@@ -22,11 +22,8 @@ def main() -> None:
     root = args.opennurbs.resolve()
     repo = Path(__file__).resolve().parents[1]
     run(["make", "-s", f"-j{args.jobs}", "example_read/example_read"], root)
-    scratch_root = Path.home() / "side2" / "tmp" / "rhino-l9"
-    scratch_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix="opennurbs-comparison-",
-        dir=scratch_root,
     ) as temporary:
         generated = Path(temporary)
         generator = generated / "rhino-comparison"

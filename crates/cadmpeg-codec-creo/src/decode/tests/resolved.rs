@@ -252,7 +252,7 @@ fn decode_reports_missing_declared_section_segment_rows() {
 }
 
 #[test]
-fn missing_section_segment_rows_are_given_up_and_a_pinned_decode_refuses_them() {
+fn missing_section_segment_rows_are_given_up_as_undecoded_and_a_pinned_decode_keeps_them() {
     let mut payload =
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
@@ -273,7 +273,7 @@ fn missing_section_segment_rows_are_given_up_and_a_pinned_decode_refuses_them() 
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .map(|loss| loss.message.clone())
         .collect();
     let [charge] = charges.as_slice() else {
@@ -310,13 +310,14 @@ fn missing_section_segment_rows_are_given_up_and_a_pinned_decode_refuses_them() 
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = CreoCodec
+    let pinned = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect_err("a pinned decode refuses the missing rows");
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert_eq!(rejection.loss().message, charges[0]);
+        .expect("a pinned decode keeps the rows it does not decode");
+    assert!(pinned
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message == charges[0]));
 }
 
 #[test]

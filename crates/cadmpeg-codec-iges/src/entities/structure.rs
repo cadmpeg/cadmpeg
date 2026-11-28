@@ -4,7 +4,7 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
     curve_geometry_coplanar, linear_nurbs_parameters, planar_polyline_has_self_intersection,
-    plane_coordinates, resolve_transform, PlanarPairBudget, ProjectionOutcome,
+    plane_coordinates, resolve_transform, PlanarPairBudget, ProjectionOutcome, TransformFailure,
     TransformResolutionError,
 };
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
@@ -24,6 +24,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -128,6 +129,79 @@ fn network_connectivity_valid(
         && slots_match
         && (!matches!(global_table, GlobalTable::V4_0)
             || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
+}
+
+/// How a Type 308 or Type 320 definition holds one member.
+#[derive(Clone, Copy)]
+enum Member {
+    /// The member is not an instance, or it is a decodable instance of a
+    /// shallower definition.
+    Held,
+    /// The member instance places a definition whose depth is not below the
+    /// containing definition's depth.
+    TooDeep(u32),
+    /// The member has no decodable instance in the projection.
+    Needed(u32),
+}
+
+/// Decodes the Type 308 or Type 320 definition `entry` whose members are
+/// held as `members`, or charges its loss. Invalid own fields and a member
+/// of a definition that is not shallower break the definition's rules. A
+/// member that the projection does not hold makes the definition a
+/// dependent of that member.
+fn settle_definition(
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    decoded: &mut BTreeSet<u32>,
+    entry: &DirectoryEntry,
+    fields_valid: bool,
+    members: &[Member],
+    kind: &str,
+) {
+    let too_deep = members.iter().find_map(|member| match member {
+        Member::TooDeep(sequence) => Some(*sequence),
+        Member::Held | Member::Needed(_) => None,
+    });
+    if !fields_valid {
+        super::push_entity_loss(
+            losses,
+            entry,
+            Cause::Unreadable,
+            format_args!("{kind} definition fields or nesting depth is invalid"),
+        );
+        return;
+    }
+    if let Some(sequence) = too_deep {
+        super::push_entity_loss(
+            losses,
+            entry,
+            Cause::Unreadable,
+            format_args!(
+                "{kind} definition member D{sequence} places a definition whose depth is not \
+                 below this definition's depth"
+            ),
+        );
+        return;
+    }
+    let needed = members
+        .iter()
+        .filter_map(|member| match member {
+            Member::Needed(sequence) => Some(*sequence),
+            Member::Held | Member::TooDeep(_) => None,
+        })
+        .collect::<Vec<_>>();
+    if needed.is_empty() {
+        decoded.insert(entry.sequence);
+        return;
+    }
+    for sequence in needed {
+        super::push_entity_loss_needing(
+            losses,
+            entry,
+            Some(sequence),
+            Cause::Undecoded,
+            format_args!("{kind} definition member D{sequence} is not decoded"),
+        );
+    }
 }
 
 fn subfigure_definition_directory_fields_valid(
@@ -2147,17 +2221,16 @@ fn read_flow_optional_pointers(
     Some(pointers)
 }
 
-fn definition_members(
-    record: &ParameterRecord,
-    count: usize,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> Option<Vec<u32>> {
+/// The `count` member pointers of a Type 308 or Type 320 definition, each a
+/// positive odd Directory sequence. A member that the projection does not
+/// hold makes the definition a dependent of that member.
+fn definition_members(record: &ParameterRecord, count: usize) -> Option<Vec<u32>> {
     let mut members = Vec::new();
     for index in 0..count {
         let sequence = record
             .integer(4 + index)
             .and_then(|value| u32::try_from(value).ok())
-            .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))?;
+            .filter(|sequence| sequence % 2 == 1)?;
         members.push(sequence);
     }
     Some(members)
@@ -2275,29 +2348,78 @@ pub(crate) enum PlacementRejection {
 
 /// The local affine placement of a subfigure or network instance.
 pub(crate) enum PlacementAffineError {
-    Invalid,
+    Invalid(PlacementFailure),
     Resource(CodecError),
+}
+
+/// Why the placement of a subfigure or network instance has no affine
+/// transform.
+#[derive(Debug)]
+pub(crate) enum PlacementFailure {
+    /// The definition pointer or a supplied placement field has the wrong
+    /// lexical type, a non-finite value, or a non-positive scale.
+    Field,
+    /// The finite placement fields compose to a non-finite transform.
+    NonFinite,
+    /// The Directory transformation does not resolve.
+    Transform(TransformFailure),
+}
+
+impl PlacementFailure {
+    /// The cause of the give-up of the instance that this failure keeps
+    /// from its placement.
+    pub(crate) fn cause(&self) -> Cause {
+        match self {
+            Self::Field => Cause::Unreadable,
+            Self::NonFinite => Cause::Undecoded,
+            Self::Transform(failure) => failure.cause(),
+        }
+    }
+
+    /// The transformation entity that has no Directory Entry in the
+    /// projection.
+    pub(crate) fn needs(&self) -> Option<u32> {
+        match self {
+            Self::Transform(failure) => failure.needs(),
+            Self::Field | Self::NonFinite => None,
+        }
+    }
+}
+
+impl std::fmt::Display for PlacementFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Field => formatter.write_str(
+                "a placement field has the wrong lexical type, a non-finite value, or a \
+                 non-positive scale",
+            ),
+            Self::NonFinite => formatter.write_str("the placement is not finite"),
+            Self::Transform(failure) => write!(formatter, "{failure}"),
+        }
+    }
 }
 
 impl From<()> for PlacementAffineError {
     fn from((): ()) -> Self {
-        Self::Invalid
+        Self::Invalid(PlacementFailure::Field)
     }
 }
 
 impl From<TransformResolutionError> for PlacementAffineError {
     fn from(error: TransformResolutionError) -> Self {
         match error {
-            TransformResolutionError::Invalid(_) => Self::Invalid,
+            TransformResolutionError::Invalid(failure) => {
+                Self::Invalid(PlacementFailure::Transform(failure))
+            }
             TransformResolutionError::Resource(error) => Self::Resource(error),
         }
     }
 }
 
 impl PlacementAffineError {
-    pub(crate) fn non_resource(self) -> Result<(), CodecError> {
+    pub(crate) fn non_resource(self) -> Result<PlacementFailure, CodecError> {
         match self {
-            Self::Invalid => Ok(()),
+            Self::Invalid(failure) => Ok(failure),
             Self::Resource(error) => Err(error),
         }
     }
@@ -2355,13 +2477,13 @@ pub(crate) fn placement_affine(
             translation_component(4)?.get() * length_factor,
         ],
     ])
-    .ok_or(())?;
+    .ok_or(PlacementAffineError::Invalid(PlacementFailure::NonFinite))?;
     let scale = Transform::affine([
         [scales[0].get(), 0.0, 0.0, 0.0],
         [0.0, scales[1].get(), 0.0, 0.0],
         [0.0, 0.0, scales[2].get(), 0.0],
     ])
-    .ok_or(())?;
+    .ok_or(PlacementAffineError::Invalid(PlacementFailure::NonFinite))?;
     let directory = if instance.transform == 0 {
         Transform::identity()
     } else {
@@ -2376,11 +2498,12 @@ pub(crate) fn placement_affine(
         )
         .map_err(PlacementAffineError::from)?
     };
+    let non_finite = |_| PlacementAffineError::Invalid(PlacementFailure::NonFinite);
     Ok((
         definition,
         directory
-            .compose(translation.compose(scale).map_err(|_| ())?)
-            .map_err(|_| ())?,
+            .compose(translation.compose(scale).map_err(non_finite)?)
+            .map_err(non_finite)?,
     ))
 }
 
@@ -3063,6 +3186,7 @@ pub(super) fn project(
                     entry,
                     face,
                     Some(entry.sequence),
+                    Cause::Undecoded,
                     super::entity_note(
                         entry,
                         format_args!("bounded plane face has no projected plane"),
@@ -3078,6 +3202,7 @@ pub(super) fn project(
                     entry,
                     face,
                     None,
+                    Cause::Unreadable,
                     super::entity_note(entry, format_args!("plane boundary pointer is invalid")),
                 );
             }
@@ -3116,6 +3241,7 @@ pub(super) fn project(
                             entry,
                             face,
                             None,
+                            Cause::Undecoded,
                             super::entity_note(entry, format_args!("{}", reason.non_resource()?)),
                         ),
                     }
@@ -3128,6 +3254,7 @@ pub(super) fn project(
                         entry,
                         face,
                         needs,
+                        Cause::Undecoded,
                         super::entity_note(entry, format_args!("{}", reason.message()?)),
                     );
                 }
@@ -3192,6 +3319,7 @@ pub(super) fn project(
                 entry,
                 face,
                 None,
+                Cause::Undecoded,
                 super::entity_note(
                     entry,
                     format_args!("plane face failed neutral topology validation"),
@@ -3200,28 +3328,34 @@ pub(super) fn project(
         }
     }
     for (entry, face, hole) in lost_holes {
-        let why = match hole.child {
-            LostChild::Dangling(pointer) => super::attributed_note(
-                entry,
-                crate::loss::IgesLossCode::EntityNotProjected,
-                format_args!(
-                    "IGES entity type {} form {} child pointer {pointer} names no Directory \
+        let (cause, why) = match hole.child {
+            LostChild::Dangling(pointer) => (
+                Cause::Unreadable,
+                super::attributed_note(
+                    entry,
+                    crate::loss::IgesLossCode::EntityNotProjected,
+                    format_args!(
+                        "IGES entity type {} form {} child pointer {pointer} names no Directory \
                      entry, so its slot bounds no hole of the face",
-                    entry.entity_type, entry.form
+                        entry.entity_type, entry.form
+                    ),
                 ),
             ),
-            LostChild::Unbounded(child, why) => super::attributed_note(
-                entry,
-                crate::loss::IgesLossCode::EntityNotProjected,
-                format_args!(
+            LostChild::Unbounded(child, why) => (
+                Cause::Undecoded,
+                super::attributed_note(
+                    entry,
+                    crate::loss::IgesLossCode::EntityNotProjected,
+                    format_args!(
                     "IGES entity type {} form {} hole bounded by Directory sequence {child} was \
                      not projected: {why}",
                     entry.entity_type, entry.form
                 ),
+                ),
             ),
         };
         let marked = committed_faces.contains(&face).then_some(face);
-        super::give_up_marking(&mut losses, entry, hole.loop_id, marked, why);
+        super::give_up_marking(&mut losses, entry, hole.loop_id, marked, cause, &why);
     }
     for (entry, parent, why) in failed_holes {
         super::give_up_marking(
@@ -3232,7 +3366,8 @@ pub(super) fn project(
                 entry.sequence,
             )),
             partial_faces.get(&parent).cloned(),
-            why,
+            Cause::Undecoded,
+            &why,
         );
     }
 
@@ -3667,6 +3802,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3677,13 +3813,14 @@ pub(super) fn project(
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let count = record.count(3);
         let members = match count {
-            Some(count) => definition_members(record, count, &entries),
+            Some(count) => definition_members(record, count),
             None => None,
         };
         let (Some(depth), Some(members)) = (depth, members) else {
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("subfigure depth, member count, or member pointer is invalid"),
             );
             continue;
@@ -3700,6 +3837,11 @@ pub(super) fn project(
 
     let mut instances = BTreeMap::new();
     let mut instance_fields_valid = BTreeSet::new();
+    // The placement failure of each parsed Type 408 or Type 420 instance.
+    let mut placement_failures = BTreeMap::<u32, PlacementFailure>::new();
+    // The parsed Type 420 instances whose own fields or connect-point list
+    // break their rules.
+    let mut network_instance_fields_damaged = BTreeSet::new();
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
@@ -3709,6 +3851,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3717,7 +3860,7 @@ pub(super) fn project(
             let sequence = u32::try_from(value).ok()?;
             (sequence % 2 == 1 && definitions.contains_key(&sequence)).then_some(sequence)
         });
-        let placement_valid = match placement_affine(
+        let placement = match placement_affine(
             entry,
             record,
             &entries,
@@ -3726,15 +3869,15 @@ pub(super) fn project(
             global.real_precision(),
             ctx,
         ) {
-            Ok(_) => true,
-            Err(error) => {
-                error.non_resource()?;
-                false
-            }
+            Ok(_) => None,
+            Err(error) => Some(error.non_resource()?),
         };
-        if !placement_valid {
+        if placement.is_some() {
             placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
         }
+        let placement_damaged = placement
+            .as_ref()
+            .is_some_and(|failure| failure.cause() == Cause::Unreadable);
         let Some(definition) = definition else {
             placement_rejections
                 .entry(entry.sequence)
@@ -3743,18 +3886,24 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 super::pointer(record, 1).filter(|target| {
-                    placement_valid
+                    !placement_damaged
                         && entries
                             .get(target)
                             .is_none_or(|target| target.entity_type == 308)
                 }),
+                Cause::Unreadable,
                 format_args!("subfigure-instance definition pointer is invalid"),
             );
             continue;
         };
         instances.insert(entry.sequence, definition);
-        if placement_valid {
-            instance_fields_valid.insert(entry.sequence);
+        match placement {
+            Some(failure) => {
+                placement_failures.insert(entry.sequence, failure);
+            }
+            None => {
+                instance_fields_valid.insert(entry.sequence);
+            }
         }
     }
 
@@ -3768,6 +3917,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3778,7 +3928,7 @@ pub(super) fn project(
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let member_count = record.count(3);
         let members = match member_count {
-            Some(count) => definition_members(record, count, &entries),
+            Some(count) => definition_members(record, count),
             None => None,
         };
         let Some((depth, member_count, members)) = depth
@@ -3789,6 +3939,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("network definition header or member list is invalid"),
             );
             continue;
@@ -3815,6 +3966,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("network definition connect-point count is invalid"),
             );
             continue;
@@ -3850,6 +4002,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3874,7 +4027,7 @@ pub(super) fn project(
         });
         let connect_points =
             network_connect_points(record, 11, 12, &entries, global.global_table());
-        let placement_valid = match placement_affine(
+        let placement = match placement_affine(
             entry,
             record,
             &entries,
@@ -3883,15 +4036,15 @@ pub(super) fn project(
             global.real_precision(),
             ctx,
         ) {
-            Ok(_) => true,
-            Err(error) => {
-                error.non_resource()?;
-                false
-            }
+            Ok(_) => None,
+            Err(error) => Some(error.non_resource()?),
         };
-        if !placement_valid {
+        if placement.is_some() {
             placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
         }
+        let placement_damaged = placement
+            .as_ref()
+            .is_some_and(|failure| failure.cause() == Cause::Unreadable);
         let connect_points_valid = connect_points.is_some();
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
             placement_rejections
@@ -3909,11 +4062,12 @@ pub(super) fn project(
                             .get(target)
                             .is_none_or(|target| target.entity_type == 320)
                         && connect_points_valid
-                        && placement_valid
+                        && !placement_damaged
                         && type_flag_valid
                         && designator_valid
                         && display_valid
                 }),
+                Cause::Unreadable,
                 format_args!("network instance definition or count is invalid"),
             );
             continue;
@@ -3925,47 +4079,66 @@ pub(super) fn project(
                 connect_points,
             },
         );
-        if placement_valid && type_flag_valid && designator_valid && display_valid {
+        if !(type_flag_valid && designator_valid && display_valid) {
+            network_instance_fields_damaged.insert(entry.sequence);
+        } else if let Some(failure) = placement {
+            placement_failures.insert(entry.sequence, failure);
+        } else {
             network_instance_fields_valid.insert(entry.sequence);
         }
     }
 
+    // How a definition of depth `depth` holds its member `member`.
+    let member = |member: u32, depth: usize| {
+        let Some(member_entry) = entries.get(&member) else {
+            return Member::Needed(member);
+        };
+        let (fields_valid, child_depth) = match member_entry.entity_type {
+            408 => {
+                let Some(definition) = instances.get(&member) else {
+                    return Member::Needed(member);
+                };
+                (
+                    instance_fields_valid.contains(&member)
+                        && definition_fields_valid.contains(definition),
+                    definitions.get(definition).map(|child| child.depth),
+                )
+            }
+            420 => {
+                let Some(instance) = network_instances.get(&member) else {
+                    return Member::Needed(member);
+                };
+                (
+                    network_instance_fields_valid.contains(&member)
+                        && network_definition_fields_valid.contains(&instance.definition),
+                    network_definitions
+                        .get(&instance.definition)
+                        .map(|child| child.depth),
+                )
+            }
+            _ => return Member::Held,
+        };
+        match child_depth {
+            Some(child_depth) if child_depth >= depth => Member::TooDeep(member),
+            Some(_) if fields_valid => Member::Held,
+            _ => Member::Needed(member),
+        }
+    };
     for (sequence, definition) in &definitions {
         let entry = entries[sequence];
-        let nesting_valid = definition.members.iter().all(|member| {
-            let Some(member_entry) = entries.get(member) else {
-                return false;
-            };
-            if !matches!(member_entry.entity_type, 408 | 420) {
-                return true;
-            }
-            match member_entry.entity_type {
-                408 => instances.get(member).is_some_and(|definition_sequence| {
-                    instance_fields_valid.contains(member)
-                        && definition_fields_valid.contains(definition_sequence)
-                        && definitions
-                            .get(definition_sequence)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                420 => network_instances.get(member).is_some_and(|instance| {
-                    network_instance_fields_valid.contains(member)
-                        && network_definition_fields_valid.contains(&instance.definition)
-                        && network_definitions
-                            .get(&instance.definition)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                _ => false,
-            }
-        });
-        if definition_fields_valid.contains(sequence) && nesting_valid {
-            decoded.insert(*sequence);
-        } else {
-            super::push_entity_loss(
-                &mut losses,
-                entry,
-                format_args!("subfigure definition fields or nesting depth is invalid"),
-            );
-        }
+        let members = definition
+            .members
+            .iter()
+            .map(|sequence| member(*sequence, definition.depth))
+            .collect::<Vec<_>>();
+        settle_definition(
+            &mut losses,
+            &mut decoded,
+            entry,
+            definition_fields_valid.contains(sequence),
+            &members,
+            "subfigure",
+        );
     }
     for (sequence, definition_sequence) in &instances {
         let entry = entries[sequence];
@@ -3974,57 +4147,47 @@ pub(super) fn project(
             && decoded.contains(definition_sequence)
         {
             decoded.insert(*sequence);
-        } else {
-            placement_rejections
-                .entry(*sequence)
-                .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_entity_loss_needing(
+            continue;
+        }
+        placement_rejections
+            .entry(*sequence)
+            .or_insert(PlacementRejection::InvalidDefinition);
+        match placement_failures.get(sequence) {
+            Some(failure) => super::push_entity_loss_needing(
                 &mut losses,
                 entry,
-                instance_fields_valid
-                    .contains(sequence)
-                    .then_some(*definition_sequence),
-                format_args!("subfigure-instance placement or decoded definition is invalid"),
-            );
+                failure.needs(),
+                failure.cause(),
+                format_args!("subfigure-instance placement is invalid: {failure}"),
+            ),
+            None => super::push_entity_loss_needing(
+                &mut losses,
+                entry,
+                Some(*definition_sequence),
+                Cause::Undecoded,
+                format_args!("subfigure-instance definition D{definition_sequence} is not decoded"),
+            ),
         }
     }
     for (sequence, definition) in &network_definitions {
         let entry = entries[sequence];
-        let nesting_valid = definition.members.iter().all(|member| {
-            let Some(member_entry) = entries.get(member) else {
-                return false;
-            };
-            match member_entry.entity_type {
-                408 => instances.get(member).is_some_and(|definition_sequence| {
-                    instance_fields_valid.contains(member)
-                        && definition_fields_valid.contains(definition_sequence)
-                        && definitions
-                            .get(definition_sequence)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                420 => network_instances.get(member).is_some_and(|instance| {
-                    network_instance_fields_valid.contains(member)
-                        && network_definition_fields_valid.contains(&instance.definition)
-                        && network_definitions
-                            .get(&instance.definition)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                _ => true,
-            }
-        });
-        if network_definition_fields_valid.contains(sequence) && nesting_valid {
-            decoded.insert(*sequence);
-        } else {
-            super::push_entity_loss(
-                &mut losses,
-                entry,
-                format_args!("network definition fields or nesting depth is invalid"),
-            );
-        }
+        let members = definition
+            .members
+            .iter()
+            .map(|sequence| member(*sequence, definition.depth))
+            .collect::<Vec<_>>();
+        settle_definition(
+            &mut losses,
+            &mut decoded,
+            entry,
+            network_definition_fields_valid.contains(sequence),
+            &members,
+            "network",
+        );
     }
     for (sequence, instance) in &network_instances {
         let entry = entries[sequence];
-        let definition_valid =
+        let connectivity_valid =
             network_definitions
                 .get(&instance.definition)
                 .is_some_and(|definition| {
@@ -4035,27 +4198,46 @@ pub(super) fn project(
                     )
                 });
         if network_instance_fields_valid.contains(sequence)
-            && definition_valid
+            && connectivity_valid
             && decoded.contains(&instance.definition)
         {
             decoded.insert(*sequence);
-        } else {
-            placement_rejections.entry(*sequence).or_insert(
-                if decoded.contains(&instance.definition) {
-                    PlacementRejection::InvalidMetadata {
-                        definition: instance.definition,
-                    }
-                } else {
-                    PlacementRejection::InvalidDefinition
-                },
+            continue;
+        }
+        placement_rejections.entry(*sequence).or_insert(
+            if decoded.contains(&instance.definition) {
+                PlacementRejection::InvalidMetadata {
+                    definition: instance.definition,
+                }
+            } else {
+                PlacementRejection::InvalidDefinition
+            },
+        );
+        if network_instance_fields_damaged.contains(sequence) || !connectivity_valid {
+            super::push_entity_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("network instance fields or connection list is invalid"),
             );
+        } else if let Some(failure) = placement_failures.get(sequence) {
             super::push_entity_loss_needing(
                 &mut losses,
                 entry,
-                (network_instance_fields_valid.contains(sequence)
-                    && !decoded.contains(&instance.definition))
-                .then_some(instance.definition),
-                format_args!("network instance placement or connection list is invalid"),
+                failure.needs(),
+                failure.cause(),
+                format_args!("network instance placement is invalid: {failure}"),
+            );
+        } else {
+            super::push_entity_loss_needing(
+                &mut losses,
+                entry,
+                Some(instance.definition),
+                Cause::Undecoded,
+                format_args!(
+                    "network instance definition D{} is not decoded",
+                    instance.definition
+                ),
             );
         }
     }

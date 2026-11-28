@@ -1951,6 +1951,89 @@ pub(crate) struct F3dNative {
 }
 
 impl F3dNative {
+    /// Indexed record headers that the parameter machinery does not own. The
+    /// header arena also holds the headers of parameter scopes, parameters,
+    /// owners and companions, which state no geometry.
+    fn entity_record_header_count(&self) -> usize {
+        let mut parameter_records = std::collections::HashSet::new();
+        let mut note = |id: &str, record_index: u32| {
+            if let Some(stream) = crate::ids::native_stream(id) {
+                parameter_records.insert((stream.to_owned(), record_index));
+            }
+        };
+        for scope in &self.design_parameter_scopes {
+            note(&scope.id, scope.record_index);
+        }
+        for parameter in &self.design_parameters {
+            note(&parameter.id, parameter.record_index);
+        }
+        for owner in &self.design_parameter_owners {
+            note(owner.id(), owner.record_index());
+        }
+        for companion in &self.design_parameter_companions {
+            note(companion.id(), companion.record_index());
+        }
+        self.design_record_headers
+            .iter()
+            .filter(|header| {
+                crate::ids::native_stream(&header.id).is_none_or(|stream| {
+                    !parameter_records.contains(&(stream.to_owned(), header.record_index))
+                })
+            })
+            .count()
+    }
+
+    /// Design records that state intended geometry: feature timeline items,
+    /// framed records of no typed kind, sketch
+    /// and construction carriers, component occurrences, mesh features,
+    /// joints, selections, operands and dimension geometry. Parameters, their
+    /// scopes, owners and companions, material assignments, configurations and image
+    /// carriers state no geometry and do not count.
+    pub(crate) fn geometry_record_count(&self) -> usize {
+        self.design_feature_timelines
+            .iter()
+            .map(|timeline| timeline.frame().items().len())
+            .sum::<usize>()
+            + self.entity_record_header_count()
+            + self.design_sketch_placements.len()
+            + self.design_placement_constructions.len()
+            + self.sketch_points.len()
+            + self.sketch_curve_identities.len()
+            + self.sketch_surfaces.len()
+            + self.sketch_geometry_groups.len()
+            + self.sketch_texts.len()
+            + self.sketch_relations.len()
+            + self.design_component_occurrences.len()
+            + self.design_component_paths.len()
+            + self.design_mesh_features.len()
+            + self.design_joint_motions.len()
+            + self.design_surface_trim_operations.len()
+            + self.design_sheet_metal_settings.len()
+            + self.construction_recipes.len()
+            + self.persistent_references.len()
+            + self.design_body_bounds.len()
+            + self.design_body_recipe_operands.len()
+            + self.design_loft_legacy_body_carriers.len()
+            + self.design_edge_operands.len()
+            + self.design_edge_treatment_vertex_operands.len()
+            + self.design_edge_identity_operands.len()
+            + self.design_face_operands.len()
+            + self.design_face_source_groups.len()
+            + self.design_profile_curve_selections.len()
+            + self.design_construction_operand_groups.len()
+            + self.design_construction_operand_identities.len()
+            + self.design_extrude_selection_groups.len()
+            + self.design_extrude_selection_members.len()
+            + self.design_entity_selection_operands.len()
+            + self.design_fillet_radius_groups.len()
+            + self.design_dimension_annotation_frames.len()
+            + self.design_dimension_presentation_frames.len()
+            + self.design_dimension_locus_pairs.len()
+            + self.design_dimension_locus_groups.len()
+            + self.design_dimension_null_locus_pairs.len()
+            + self.design_dimension_recipe_records.len()
+    }
+
     /// Load the typed native records from `namespace` under `ctx`.
     pub(crate) fn load_inner(
         ctx: &DecodeContext<'_>,

@@ -652,15 +652,10 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
-    let mut losses = Vec::new();
     let mut given_up = Vec::new();
-    let decoded = super::decode_configurations(&ctx, &scan, &mut losses, &mut given_up).unwrap();
+    let decoded = super::decode_configurations(&ctx, &scan, &mut given_up).unwrap();
     assert_eq!(decoded.documents.len(), 1);
     assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()]
-    );
     assert_eq!(given_up.len(), 1);
     assert_eq!(given_up[0].kind(), crate::container::ENTRY_PART);
     assert_eq!(given_up[0].name(), Some(bad));

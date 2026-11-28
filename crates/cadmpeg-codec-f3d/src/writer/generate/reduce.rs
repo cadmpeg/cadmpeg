@@ -30,13 +30,15 @@ use cadmpeg_ir::codec::write::{
     NativeDispositions,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -80,10 +82,20 @@ const BREP_ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
+/// Native Design arenas whose records the neutral Design stream writes from
+/// the bodies and the type registry of the written records.
+const NEUTRAL_DESIGN_ARENAS: &[&str] = &[
+    "design_body_bindings",
+    "design_body_members",
+    "design_types",
+];
+
+/// Native Design arenas whose records the neutral Design stream writes from
+/// the root definition's design scope: its timeline and its parameters.
+const NEUTRAL_SCOPE_ARENAS: &[&str] = &["design_feature_timelines", "design_parameters"];
+
 /// Native Design arenas the source-less Design stream has no form for. The
-/// generator writes no record of these families on the native path. A
-/// document with parameter records takes the neutral path, which drops them
-/// with the Design stream.
+/// generator writes no record of these families on the native path.
 const DESIGN_ARENAS_WITHOUT_FORM: &[&str] = &[
     "derived_references",
     "design_body_bindings",
@@ -120,6 +132,25 @@ const DESIGN_ARENAS_WITHOUT_FORM: &[&str] = &[
     "sketch_surfaces",
     "xref_designs",
     "xref_references",
+];
+
+/// Native arenas of feature scopes and of the records that a scope, a
+/// parameter owner or a parameter companion holds. The source-less Design
+/// stream writes no feature scope, so the generator writes no record of these
+/// families on the native path; it writes each owned parameter as a user
+/// parameter.
+const SCOPE_ARENAS: &[&str] = &[
+    "design_dimension_annotation_frames",
+    "design_dimension_locus_groups",
+    "design_dimension_locus_pairs",
+    "design_dimension_null_locus_pairs",
+    "design_dimension_presentation_frames",
+    "design_dimension_recipe_records",
+    "design_face_source_groups",
+    "design_parameter_companions",
+    "design_parameter_owners",
+    "design_parameter_scopes",
+    "design_sketch_placements",
 ];
 
 /// Native arenas the generator never writes: it has no `MetaStream` record
@@ -219,21 +250,9 @@ pub(super) struct Failure {
     pub(super) error: CodecError,
     /// The records the failure names, where it names any.
     pub(super) culprit: Option<Culprit>,
-    /// The native records that cause the failure, where it names them.
-    pub(super) native: Option<NativeCause>,
-}
-
-/// The native records that cause a failure.
-#[derive(Debug)]
-pub(super) enum NativeCause {
-    /// Records the writer drops alone (W1).
-    Records(Box<Unwritable>),
-    /// Parameter records. A typed feature scope, parameter owner or
-    /// companion, sketch placement or dimension frame holds its decoded
-    /// members and their offsets, and no byte form for the rest of its
-    /// frame. The neutral records restate them, so the Design stream is
-    /// written from those (W2).
-    ParameterRecords,
+    /// The native records that cause the failure, which the writer drops
+    /// alone (W1), where it names them.
+    pub(super) native: Option<Box<Unwritable>>,
 }
 
 impl Failure {
@@ -300,20 +319,7 @@ impl Failure {
                     .join(", ")
             )),
             culprit: None,
-            native: Some(NativeCause::Records(Box::new(unwritable))),
-        }
-    }
-
-    /// A failure of the native Design path whose records hold parameter
-    /// records.
-    pub(super) fn parameter_records() -> Self {
-        Self {
-            stage: Stage::Design,
-            error: CodecError::NotImplemented(
-                "source-less F3D Design parameter records are not writable".into(),
-            ),
-            culprit: None,
-            native: Some(NativeCause::ParameterRecords),
+            native: Some(Box::new(unwritable)),
         }
     }
 
@@ -354,6 +360,9 @@ pub(super) struct Reduction<'a> {
     /// The reduction before the first held state, which the writer takes
     /// again where it no longer writes the held items.
     unheld: Option<Box<Reduction<'a>>>,
+    /// The native parameter records removed for the neutral Design stream to
+    /// regenerate, each with the neutral parameter it projects to.
+    regenerated_parameters: Vec<(String, Option<ParameterId>)>,
 }
 
 impl<'a> Reduction<'a> {
@@ -377,6 +386,7 @@ impl<'a> Reduction<'a> {
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
             unheld: None,
+            regenerated_parameters: Vec::new(),
         }
     }
 
@@ -489,6 +499,7 @@ impl<'a> Reduction<'a> {
         self.omit_partial_bodies()?;
         self.drop_unwritten_native();
         self.drop_rolled_back_native_design();
+        self.drop_native_design_beside_neutral_timeline();
         self.drop_unmatched_asm_histories();
         if !self.writes_design() {
             self.drop_design_only_arenas();
@@ -523,17 +534,10 @@ impl<'a> Reduction<'a> {
             culprit,
             native,
         } = failure;
-        if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
+        if matches!(error, CodecError::ResourceLimit(_)) {
             return Err(error);
         }
-        let dropped_cause = match native {
-            Some(NativeCause::Records(unwritable)) => self.drop_unwritable(&unwritable),
-            Some(NativeCause::ParameterRecords) => self.writes_design() && self.drop_design_stream(
-                "of the Design stream, which the generator writes from the design's neutral records (its feature scopes, parameter owners and companions, sketch placements and dimension frames hold no byte form that a write without the source file can store)",
-            ),
-            None => false,
-        };
-        if dropped_cause {
+        if native.is_some_and(|unwritable| self.drop_unwritable(&unwritable)) {
             return self.prepare();
         }
         let reason = error.to_string();
@@ -623,18 +627,67 @@ impl<'a> Reduction<'a> {
     }
 
     /// Neither Design stream form holds a joint record: the source-less
-    /// generator writes the joints of no design.
+    /// generator writes the joints of no design. Where no native Design
+    /// record is written, the design losses charge each design `Joint` and
+    /// `RigidGroup` feature, and with it the joints the feature restates.
     fn drop_assembly_joints(&mut self) {
         if self.ir.model.assembly_joints.is_empty() {
             return;
         }
-        let joints = std::mem::take(&mut self.ir.to_mut().model.assembly_joints);
+        let restating = if self.writes_design() {
+            BTreeSet::new()
+        } else {
+            self.ir
+                .design
+                .features
+                .iter()
+                .filter(|feature| {
+                    matches!(
+                        feature.definition.operation,
+                        FeatureOperation::Joint(_) | FeatureOperation::RigidGroup(_)
+                    )
+                })
+                .map(|feature| feature.id.to_string())
+                .collect()
+        };
+        let mut omitted = Vec::new();
+        let mut cut = Vec::new();
+        for id in self
+            .ir
+            .model
+            .assembly_joints
+            .iter()
+            .map(|row| row.id.to_string())
+        {
+            let fields = self.ir.model.restated().get(&id).and_then(|restating_of| {
+                restating_of.cut_by(
+                    |by| matches!(by, Restater::Record(feature) if restating.contains(feature)),
+                )
+            });
+            match fields {
+                None => omitted.push(id),
+                Some(fields) if !fields.is_empty() => {
+                    let fields = fields.into_iter().collect::<Vec<_>>().join(", ");
+                    cut.push(format!("{id} ({fields})"));
+                }
+                Some(_) => {}
+            }
+        }
+        self.ir.to_mut().model.assembly_joints.clear();
         self.losses.extend(named_loss(
             F3dLossCode::WriterJointOmitted,
             "assembly joint",
             "the source-less F3D Design stream holds no joint record",
-            joints.iter().map(|row| row.id.to_string()),
+            omitted,
         ));
+        if !cut.is_empty() {
+            cut.sort_unstable();
+            self.losses.push(F3dLossCode::WriterJointOmitted.note(format!(
+                "{} assembly joint record(s) are stated in part by the design features that restate them: {}",
+                cut.len(),
+                cut.join(", ")
+            )));
+        }
     }
 
     fn drop_unwritten_arenas(&mut self) {
@@ -1565,14 +1618,96 @@ impl<'a> Reduction<'a> {
             ))
     }
 
-    /// Write the design from its neutral records: drop every native record
-    /// the B-rep stream is not written from. Returns whether it dropped one.
+    /// Write the design from its neutral records: remove every native record
+    /// the B-rep stream is not written from. The records the neutral Design
+    /// stream writes again are regenerated (W3), and the others are dropped.
+    /// Returns whether it removed one.
     fn drop_design_stream(&mut self, reason: &str) -> bool {
+        let regenerated = self.neutral_regenerated_arenas();
+        if regenerated.contains(&"design_parameters") {
+            let records = self.native_parameter_records();
+            self.regenerated_parameters.extend(records);
+        }
+        let rewritten = self.remove_native_arenas(|arena| regenerated.contains(&arena));
         let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
-        let progressed = !dropped.is_empty();
+        let progressed = !dropped.is_empty() || !rewritten.is_empty();
         self.design_dropped |= progressed;
+        if progressed {
+            for arena in regenerated {
+                self.native
+                    .arena("f3d", arena, NativeDisposition::Regenerated);
+            }
+        }
         self.native.drop_records("f3d", reason, dropped);
         progressed
+    }
+
+    /// The native parameter records of the document, each with the neutral
+    /// parameter it projects to.
+    fn native_parameter_records(&self) -> Vec<(String, Option<ParameterId>)> {
+        let Some(records) = self
+            .ir
+            .native
+            .namespace("f3d")
+            .and_then(|namespace| namespace.arenas().get("design_parameters"))
+        else {
+            return Vec::new();
+        };
+        records
+            .iter()
+            .map(|record| {
+                let parameter = record
+                    .field("record_index")
+                    .as_ref()
+                    .and_then(Value::as_u64)
+                    .and_then(|index| u32::try_from(index).ok())
+                    .map(|index| crate::ids::neutral_parameter_id_of(record.id(), index));
+                (record.id().to_owned(), parameter)
+            })
+            .collect()
+    }
+
+    /// Declare the native parameter records the written Design stream
+    /// regenerates. `restated` holds the neutral parameters the written
+    /// parameter records restate, where the attempt regenerated them from the
+    /// neutral parameters. A regenerated record whose neutral parameter no
+    /// written record restates is dropped.
+    pub(super) fn declare_regenerated_parameters(
+        &mut self,
+        restated: Option<&BTreeSet<ParameterId>>,
+    ) {
+        let mut records = std::mem::take(&mut self.regenerated_parameters);
+        if restated.is_some() {
+            records.extend(self.native_parameter_records());
+        } else if records.is_empty() {
+            return;
+        }
+        self.native
+            .arena("f3d", "design_parameters", NativeDisposition::Regenerated);
+        let unrestated = records
+            .into_iter()
+            .filter(|(_, parameter)| {
+                !parameter
+                    .as_ref()
+                    .is_some_and(|parameter| restated.is_some_and(|set| set.contains(parameter)))
+            })
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        self.native.drop_records(
+            "f3d",
+            "because no written parameter record restates their neutral parameters",
+            unrestated,
+        );
+    }
+
+    /// The native Design arenas the neutral Design stream writes again: the
+    /// scope arenas when it writes the root definition's design scope.
+    fn neutral_regenerated_arenas(&self) -> Vec<&'static str> {
+        let mut arenas = NEUTRAL_DESIGN_ARENAS.to_vec();
+        if !self.neutral_dropped && super::design::root_scope(&self.ir).is_some() {
+            arenas.extend(NEUTRAL_SCOPE_ARENAS);
+        }
+        arenas
     }
 
     /// W3 for the native Design path: the written Design stream holds no
@@ -1587,6 +1722,13 @@ impl<'a> Reduction<'a> {
                 "f3d",
                 arena,
                 "because the source-less Design stream has no form for these records",
+            );
+        }
+        for arena in SCOPE_ARENAS {
+            self.native.drop_arena(
+                "f3d",
+                arena,
+                "because the source-less Design stream writes no feature scope, and these records are feature scopes or records that a scope, a parameter owner or a parameter companion holds",
             );
         }
     }
@@ -1644,6 +1786,23 @@ impl<'a> Reduction<'a> {
             "of the Design stream, because the generator writes the design's timeline, rolled back before {first}, from its neutral records in the {form} form"
         ));
         self.design_dropped = true;
+    }
+
+    /// Write a timeline from the neutral records (W2). A scope that states
+    /// no timeline keeps its native Design records.
+    fn drop_native_design_beside_neutral_timeline(&mut self) {
+        if !self.writes_design() || !super::design::states_timeline(&self.ir) {
+            return;
+        }
+        let timeline = super::design::plan(&self.ir, self.missing_states, &self.fallback)
+            .ok()
+            .flatten()
+            .is_some_and(|plan| plan.writes_timeline() || plan.writes_features());
+        if timeline {
+            self.drop_design_stream(
+                "of the Design stream, which the generator writes from the design's neutral records because it writes the design's timeline only from them",
+            );
+        }
     }
 
     /// Write the design scope without its next droppable part (its sketch
@@ -1746,6 +1905,13 @@ impl<'a> Reduction<'a> {
         self.neutral_dropped = true;
         self.losses
             .extend(super::design::dropped_records(&self.ir, reason));
+        for arena in NEUTRAL_SCOPE_ARENAS {
+            self.native.drop_arena(
+                "f3d",
+                arena,
+                &format!("because the F3D writer writes no design ({reason})"),
+            );
+        }
         true
     }
 
@@ -2804,7 +2970,7 @@ fn rolled_back_from(ir: &CadIr) -> Option<&Member> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BREP_ARENAS, DESIGN_ARENAS_WITHOUT_FORM, UNWRITTEN_ARENAS};
+    use super::{BREP_ARENAS, DESIGN_ARENAS_WITHOUT_FORM, SCOPE_ARENAS, UNWRITTEN_ARENAS};
 
     /// Native arenas the source-less Design stream and the B-rep stream's
     /// history tail are written from.
@@ -2830,29 +2996,13 @@ mod tests {
         "sketch_texts",
     ];
 
-    /// Native arenas of parameter records, whose presence sends the design
-    /// to the neutral path.
-    const PARAMETER_ARENAS: &[&str] = &[
-        "design_dimension_annotation_frames",
-        "design_dimension_locus_groups",
-        "design_dimension_locus_pairs",
-        "design_dimension_null_locus_pairs",
-        "design_dimension_presentation_frames",
-        "design_dimension_recipe_records",
-        "design_face_source_groups",
-        "design_parameter_companions",
-        "design_parameter_owners",
-        "design_parameter_scopes",
-        "design_sketch_placements",
-    ];
-
     /// Each native arena has one disposition on the native path. The
     /// generator writes no display scene, and no list holds its poses.
     #[test]
     fn each_native_arena_has_one_disposition() {
         for arena in crate::native::F3D_ARENA_NAMES {
             let lists = [
-                PARAMETER_ARENAS,
+                SCOPE_ARENAS,
                 BREP_ARENAS,
                 DESIGN_ARENAS,
                 DESIGN_ARENAS_WITHOUT_FORM,

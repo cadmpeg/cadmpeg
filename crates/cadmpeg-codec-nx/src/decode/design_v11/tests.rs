@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
-use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
+use cadmpeg_ir::features::parameters::{
+    DesignConfiguration as LegacyConfiguration, DesignParameter as LegacyParameter,
+};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::tree::TreeChildren;
 use cadmpeg_ir::features::{
-    FeatureContent, FeatureDefinition as LegacyDefinition, FeatureId, SketchFeatureBinding,
+    FeatureContent, FeatureDefinition as LegacyDefinition, FeatureId, ParameterId,
+    SketchFeatureBinding,
 };
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::topology::{Body, BodyKind};
@@ -58,7 +61,7 @@ fn body(key: &str) -> Body {
 fn configuration(ordinal: u32, name: &str, active: bool) -> LegacyConfiguration {
     LegacyConfiguration {
         id: cadmpeg_ir::features::ConfigurationId::mint(format!(
-            "nx:arrangements:configuration#{ordinal}"
+            "nx:arrangements:arrangement#{ordinal}"
         ))
         .expect("id"),
         ordinal,
@@ -77,9 +80,51 @@ fn configuration(ordinal: u32, name: &str, active: bool) -> LegacyConfiguration 
 
 /// Projects `ir` and returns whether the root definition was stated.
 fn project_ir(ir: &mut CadIr) -> bool {
+    project_charging(ir).0
+}
+
+/// Projects `ir` and returns whether the root definition was stated, and
+/// the losses the projection charges.
+fn project_charging(ir: &mut CadIr) -> (bool, Vec<LossNote>) {
     let (definition, minted) = root_definition(ir).expect("root definition");
-    project(ir, definition).expect("projection");
-    minted
+    let mut losses = Vec::new();
+    project(ir, definition, &mut losses).expect("projection");
+    (minted, losses)
+}
+
+fn base_feature(key: &str, ordinal: u64) -> LegacyFeature {
+    feature(
+        key,
+        ordinal,
+        LegacyOperation::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: DistinctMembers::try_from(vec![body("1").id]).unwrap(),
+                native: "nx:segment-body-bindings".to_owned(),
+            },
+        },
+    )
+}
+
+fn expression(key: &str, name: &str) -> LegacyParameter {
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        NonBlankString::new("unit".to_owned()).unwrap(),
+        "mm".to_owned(),
+    );
+    LegacyParameter {
+        product_definition: None,
+        id: ParameterId::mint(format!("nx:om-entry-0:parameter#{key}")).unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: name.to_owned(),
+        expression: "10".to_owned(),
+        display: None,
+        value: None,
+        dependencies: DistinctMembers::default(),
+        properties,
+        pmi: None,
+        native_ref: Some(format!("nx:om-entry-0:expression#{key}")),
+    }
 }
 
 fn design_findings(ir: &CadIr) -> Vec<String> {
@@ -164,23 +209,13 @@ fn history_is_one_timeline_in_construction_order() {
 }
 
 #[test]
-fn a_part_with_no_history_states_no_design_records() {
+fn a_part_with_no_history_and_no_scope_record_states_no_design_records() {
     let mut ir = CadIr::empty();
     ir.geometry.bodies = vec![body("1"), body("2")];
     ir.model.features = vec![
         feature("equations", 0, equations()),
-        feature(
-            "initial-bodies",
-            1,
-            LegacyOperation::BaseFeature {
-                bodies: BodySelection::Resolved {
-                    bodies: DistinctMembers::try_from(vec![body("1").id]).unwrap(),
-                    native: "nx:segment-body-bindings".to_owned(),
-                },
-            },
-        ),
+        base_feature("initial-bodies", 1),
     ];
-    ir.model.configurations = vec![configuration(0, "Default", true)];
     let minted = project_ir(&mut ir);
     assert_eq!(
         json::to_value(&ir.design).unwrap(),
@@ -191,6 +226,108 @@ fn a_part_with_no_history_states_no_design_records() {
         ir.model.product_definitions[0].bodies,
         [body("1").id, body("2").id]
     );
+}
+
+#[test]
+fn a_part_with_no_history_states_its_expressions_and_arrangements() {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1"), body("2")];
+    ir.model.features = vec![
+        feature("equations", 0, equations()),
+        base_feature("initial-bodies", 1),
+    ];
+    ir.model.parameters = vec![expression("p1", "p1")];
+    ir.model.configurations = vec![
+        configuration(0, "Default", true),
+        configuration(1, "Open", false),
+    ];
+    project_ir(&mut ir);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    assert_eq!(scope.definition.as_str(), PART_ROOT);
+    assert!(scope.roots.is_empty());
+    assert!(scope.current.is_empty());
+    assert_eq!(
+        scope.unproduced.iter().cloned().collect::<Vec<_>>(),
+        [body("1").id, body("2").id]
+    );
+    assert_eq!(
+        scope
+            .active_arrangements
+            .iter()
+            .map(ArrangementId::as_str)
+            .collect::<Vec<_>>(),
+        ["nx:arrangements:arrangement#0"]
+    );
+    assert!(ir.design.containers.is_empty());
+    assert!(ir.design.features.is_empty());
+    let [parameter] = ir.design.parameters.as_slice() else {
+        panic!("one parameter");
+    };
+    assert_eq!(parameter.id.as_str(), "nx:om-entry-0:parameter#p1");
+    assert_eq!(parameter.scope.as_str(), PART_ROOT);
+    assert_eq!(
+        ir.design
+            .arrangements
+            .iter()
+            .map(|arrangement| arrangement.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "nx:arrangements:arrangement#0",
+            "nx:arrangements:arrangement#1"
+        ]
+    );
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn an_unnamed_record_charges_a_loss_naming_it() {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1")];
+    let mut unnamed = configuration(1, "Open", false);
+    unnamed.name = None;
+    ir.model.configurations = vec![
+        configuration(0, "Default", true),
+        unnamed,
+        configuration(2, " ", false),
+    ];
+    ir.model.parameters = vec![expression("p1", "p1"), expression("p2", "")];
+    let (_, losses) = project_charging(&mut ir);
+    assert_eq!(ir.design.arrangements.len(), 1);
+    assert_eq!(ir.design.parameters.len(), 1);
+    let charged = losses
+        .iter()
+        .map(|loss| (loss.code.clone(), loss.message.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        charged,
+        [
+            (
+                NxLossCode::ArrangementUnnamed.kind(),
+                "NX arrangement nx:arrangements:arrangement#1 stores no name and has no design record."
+            ),
+            (
+                NxLossCode::ArrangementUnnamed.kind(),
+                "NX arrangement nx:arrangements:arrangement#2 stores a blank name and has no design record."
+            ),
+            (
+                NxLossCode::ParameterUnnamed.kind(),
+                "NX expression nx:om-entry-0:parameter#p2 stores a blank name and has no design record."
+            ),
+        ]
+    );
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn a_part_whose_only_expression_is_unnamed_states_no_scope() {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1")];
+    ir.model.parameters = vec![expression("p1", "")];
+    let (_, losses) = project_charging(&mut ir);
+    assert!(ir.design.scopes.is_empty());
+    assert_eq!(losses.len(), 1);
 }
 
 #[test]
@@ -297,7 +434,7 @@ fn each_arrangement_restates_its_configuration() {
     let restating = ir
         .model
         .restated()
-        .get("nx:arrangements:configuration#0")
+        .get("nx:arrangements:arrangement#0")
         .expect("restated");
     let by = Restater::Record("nx:arrangements:arrangement#0".to_owned());
     assert_eq!(
@@ -305,7 +442,7 @@ fn each_arrangement_restates_its_configuration() {
         Some(BTreeSet::from(["ordinal"]))
     );
     assert_eq!(
-        ir.model.restated().get("nx:arrangements:configuration#1"),
+        ir.model.restated().get("nx:arrangements:arrangement#1"),
         None
     );
 }
@@ -441,4 +578,129 @@ fn a_wave_face_link_with_unresolved_bodies_keeps_its_nx_kind() {
             source_settings: BTreeMap::new(),
         }
     );
+}
+
+/// The fields a CADIR write of `ir` names for the model parameter `id`:
+/// none where it carries the parameter whole.
+fn parameter_charge(ir: &CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `parameters`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(
+        !omitted.split([' ', ',']).any(|token| token == id),
+        "{}",
+        loss.message
+    );
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// An NX expression is a user parameter of the part (§5.12) and states no
+/// value NX does not store, so its design parameter has no owner and a
+/// formula of references has no cache; the design still holds the
+/// expression table as its owner and the value its tree evaluates to, and
+/// a CADIR write names neither.
+#[test]
+fn a_write_carries_the_owner_and_value_of_an_nx_expression() {
+    use cadmpeg_ir::design::edit::{evaluate, Value};
+    use cadmpeg_ir::design::expr::{Expression, Neutral};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::parameters::ParameterValue as ModelValue;
+    use cadmpeg_test_support::EditableDecodeResult;
+
+    let mut payload =
+        crate::test_support::test_om::segment_om_record_area_with_input_store_payload();
+    payload.extend_from_slice(b"hostglobalvariables");
+    for formula in ["p101: 10", "p102: 15", "p103: p101 + p102"] {
+        let text = format!("(Number [mm]) {formula}; ");
+        payload.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("length")]);
+        payload.extend_from_slice(text.as_bytes());
+        payload.push(0);
+    }
+    let fixture = crate::test_support::test_prt::prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]);
+    let decoded = crate::NxCodec
+        .decode(
+            &mut std::io::Cursor::new(fixture),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic NX part");
+    let decoded = EditableDecodeResult::from(decoded);
+    let ir = decoded.ir();
+    let model = |name: &str| {
+        ir.model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .expect("model parameter")
+    };
+    let legacy_sum = model("p103");
+    assert!(legacy_sum.owner.is_some());
+    assert!(matches!(legacy_sum.value, Some(ModelValue::Length(value)) if value.get() == 25.0));
+    let sum = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == legacy_sum.id)
+        .expect("design parameter");
+    assert_eq!(sum.owner, None);
+    assert_eq!(sum.value, None);
+    let ParameterDefinition::Expression(Expression::Neutral(Neutral(tree))) = &sum.definition
+    else {
+        panic!("a neutral tree: {:?}", sum.definition)
+    };
+    let evaluated = evaluate(tree, &mut |reference| {
+        let cadmpeg_ir::design::dimension::RefTarget::Parameter(target) = &reference.target else {
+            return None;
+        };
+        let addend = ir
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| &parameter.id == target)?;
+        match addend.value {
+            Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value)) => {
+                Some(Value::Number {
+                    value: value.get(),
+                    quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
+                })
+            }
+            _ => None,
+        }
+    })
+    .expect("the tree evaluates");
+    assert_eq!(
+        evaluated,
+        Value::Number {
+            value: 25.0,
+            quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
+        }
+    );
+    for name in ["p101", "p102", "p103"] {
+        let charge = parameter_charge(ir, model(name).id.as_str());
+        assert!(
+            !charge
+                .iter()
+                .any(|field| field == "owner" || field == "value"),
+            "{name}: {charge:?}"
+        );
+    }
 }

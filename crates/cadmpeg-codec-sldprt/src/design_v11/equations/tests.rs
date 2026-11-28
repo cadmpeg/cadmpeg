@@ -365,6 +365,7 @@ fn global(name: &str, kind: ValueKind) -> DesignParameter {
         id: id(name),
         scope: super::super::root_definition(),
         owner: None,
+        position: None,
         name: cadmpeg_core::text::NonBlankString::new(name.to_owned()),
         kind,
         unit: None,
@@ -397,9 +398,9 @@ fn translated(
     let names = Names::new(&parameters, &[]);
     let tree = translate::tree(
         expression,
+        &names,
         &Typing {
             parameters: &parameters,
-            names: &names,
             target: &ValueKind::Quantity(target),
             length_unit,
         },
@@ -922,6 +923,39 @@ fn a_part_that_states_no_design_names_its_equation_lines() {
             && unread[0].contains("the part states no design")
             && unread[0].contains("D1@Boss")
             && unread[0].contains("width"),
+        "{unread:?}"
+    );
+}
+
+#[test]
+fn a_part_with_sketches_and_no_history_reads_its_equation_lines() {
+    let (mut ir, _) = crate::design_v11::tests::sketch_and_extrude();
+    let losses = crate::design_v11::tests::outside_history::project_with(
+        &mut ir,
+        &[],
+        &[],
+        managers(&[(0, Some(&["\"width\" = 4"]))]),
+    );
+    let width = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str() == "width")
+        })
+        .unwrap_or_else(|| panic!("a parameter width: {:#?}", ir.design.parameters));
+    assert!(matches!(
+        width.value,
+        Some(ParameterValue::Number(value)) if value.get() == 4.0
+    ));
+    let unread = messages(&losses, SldprtLossCode::DesignEquationUnread);
+    assert!(
+        unread
+            .iter()
+            .all(|message| !message.contains("the part states no design")),
         "{unread:?}"
     );
 }

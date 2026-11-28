@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::features::parameters::DesignParameter;
@@ -131,7 +131,6 @@ pub(crate) fn prepare_features_for_write(
     edits: &mut SourceEdits<'_>,
 ) -> Result<features::PreparedFeatures, CodecError> {
     let hash_ctx = edits.ctx();
-    let limits = hash_ctx.policy().limits;
 
     let neutral_hash = feature_hash(hash_ctx, &ir.model)?;
     let native_hash = native
@@ -158,7 +157,7 @@ pub(crate) fn prepare_features_for_write(
         (true, true) => {
             let projected_model = native
                 .as_ref()
-                .map(|native| project_feature_model_with_native_inputs(native, limits))
+                .map(|native| project_feature_model_with_native_inputs(native, hash_ctx))
                 .transpose()?
                 .map(|projection| Ok::<_, CodecError>(projection.into_model()?.0))
                 .transpose()?
@@ -212,7 +211,7 @@ fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native, edits.ctx().policy().limits)?
+    let expected = project_features_with_native_inputs(native, edits.ctx())?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
@@ -266,7 +265,7 @@ fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let projected = project_features_with_native_inputs(native, edits.ctx().policy().limits)?;
+    let projected = project_features_with_native_inputs(native, edits.ctx())?;
     let expected_paths = projected
         .iter()
         .filter_map(|feature| {
@@ -363,26 +362,18 @@ fn validate_surface_sweep_profile_edits(
 
 pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    Ok(project_feature_model_with_native_inputs(native, limits)?.features)
+    Ok(project_feature_model_with_native_inputs(native, ctx)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy { limits })?;
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
-        &ctx,
+        ctx,
         &mut histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
@@ -402,7 +393,7 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
+    project_compact_and_generated(ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,

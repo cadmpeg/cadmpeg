@@ -1169,7 +1169,7 @@ class ScriptTestCollection(TempSourceCase):
 
 
 class AuthoringPaths(TempSourceCase):
-    PATH = "/home/author/side2/cadmpeg/target/debug/deps/libdemo.rlib"
+    PATH = "/home/author/project/target/debug/deps/libdemo.rlib"
 
     def test_every_text_record_suffix_is_scanned(self) -> None:
         for name in (

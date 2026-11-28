@@ -85,6 +85,7 @@ fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
             component_owner: None,
             component_owner_unresolved: false,
             history_only: true,
+            consumers: Vec::new(),
             id: format!("{stream}:design-body-binding#0"),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,

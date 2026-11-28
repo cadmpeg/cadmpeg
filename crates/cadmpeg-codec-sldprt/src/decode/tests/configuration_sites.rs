@@ -327,6 +327,35 @@ fn decode_uses_the_active_configuration_source_site() {
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
+    let unplaced = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::SldprtLossCode::DesignConfigurationStateUnplaced.kind()
+        })
+        .expect("a note names the unplaced bodies");
+    let [scope] = result.ir().design.scopes.as_slice() else {
+        panic!("one scope: {:#?}", result.ir().design.scopes);
+    };
+    assert_eq!(
+        scope.unproduced.len(),
+        result.ir().geometry.bodies.len(),
+        "{scope:#?}"
+    );
+    for body in &result.ir().geometry.bodies {
+        assert!(scope.unproduced.contains(&body.id));
+    }
+    assert!(
+        result
+            .ir()
+            .geometry
+            .bodies
+            .iter()
+            .any(|body| unplaced.message.contains(body.id.as_str())),
+        "{}",
+        unplaced.message
+    );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -699,6 +728,7 @@ fn a_given_up_container_part_names_the_partition_of_its_configuration() {
                 [cadmpeg_core::decode::ArenaClass::Model],
             )
             .named(name),
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
             cadmpeg_core::CodecError::malformed("damaged"),
         )
         .unwrap()
@@ -781,20 +811,6 @@ fn untaken_imported_bodies_of_the_active_configuration_are_an_error() {
             "configuration index 1: the file stores no partition of it, and the 1 imported \
              body stream(s) of its Config-1-FeatureBodies are not decoded."
         )]
-    );
-}
-
-#[test]
-fn imported_body_streams_that_do_not_decode_are_reported() {
-    assert!(super::super::imported_bodies_loss(0, 2).is_none());
-    let loss = super::super::imported_bodies_loss(1, 2).unwrap();
-    assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
-    );
-    assert_eq!(
-        loss.message,
-        "1 of 2 imported body stream(s) do not decode."
     );
 }
 

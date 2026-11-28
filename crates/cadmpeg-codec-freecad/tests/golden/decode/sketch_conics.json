@@ -23,10 +23,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#ConicWitness"
             }
           },
           "id": "fcstd:design:feature#ConicWitness",
@@ -54,8 +52,251 @@
       ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "arc",
+              "value": {
+                "center": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "end": 1.83,
+                "radius": 8.0,
+                "start": 0.65
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 12.0,
+                  "v": 10.0
+                },
+                "start": {
+                  "u": 6.368670388392447,
+                  "v": 4.841491245888316
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": -2.0504872658201823,
+                  "v": 7.73275513466638
+                },
+                "start": {
+                  "u": 12.0,
+                  "v": 10.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "ellipse",
+              "value": {
+                "center": {
+                  "u": 30.0,
+                  "v": 0.0
+                },
+                "major": [
+                  0.8628070705147609,
+                  0.505533341204847
+                ],
+                "radii": [
+                  10.999999999999998,
+                  4.000000000000001
+                ],
+                "range": [
+                  5.863185307179586,
+                  7.653185307179586
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "ellipse",
+              "value": {
+                "center": {
+                  "u": 0.0,
+                  "v": 30.0
+                },
+                "major": [
+                  0.7583618759905082,
+                  0.6518337710215366
+                ],
+                "radii": [
+                  9.0,
+                  2.9999999999999973
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:5",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "hyperbola",
+              "value": {
+                "center": {
+                  "u": 30.0,
+                  "v": 30.0
+                },
+                "major": [
+                  0.8915682881953286,
+                  0.4528862853790689
+                ],
+                "radii": [
+                  7.000000000000004,
+                  3.0000000000000027
+                ],
+                "range": [
+                  -0.63,
+                  0.88
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:6",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "parabola",
+              "value": {
+                "axis": [
+                  0.7838216658808488,
+                  0.6209859870365603
+                ],
+                "focal": 3.9999999999999996,
+                "range": [
+                  -2.1,
+                  2.4
+                ],
+                "vertex": {
+                  "u": 60.0,
+                  "v": 20.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:7",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#ConicWitness",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#ConicWitness",
+          "name": "ConicWitness",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#ConicWitness",
+          "owner": "fcstd:design:feature#ConicWitness",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],

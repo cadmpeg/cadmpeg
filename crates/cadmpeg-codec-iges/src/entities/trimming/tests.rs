@@ -143,7 +143,7 @@ fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains(&format!(
                 "endpoint clustering is limited to {cluster_limit}"
             ))
@@ -197,7 +197,7 @@ fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(
         decoded.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::GeometryNotProjected.kind()
+            crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
                 && loss.message.contains("linear boundary points")
                 && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
         }),
@@ -239,14 +239,15 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
         );
         assert!(
             losses.iter().any(|loss| {
-                loss.code == IgesLossCode::GeometryNotProjected.kind()
+                crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
                     && loss.message.contains("MAX_BEZIER_BLENDS")
             }),
             "{losses:#?}"
         );
-        assert!(!losses
-            .iter()
-            .any(|loss| loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind()));
+        assert!(!losses.iter().any(|loss| crate::test_support::reports(
+            loss,
+            IgesLossCode::BoundaryPcurveOutsideSupportDomain
+        )));
         if face_kept {
             let coedge = result
                 .ir()
@@ -514,11 +515,9 @@ fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
         .faces
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D9"));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
+    assert!(result.report().losses.iter().any(|loss| {
+        crate::test_support::reports(loss, IgesLossCode::BoundaryPcurveOutsideSupportDomain)
+    }));
 }
 
 #[test]
@@ -1228,7 +1227,7 @@ fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D15"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss
                 .message
                 .contains("trimmed-surface boundary loops are not simple")
@@ -1256,7 +1255,7 @@ fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+        .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
 }
 
 #[test]
@@ -1294,7 +1293,7 @@ fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+        .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
 }
 
 #[test]
@@ -1307,26 +1306,19 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         .unwrap();
     assert_eq!(
         result.report().losses.len(),
-        2,
+        1,
         "{:#?}",
         result.report().losses
     );
-    assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::GeometryNotProjected.kind()
-    );
-    crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 13));
+    crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 13));
     // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
     // the provenance tag is what separates this test from the bug it guards
     // against: the loss must land on the trimmed surface, never on the Type
     // 141 boundary or the Type 142 curve-on-surface it names.
-    assert_eq!(
-        result.report().losses[0]
-            .provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D13")
-    );
+    assert!(crate::test_support::reports(
+        &result.report().losses[0],
+        IgesLossCode::GeometryNotProjected
+    ));
     assert!(result.report().losses[0]
         .message
         .contains("IGES entity type 144 form 0"));
@@ -1817,7 +1809,7 @@ fn a_trimmed_face_on_a_surface_over_the_pole_limit_is_dropped_with_the_surface()
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .unwrap();
     assert!(
         given_up.message.contains("surface pole count exceeds"),

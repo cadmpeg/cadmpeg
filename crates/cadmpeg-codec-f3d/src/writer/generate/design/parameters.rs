@@ -16,12 +16,12 @@
 //! the general tolerance of a `General` parameter
 //! (`export:general_tolerance.dropped`).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     dependency_cycle_broken, fit_dropped, general_tolerance_dropped, parameter_flattened,
-    parameter_renamed, value_unwritable,
+    parameter_renamed, record_residual_unavailable, value_unwritable,
 };
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
@@ -38,12 +38,17 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::expression;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
+use crate::records::configuration::DesignConfigurationKind;
 use crate::records::identity::{Located, RecordedValue};
 use crate::records::parameters::{
-    DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
+    DesignParameter as NativeParameter, DesignParameterDiscriminator, DesignParameterDraft,
+    DesignParameterSource,
 };
+use crate::writer::generate::configuration_table::{DestinationParameter, DestinationParameters};
 use crate::writer::generate::presentation::GeneratedDesignRegistry;
-use crate::writer::generate::records::{encode_document_parameters, ParameterRecords};
+use crate::writer::generate::records::{
+    encode_document_parameters, ParameterRecords, UserParameter,
+};
 use crate::writer::generate::reduce::named_loss;
 
 /// The parameter collection the native path's parameter tails name.
@@ -198,10 +203,52 @@ struct PlannedParameter {
 
 /// Where the native path takes its parameter records from.
 pub(in crate::writer::generate) enum ParameterSource {
-    /// The native records: the neutral parameters equal their projection.
-    Native,
+    /// The native records: the neutral parameters equal their projection,
+    /// up to the edited expressions and values.
+    Native(NativeParameters),
     /// The design scope's parameters: the neutral parameters were edited.
     Neutral(ParameterPlan),
+}
+
+/// The expression and the value in database units that a neutral parameter
+/// gives each edited native record, keyed by record id.
+type ValueEdits = BTreeMap<String, (String, f64)>;
+
+/// The native parameter records the native path writes.
+pub(in crate::writer::generate) struct NativeParameters {
+    /// The records in their user form, encoded.
+    records: ParameterRecords,
+    edits: ValueEdits,
+    /// The losses of the user form.
+    losses: Vec<LossNote>,
+}
+
+impl NativeParameters {
+    pub(in crate::writer::generate) fn destinations<'a>(
+        &'a self,
+        native: &'a F3dNative,
+    ) -> DestinationParameters<'a> {
+        native
+            .design_parameters
+            .iter()
+            .map(|record| {
+                let (expression, evaluated) = written_value(record, &self.edits);
+                (
+                    crate::ids::neutral_parameter_id(record),
+                    DestinationParameter {
+                        index: record.record_index,
+                        name: record.name(),
+                        expression,
+                        evaluated,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {
+        self.losses
+    }
 }
 
 /// The quantity a Fusion user parameter holds.
@@ -297,6 +344,8 @@ pub(in crate::writer::generate) fn plan(
             (Some(form), _) => candidates.push((parameter, form)),
         }
     }
+    in_owner_order(&mut candidates);
+    in_owner_order(&mut driven_candidates);
     // The driven parameters are named after the others, so that their names
     // change none of those.
     let names = Names::new(
@@ -520,39 +569,138 @@ pub(in crate::writer::generate) fn plan(
     }
 }
 
-/// The native records when the neutral parameters equal their projection;
-/// otherwise the root scope's parameters, and a loss naming each neutral
-/// parameter that no scope parameter restates. It never refuses.
+/// The native records when they cover the configured parameters and the
+/// neutral parameters match their projection up to expression and value edits.
+/// Otherwise write the root scope's parameters.
 pub(in crate::writer::generate) fn native_or_neutral(
     target: &CadIr,
+    native: &F3dNative,
+    neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
     projected: &[cadmpeg_ir::features::parameters::DesignParameter],
-) -> ParameterSource {
-    if target.model.parameters == projected {
-        return ParameterSource::Native;
-    }
-    let mut plan = super::root_scope(target).map_or_else(
-        || ParameterPlan {
-            written: Vec::new(),
-            claimed: Vec::new(),
-            owned: Vec::new(),
-            driven: Vec::new(),
-            losses: Vec::new(),
-        },
-        |scope| plan(target, &scope.definition),
-    );
+) -> Result<ParameterSource, CodecError> {
+    let root = super::root_scope(target);
+    let mut parameter_plan = if let Some(edits) = value_edits(neutral, projected, native) {
+        if let Some(configured) = root
+            .filter(|_| {
+                native
+                    .design_configurations
+                    .iter()
+                    .any(|document| document.kind() == DesignConfigurationKind::Table)
+            })
+            .and_then(|root| configured_parameter_plan(target, &root.definition, projected))
+        {
+            configured
+        } else {
+            let (form, losses) = user_form(native, &edits)?;
+            let records = encode_document_parameters(&form, NATIVE_PARAMETER_COLLECTION)?;
+            return Ok(ParameterSource::Native(NativeParameters {
+                records,
+                edits,
+                losses,
+            }));
+        }
+    } else {
+        root.map_or_else(
+            || ParameterPlan {
+                written: Vec::new(),
+                claimed: Vec::new(),
+                owned: Vec::new(),
+                driven: Vec::new(),
+                losses: Vec::new(),
+            },
+            |scope| plan(target, &scope.definition),
+        )
+    };
     let restated = super::restated_parameters(target);
-    plan.losses.extend(named_loss(
+    parameter_plan.losses.extend(named_loss(
         F3dLossCode::WriterParameterOmitted,
         "parameter",
-        "the neutral parameters differ from the native Design records and no design parameter restates them",
-        target
-            .model
-            .parameters
+        "the root scope states no design parameter that restates them",
+        neutral
             .iter()
             .map(|row| row.id.to_string())
             .filter(|id| !restated.contains(id.as_str())),
     ));
-    ParameterSource::Neutral(plan)
+    Ok(ParameterSource::Neutral(parameter_plan))
+}
+
+/// The neutral plan when it supplies a configured parameter with no native
+/// placement.
+fn configured_parameter_plan(
+    target: &CadIr,
+    scope: &ProductDefinitionId,
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
+) -> Option<ParameterPlan> {
+    let configured = target
+        .design
+        .configurations
+        .iter()
+        .filter(|row| row.scope == *scope)
+        .flat_map(|row| row.overrides.parameters.keys())
+        .collect::<BTreeSet<_>>();
+    if configured.is_empty() {
+        return None;
+    }
+    let native = projected
+        .iter()
+        .map(|parameter| &parameter.id)
+        .collect::<BTreeSet<_>>();
+    if configured.is_subset(&native) {
+        return None;
+    }
+    let plan = plan(target, scope);
+    plan.written
+        .iter()
+        .any(|parameter| {
+            configured.contains(&parameter.source) && !native.contains(&parameter.source)
+        })
+        .then_some(plan)
+}
+
+/// The expression and the value in database units of each native record
+/// whose neutral parameter `neutral` edits, keyed by record id, when
+/// `neutral` equals the native records' projection in everything else.
+fn value_edits(
+    neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
+    projection: &[cadmpeg_ir::features::parameters::DesignParameter],
+    native: &F3dNative,
+) -> Option<ValueEdits> {
+    use cadmpeg_ir::features::parameters::ParameterValue;
+
+    if neutral == projection {
+        return Some(ValueEdits::new());
+    }
+    if neutral.len() != projection.len() {
+        return None;
+    }
+    let records = native
+        .design_parameters
+        .iter()
+        .map(|record| (crate::ids::neutral_parameter_id(record), record))
+        .collect::<HashMap<_, _>>();
+    let mut edits = BTreeMap::new();
+    for (stated, projected) in neutral.iter().zip(projection) {
+        if stated == projected {
+            continue;
+        }
+        let mut edited = projected.clone();
+        edited.expression.clone_from(&stated.expression);
+        edited.value.clone_from(&stated.value);
+        let evaluated = match &stated.value {
+            Some(ParameterValue::Length(length)) => {
+                length.get() / crate::design::feature_project::DESIGN_LENGTH_TO_MILLIMETRE
+            }
+            Some(ParameterValue::Angle(angle)) => angle.get(),
+            Some(ParameterValue::Real(real)) => real.get(),
+            _ => return None,
+        };
+        let record = records.get(&stated.id)?;
+        if edited != *stated || stated.expression.trim().is_empty() {
+            return None;
+        }
+        edits.insert(record.id.clone(), (stated.expression.clone(), evaluated));
+    }
+    Some(edits)
 }
 
 /// The native records' features and parameters as the decoder projects them.
@@ -592,16 +740,96 @@ pub(in crate::writer::generate) fn native_projection(
     )
 }
 
-/// The parameter records of `source`, encoded.
+/// The native parameter records in the user form the Design stream writes,
+/// with the expressions and values of `edits`, and the losses of that form.
+/// The stream writes no parameter owner, so an owned parameter becomes a user
+/// parameter at the next source ordinal after those of the user parameters.
+/// A record that stores no family discriminator takes the one the other
+/// records share, or 0 where they share none.
+fn user_form<'a>(
+    native: &'a F3dNative,
+    edits: &'a ValueEdits,
+) -> Result<(Vec<UserParameter<'a>>, Vec<LossNote>), CodecError> {
+    let parameters = &native.design_parameters;
+    let mut stored = parameters.iter().filter_map(|parameter| {
+        parameter
+            .family_discriminator()
+            .map(|located| located.value)
+    });
+    let first = stored.next();
+    let shared = match first {
+        Some(first) if stored.all(|value| value == first) => first,
+        _ => DesignParameterDiscriminator::Code0,
+    };
+    let mut ordinal = parameters
+        .iter()
+        .filter(|parameter| matches!(parameter.source(), DesignParameterSource::User { .. }))
+        .map(|parameter| parameter.source_ordinal)
+        .max()
+        .unwrap_or(0);
+    let mut owned = Vec::new();
+    let mut undiscriminated = Vec::new();
+    let mut written = Vec::with_capacity(parameters.len());
+    for record in parameters {
+        let source_ordinal = match record.source() {
+            DesignParameterSource::User { .. } => record.source_ordinal,
+            DesignParameterSource::Owned(_) => {
+                owned.push(record.id.clone());
+                ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                    CodecError::NotImplemented("F3D parameter ordinal exceeds u32".into())
+                })?;
+                ordinal
+            }
+        };
+        let family_discriminator = match record.family_discriminator() {
+            Some(located) => located.value,
+            None => {
+                undiscriminated.push(record.id.clone());
+                shared
+            }
+        };
+        let (expression, evaluated) = written_value(record, edits);
+        written.push(UserParameter {
+            record,
+            family_discriminator,
+            source_ordinal,
+            expression,
+            evaluated,
+        });
+    }
+    let losses = value_unwritable(
+        "F3D",
+        "writes these owned parameters as user parameters, each at the next source ordinal after those of the user parameters: the written Design stream holds no parameter owner",
+        owned,
+    )
+    .into_iter()
+    .chain(record_residual_unavailable(
+        "F3D",
+        &format!(
+            "writes these parameters, whose records store no family discriminator, with family discriminator {}: the value the other parameter records share, or 0 where they share none",
+            shared.code()
+        ),
+        undiscriminated,
+    ))
+    .collect();
+    Ok((written, losses))
+}
+
+fn written_value<'a>(record: &'a NativeParameter, edits: &'a ValueEdits) -> (&'a str, f64) {
+    edits.get(&record.id).map_or_else(
+        || (record.expression(), record.evaluated_value().get()),
+        |(expression, evaluated)| (expression.as_str(), *evaluated),
+    )
+}
+
+/// The parameter records of `source`, encoded. It takes the encoded native
+/// records out of `source`.
 pub(in crate::writer::generate) fn encode(
-    source: &ParameterSource,
-    native: &F3dNative,
+    source: &mut ParameterSource,
     registry: &mut GeneratedDesignRegistry,
 ) -> Result<ParameterRecords, CodecError> {
     match source {
-        ParameterSource::Native => {
-            encode_document_parameters(&native.design_parameters, NATIVE_PARAMETER_COLLECTION)
-        }
+        ParameterSource::Native(parameters) => Ok(std::mem::take(&mut parameters.records)),
         ParameterSource::Neutral(plan) => {
             let indices = plan.allocate(registry)?;
             plan.encode(registry, &indices, None)
@@ -614,11 +842,21 @@ impl ParameterPlan {
     pub(in crate::writer::generate) fn destinations(
         &self,
         indices: &[u32],
-    ) -> super::super::configuration_table::DestinationParameters<'_> {
+    ) -> DestinationParameters<'_> {
         self.written
             .iter()
             .zip(indices)
-            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .map(|(parameter, &index)| {
+                (
+                    parameter.source.clone(),
+                    DestinationParameter {
+                        index,
+                        name: &parameter.name,
+                        expression: &parameter.expression,
+                        evaluated: parameter.evaluated,
+                    },
+                )
+            })
             .collect()
     }
 
@@ -662,6 +900,16 @@ impl ParameterPlan {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let records = records
+            .iter()
+            .map(|record| UserParameter {
+                record,
+                family_discriminator: DesignParameterDiscriminator::Code0,
+                source_ordinal: record.source_ordinal,
+                expression: record.expression(),
+                evaluated: record.evaluated_value().get(),
+            })
+            .collect::<Vec<_>>();
         encode_document_parameters(&records, collection)
     }
 
@@ -682,6 +930,13 @@ impl ParameterPlan {
             let record =
                 parameter.record(class_tag.clone(), record_index, ordinal, discriminator)?;
             out.primaries.push((record_index, out.bytes.len()));
+            let record = UserParameter {
+                record: &record,
+                family_discriminator: discriminator,
+                source_ordinal: record.source_ordinal,
+                expression: record.expression(),
+                evaluated: record.evaluated_value().get(),
+            };
             out.bytes
                 .extend(encode_document_parameters(&[record], collection)?.bytes);
         }
@@ -696,6 +951,23 @@ impl ParameterPlan {
     /// The ids of the written parameters.
     pub(in crate::writer::generate) fn written(&self) -> impl Iterator<Item = &ParameterId> {
         self.written.iter().map(|parameter| &parameter.source)
+    }
+
+    /// The ids of the parameters a written record restates: the written
+    /// user parameters, those written features own, and the driven
+    /// parameters a written dimension binds.
+    pub(in crate::writer::generate) fn restated(&self) -> BTreeSet<ParameterId> {
+        self.written
+            .iter()
+            .chain(&self.claimed)
+            .map(|parameter| parameter.source.clone())
+            .chain(
+                self.driven
+                    .iter()
+                    .filter(|parameter| parameter.taken)
+                    .map(|parameter| parameter.source.clone()),
+            )
+            .collect()
     }
 
     pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {
@@ -996,6 +1268,32 @@ fn references(definition: &ParameterDefinition) -> Vec<&ParameterRef> {
         | ParameterDefinition::Unset => {}
     }
     out
+}
+
+/// Orders `candidates` by the first place of their owner in arena order, then
+/// by their stated positions, then by id.
+fn in_owner_order(candidates: &mut [(&DesignParameter, Form)]) {
+    let mut first = HashMap::new();
+    for (place, (parameter, _)) in candidates.iter().enumerate() {
+        first.entry(owner_key(parameter)).or_insert(place);
+    }
+    candidates.sort_by_cached_key(|(parameter, _)| {
+        (
+            first[&owner_key(parameter)],
+            parameter.position.is_none(),
+            parameter.position,
+            parameter.id.clone(),
+        )
+    });
+}
+
+/// The id of `parameter`'s owner.
+fn owner_key(parameter: &DesignParameter) -> Option<&str> {
+    parameter.owner.as_ref().map(|owner| match owner {
+        ParameterOwner::Feature(id) => id.as_str(),
+        ParameterOwner::Container(id) => id.as_str(),
+        ParameterOwner::Attribute(id) => id.as_str(),
+    })
 }
 
 /// The candidates in the stable topological order of their references, ties

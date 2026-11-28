@@ -217,3 +217,108 @@ fn a_geometry_scope_decode_states_no_design_scope() {
     assert!(ir.design.parameters.is_empty());
     assert!(ir.design.configurations.is_empty());
 }
+
+fn reciprocal_hole_design(first: u8, second: u8) -> (Vec<u8>, u64) {
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::{indexed_header, lp_utf16, write_marked_reference};
+
+    let mut bulk = Vec::new();
+    indexed_header(&mut bulk, *b"256", 12);
+    bulk.extend_from_slice(&[0; 10]);
+    bulk.extend_from_slice(&2u32.to_le_bytes());
+    push_reference_u64(&mut bulk, 55);
+    push_reference_u64(&mut bulk, 56);
+    bulk.extend_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut bulk, "Hole");
+    let tail_at = cadmpeg_core::decode::u64_from_index(bulk.len());
+    let mut tail = [0u8; 98];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[12..16].copy_from_slice(&1u32.to_le_bytes());
+    tail[28] = first;
+    tail[42..46].copy_from_slice(&u32::MAX.to_le_bytes());
+    tail[73] = second;
+    for (offset, record) in [(16, 12), (30, 99), (62, 98), (75, 97), (86, 12)] {
+        write_marked_reference(&mut tail, offset, record);
+    }
+    bulk.extend_from_slice(&tail);
+    indexed_header(&mut bulk, *b"260", 12);
+    let timeline_at = cadmpeg_core::decode::u64_from_index(bulk.len());
+    lp_ascii(&mut bulk, "257");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0]);
+    push_reference_u64(&mut bulk, 12);
+    bulk.extend_from_slice(&1u32.to_le_bytes());
+    push_reference_u64(&mut bulk, 12);
+    let meta = design_metastream_with_records(
+        &[
+            (
+                "1C037A07-4A15-43F6-ABFC-BBF61B9038D4",
+                "2EDC2536-D95B-4469-8ACA-DC07124D9C43",
+                5,
+                "Fusion",
+                &[12],
+            ),
+            (
+                "2F4C1849-1A5A-4F6C-A086-8DD445CBF94B",
+                "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+                2,
+                "Fusion",
+                &[35],
+            ),
+        ],
+        &[(12, 0), (35, timeline_at)],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    for (name, bytes) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    (zip.finish().unwrap().into_inner(), tail_at)
+}
+
+#[test]
+fn reciprocal_hole_suppression_reaches_the_projected_feature() {
+    use cadmpeg_ir::design::dimension::Dimension;
+
+    use crate::loss::F3dLossCode;
+
+    for (first, second, suppressed) in [(0, 0, false), (1, 1, true), (1, 0, true), (0, 1, true)] {
+        let (archive, tail_at) = reciprocal_hole_design(first, second);
+        let decoded = super::decode(archive);
+        let [hole] = decoded.ir().design.features.as_slice() else {
+            panic!("one Hole feature");
+        };
+        assert_eq!(
+            hole.suppressed,
+            Some(Dimension::Literal(suppressed)),
+            "flags {first}, {second}"
+        );
+
+        let losses = &decoded.report().losses;
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::HistoryRollbackUnread.kind()));
+        let conflicts = losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::FeatureHoleSuppressionConflict.kind())
+            .collect::<Vec<_>>();
+        if first == second {
+            assert!(conflicts.is_empty());
+        } else {
+            let [loss] = conflicts.as_slice() else {
+                panic!("one suppression conflict");
+            };
+            assert!(loss.message.contains(hole.native_ref.as_deref().unwrap()));
+            assert!(loss.message.contains(&format!(
+                "{first} at byte {} and {second} at byte {}",
+                tail_at + 28,
+                tail_at + 73,
+            )));
+        }
+    }
+}

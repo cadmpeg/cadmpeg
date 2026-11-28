@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-
 mod partial_operands;
 mod repeated_owners;
-
+use super::member_source;
+use crate::f3z::merge::{append_feature_history, extend_native, occurrence_key, OccurrenceScope};
 use crate::records::sketch_placement::DesignSketchPlacement;
+use crate::records::xref::XrefReference;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -11,6 +12,7 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::RegionId;
@@ -20,12 +22,6 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Region;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Native;
-
-use super::member_source;
-use crate::f3z::merge::{append_feature_history, extend_native, occurrence_key, OccurrenceScope};
-use crate::records::xref::XrefReference;
-use cadmpeg_ir::features::FeatureOperation;
-
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
         product_definition: None,
@@ -38,7 +34,6 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
@@ -48,7 +43,6 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         native_ref: None,
     }
 }
-
 #[test]
 fn component_feature_history_follows_the_parent_without_losing_relative_order() {
     let mut parent = Model::default();
@@ -61,9 +55,7 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         feature("f3d:test:feature#component-0", 10),
         feature("f3d:test:feature#component-1", 12),
     ];
-
     append_feature_history(&parent, &mut component).unwrap();
-
     assert_eq!(
         component
             .features
@@ -73,21 +65,17 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         vec![9, 11]
     );
 }
-
 #[test]
 fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
     let mut parent = Model::default();
     parent.features = vec![feature("f3d:test:feature#parent", u64::MAX)];
     let mut component = Model::default();
     component.features = vec![feature("f3d:test:feature#component", 0)];
-
     let error = append_feature_history(&parent, &mut component).unwrap_err();
-
     assert!(error
         .to_string()
         .contains("merged F3Z feature ordinal exceeds u64::MAX"));
 }
-
 #[test]
 fn member_definition_preserves_the_body_transform_inside_each_placement() {
     let outer = Transform::affine([
@@ -204,12 +192,13 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             decoded: &mut std::collections::BTreeMap::new(),
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
-            failed: std::collections::BTreeMap::new(),
+            failed: std::collections::BTreeSet::new(),
             scene_sources: &mut crate::scene::Sources::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
             component_path_tables: Vec::new(),
             instance_scopes: &mut crate::f3z::merge::InstanceScopes::new(),
+            joint_roots: crate::design_v11::joint::RootOperands::new(),
         }
         .merge(
             &mut ir,
@@ -1130,9 +1119,17 @@ fn a_repeated_member_states_its_joints_once() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let first_parent = OccurrenceId::mint("f3d:model:occurrence#first").unwrap();
     let second_parent = OccurrenceId::mint("f3d:model:occurrence#second").unwrap();
-    let first = member.instantiate(&ctx, "first", &first_parent).unwrap();
+    let mut joint_roots = crate::design_v11::joint::RootOperands::new();
+    let first = member
+        .instantiate(&ctx, "first", &first_parent, &mut joint_roots)
+        .unwrap();
     let second = member
-        .instantiate(&ctx, "second/instance-child", &second_parent)
+        .instantiate(
+            &ctx,
+            "second/instance-child",
+            &second_parent,
+            &mut joint_roots,
+        )
         .unwrap();
     assert_eq!(
         second.occurrences[0].id.as_str(),
@@ -1143,6 +1140,10 @@ fn a_repeated_member_states_its_joints_once() {
         "f3d:first@model:joint#group"
     );
     assert!(second.assembly_joints.is_empty());
+    assert_eq!(joint_roots.len(), 1);
+    let roots = &joint_roots[&first.assembly_joints[0].id];
+    assert_eq!(roots.definition, definition);
+    assert_eq!(roots.connectors, [true, false]);
     for instance in [&first, &second] {
         assert!(instance.product_definitions.is_empty());
         assert_eq!(instance.occurrences[0].prototype, definition);
@@ -1232,9 +1233,9 @@ fn a_joint_one_placement_of_a_repeated_member_binds_names_the_others() {
     );
     assert_eq!(
         losses[0].message,
-        "joint f3d:first@model:joint#bound names an operand of the root of member \
+        "legacy assembly joint f3d:first@model:joint#bound names an operand of the root of member \
          f3d:xref:product-definition#first through placement f3d:model:occurrence#first; \
-         placement(s) f3d:model:occurrence#second of that member do not state it"
+         placement(s) f3d:model:occurrence#second of that member have no corresponding legacy joint"
     );
 
     model.occurrences.retain(|row| row.id != second.id);
@@ -1475,12 +1476,13 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 decoded: &mut std::collections::BTreeMap::new(),
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
-                failed: std::collections::BTreeMap::new(),
+                failed: std::collections::BTreeSet::new(),
                 scene_sources: &mut crate::scene::Sources::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
                 component_path_tables: Vec::new(),
                 instance_scopes: &mut crate::f3z::merge::InstanceScopes::new(),
+                joint_roots: crate::design_v11::joint::RootOperands::new(),
             }
             .merge(
                 &mut ir,

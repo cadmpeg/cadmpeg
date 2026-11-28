@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use super::read;
 use crate::schema::tests::with_layer;
 
-fn patch(body: &str) -> Option<super::PatchData> {
+fn patch(body: &str) -> Result<super::PatchData, Cause> {
     let text = format!("#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{body}\n}}\n");
     with_layer(&text, |stage, issues| read(&stage.prims[0], issues))
 }
@@ -24,13 +26,28 @@ fn the_u_index_varies_fastest_in_points() {
 }
 
 #[test]
-fn counts_that_disagree_reject_the_patch() {
-    assert!(patch(&GRID.replace("int vVertexCount = 3", "int vVertexCount = 4")).is_none());
-    assert!(patch(&GRID.replace(
-        "double[] uKnots = [0, 0, 1, 1]",
-        "double[] uKnots = [0, 1, 1]"
-    ))
-    .is_none());
+fn counts_that_disagree_make_the_patch_unreadable() {
+    assert!(matches!(
+        patch(&GRID.replace("int vVertexCount = 3", "int vVertexCount = 4")),
+        Err(Cause::Unreadable)
+    ));
+    assert!(matches!(
+        patch(&GRID.replace(
+            "double[] uKnots = [0, 0, 1, 1]",
+            "double[] uKnots = [0, 1, 1]"
+        )),
+        Err(Cause::Unreadable)
+    ));
+}
+
+#[test]
+fn a_patch_that_states_no_points_is_undecoded() {
+    let body = GRID
+        .lines()
+        .filter(|line| !line.starts_with("point3f[] points"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(matches!(patch(&body), Err(Cause::Undecoded)));
 }
 
 #[test]

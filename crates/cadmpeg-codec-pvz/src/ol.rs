@@ -15,7 +15,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::layout::{ol_directory_entry as entry, ol_header, ol_preamble_block as preamble, token};
-use crate::loss::PvzLossCode;
+use crate::loss::{give_up_cause, PvzLossCode};
 use crate::read::{at, record};
 pub(crate) use attributes::{Appearance, AppearanceTable};
 pub(crate) use surface::Mesh;
@@ -66,15 +66,15 @@ impl<'a> Container<'a> {
     /// Reads the header, the directory, and the preamble block (§4.1–§4.3).
     fn open(ctx: &DecodeContext<'_>, member: View<'a>) -> Result<Self, CodecError> {
         if generation(member).is_none() {
-            return Err(CodecError::malformed(
-                "geometry member opens with no known DIV-OL signature",
+            return Err(CodecError::NotImplemented(
+                "geometry member opens with no known DIV-OL signature".to_owned(),
             ));
         }
         let mut view = member;
         let header = record(&mut view, ol_header::LEN)?;
         let version = at(header, ol_header::VERSION)?.req_u32_le()?;
         if version != ol_header::VERSION_VALUE {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::NotImplemented(format!(
                 "geometry member states version {version}, not {}",
                 ol_header::VERSION_VALUE
             )));
@@ -331,10 +331,13 @@ fn read_stream<T>(
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            residue.failed_streams.push(format!(
-                "the {label} stream {id:#010x} was not decoded: {error}"
-            ));
-            given_up.push(ctx.give_up_part(part, error)?);
+            given_up.push(ctx.give_up_part(
+                part,
+                give_up_cause(&error),
+                CodecError::malformed(format_args!(
+                    "the {label} stream {id:#010x} was not decoded: {error}"
+                )),
+            )?);
             Ok(None)
         }
     }

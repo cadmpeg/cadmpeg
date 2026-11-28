@@ -38,7 +38,6 @@ pub(crate) struct DecodedConfigurations {
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
@@ -52,13 +51,8 @@ pub(crate) fn decode_configurations(
             Ok(document) => documents.push(document),
             Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
             Err(error) => {
-                losses.push(
-                    crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
-                        "Configuration document {} remains in the source archive because its decoding failed: {error}",
-                        entry.name
-                    )),
-                );
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, cause, error)?);
             }
         }
     }
@@ -517,25 +511,31 @@ pub(crate) fn attach(
         "Configuration projection",
     )?
     .unwrap_or_default();
-    let unstored = native
-        .design_parameter_scopes
+    let undecided =
+        undecided_suppression(&model.features, &native.design_parameter_scopes, producers);
+    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
+    model.configurations = configurations;
+    Ok(())
+}
+
+pub(crate) fn undecided_suppression(
+    features: &[cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
+) -> BTreeSet<cadmpeg_ir::features::FeatureId> {
+    let unstored = scopes
         .iter()
         .filter(|scope| scope.stored_suppression().is_none())
         .map(crate::ids::neutral_feature_id)
         .collect::<BTreeSet<_>>();
-    // A feature that produces a body is active in the stored geometry.
-    let undecided = model
-        .features
+    features
         .iter()
         .filter(|feature| {
             !producers.contains(&feature.id)
                 && (feature.suppressed.is_none() || unstored.contains(&feature.id))
         })
         .map(|feature| feature.id.clone())
-        .collect();
-    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
-    model.configurations = configurations;
-    Ok(())
+        .collect()
 }
 
 /// Make the active configurations and the current feature states agree where

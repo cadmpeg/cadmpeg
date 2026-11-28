@@ -257,13 +257,13 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
         .unwrap();
 
     assert!(result.ir().geometry.points.is_empty());
-    assert_eq!(result.report().losses.len(), 2, "{:#?}", result.report());
-    assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::ParameterDataQuarantined.kind()
-    );
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert!(crate::test_support::reports(
+        &result.report().losses[0],
+        IgesLossCode::ParameterDataQuarantined
+    ));
     assert!(result.report().losses[0]
         .message
         .contains("numeric field or its delimiter crosses a card boundary"));
-    crate::test_support::assert_given_up(&result.report().losses[1], ("parameter-data", 1));
+    crate::test_support::assert_given_up(&result.report().losses[0], ("parameter-data", 1));
 }
