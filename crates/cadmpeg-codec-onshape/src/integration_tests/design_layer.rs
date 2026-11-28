@@ -216,8 +216,7 @@ fn a_cadir_write_carries_the_restated_parameters() {
         result.ir().model.parameters.len()
     );
     let evaluated = id("parameter", "Base sketch/length");
-    let cuts = omitted(&losses, &evaluated);
-    assert!(cuts.is_empty(), "{cuts:#?}");
+    assert!(omitted(&losses, &evaluated).is_empty());
 }
 
 #[test]
