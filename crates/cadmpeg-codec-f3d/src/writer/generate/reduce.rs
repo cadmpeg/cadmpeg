@@ -118,6 +118,7 @@ const DESIGN_ARENAS_WITHOUT_FORM: &[&str] = &[
     "design_face_operands",
     "design_feature_timelines",
     "design_fillet_radius_groups",
+    "design_hidden_occurrences",
     "design_intent_failures",
     "design_joint_motions",
     "design_loft_legacy_body_carriers",

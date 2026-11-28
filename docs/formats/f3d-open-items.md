@@ -2487,7 +2487,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** Displayed matrices and stored Design world poses can differ.
 
-**Note.** Enclosing node framing is not decoded. The local transform reader leaves visibility and material override attributes unread. Binding uses the root design scene; member scenes retain their separate saved state.
+**Note.** The native source image retains enclosing node frames, visibility attributes, and material override attributes. Member scenes retain their separate saved state.
 
 ### DR-253. Typed occurrence path identity-pair words
 

@@ -64,6 +64,29 @@ pub(crate) struct LocalComponentProjection {
     pub(crate) component_definitions_by_record: BTreeMap<(String, u64), ProductDefinitionId>,
 }
 
+pub(crate) fn root_occurrence_id(
+    components: &BTreeMap<String, StreamComponents>,
+    stream: &str,
+    root: &ComponentDefinition,
+) -> OccurrenceId {
+    let repeated = components
+        .values()
+        .filter_map(|components| {
+            components
+                .root_component
+                .and_then(|record| components.roots.get(&record))
+        })
+        .filter(|other| other.context_uuid == root.context_uuid)
+        .take(2)
+        .count()
+        > 1;
+    if repeated {
+        crate::ids::stream_root_occurrence_id(stream, &root.context_uuid)
+    } else {
+        crate::ids::neutral_root_occurrence_id(&root.context_uuid)
+    }
+}
+
 /// Project local component definitions and their placed occurrences.
 ///
 /// Component operations supply the occurrences and placements they prove.
@@ -606,27 +629,6 @@ impl<'a> Projector<'a> {
         }
     }
 
-    fn root_occurrence_id(&self, stream: &str, root: &ComponentDefinition) -> OccurrenceId {
-        let repeated = self
-            .sources
-            .components
-            .values()
-            .filter_map(|components| {
-                components
-                    .root_component
-                    .and_then(|record| components.roots.get(&record))
-            })
-            .filter(|other| other.context_uuid == root.context_uuid)
-            .take(2)
-            .count()
-            > 1;
-        if repeated {
-            crate::ids::stream_root_occurrence_id(stream, &root.context_uuid)
-        } else {
-            crate::ids::neutral_root_occurrence_id(&root.context_uuid)
-        }
-    }
-
     fn stream_components(
         &self,
         carrier: &DesignComponentOccurrence,
@@ -875,7 +877,7 @@ impl<'a> Projector<'a> {
             let Some(root) = components.roots.get(&root_record) else {
                 continue;
             };
-            let root_occurrence = self.root_occurrence_id(stream, root);
+            let root_occurrence = root_occurrence_id(self.sources.components, stream, root);
             let mut contained = false;
             for (key, (_, carrier)) in &self.occurrences {
                 if carrier.is_some_and(|carrier| {
@@ -1019,7 +1021,7 @@ impl<'a> Projector<'a> {
                     .as_str(),
                 );
             }
-            let root_id = self.root_occurrence_id(stream, root);
+            let root_id = root_occurrence_id(self.sources.components, stream, root);
             let mut stack = Vec::new();
             if self.occurrences.contains_key(root_id.as_str()) {
                 stack.push((root_id, root.root_entity, 1_u64));

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-
 mod partial_operands;
 mod repeated_owners;
-
+use super::member_source;
+use crate::f3z::merge::{append_feature_history, extend_native, occurrence_key, OccurrenceScope};
 use crate::records::sketch_placement::DesignSketchPlacement;
+use crate::records::xref::XrefReference;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -11,6 +12,7 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::RegionId;
@@ -20,12 +22,6 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Region;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Native;
-
-use super::member_source;
-use crate::f3z::merge::{append_feature_history, extend_native, occurrence_key, OccurrenceScope};
-use crate::records::xref::XrefReference;
-use cadmpeg_ir::features::FeatureOperation;
-
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
         product_definition: None,
@@ -38,7 +34,6 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
@@ -48,7 +43,6 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         native_ref: None,
     }
 }
-
 #[test]
 fn component_feature_history_follows_the_parent_without_losing_relative_order() {
     let mut parent = Model::default();
@@ -61,9 +55,7 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         feature("f3d:test:feature#component-0", 10),
         feature("f3d:test:feature#component-1", 12),
     ];
-
     append_feature_history(&parent, &mut component).unwrap();
-
     assert_eq!(
         component
             .features
@@ -73,21 +65,17 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
         vec![9, 11]
     );
 }
-
 #[test]
 fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
     let mut parent = Model::default();
     parent.features = vec![feature("f3d:test:feature#parent", u64::MAX)];
     let mut component = Model::default();
     component.features = vec![feature("f3d:test:feature#component", 0)];
-
     let error = append_feature_history(&parent, &mut component).unwrap_err();
-
     assert!(error
         .to_string()
         .contains("merged F3Z feature ordinal exceeds u64::MAX"));
 }
-
 #[test]
 fn member_definition_preserves_the_body_transform_inside_each_placement() {
     let outer = Transform::affine([
@@ -914,6 +902,35 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
         fields["placement_source"]["owner"]["type_guid"],
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     );
+}
+
+#[test]
+fn hidden_occurrence_native_stream_is_scoped_with_its_member() {
+    let mut fields = cadmpeg_core::json!({
+        "stream": "f3d:Design/BulkStream.dat",
+        "record_index": 11,
+        "target": 30,
+        "ancestors": [10, 20]
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::rescope_native_reference_fields(
+            ctx,
+            "design_hidden_occurrences",
+            &mut fields,
+            &|text| super::super::rescope(text, "part/occurrence-2"),
+        )
+        .unwrap();
+    });
+    assert_eq!(
+        fields["stream"],
+        "f3d:part/occurrence-2@Design/BulkStream.dat"
+    );
+    assert_eq!(fields["record_index"], 11);
+    assert_eq!(fields["target"], 30);
+    assert_eq!(fields["ancestors"], cadmpeg_core::json!([10, 20]));
 }
 
 #[test]

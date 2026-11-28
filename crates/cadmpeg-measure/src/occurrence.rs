@@ -53,7 +53,7 @@ impl Space<'_> {
 /// when a listed occurrence does not place the owner of the next, an owning
 /// definition above the first is placed by no occurrence or by several, or
 /// the chain repeats.
-fn chain<'ir>(
+pub(crate) fn chain<'ir>(
     ir: &'ir CadIr,
     above: &[&'ir Occurrence],
     occurrence: &'ir Occurrence,

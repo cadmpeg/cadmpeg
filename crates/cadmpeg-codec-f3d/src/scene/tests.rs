@@ -16,6 +16,28 @@ fn decode(bytes: &[u8]) -> (Vec<DisplayPose>, Vec<LossNote>) {
 }
 
 #[test]
+fn visibility_names_charge_native_loss_beside_complete_transform_rows() {
+    let mut bytes = encoded(&[3, 17]);
+    for name in [
+        "VisibilityAttribute",
+        "OverrideInActivatedVisibilityAttribute",
+    ] {
+        crate::test_support::lp_utf16(&mut bytes, name);
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    let (rows, losses) = decode(&bytes);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::SceneVisibilityNative.kind());
+    assert!(losses[0]
+        .message
+        .contains("2 saved scene visibility name(s)"));
+    let (rows, losses) = decode(b"VisibilityAttribute");
+    assert!(rows.is_empty());
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn scene_one_and_two_level_paths_preserve_matrix_and_offset() {
     for path in [vec![3, 17], vec![3, 17, 23, 29]] {
         let mut bytes = vec![99; 7];

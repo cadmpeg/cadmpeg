@@ -21,6 +21,10 @@ use crate::loss::F3dLossCode;
 const NAME: &str = "OverrideTransformAttribute";
 const COUNTED_NAME: &[u8] =
     b"\x1a\0\0\0O\0v\0e\0r\0r\0i\0d\0e\0T\0r\0a\0n\0s\0f\0o\0r\0m\0A\0t\0t\0r\0i\0b\0u\0t\0e\0";
+const COUNTED_VISIBILITY: &[u8] =
+    b"\x13\0\0\0V\0i\0s\0i\0b\0i\0l\0i\0t\0y\0A\0t\0t\0r\0i\0b\0u\0t\0e\0";
+const COUNTED_OVERRIDE_VISIBILITY: &[u8] =
+    b"\x26\0\0\0O\0v\0e\0r\0r\0i\0d\0e\0I\0n\0A\0c\0t\0i\0v\0a\0t\0e\0d\0V\0i\0s\0i\0b\0i\0l\0i\0t\0y\0A\0t\0t\0r\0i\0b\0u\0t\0e\0";
 const PATH_CLASS: &str = "PersistentPassiveNodePath";
 // resource-cap: MAX_PATH_ELEMENTS = 2
 const MAX_PATH_ELEMENTS: usize = 1024;
@@ -283,6 +287,13 @@ fn read(
         losses.push(F3dLossCode::SceneOverrideRefused.note(format!(
             "{stream}: {refused} display override candidate(s) refused; first: {}",
             first.unwrap_or_default()
+        )));
+    }
+    let native_names = memchr::memmem::find_iter(view.window(), COUNTED_VISIBILITY).count()
+        + memchr::memmem::find_iter(view.window(), COUNTED_OVERRIDE_VISIBILITY).count();
+    if native_names != 0 {
+        losses.push(F3dLossCode::SceneVisibilityNative.note(format!(
+            "{stream}: {native_names} saved scene visibility name(s) remain in the native source image with unresolved node framing and instance bindings (DR-252)."
         )));
     }
     Ok(rows)

@@ -164,7 +164,7 @@ impl ProductPrereqs {
             design_work_plane_inferred_axes: _,
             design_joint_motions,
             design_unbound_motions: _,
-            design_hidden_occurrences: _,
+            design_hidden_occurrences,
             design_feature_timelines,
             design_record_losses: _,
             design_component_naming_spaces,
@@ -189,6 +189,7 @@ impl ProductPrereqs {
         native.design_component_paths = design_component_paths;
         native.design_parameter_scopes = design_parameter_scopes;
         native.design_joint_motions = design_joint_motions;
+        native.design_hidden_occurrences = design_hidden_occurrences;
         native.design_component_naming_spaces = design_component_naming_spaces;
         native.design_body_bindings = design_body_bindings;
         native.design_body_members = design_body_members;
