@@ -9,13 +9,9 @@ const NATIVE_LINKS_AND_ORDER: &super::Admission =
     &super::Admission::new(NATIVE_LINKS_AND_ORDER_RULES, false);
 
 const NATIVE_LINKS_AND_ORDER_RULES: &[crate::report::check::RuleName] = &[
-    crate::rule_name!("annotations_native.helix-axis-native-ref-does-not"),
     crate::rule_name!("annotations_native.native-record-link-does-not-resolve"),
     crate::rule_name!("annotations_native.native-record-link-must-identity-string"),
     crate::rule_name!("annotations_native.native-record-links-must-array-identities"),
-    crate::rule_name!("annotations_native.native-ref-does-not-resolve"),
-    crate::rule_name!("annotations_native.operand-native-ref-does-not-resolve"),
-    crate::rule_name!("annotations_native.pmi-native-ref-does-not-resolve"),
     crate::rule_name!("identity_order.arena-not-strictly-sorted-id"),
 ];
 

@@ -217,14 +217,53 @@ fn linked_datum(record: &str, link: &str) -> Feature {
 }
 
 #[test]
-fn a_datum_link_native_ref_resolves() {
+fn native_refs_are_source_keys_without_document_targets() {
+    let mut ir = document();
+    ir.native
+        .namespace_mut(crate::codec_id!("sldprt"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![NativeRecord::new(
+                Identity::new("sldprt:native:record#other").unwrap(),
+                Map::new(),
+            )
+            .unwrap()],
+        );
+    ir.design.features.push(linked_datum(
+        "sldprt:feature#missing",
+        "sldprt:link#missing",
+    ));
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.insert(0, Member::Feature(feature("datum")));
+    let text = ir.to_canonical_json().unwrap();
+    let (read, _, _) = CadIr::read(text.as_bytes(), &crate::ReadOptions::default())
+        .unwrap()
+        .without_sidecar();
+    let findings = crate::validate::validate_neutral(&read, Vec::new())
+        .unwrap()
+        .findings;
+    assert!(
+        findings
+            .iter()
+            .all(|finding| !finding.message.contains("native_ref")),
+        "{findings:#?}"
+    );
+}
+
+#[test]
+fn a_datum_link_native_ref_is_a_source_key() {
     let mut ir = document();
     ir.native.namespace_mut(crate::codec_id!("sldprt"));
     ir.design.features.push(linked_datum(
         "sldprt:feature#missing",
         "sldprt:link#missing",
     ));
-    assert_finding(&ir, "native_ref `sldprt:link#missing` does not resolve");
+    assert!(design_findings(&ir)
+        .iter()
+        .all(|finding| !finding.message.contains("native_ref")));
 
     let (record, link) = ("sldprt:native:feature#0", "sldprt:native:link#0");
     ir.native

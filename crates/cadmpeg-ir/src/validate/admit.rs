@@ -70,13 +70,9 @@ impl Admission {
 macro_rules! draft_core_rules {
     ($($extra:literal),* $(,)?) => {
         &[
-            crate::rule_name!("annotations_native.helix-axis-native-ref-does-not"),
             crate::rule_name!("annotations_native.native-record-link-does-not-resolve"),
             crate::rule_name!("annotations_native.native-record-link-must-identity-string"),
             crate::rule_name!("annotations_native.native-record-links-must-array-identities"),
-            crate::rule_name!("annotations_native.native-ref-does-not-resolve"),
-            crate::rule_name!("annotations_native.operand-native-ref-does-not-resolve"),
-            crate::rule_name!("annotations_native.pmi-native-ref-does-not-resolve"),
             crate::rule_name!("carriers_parameterization.coedge-pcurve-range-outside-carrier-domain"),
             crate::rule_name!("carriers_parameterization.coedge-use-curve-names-no-curve"),
             crate::rule_name!("carriers_parameterization.coedge-use-curve-range-outside-carrier"),

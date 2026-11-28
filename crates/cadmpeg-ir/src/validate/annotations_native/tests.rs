@@ -90,7 +90,7 @@ fn native_topology_link_must_resolve() {
 }
 
 #[test]
-fn parameter_native_ref_must_resolve() {
+fn parameter_native_refs_are_source_keys() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // The document holds the native namespace that the links name.
     ir.native.namespace_mut(crate::codec_id!("native"));
@@ -127,18 +127,8 @@ fn parameter_native_ref_must_resolve() {
         .expect("validate the neutral model")
         .findings
         .iter()
-        .any(|finding| {
-            finding.check == Check::NativeLinks && finding.entity.as_deref() == Some(id.as_str())
-        }));
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == Check::NativeLinks
-                && finding.message.contains("PMI native_ref")
-                && finding.entity.as_deref() == Some(id.as_str())
-        }));
+        .all(|finding| finding.check != Check::NativeLinks
+            || finding.entity.as_deref() != Some(id.as_str())));
 }
 
 #[test]

@@ -68,7 +68,6 @@ pub(super) fn check_design_and_process_with(
     };
     order::check_order(records, findings);
     references::check_references(records, findings);
-    references::check_native_refs(records, ids, findings);
     bindings::check_bindings(records, walked, findings);
     scope::check_scope(records, walked, &index, &matchers, findings);
     evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings)?;

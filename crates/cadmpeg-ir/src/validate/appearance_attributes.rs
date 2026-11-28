@@ -2,8 +2,7 @@
 //! Part 10 rules for appearances, appearance bindings, and source attributes
 //! (§8) that the reference checks of `topology` leave out: the targets that
 //! name a shell, a loop, a region, a carrier, a design record, a product,
-//! PMI, drawing, or presentation record, or a neutral record by its arena;
-//! and the `native_ref` of each record.
+//! PMI, drawing, or presentation record, or a neutral record by its arena.
 
 use crate::report::check::Ruled;
 use std::collections::BTreeSet;
@@ -23,7 +22,6 @@ pub(super) fn check_appearance_attributes_with<'ir>(
     doc_records: &std::cell::OnceCell<DesignRecords<'ir>>,
     findings: &mut Vec<Finding>,
 ) {
-    check_native_refs(ir, ids, findings);
     if ir.model.appearance_bindings.is_empty() && ir.model.attributes.is_empty() {
         return;
     }
@@ -342,37 +340,6 @@ fn record(
             crate::rule!("appearance_attributes.record-target-no-record-arena", "record target `{id}` is no record of arena `{arena}`"),
         ),
         Some(true) => {}
-    }
-}
-
-/// Every `native_ref` of an appearance, a binding, and an attribute resolves.
-fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
-    let mut check = |owner: &str, native_ref: Option<&String>| {
-        let Some(target) = native_ref else { return };
-        let resolves = super::annotations_native::native_link_resolves(
-            ir,
-            |target| ids.native_record_owns(target),
-            target,
-        );
-        if !resolves {
-            error(
-                findings,
-                owner,
-                crate::rule!(
-                    "appearance_attributes.native-ref-does-not-resolve",
-                    "native_ref `{target}` does not resolve"
-                ),
-            );
-        }
-    };
-    for appearance in &ir.model.appearances {
-        check(appearance.id.as_str(), appearance.native_ref.as_ref());
-    }
-    for binding in &ir.model.appearance_bindings {
-        check(binding.id.as_str(), binding.native_ref.as_ref());
-    }
-    for attribute in &ir.model.attributes {
-        check(attribute.id.as_str(), attribute.native_ref.as_ref());
     }
 }
 

@@ -36,11 +36,7 @@ pub(super) fn check_drawings_with<'ir>(
     let cyclic = on_cycles(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid = all_ids.contains(drawing.object.as_str())
-            && drawing
-                .native_ref
-                .as_deref()
-                .is_none_or(|native| all_ids.contains(native));
+        let mut refs_valid = all_ids.contains(drawing.object.as_str());
         if refs_valid {
             if let Some(id) = &drawing.template {
                 refs_valid = all_ids.contains(id.as_str());

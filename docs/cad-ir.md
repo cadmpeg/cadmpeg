@@ -280,7 +280,7 @@ Loft guidance is a guide-path list or one centerline path. An empty guide-path l
 
 A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.
 
-`native_ref` identifies the full-fidelity native record corresponding to a neutral projection. The neutral definition keeps its own meaning. A native link resolves to a record of the native namespace of its format. When the document holds no native namespace of that format, as after a conversion through a format that carries no native records, the link is provenance and needs no record.
+`native_ref` is the source's key for the record corresponding to a neutral projection. The key is opaque and need not resolve in the document. The neutral definition keeps its own meaning.
 
 `source_content` retains the ordered mixed content of a feature. Parameter items
 reference entries in the document parameter arena. A referenced parameter may

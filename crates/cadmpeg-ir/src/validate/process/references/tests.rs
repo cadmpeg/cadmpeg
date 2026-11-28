@@ -204,7 +204,7 @@ fn with_native_record(record: &str) -> crate::document::CadIr {
 }
 
 #[test]
-fn process_native_refs_resolve() {
+fn process_native_refs_are_source_keys() {
     let record = "sldprt:native:setup#0";
     let missing = "sldprt:native:setup#missing";
     let mut ir = with_native_record(record);
@@ -213,10 +213,7 @@ fn process_native_refs_resolve() {
     assert_no_process_finding(&ir);
 
     ir.process.operations[0].native_ref = Some(missing.to_owned());
-    assert_error(
-        &ir,
-        "native_ref `sldprt:native:setup#missing` does not resolve",
-    );
+    assert_no_process_finding(&ir);
 
     let mut ir = with_native_record(record);
     ir.process.programs[0].steps.push(ProgramStep::Group {
@@ -227,10 +224,7 @@ fn process_native_refs_resolve() {
             native_ref: Some(missing.to_owned()),
         })],
     });
-    assert_error(
-        &ir,
-        "native_ref `sldprt:native:setup#missing` does not resolve",
-    );
+    assert_no_process_finding(&ir);
 
     let mut ir = with_native_record(record);
     ir.process.setups[0]
@@ -240,8 +234,5 @@ fn process_native_refs_resolve() {
             suppressed: None,
             native_ref: Some(missing.to_owned()),
         }));
-    assert_error(
-        &ir,
-        "native_ref `sldprt:native:setup#missing` does not resolve",
-    );
+    assert_no_process_finding(&ir);
 }

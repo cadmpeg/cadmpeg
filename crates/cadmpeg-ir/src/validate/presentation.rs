@@ -17,10 +17,6 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
     let ir: &CadIr = ids.ir();
     let all_ids: &dyn IdentitySet = ids;
     for document in &ir.model.presentation_documents {
-        let native_valid = match &document.native_ref {
-            Some(native) => all_ids.contains(native),
-            None => true,
-        };
         let mut assets_valid = true;
         'states: for state in document.states() {
             for asset in &state.assets {
@@ -30,7 +26,7 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 }
             }
         }
-        if !native_valid || !assets_valid {
+        if !assets_valid {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
@@ -46,15 +42,10 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
     }
 
     for view in &ir.model.view_presentations {
-        let mut references_valid = match &view.object {
+        let references_valid = match &view.object {
             Some(object) => all_ids.contains(object.as_str()),
             None => true,
         };
-        if references_valid {
-            if let Some(native) = &view.native_ref {
-                references_valid = all_ids.contains(native);
-            }
-        }
         if !references_valid {
             record_finding(
                 findings,

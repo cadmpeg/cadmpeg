@@ -136,7 +136,7 @@ pub(super) fn check_design<'a>(
         return Ok(index);
     }
     let records = &index.records;
-    linkage::check_linkage(records, ids, findings);
+    linkage::check_linkage(records, findings);
     containers::check_containers(records, findings);
     evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings)?;
     evaluations::check_current_geometry(records, findings);

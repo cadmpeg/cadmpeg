@@ -267,7 +267,7 @@ fn an_unresolved_binding_states_what_the_decoder_read_and_no_instance() {
 }
 
 #[test]
-fn native_refs_of_appearances_bindings_and_attributes_resolve() {
+fn native_refs_of_appearances_bindings_and_attributes_are_source_keys() {
     let mut ir = unit_cube().unwrap();
     ir.native.namespace_mut(crate::codec_id!("native"));
     let mut asset = appearance();
@@ -279,15 +279,8 @@ fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     ir.model.appearances.push(asset);
     ir.model.appearance_bindings.push(assigned);
     ir.model.attributes.push(property);
-    for (entity, target) in [
-        ("test:model:appearance#1", "native:missing#1"),
-        (BINDING, "native:missing#2"),
-        (ATTRIBUTE, "native:missing#3"),
-    ] {
-        assert_eq!(
-            design_findings(&ir, entity),
-            [format!("native_ref `{target}` does not resolve")]
-        );
+    for entity in ["test:model:appearance#1", BINDING, ATTRIBUTE] {
+        assert!(design_findings(&ir, entity).is_empty());
     }
 }
 

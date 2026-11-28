@@ -770,7 +770,7 @@ fn point_symmetry_loci_must_match_their_entities() {
 }
 
 #[test]
-fn sketch_constraint_native_ref_must_resolve() {
+fn sketch_constraint_native_refs_are_source_keys() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // The document holds the native namespace that the links name.
     ir.native.namespace_mut(crate::codec_id!("native"));
@@ -819,20 +819,8 @@ fn sketch_constraint_native_ref_must_resolve() {
         .expect("validate the neutral model")
         .findings
         .iter()
-        .any(|finding| {
-            finding.check == Check::NativeLinks
-                && finding.entity.as_deref() == Some(id.as_str())
-                && finding.message.contains("native:missing-relation#0")
-        }));
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == Check::NativeLinks
-                && finding.entity.as_deref() == Some(id.as_str())
-                && finding.message.contains("native:missing-operand#0")
-        }));
+        .all(|finding| finding.check != Check::NativeLinks
+            || finding.entity.as_deref() != Some(id.as_str())));
     let serialized = json::to_string(&ir.model.sketch_constraints).unwrap();
     let round_trip: Vec<crate::sketches::SketchConstraint> =
         serde_json::from_str(&serialized).unwrap();
