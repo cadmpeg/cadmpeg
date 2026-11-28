@@ -31,9 +31,10 @@ fn thin_after_producer(
         parameter(feature, "operationType")["value"] = json!(operation);
         parameter(feature, "oppositeDirection")["value"] = json!(reverse);
         if operation != "NEW" {
-            feature["parameters"].as_array_mut().unwrap().push(
+            feature["parameters"].as_array_mut().unwrap().extend([
+                json!({"parameterId":"defaultScope","value":false}),
                 json!({"parameterId":"booleanScope","queries":[{"deterministicIds":["body"]}]}),
-            );
+            ]);
         }
         if let Some(missing) = missing {
             feature["parameters"]
@@ -109,11 +110,60 @@ fn stored_thin_scope_and_controls_map_a_typed_design() {
                     result.report().losses
                 );
                 assert_eq!(design["direction"]["reversed"]["value"], reverse);
+                if operation != "NEW" {
+                    let targets = &design["output"]["boolean"]["targets"];
+                    assert_eq!(targets["kind"], "selected");
+                    assert_eq!(
+                        targets["picks"]["value"][0]["native"]["value"]["value"],
+                        "body"
+                    );
+                }
                 assert!(!has_loss(&result, "onshape/extrude.thin-not-supported"));
                 validate(result);
             }
         }
     }
+}
+
+#[test]
+fn equal_evaluated_setbacks_keep_a_multicurve_thin_wall() {
+    let bytes = edit(&stored_thin(true, false, false), |path, response| {
+        if !path.ends_with("features.json") {
+            return;
+        }
+        let curves = response["features"][0]["entities"].as_array_mut().unwrap();
+        let mut second_curve = curves[0].clone();
+        second_curve["entityId"] = json!("next-line");
+        second_curve["startPointId"] = json!("next-line.start");
+        second_curve["endPointId"] = json!("next-line.end");
+        second_curve["geometry"]["pntX"] = json!(0.02);
+        curves.push(second_curve);
+        let feature = &mut response["features"][1];
+        parameter(feature, "wallShape")["queries"] = json!([
+            {"featureId":"Base sketch","btType":"BTMIndividualSketchRegionQuery-140"}
+        ]);
+        parameter(feature, "thickness1")["expression"] = json!("1 mm + 1 mm");
+        parameter(feature, "thickness2")["expression"] = json!("2 mm");
+    });
+    let result = decode(&bytes);
+    let operation = crate::test_support::review::design_operation(result.ir(), "Plate");
+    assert_eq!(operation["kind"], "extrude", "{:?}", result.report().losses);
+    assert_eq!(
+        operation["value"]["profile"]["picks"]["value"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        operation["value"]["output"]["body"]["thickness"],
+        json!({"kind":"symmetric","value":{"kind":"literal","value":4.0}})
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "history.parameter-not-projected"
+            && loss.message.starts_with("parameter thickness1 ")
+    }));
+    validate(result);
 }
 
 #[test]
@@ -163,8 +213,10 @@ fn thin_ellipse_profiles_keep_solved_curves_and_design_ownership() {
     validate(result);
 }
 
+/// A Part Studio without its STEP export has no product definition of its
+/// own; the design scope states the root definition it spans (§5.1).
 #[test]
-fn thin_without_a_product_scope_stays_native_with_named_loss() {
+fn thin_without_a_step_export_keeps_its_design_on_a_stated_root() {
     let bytes = members(&stored_thin(true, false, false), |members| {
         members.remove("partstudios/studio/export.step");
     });
@@ -174,7 +226,21 @@ fn thin_without_a_product_scope_stays_native_with_named_loss() {
         output["model"]["features"][1]["definition"]["value"]["kind"],
         "native"
     );
-    assert!(has_loss(&result, "onshape/extrude.thin-not-supported"));
+    assert_eq!(plate(&output)["definition"]["operation"]["kind"], "extrude");
+    assert_eq!(
+        plate(&output)["definition"]["operation"]["value"]["output"]["body"]["kind"],
+        "thin"
+    );
+    let [root] = result.ir().model.product_definitions.as_slice() else {
+        panic!("one stated root definition");
+    };
+    assert!(root.is_root());
+    assert_eq!(result.ir().design.scopes[0].definition, root.id);
+    assert!(has_loss(
+        &result,
+        "onshape/extrude.thin-model-not-supported"
+    ));
+    assert!(!has_loss(&result, "onshape/extrude.thin-not-supported"));
     validate(result);
 }
 
@@ -190,7 +256,11 @@ fn missing_thin_scope_side_thickness_or_direction_refuses_with_named_loss() {
         "midplane",
     ] {
         let result = decode(&thin_after_producer(false, false, "ADD", Some(missing)));
-        assert!(result.ir().design.features.is_empty(), "{missing}");
+        assert_eq!(
+            crate::test_support::review::design_operation(result.ir(), "Plate"),
+            crate::test_support::review::unresolved("extrude"),
+            "{missing}"
+        );
         assert!(
             has_loss(&result, "onshape/extrude.thin-not-supported"),
             "{missing}: {:?}",
@@ -210,7 +280,10 @@ fn missing_thin_scope_side_thickness_or_direction_refuses_with_named_loss() {
         },
     );
     let result = decode(&bytes);
-    assert!(result.ir().design.features.is_empty());
+    assert_eq!(
+        crate::test_support::review::design_operation(result.ir(), "Plate"),
+        crate::test_support::review::unresolved("extrude")
+    );
     assert!(has_loss(&result, "onshape/extrude.thin-not-supported"));
     validate(result);
 }
@@ -246,7 +319,10 @@ fn stored_symmetric_thickness_maps_with_explicit_wall_controls() {
                 result.report().losses
             );
         } else {
-            assert!(result.ir().design.features.is_empty());
+            assert_eq!(
+                crate::test_support::review::design_operation(result.ir(), "Plate"),
+                crate::test_support::review::unresolved("extrude")
+            );
             assert!(has_loss(&result, "onshape/extrude.thin-not-supported"));
         }
         validate(result);

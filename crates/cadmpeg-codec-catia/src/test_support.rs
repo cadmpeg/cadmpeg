@@ -16,6 +16,7 @@ pub(crate) mod test_bytes;
 pub(crate) mod test_class25;
 pub(crate) mod test_container;
 pub(crate) mod test_e5;
+pub(crate) mod test_feature_tree;
 pub(crate) mod test_formula;
 pub(crate) mod test_object_graph;
 pub(crate) mod test_parameter_map;
