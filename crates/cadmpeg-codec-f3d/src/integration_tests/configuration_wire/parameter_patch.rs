@@ -134,7 +134,7 @@ fn a_nested_design_parameter_edit_survives_synthesis() {
     use cadmpeg_ir::design::parameter::ParameterDefinition;
 
     let archive =
-        crate::test_support::assembly_test::f3z_archive("root.f3d", &[("root.f3d", SOURCE)]);
+        crate::test_support::assembly_fixture::f3z_archive("root.f3d", &[("root.f3d", SOURCE)]);
     let decoded = decode(&archive);
     let (id, _) = length(decoded.ir());
     let mut ir = saved(decoded.ir());
@@ -276,7 +276,7 @@ fn the_patch_writes_a_parameter_reference_and_relocates_the_next_record() {
     bulk.extend(depth);
     let collection_start = u64::try_from(bulk.len()).unwrap();
     crate::test_support::indexed_header(&mut bulk, *b"257", 19);
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (
                 "7A6A3D31-BE74-4E19-9115-20642944C2E4",
@@ -334,20 +334,21 @@ fn the_patch_writes_a_parameter_reference_and_relocates_the_next_record() {
         .unwrap();
     parameter.definition = ParameterDefinition::Expression(reference.clone());
     parameter.value = length_override(9.0).value;
-    let collection_type = crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
-        let collection = native
-            .design_types
-            .iter_mut()
-            .find(|row| {
-                row.table_position()
-                    .0
-                    .contains("FusionDesignSegmentType3/MetaStream.dat")
-                    && row.entities.values().copied().eq([19])
-            })
-            .expect("the registered collection type");
-        collection.set_version(5);
-        collection.id().clone()
-    });
+    let collection_type =
+        crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
+            let collection = native
+                .design_types
+                .iter_mut()
+                .find(|row| {
+                    row.table_position()
+                        .0
+                        .contains("FusionDesignSegmentType3/MetaStream.dat")
+                        && row.entities.values().copied().eq([19])
+                })
+                .expect("the registered collection type");
+            collection.set_version(5);
+            collection.id().clone()
+        });
     let (written, losses) = written_with_losses(&ir, decoded.source_fidelity());
     assert_eq!(
         own(written.ir(), &width),

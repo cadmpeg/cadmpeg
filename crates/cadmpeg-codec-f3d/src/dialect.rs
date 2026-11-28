@@ -44,7 +44,9 @@ use std::fmt;
 use crate::loss::F3dLossCode;
 use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{F3D_F3Z_MULTI_DOCUMENT, F3D_MANIFEST_3_2_0_0, F3D_UNKNOWN, FORMAT};
 
 /// The one dialect this writer synthesizes.
 ///
@@ -246,7 +248,7 @@ pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
     }
     for matched in layers
         .iter()
-        .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        .filter(|matched| matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT)
     {
         if let Some(loss) = kernel_dialect_loss(matched) {
             losses.push(loss);
@@ -360,7 +362,7 @@ fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         }
         Admission::Admitted | Admission::Unverified { .. } | Admission::Residual => {}
     }
-    if matched.format() != cadmpeg_asm::dialect::FORMAT
+    if matched.format() != cadmpeg_asm::dialect::registry_ids::FORMAT
         || matches!(matched.admission(), Admission::Admitted)
     {
         return None;

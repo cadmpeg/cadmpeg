@@ -21,7 +21,7 @@ use crate::records::configuration::table::{ColumnTarget, ConfiguredValue};
 use crate::records::configuration::{
     DesignConfiguration as NativeConfiguration, DesignConfigurationKind,
 };
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 
 const TOLERANCE: f64 = 1e-9;
 

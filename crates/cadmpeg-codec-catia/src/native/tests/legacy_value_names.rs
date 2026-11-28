@@ -65,3 +65,27 @@ fn evaluated_value_name_requires_one_evaluation_role() {
     assert!(names.get(7, 100 + VALUE_AFTER_ROLE).is_none());
     assert!(names.get(7, 300 + VALUE_AFTER_ROLE).is_none());
 }
+
+#[test]
+fn legacy_string_value_refuses_null_optional_keys() {
+    use crate::native::CatiaLegacyStringValue;
+    use cadmpeg_core::serde_erase::json;
+
+    let value = CatiaLegacyStringValue {
+        id: "test:catia:legacy-value#1".to_owned(),
+        byte_offset: 1,
+        entity_id: 2,
+        name_field: None,
+        name: None,
+        value: "value".to_owned(),
+    };
+    let written = json::to_value(value).expect("legacy value writes");
+    for key in ["name_field", "name"] {
+        let mut malformed = written.clone();
+        malformed[key] = serde_json::Value::Null;
+        assert!(
+            json::from_value::<CatiaLegacyStringValue>(malformed).is_err(),
+            "{key}"
+        );
+    }
+}

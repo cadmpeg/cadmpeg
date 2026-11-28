@@ -583,7 +583,7 @@ pub(crate) fn relocate_records(
 #[cfg(test)]
 mod tests {
     use super::{MetaStream, RecordIndexEntry};
-    use crate::test_support::streams_test::design_metastream;
+    use crate::test_support::streams_fixture::design_metastream;
     use crate::test_support::{lp_ascii, lp_utf16};
 
     use super::primary_record_frames;

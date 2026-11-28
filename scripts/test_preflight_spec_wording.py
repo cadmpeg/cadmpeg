@@ -19,25 +19,20 @@ check = harness.load("preflight_spec_wording")
 
 
 class Phrases(unittest.TestCase):
-    def test_behaviour_and_provenance_are_flagged(self) -> None:
-        lines = [(1, "The decoder retains the raw z values natively."),
-                 (2, "A reader selects the typed spelling from these positions."),
-                 (3, "In the corpus every record stores 3."),
-                 (4, "Offset 21 stores u32 `3`, the entry count."),
-                 (5, "| 21 | 4 | `count` | the decoder |"),
-                 (6, "The `decoder_flags` byte at offset 9 is zero."),
-                 (7, "A scope whose operand paths do not read keeps its frames."),
-                 (8, "The earliest definition record defines the component.")]
+    def test_technical_terms_pass_and_provenance_is_flagged(self) -> None:
+        lines = [(1, "The decoder projects each sample with a fallback."),
+                 (2, "The reader and writer use the projection."),
+                 (3, "An experiment observed the stored form."),
+                 (4, "In the corpus every record stores 3.")]
         self.assertEqual([number for number, _, _ in check.flagged(lines, check.PHRASES)],
-                         [1, 2, 3, 7, 8])
+                         [3, 4])
 
     def test_pronouns_match_by_case(self) -> None:
         lines = [(1, "We store the angle in degrees."),
                  (2, "The flag marks our frame."),
                  (3, "A US-customary unit keeps its name."),
                  (4, "The energy is wE times the factor.")]
-        for phrases in (check.PHRASES, check.CADIR_PHRASES):
-            self.assertEqual([number for number, _, _ in check.flagged(lines, phrases)], [1, 2])
+        self.assertEqual([number for number, _, _ in check.flagged(lines, check.PHRASES)], [1, 2])
 
 
 class SpecWordingCheck(harness.FixtureCase):
@@ -47,11 +42,11 @@ class SpecWordingCheck(harness.FixtureCase):
                           "docs/formats/f3d-open-items.md": "# Open\n"})
         self.repo.branch()
 
-    def test_decoder_sentence_warns(self) -> None:
-        self.repo.commit({"docs/formats/f3d.md": "# F3D\n\nThe last record is chosen.\n"})
+    def test_provenance_sentence_warns(self) -> None:
+        self.repo.commit({"docs/formats/f3d.md": "# F3D\n\nThe record was observed.\n"})
         results = harness.run_check(check, self.repo.context())
         self.assertEqual(harness.statuses(results), ["WARN"])
-        self.assertIn("docs/formats/f3d.md:3: [is chosen]", results[0].details[0])
+        self.assertIn("docs/formats/f3d.md:3: [observed]", results[0].details[0])
 
     def test_byte_semantics_pass(self) -> None:
         self.repo.commit({"docs/formats/f3d.md": "# F3D\n\nOffset 25 stores the frame sense.\n"})
@@ -88,7 +83,7 @@ class SpecWordingCheck(harness.FixtureCase):
         self.repo.commit({"docs/cad-ir.md": "# IR\n\nThe decoder states each pick it reads.\n"})
         results = harness.run_check(check, self.repo.context())
         self.assertEqual(harness.statuses(results), ["PASS"])
-        self.assertEqual(results[0].summary, "1 specification(s): no behaviour or provenance wording")
+        self.assertEqual(results[0].summary, "1 specification(s): no provenance wording")
 
     def test_cadir_specification_progress_wording_warns(self) -> None:
         self.repo.commit({"docs/cadir-v11.md": "# CADIR\n\nThe writer currently skips it.\n"})

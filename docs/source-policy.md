@@ -148,6 +148,7 @@ exception is the module-level expectation in `cadmpeg-core/src/convert.rs` for
 `as_conversions`, `cast_possible_truncation`, `cast_precision_loss` and
 `cast_sign_loss`. It has a nonempty reason and appears once. Function-level
 expectations, nested module expectations and additional lints are rejected.
+Generated dialect ID modules each permit one module-level `expect(dead_code)`.
 
 ## Integer limits
 

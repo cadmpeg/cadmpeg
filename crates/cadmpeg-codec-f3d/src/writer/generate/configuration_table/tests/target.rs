@@ -14,7 +14,7 @@ use super::super::{generated, patched, stated_rows};
 use crate::design_v11::configurations::rebase::rebased;
 use crate::design_v11::configurations::ActiveRows;
 use crate::integration_tests::configuration_wire as wire;
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 use crate::writer::primitives::{configuration_targets, decoded_configurations};
 
 /// `ir` with the configuration table documents the generator writes for

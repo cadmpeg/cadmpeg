@@ -176,6 +176,7 @@ pub struct ChainOrder {
 /// any other. The join maps are not on the wire: they are projections of the
 /// key records, derived on read through [`key_maps`].
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct AsmBrepWire {
     bodies: Vec<Body>,
@@ -207,6 +208,17 @@ struct AsmBrepWire {
     attributes: Vec<SourceAttribute>,
     unknowns: Vec<UnknownRecord>,
     stats: Stats,
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for AsmBrep {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AsmBrep".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        <AsmBrepWire as schemars::JsonSchema>::json_schema(generator)
+    }
 }
 
 impl<'de> Deserialize<'de> for AsmBrep {

@@ -34,7 +34,7 @@ use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, root_record, string_cell,
     table_document, with_root_segment_in, written_on, ROOT_RECORD,
 };
-use crate::test_support::native_test::f3d_native;
+use crate::test_support::native_fixture::f3d_native;
 use crate::F3dCodec;
 
 const SOURCE: &[u8] = include_bytes!("../../../../corpus/f3d/region_A.f3d");
@@ -831,7 +831,7 @@ fn a_native_cell_edit_loses_to_the_design_configuration() {
     use crate::records::configuration::table::{set_cell, CellData};
     let (decoded, fixture) = fixture(true);
     let edit = |ir: &mut CadIr| {
-        crate::test_support::native_test::update_f3d_native(ir, |native| {
+        crate::test_support::native_fixture::update_f3d_native(ir, |native| {
             let document = native
                 .design_configurations
                 .iter_mut()

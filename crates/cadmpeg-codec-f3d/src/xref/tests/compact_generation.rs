@@ -80,7 +80,7 @@ fn compact_legacy_placements_keep_owner_key_and_qualified_role() {
                         &DecodeOptions::default(),
                     )
                     .unwrap();
-                let native = crate::test_support::native_test::f3d_native(decoded.ir());
+                let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
                 let reference = &native.xref_references[0];
                 assert!(super::super::placement_source_matches(reference).unwrap());
                 assert_eq!(reference.neutron_role.as_str(), role);

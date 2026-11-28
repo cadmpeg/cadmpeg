@@ -37,7 +37,7 @@ use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::{add_empty_f3d_native, f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{add_empty_f3d_native, f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 const SKETCH: &str = "test:design:feature#sketch";

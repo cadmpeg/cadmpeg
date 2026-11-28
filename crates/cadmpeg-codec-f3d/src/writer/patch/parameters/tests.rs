@@ -64,7 +64,7 @@ fn a_resize_moves_outer_and_nested_index_offsets_after_the_expression() {
     )
     .unwrap();
     let nested = record.evaluated_value_offset();
-    let mut meta = crate::test_support::streams_test::design_metastream_with_records(
+    let mut meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[],
         &[(71, 0), (19, end)],
     );

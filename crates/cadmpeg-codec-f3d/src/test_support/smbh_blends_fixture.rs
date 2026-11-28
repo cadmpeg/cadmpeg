@@ -3,16 +3,16 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::smbh_blocks_test::{
+use crate::test_support::smbh_blocks_fixture::{
     generated_curve_block, generated_pcurve_block, generated_rational_surface_block,
     generated_surface_block,
 };
-use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_geometry_fixture::synthetic_mixed_smbh;
+use crate::test_support::smbh_surfaces_fixture::{
     append_revision_surface_tail_discontinuities, append_revision_surface_tail_head,
     synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
 };
-use crate::test_support::tokens_test::{
+use crate::test_support::tokens_fixture::{
     push_tagged_i64, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident, t_vec,
 };
 
