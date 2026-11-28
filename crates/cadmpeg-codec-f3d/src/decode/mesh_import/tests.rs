@@ -90,7 +90,7 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
         bytes.resize(128, 0);
         let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(&bytes).unwrap();
         let archive = zip.finish().unwrap().into_inner();
@@ -104,7 +104,7 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
             tessellations_by_scope: Default::default(),
         };
         let mut losses = Vec::new();
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::test_support::with_decode_context(|ctx| {
                 bind_features(ctx, scan, &mut features, &[scope], &projection, &mut losses)
             })
@@ -143,7 +143,7 @@ fn imports_without_native_scopes_retain_typed_originating_features() {
 
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     let archive = zip.finish().unwrap().into_inner();
     for native_ref in [
         None,
@@ -152,7 +152,7 @@ fn imports_without_native_scopes_retain_typed_originating_features() {
     ] {
         let mut feature = import_feature(native_ref);
         let mut losses = Vec::new();
-        let selection = crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let selection = crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::test_support::with_decode_context(|ctx| {
                 native_source(ctx, scan, &mut feature, None, &mut losses)
             })

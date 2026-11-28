@@ -32,9 +32,11 @@ use super::history_states::Closed;
 use crate::kernel::ActiveCarrier;
 
 /// Cap of records materialized for all views of a part.
+// resource-cap: MAX_STATE_VIEW_WORK = 4
 pub(crate) const MAX_STATE_VIEW_WORK: usize = 1 << 21;
 
 /// Cap of cached state outcomes per part.
+// resource-cap: MAX_STATE_VIEW_MODELS = 4
 pub(crate) const MAX_STATE_VIEW_MODELS: usize = 4;
 
 /// The model of one history state.
@@ -264,13 +266,33 @@ pub(crate) enum Decoded<T> {
 }
 
 /// Read the state at `ordinal` and let the caller extract its evidence.
-pub(crate) fn decode_scratch<T>(
+fn decode_scratch<T>(
     ctx: &DecodeContext<'_>,
     header: &BinaryHeader,
     archive: &HashMap<i64, Record>,
     versions: &BTreeMap<i64, i64>,
     ordinal: u32,
     use_state: impl for<'s> FnOnce(&ScratchContext<'s>, InspectionGeometry) -> Result<T, CodecError>,
+) -> Result<Decoded<T>, CodecError> {
+    let stream = format!("inventor:history:{ordinal}");
+    with_state_table(ctx, archive, versions, |scratch, table| {
+        let brep = inspect_with_header(
+            scratch,
+            table,
+            Some(&header.metadata),
+            &stream,
+            cadmpeg_asm::asm_format!("inventor"),
+        )?;
+        use_state(scratch, transfer_inspection(scratch, brep)?)
+    })
+}
+
+/// Materialize a state's record table for a bounded scratch read.
+pub(super) fn with_state_table<T>(
+    ctx: &DecodeContext<'_>,
+    archive: &HashMap<i64, Record>,
+    versions: &BTreeMap<i64, i64>,
+    read: impl for<'s> FnOnce(&ScratchContext<'s>, &[Record]) -> Result<T, CodecError>,
 ) -> Result<Decoded<T>, CodecError> {
     let Some(table) = materialize_record_table(versions, |revision| archive.get(&revision)) else {
         return Ok(Decoded::Failed);
@@ -279,17 +301,7 @@ pub(crate) fn decode_scratch<T>(
         .iter()
         .try_fold(0_usize, |total, record| total.checked_add(record.len))
         .ok_or_else(|| CodecError::malformed("Inventor history source extents exceed usize"))?;
-    let stream = format!("inventor:history:{ordinal}");
-    let decoded = ctx.scratch(input_bytes, |scratch| {
-        let brep = inspect_with_header(
-            scratch,
-            &table,
-            Some(&header.metadata),
-            &stream,
-            cadmpeg_asm::asm_format!("inventor"),
-        )?;
-        use_state(scratch, transfer_inspection(scratch, brep)?)
-    });
+    let decoded = ctx.scratch(input_bytes, |scratch| read(scratch, &table));
     match decoded {
         Ok(Ok(state)) => Ok(Decoded::Scratch(state)),
         Ok(Err(limit)) => Ok(Decoded::Bounded(limit)),

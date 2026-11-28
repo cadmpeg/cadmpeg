@@ -86,6 +86,8 @@ pub(super) struct ProductPrereqs {
     pub(super) design_work_plane_inferred_axes: std::collections::HashMap<String, (u64, [u8; 2])>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
+    /// Records of freedom entries that bind no joint record.
+    pub(super) design_unbound_motions: Vec<crate::design::decode::joint_motion::UnboundMotion>,
     /// Occurrences that hidden-occurrence records name.
     pub(super) design_hidden_occurrences:
         Vec<crate::design::decode::hidden_occurrences::DesignHiddenOccurrence>,
@@ -161,6 +163,7 @@ impl ProductPrereqs {
             design_sheet_metal_settings_given_up: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
+            design_unbound_motions: _,
             design_hidden_occurrences: _,
             design_feature_timelines,
             design_record_losses: _,
@@ -280,11 +283,12 @@ pub(super) fn decode(
             &history_index,
             &primary_frames,
         )?;
-    let design_joint_motions = crate::design::decode::joint_motion::decode_joint_motions(
-        scan,
-        &design_parameter_scopes,
-        &design_types,
-    )?;
+    let (design_joint_motions, design_unbound_motions) =
+        crate::design::decode::joint_motion::decode_joint_motions(
+            scan,
+            &design_parameter_scopes,
+            &design_types,
+        )?;
     let primary_given_up = crate::design::decode::meta::primary_frames_given_up(scan)?;
     let mut design_record_losses = Vec::new();
     given_up.extend(crate::design::decode::record::give_up_frames(
@@ -363,6 +367,7 @@ pub(super) fn decode(
         design_sheet_metal_settings_given_up,
         design_work_plane_inferred_axes,
         design_joint_motions,
+        design_unbound_motions,
         design_hidden_occurrences,
         design_feature_timelines,
         design_record_losses,

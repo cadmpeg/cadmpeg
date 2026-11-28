@@ -476,7 +476,7 @@ fn form_partial_owned_list_and_complete_body_keep_both_members_and_conflicts() {
     let cages = [neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID)];
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, options);
     archive
         .start_file(
             format!("FusionAssetName[Active]/TSplines.BlobParts/TSpline.{SECOND_CAGE_UUID}.tsm"),
@@ -485,7 +485,7 @@ fn form_partial_owned_list_and_complete_body_keep_both_members_and_conflicts() {
         .unwrap();
     archive.write_all(b"synthetic").unwrap();
     let archive = archive.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let mut facts = form_cages::FormFacts {
                 inputs: form_cages::form_inputs(&scope)?,
@@ -579,7 +579,7 @@ fn form_repeated_and_distinct_lists_keep_direct_inputs_and_each_source_slot() {
     let bytes = [make_list(210, 211), make_list(220, 221)].concat();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, options);
     archive
         .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
         .unwrap();
@@ -587,7 +587,7 @@ fn form_repeated_and_distinct_lists_keep_direct_inputs_and_each_source_slot() {
     let archive = archive.finish().unwrap().into_inner();
     let scope = form_scope(201, vec![210, 210, 220]);
     let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![json::from_value(cadmpeg_core::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             form_cages::FormProjection::new(scan).project(
                 ctx,
@@ -653,7 +653,7 @@ fn ordinary_form_list_keeps_valid_positions_around_a_malformed_slot_and_full_nat
         let bytes = [list, indexed_frame(b"264", 2196, 15)].concat();
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
         archive
             .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
             .unwrap();
@@ -661,7 +661,7 @@ fn ordinary_form_list_keeps_valid_positions_around_a_malformed_slot_and_full_nat
         let archive = archive.finish().unwrap().into_inner();
         let scope = form_scope(2190, vec![2196]);
         let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![json::from_value(cadmpeg_core::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 form_cages::FormProjection::new(scan).project(
                     ctx,
@@ -1133,8 +1133,8 @@ fn complete_owned_list_does_not_hide_conflicting_body_evidence() {
         "f3d:model:subd#1",
         "00000000-0000-4000-8000-000000000099",
     )];
-    let archive = crate::test_support::zip_test::f3d_with_form_body_resource(b"synthetic");
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let archive = crate::test_support::zip_fixture::f3d_with_form_body_resource(b"synthetic");
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let source = form_cages::FormSource {
                 bytes: &bytes,

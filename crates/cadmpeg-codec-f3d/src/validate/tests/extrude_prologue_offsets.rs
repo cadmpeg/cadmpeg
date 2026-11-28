@@ -10,7 +10,7 @@ use crate::records::feature::scope::{
     DesignExtrudeScope, DesignFeatureKind, DesignParameterScope, DesignScopePayload,
 };
 use crate::records::identity::ReferenceRun;
-use crate::test_support::native_test::f3d_native_mut;
+use crate::test_support::native_fixture::f3d_native_mut;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:design-parameter-scope#0";

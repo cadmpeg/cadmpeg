@@ -18,9 +18,11 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 /// The deepest JSON a CADIR document holds, the root object included.
+// resource-cap: MAX_DOCUMENT_DEPTH = 1
 pub const MAX_DOCUMENT_DEPTH: usize = 128;
 
 /// The deepest expression tree a CADIR document holds, a leaf being one level.
+// resource-cap: MAX_EXPRESSION_DEPTH = 1
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 
 /// The least nesting the decode wrapper's digest walk admits: twice

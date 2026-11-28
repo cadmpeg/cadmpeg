@@ -10,11 +10,12 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::io::Cursor;
 
 use crate::loss::SatLossCode;
+use crate::registry_ids::FORMAT;
 use crate::test_support::test_streams::{
     acis_text_sphere_stream, binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
     UNVERIFIED_SAVE_FORMAT,
 };
-use crate::{SatCodec, FORMAT};
+use crate::SatCodec;
 
 fn decode_bytes(bytes: &[u8]) -> DecodeResult {
     SatCodec

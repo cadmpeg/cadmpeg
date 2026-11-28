@@ -144,6 +144,10 @@ fn entity_cut(
         endpoints_carried(model, design, points),
     );
     leave(
+        ModelSketchEntityField::CenterRef,
+        center_carried(model, design, points),
+    );
+    leave(
         ModelSketchEntityField::Geometry,
         geometry_carried(model, design),
     );
@@ -176,6 +180,27 @@ fn endpoints_carried(
             }),
         _ => false,
     }
+}
+
+/// Whether the design states the center record of `model`: it is the native
+/// record of a design entity of its sketch that is the center of `model`.
+fn center_carried(
+    model: &ModelEntity,
+    design: &SketchEntity<Planar>,
+    points: &HashMap<(&str, &str), Vec<&SketchEntity<Planar>>>,
+) -> bool {
+    model.center_ref.as_ref().is_none_or(|native| {
+        points
+            .get(&(design.sketch.as_str(), native.as_str()))
+            .is_some_and(|candidates| {
+                candidates.iter().any(|point| {
+                    point
+                        .roles
+                        .iter()
+                        .any(|held| held.of == design.id && held.role == DefiningRole::Center)
+                })
+            })
+    })
 }
 
 /// Whether the design states the solved geometry of `model`: its planar

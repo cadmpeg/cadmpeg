@@ -141,7 +141,7 @@ impl<'a> InventorContainer<'a> {
         let dialects = crate::dialect::layers(&matched, &self.rse.active_carrier)?;
         if let Some(kernel) = dialects
             .iter()
-            .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+            .find(|matched| matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT)
         {
             if let Some(loss) = crate::dialect::kernel_dialect_loss(kernel) {
                 losses.push(loss);

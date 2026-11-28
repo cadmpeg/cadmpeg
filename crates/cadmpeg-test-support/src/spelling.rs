@@ -124,7 +124,7 @@ impl SpellingSweep {
             }
             if let Some(key) = fields.keys().next() {
                 let mut text = String::new();
-                write_repeating(&document, &path, &mut text);
+                write_repeating(&document, &path, key, &mut text);
                 self.probes += 1;
                 if serde_json::from_str::<CadIr>(&text).is_ok() {
                     accepting.insert(format!("{at}: `{key}` stated twice"));
@@ -289,16 +289,15 @@ fn is_empty_collection(value: &Value) -> bool {
     }
 }
 
-/// Writes `value` as JSON text, stating the first key of the object at `path`
-/// twice.
-pub(crate) fn write_repeating(value: &Value, path: &[Step], text: &mut String) {
+/// Writes `value` as JSON text, stating `repeated` twice at `path`.
+pub(crate) fn write_repeating(value: &Value, path: &[Step], repeated: &str, text: &mut String) {
     match value {
         Value::Object(fields) => {
             text.push('{');
             let repeat = path.is_empty();
             let mut first = true;
-            for (index, (key, field)) in fields.iter().enumerate() {
-                let times = if repeat && index == 0 { 2 } else { 1 };
+            for (key, field) in fields {
+                let times = if repeat && key == repeated { 2 } else { 1 };
                 for _ in 0..times {
                     if !first {
                         text.push(',');
@@ -311,7 +310,7 @@ pub(crate) fn write_repeating(value: &Value, path: &[Step], text: &mut String) {
                         _ => None,
                     };
                     match rest {
-                        Some(rest) => write_repeating(field, rest, text),
+                        Some(rest) => write_repeating(field, rest, repeated, text),
                         None => text.push_str(&field.to_string()),
                     }
                 }
@@ -326,7 +325,7 @@ pub(crate) fn write_repeating(value: &Value, path: &[Step], text: &mut String) {
                 }
                 match path.split_first() {
                     Some((Step::Index(step), rest)) if *step == index => {
-                        write_repeating(item, rest, text);
+                        write_repeating(item, rest, repeated, text);
                     }
                     _ => text.push_str(&item.to_string()),
                 }

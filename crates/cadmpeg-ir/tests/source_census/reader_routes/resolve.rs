@@ -3,8 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::scan::path_matches;
-use super::{HandImplSource, PathShape, SourceIndex, SymbolKey, SymbolKind};
+use super::{PathShape, SourceIndex, SymbolKey, SymbolKind};
 use crate::roots::crate_of;
 
 /// A file or crate, a module scope in it, and a name.
@@ -12,7 +11,7 @@ type ScopedName = (String, Vec<String>, String);
 
 /// The source index keyed the way resolution reads it.
 pub(super) struct Lookups {
-    /// The symbol, import, and denied counts the tables were built from.
+    /// The symbol, import, and macro-type counts the tables were built from.
     sizes: (usize, usize, usize),
     /// Positions of non-glob imports, by file, scope, and alias.
     explicit: BTreeMap<ScopedName, Vec<usize>>,
@@ -20,8 +19,8 @@ pub(super) struct Lookups {
     globs: BTreeMap<(String, Vec<String>), Vec<usize>>,
     /// Distinct symbols, by crate, scope, and name.
     symbols: BTreeMap<ScopedName, Vec<SymbolKey>>,
-    /// Denied wire declarations as type symbols, by crate, scope, and name.
-    denied: BTreeMap<ScopedName, Vec<SymbolKey>>,
+    /// Macro declarations as type symbols, by crate, scope, and name.
+    macro_types: BTreeMap<ScopedName, Vec<SymbolKey>>,
     /// The least (scope length, file) of the symbols and imports under each
     /// crate and scope prefix.
     module_sources: BTreeMap<(String, Vec<String>), (usize, String)>,
@@ -34,7 +33,7 @@ impl Lookups {
             explicit: BTreeMap::new(),
             globs: BTreeMap::new(),
             symbols: BTreeMap::new(),
-            denied: BTreeMap::new(),
+            macro_types: BTreeMap::new(),
             module_sources: BTreeMap::new(),
         };
         for (position, import) in index.imports.iter().enumerate() {
@@ -71,15 +70,19 @@ impl Lookups {
             }
             lookups.record_module_source(&symbol.path, &symbol.scope);
         }
-        for wire in &index.denied {
+        for declaration in &index.macro_types {
             lookups
-                .denied
-                .entry((crate_of(&wire.path), wire.scope.clone(), wire.name.clone()))
+                .macro_types
+                .entry((
+                    crate_of(&declaration.path),
+                    declaration.scope.clone(),
+                    declaration.name.clone(),
+                ))
                 .or_default()
                 .push(SymbolKey {
-                    path: wire.path.clone(),
-                    scope: wire.scope.clone(),
-                    name: wire.name.clone(),
+                    path: declaration.path.clone(),
+                    scope: declaration.scope.clone(),
+                    name: declaration.name.clone(),
                     kind: SymbolKind::Type,
                 });
         }
@@ -87,7 +90,11 @@ impl Lookups {
     }
 
     fn sizes_of(index: &SourceIndex) -> (usize, usize, usize) {
-        (index.symbols.len(), index.imports.len(), index.denied.len())
+        (
+            index.symbols.len(),
+            index.imports.len(),
+            index.macro_types.len(),
+        )
     }
 
     /// Whether these tables were built from `index` as it stands.
@@ -132,8 +139,8 @@ impl Lookups {
             .unwrap_or_default()
     }
 
-    fn denied(&self, path: &str, scope: &[String], name: &str) -> &[SymbolKey] {
-        self.denied
+    fn macro_types(&self, path: &str, scope: &[String], name: &str) -> &[SymbolKey] {
+        self.macro_types
             .get(&(crate_of(path), scope.to_vec(), name.to_owned()))
             .map(Vec::as_slice)
             .unwrap_or_default()
@@ -376,11 +383,11 @@ fn resolve_from_module(
         return resolve_from_module(&nested_path, &nested_scope, &segments[1..], index, seen);
     }
 
-    let denied = lookups.denied(source_path, module_scope, first);
-    if denied.len() > 1 {
+    let macro_types = lookups.macro_types(source_path, module_scope, first);
+    if macro_types.len() > 1 {
         return ResolvedPath::Unknown;
     }
-    if let Some(symbol) = denied.first() {
+    if let Some(symbol) = macro_types.first() {
         if segments.len() == 1 {
             return ResolvedPath::Local(symbol.clone());
         }
@@ -463,39 +470,4 @@ fn append_resolved(
         }
         ResolvedPath::Unknown => ResolvedPath::Unknown,
     }
-}
-
-pub(super) fn resolve_receiver_path(
-    route: &HandImplSource,
-    path: &PathShape,
-    index: &SourceIndex,
-) -> ResolvedPath {
-    resolve_path_from_context(&route.path, &route.scope, path, index, &mut BTreeSet::new())
-}
-
-pub(super) fn external_is_keyless(path: &[String]) -> bool {
-    (path.len() == 2
-        && path.first().is_some_and(|segment| segment == "primitive")
-        && path.get(1).is_some_and(|segment| primitive_name(segment)))
-        || path_matches(path, &["std", "string", "String"])
-        || path_matches(path, &["std", "vec", "Vec"])
-        || path_matches(path, &["std", "collections", "VecDeque"])
-        || path_matches(path, &["std", "collections", "LinkedList"])
-        || path_matches(path, &["std", "collections", "BinaryHeap"])
-        || path_matches(path, &["std", "collections", "HashSet"])
-        || path_matches(path, &["std", "collections", "BTreeSet"])
-        || path_matches(path, &["std", "boxed", "Box"])
-        || path_matches(path, &["core", "option", "Option"])
-        || path_matches(path, &["std", "rc", "Rc"])
-        || path_matches(path, &["std", "sync", "Arc"])
-        || path_matches(path, &["core", "pin", "Pin"])
-        || path_matches(path, &["std", "cell", "RefCell"])
-        || path_matches(path, &["std", "cell", "Cell"])
-        || path_matches(path, &["std", "sync", "Mutex"])
-        || path_matches(path, &["std", "sync", "RwLock"])
-        || path_matches(path, &["serde_bytes", "ByteBuf"])
-}
-
-pub(super) fn external_is_value(path: &[String]) -> bool {
-    path.len() == 2 && path[0] == "serde_json" && path[1] == "Value"
 }

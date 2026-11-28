@@ -108,6 +108,7 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
 
 rewrite_scalar!(CodecId);
 rewrite_scalar!(CodecName);
+rewrite_scalar!(super::options::BlankText);
 rewrite_scalar!(super::parameter::Tolerance);
 rewrite_scalar!(super::units::Quantity);
 rewrite_scalar!(NativeName);
@@ -207,7 +208,7 @@ rewrite_enum!(AnyConstruction, []; {Point(value), Direction(value), Axis(value),
 rewrite_enum!(ScalarDimension, []; {Length(value), Angle(value), Ratio(value), Uv {u, v}, Position {x, y, z}, Components {x, y, z}, PlaneEquation {a, b, c, d}, ParameterRatio(value)});
 rewrite_enum!(PostStep, []; {Flip(value), Translate {axis, distance}, Rotate {axis, angle}, AxisRotate {axis, angle}, Fixed(value)});
 rewrite_record!(SourceMode, []; {codec, method, native_options, source_settings});
-rewrite_enum!(NativeOption, []; {Bool(value), Integer(value), Real(value), Length(value), Angle(value), Text(value), Selection(value), OrderedSelection(value)});
+rewrite_enum!(NativeOption, []; {Bool(value), Integer(value), Real(value), Length(value), Angle(value), Text(value), Blank(value), Selection(value), OrderedSelection(value)});
 rewrite_enum!(RefTarget, []; {
     Parameter(value),
     External {definition, name},

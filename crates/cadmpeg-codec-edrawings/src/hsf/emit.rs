@@ -45,6 +45,7 @@ const POSITION_BYTES: u64 = 24;
 /// Bytes one retained triangle takes.
 const TRIANGLE_BYTES: u64 = 12;
 /// Most shell failures a loss message lists.
+// resource-cap: MAX_LISTED = N
 const MAX_LISTED: usize = 5;
 
 /// A body that was built.

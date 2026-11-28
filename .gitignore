@@ -8,7 +8,7 @@ Cargo.lock.orig
 /.scratch*
 /.repro/
 
-# Private local corpus (golden testing; never committed — see corpus/README.md)
+# Local input directory
 corpus/private/
 
 # Fuzzing artifacts (the fuzz crate is workspace-excluded, so it has its own target/)
@@ -34,3 +34,5 @@ crates/cadmpeg-fuzz/artifacts/
 
 
 *.pyc
+# Merge conflict backups
+*.premerge

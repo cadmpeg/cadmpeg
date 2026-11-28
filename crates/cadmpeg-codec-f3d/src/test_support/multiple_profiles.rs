@@ -169,7 +169,7 @@ pub(crate) fn fixture_with_nested_records(
         .unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, options);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
         .unwrap();
     zip.write_all(&bytes).unwrap();

@@ -51,6 +51,7 @@ pub(super) type BlendMemo<'a, 'ctx> =
     RefCell<HashMap<(u32, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
 
 /// Blends a rolling-ball support may nest within one another.
+// resource-cap: MAX_BLEND_NESTING = 4
 const MAX_BLEND_NESTING: usize = 3;
 
 #[derive(Default)]

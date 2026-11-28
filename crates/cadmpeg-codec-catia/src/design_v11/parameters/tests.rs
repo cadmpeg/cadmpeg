@@ -77,6 +77,21 @@ fn a_literal_parameter_holds_its_stored_value() {
     assert_eq!(thickness.native_ref, legacy.native_ref);
 }
 
+/// A user parameter takes its rank in the stored order of the user
+/// parameters as its position.
+#[test]
+fn a_user_parameter_is_placed_by_its_stored_rank() {
+    let result = decode(standard_catpart_with_formula_relation(4, false));
+    let legacy = &result.ir().model.parameters;
+    assert!(legacy.len() > 1);
+    for model in legacy {
+        assert_eq!(
+            parameter(&result, &model.name).position,
+            Some(model.ordinal)
+        );
+    }
+}
+
 #[test]
 fn a_formula_of_unit_arithmetic_is_neutral() {
     let result = decode(standard_catpart_with_formula_relation(4, false));

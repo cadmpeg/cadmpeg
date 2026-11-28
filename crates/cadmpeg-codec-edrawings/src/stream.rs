@@ -30,6 +30,7 @@ const COMMENT_END: u8 = b'\n';
 /// Bytes of one `f32`.
 const F32_BYTES: usize = 4;
 /// The longest comment line the reader accepts, version number included.
+// resource-cap: MAX_COMMENT_LEN = 2
 const MAX_COMMENT_LEN: usize = 64;
 /// Tag of the info record.
 const TAG_INFO: u8 = info::TAG_VALUE;
@@ -38,6 +39,7 @@ const TAG_BOUNDS: u8 = bounds_record::TAG_VALUE;
 /// Tag of the body record.
 const TAG_BODY: u8 = wrapper::BODY_TAG_VALUE;
 /// The most wrapper records read before the body record.
+// resource-cap: MAX_WRAPPER_RECORDS = 2
 const MAX_WRAPPER_RECORDS: usize = 8;
 /// Tail the observed files carry after the zlib stream: one zero byte.
 const OBSERVED_TAIL: &[u8] = &[0];
