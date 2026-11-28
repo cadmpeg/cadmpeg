@@ -881,7 +881,7 @@ fn a_tool_result_state_joins_the_result_state_of_its_feature() {
 }
 
 #[test]
-fn a_writer_result_state_of_this_pass_keeps_a_fallback_tool_identity() {
+fn a_fallback_tool_identity_keeps_its_generator_without_a_writer_result_state() {
     let (mut features, replaced) = bound_two_tool_combine();
     let writer = super::ToolResultState {
         feature: features[0].id.clone(),
@@ -896,8 +896,7 @@ fn a_writer_result_state_of_this_pass_keeps_a_fallback_tool_identity() {
     };
     assert_eq!(bodies[0].local_id.as_str(), pair(150, true).id());
     assert_eq!(bodies[1].local_id.as_str(), pair(250, true).id());
-    assert_eq!(states.len(), 1);
-    assert_eq!(states[0].output_of, features[0].id);
+    assert!(states.is_empty(), "{states:?}");
 }
 
 #[test]

@@ -540,15 +540,61 @@ pub(crate) fn bind(
 /// Align the replaced Combine tools with the result states that `states`
 /// holds, then add the tool result states. Alignment reads only the result
 /// states that exist before this pass, so a writer row of this pass never
-/// renames or reverts a tool.
+/// renames or reverts a tool. A feature whose tool body keeps a body-map pair
+/// identity gains no result state, because a result state of slots cannot
+/// list that identity.
 pub(crate) fn apply_result_states(
     features: &mut [Feature],
     states: &mut Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
-    (results, replaced): (Vec<ToolResultState>, Vec<ReplacedTools>),
+    (mut results, replaced): (Vec<ToolResultState>, Vec<ReplacedTools>),
 ) -> Vec<LossNote> {
+    let combines = replaced
+        .iter()
+        .map(|replaced| replaced.feature.clone())
+        .collect::<Vec<_>>();
     let losses = align_with_result_states(features, states, replaced);
+    let unlisted = unlisted_tool_generators(features, states, &combines, &results);
+    results.retain(|result| !unlisted.contains(&result.feature));
     add_result_states(states, results);
     losses
+}
+
+/// The generating features of generated tool bodies that have no result state
+/// and whose identity no slot of a tool result state of that feature names.
+fn unlisted_tool_generators(
+    features: &[Feature],
+    states: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
+    combines: &[FeatureId],
+    results: &[ToolResultState],
+) -> Vec<FeatureId> {
+    let mut unlisted = Vec::new();
+    for feature in features
+        .iter()
+        .filter(|feature| combines.contains(&feature.id))
+    {
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let BodySelection::Generated { bodies, .. } = operands.tools() else {
+            continue;
+        };
+        for body in bodies {
+            if states.iter().any(|state| state.output_of == body.feature) {
+                continue;
+            }
+            let listed = results
+                .iter()
+                .filter(|result| result.feature == body.feature)
+                .flat_map(|result| &result.slots)
+                .any(|slot| slot.to_string() == body.local_id.as_str());
+            if !listed && !unlisted.contains(&body.feature) {
+                unlisted.push(body.feature.clone());
+            }
+        }
+    }
+    unlisted
 }
 
 /// Add each tool result state to the result state of its feature. A feature
