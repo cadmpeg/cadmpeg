@@ -657,6 +657,26 @@ pub(crate) enum F3dLossCode {
     ParameterReferencedDesignUnscoped,
     /// Model parameters whose owner feature has no timeline item stay v10 parameters.
     ParameterOwnerOutsideTimeline,
+    /// Sketch relations on an end of a closed or unbounded curve, the center
+    /// of a curve that has none, or a point whose minted id another entity
+    /// holds: they state the curve.
+    DesignSketchLocusUnplaced,
+    /// Points of sketch curves where two or more point entities lie that the
+    /// source names alike: no point entity holds the role there, and a
+    /// relation on the point names a point minted there.
+    DesignSketchLocusAmbiguous,
+    /// Sketch relations that name one point entity for both operands of a
+    /// coincidence: the point states the coincidence, and the design holds
+    /// no relation record for it.
+    DesignSketchRelationSinglePoint,
+    /// Sketch relations with no typed relation of their operands and value:
+    /// they state their native kind.
+    DesignSketchRelationNative,
+    /// Sketch entities with no planar curve state their native kind.
+    DesignSketchEntityNative,
+    /// Sketch dimensions that bind no design parameter of their scope state
+    /// the stored value of their parameter record, or no value.
+    DesignSketchDimensionUnbound,
     /// Model parameters whose owner is unresolved stay v10 parameters.
     ParameterOwnerUnresolvedOmitted,
     /// Parameters with a blank name stay v10 parameters.
@@ -675,6 +695,10 @@ pub(crate) enum F3dLossCode {
     HistoryRollbackUnread,
     /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
     HistoryRollbackBoundUnread,
+    /// A timeline item matches its v10 feature by its position in its Design stream because no scope record states the pairing.
+    HistoryItemMatchedByPosition,
+    /// An archive member's feature does not name the component that owns it, because the member's scope does not span the owner's definition.
+    HistoryMemberComponentUnstated,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1285,9 +1309,11 @@ pub(crate) enum F3dLossCode {
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
     BodylessDesignCarrier,
-    /// Empty modern model-body maps select no body, and the design declares no
-    /// body, sketch entity, or reference image.
+    /// The design selects no body and declares no body, sketch entity,
+    /// reference image, or Design record.
     EmptyDesign,
+    /// A design stores Design records and no geometry carrier transferred.
+    DesignRecordsUntransferred,
     /// A part design stores mesh geometry containers and no BREP entry, and no mesh body transferred.
     MeshOnlyDesignUntransferred,
     /// An assembly document's geometry lives in external references.
@@ -1848,6 +1874,12 @@ impl F3dLossCode {
         Self::ParameterExpressionUnbound,
         Self::ParameterReferencedDesignUnscoped,
         Self::ParameterOwnerOutsideTimeline,
+        Self::DesignSketchLocusUnplaced,
+        Self::DesignSketchLocusAmbiguous,
+        Self::DesignSketchRelationSinglePoint,
+        Self::DesignSketchRelationNative,
+        Self::DesignSketchEntityNative,
+        Self::DesignSketchDimensionUnbound,
         Self::ParameterOwnerUnresolvedOmitted,
         Self::ParameterNameBlank,
         Self::ConfigurationReferencedDesignUnscoped,
@@ -1857,6 +1889,8 @@ impl F3dLossCode {
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackBoundUnread,
+        Self::HistoryItemMatchedByPosition,
+        Self::HistoryMemberComponentUnstated,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2201,6 +2235,7 @@ impl F3dLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::EmptyDesign,
+        Self::DesignRecordsUntransferred,
         Self::MeshOnlyDesignUntransferred,
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
@@ -2884,6 +2919,12 @@ impl F3dLossCode {
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::ParameterReferencedDesignUnscoped => "parameter.referenced-design-unscoped",
             Self::ParameterOwnerOutsideTimeline => "parameter.owner-outside-timeline",
+            Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
+            Self::DesignSketchLocusAmbiguous => "design.sketch-locus-ambiguous",
+            Self::DesignSketchRelationSinglePoint => "design.sketch-relation-single-point",
+            Self::DesignSketchRelationNative => "design.sketch-relation-native",
+            Self::DesignSketchEntityNative => "design.sketch-entity-native",
+            Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
             Self::ParameterOwnerUnresolvedOmitted => "parameter.owner-unresolved-omitted",
             Self::ParameterNameBlank => "parameter.name-blank",
             Self::ConfigurationReferencedDesignUnscoped => {
@@ -2897,6 +2938,8 @@ impl F3dLossCode {
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
+            Self::HistoryItemMatchedByPosition => "history.item-matched-by-position",
+            Self::HistoryMemberComponentUnstated => "history.member-component-unstated",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -3432,6 +3475,7 @@ impl F3dLossCode {
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::EmptyDesign => "design.empty",
+            Self::DesignRecordsUntransferred => "design.records-untransferred",
             Self::MeshOnlyDesignUntransferred => "design.mesh-only-untransferred",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
@@ -3638,6 +3682,7 @@ impl F3dLossCode {
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
             | Self::MeshOnlyDesignUntransferred
+            | Self::DesignRecordsUntransferred
             | Self::MissingGeometryStream
             | Self::XrefCycle
             | Self::XrefMemberMissing
@@ -3981,6 +4026,8 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4329,6 +4376,12 @@ impl F3dLossCode {
             | Self::BodyDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameUndecoded
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchLocusAmbiguous
+            | Self::DesignSketchRelationSinglePoint
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchDimensionUnbound
             | Self::TopologyFaceBoundaryUnstated => Severity::Warning,
         }
     }
@@ -4767,6 +4820,8 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5136,6 +5191,7 @@ impl F3dLossCode {
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
             | Self::MeshOnlyDesignUntransferred
+            | Self::DesignRecordsUntransferred
             | Self::SketchCurveUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
@@ -5144,6 +5200,12 @@ impl F3dLossCode {
             | Self::MeshBodyIdentityAssumed
             | Self::DialectLayerCollision
             | Self::FlaggedBaseFeatureBodySelected
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchLocusAmbiguous
+            | Self::DesignSketchRelationSinglePoint
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchDimensionUnbound
             | Self::DesignIntentUndecoded
             | Self::DesignIntentUnreadable => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
@@ -5664,6 +5726,12 @@ mod tests {
                 "parameter.expression-unbound",
                 "parameter.referenced-design-unscoped",
                 "parameter.owner-outside-timeline",
+                "design.sketch-locus-unplaced",
+                "design.sketch-locus-ambiguous",
+                "design.sketch-relation-single-point",
+                "design.sketch-relation-native",
+                "design.sketch-entity-native",
+                "design.sketch-dimension-unbound",
                 "parameter.owner-unresolved-omitted",
                 "parameter.name-blank",
                 "configuration.referenced-design-unscoped",
@@ -5673,6 +5741,8 @@ mod tests {
                 "configuration.property-unprojected",
                 "history.rollback-unread",
                 "history.rollback-bound-unread",
+                "history.item-matched-by-position",
+                "history.member-component-unstated",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
@@ -6017,6 +6087,7 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "design.empty",
+                "design.records-untransferred",
                 "design.mesh-only-untransferred",
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",

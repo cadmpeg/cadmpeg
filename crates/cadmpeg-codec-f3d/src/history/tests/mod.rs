@@ -32,6 +32,7 @@ mod state_pairs;
 mod state_visits;
 mod stored_chain;
 mod surface_stitch;
+mod terminal_operands;
 
 mod recipe_transitions;
 

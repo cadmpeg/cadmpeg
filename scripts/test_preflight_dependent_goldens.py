@@ -56,6 +56,8 @@ class DependentGoldens(harness.FixtureCase):
         self.assertNotIn("cadmpeg-codec-step", results[0].details)
         self.assertIn("run: cargo test-fast golden",
                       results[0].details)
+        self.assertIn("regenerate intended changes with UPDATE_GOLDEN=1 cargo test-fast golden",
+                      results[0].details)
 
     def test_leaf_codec_passes(self) -> None:
         self.repo.commit({"crates/cadmpeg-codec-sat/src/lib.rs": "\n"})
@@ -64,8 +66,6 @@ class DependentGoldens(harness.FixtureCase):
     def test_tooling_only_change_passes(self) -> None:
         self.repo.commit({"scripts/tool.py": "\n"})
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
-
-
 
 if __name__ == "__main__":
     unittest.main()
