@@ -6,6 +6,7 @@
 //! <!-- /generated: capability ironcad -->
 
 mod acis;
+mod binding;
 mod container;
 mod decode;
 mod dialect;
@@ -17,6 +18,7 @@ mod layout;
 mod loss;
 mod parasolid;
 mod placement;
+mod shape_contents;
 mod tree;
 mod units;
 

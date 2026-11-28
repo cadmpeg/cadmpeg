@@ -16,6 +16,11 @@ pub fn public_access(data: &[u8]) {
     drop(crate::placement::records(data));
 }
 
+/// Exercise the `Shape Contents` scene-object reader.
+pub fn shape_contents(data: &[u8]) {
+    drop(crate::shape_contents::objects(data));
+}
+
 /// Exercise the `Document Data` unit-entry reader.
 pub fn document_units(data: &[u8]) {
     std::hint::black_box(crate::units::scene_units(data));

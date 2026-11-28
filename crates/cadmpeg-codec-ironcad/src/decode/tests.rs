@@ -32,6 +32,21 @@ fn count(losses: &[LossNote], code: IronCadLossCode) -> usize {
     losses.iter().filter(|loss| loss.code == code).count()
 }
 
+/// Binds `scene` by rank and places it.
+fn ranked(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    results: &[(Option<usize>, Vec<cadmpeg_ir::ids::BodyId>)],
+    scene: &[crate::placement::SceneRecord],
+    tree: &[crate::tree::Assembly],
+    losses: &mut Vec<LossNote>,
+) -> Vec<cadmpeg_ir::ids::OccurrenceId> {
+    let Some(places) = super::rank_binding(scene, results.len(), tree, losses) else {
+        return Vec::new();
+    };
+    super::place(ctx, ir, results, scene, &places, tree, losses).unwrap()
+}
+
 /// A part pair: a feature record inside a node, then the result record.
 fn part(feature: &[u8], result: &[u8]) -> Vec<u8> {
     node(&[
@@ -199,15 +214,7 @@ fn part_records_that_do_not_match_the_part_results_are_unbound() {
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let placed = super::place(
-        &ctx,
-        &mut ir,
-        vec![(None, Vec::new())],
-        &[],
-        &[],
-        &mut losses,
-    )
-    .unwrap();
+    let placed = ranked(&ctx, &mut ir, &[(None, Vec::new())], &[], &[], &mut losses);
     assert!(placed.is_empty());
     assert_eq!(count(&losses, IronCadLossCode::PlacementUnbound), 1);
     assert!(ir.model.product_definitions.is_empty());
@@ -383,9 +390,20 @@ fn a_sole_result_record_gives_up_its_withheld_face_under_the_unqualified_id() {
 
 /// A part or assembly record translated by `z` millimetres.
 fn scene_record(name: &str, has_features: bool, z: f64) -> crate::placement::SceneRecord {
+    use crate::placement::Role;
     crate::placement::SceneRecord {
         name: name.to_owned(),
-        has_features,
+        role: if has_features {
+            Role::Part
+        } else {
+            Role::Assembly
+        },
+        id: None,
+        copy: false,
+        paths: Vec::new(),
+        matrix_searched: false,
+        version_unrecognized: false,
+        embedded: None,
         transform: cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -415,14 +433,23 @@ fn placed_scene(
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     let results = vec![(None, Vec::new()), (b_assembly, Vec::new())];
-    let placed =
-        super::place(&ctx, &mut ir, results, &scene, tree_assemblies, &mut losses).unwrap();
+    let placed = ranked(
+        &ctx,
+        &mut ir,
+        &results,
+        &scene,
+        tree_assemblies,
+        &mut losses,
+    );
     (ir, placed, losses)
 }
 
 #[test]
 fn an_assembly_of_the_tree_holds_its_parts_and_is_placed_by_its_record() {
-    let tree = [crate::tree::Assembly { parent: None }];
+    let tree = [crate::tree::Assembly {
+        parent: None,
+        end: 0,
+    }];
     let (ir, placed, losses) = placed_scene(&tree, Some(0));
     assert_eq!(count(&losses, IronCadLossCode::AssemblyBoundByOrder), 1);
     assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
@@ -468,8 +495,14 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
         scene_record("outer", false, 100.0),
     ];
     let tree = [
-        crate::tree::Assembly { parent: Some(1) },
-        crate::tree::Assembly { parent: None },
+        crate::tree::Assembly {
+            parent: Some(1),
+            end: 0,
+        },
+        crate::tree::Assembly {
+            parent: None,
+            end: 0,
+        },
     ];
     let payload = plane_face_body();
     let arena = DecodeArena::new();
@@ -478,7 +511,7 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     let results = vec![(Some(1), Vec::new()), (Some(0), Vec::new())];
-    let placed = super::place(&ctx, &mut ir, results, &scene, &tree, &mut losses).unwrap();
+    let placed = ranked(&ctx, &mut ir, &results, &scene, &tree, &mut losses);
     assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
     let name = |id: &cadmpeg_ir::ids::OccurrenceId| {
         let occurrence = ir.model.occurrences.iter().find(|o| &o.id == id).unwrap();
@@ -518,4 +551,116 @@ fn unit_notes_are_charged_by_kind() {
     assert!(super::unit_losses(scene, &mut losses).is_none());
     assert_eq!(count(&losses, IronCadLossCode::UnitsUnrecognized), 1);
     assert_eq!(count(&losses, IronCadLossCode::UnitsScaleConflict), 2);
+}
+
+#[test]
+fn a_body_property_set_names_the_body_and_a_searched_matrix_is_charged() {
+    use crate::placement::{PropertyValue, BODY_SET_CLASS};
+    let body = plane_face_body();
+    let payload = part(&body, &body);
+    let (bodies, losses) = classified(&payload);
+    let mut record = scene_record("Part1", true, 0.0);
+    record.matrix_searched = true;
+    record.embedded = Some((
+        BODY_SET_CLASS,
+        vec![
+            (
+                "PartName".to_owned(),
+                PropertyValue::Text("Body<1>".to_owned()),
+            ),
+            (
+                "PartVolume".to_owned(),
+                PropertyValue::Text("0,5".to_owned()),
+            ),
+        ],
+    ));
+    let scene = super::Scene {
+        records: Some(vec![record]),
+        ..super::Scene::default()
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let decoded = transfer(
+        &ctx,
+        CadIr::empty(),
+        bodies,
+        scene,
+        losses,
+        Sha256Digest::digest(&payload),
+    )
+    .unwrap();
+    assert_eq!(
+        decoded.ir.geometry.bodies[0].name.as_deref(),
+        Some("Body<1>")
+    );
+    let losses = &decoded.body.losses;
+    assert_eq!(count(losses, IronCadLossCode::PlacementMatrixSearched), 1);
+    let unread: Vec<_> = losses
+        .iter()
+        .filter(|loss| loss.code == IronCadLossCode::PropertyUnread.note("").code)
+        .map(|loss| loss.message.clone())
+        .collect();
+    assert_eq!(unread.len(), 1);
+    assert!(unread[0].contains("PartVolume") && !unread[0].contains("PartName"));
+}
+
+#[test]
+fn a_copy_stored_before_its_part_leaves_the_definition_to_the_part_record() {
+    use crate::binding::Place;
+    use crate::placement::PropertyValue;
+    let mut copy = scene_record("", true, 5.0);
+    copy.copy = true;
+    let mut part = scene_record("Stool", true, 1.0);
+    part.properties = vec![(
+        "Part Number".to_owned(),
+        PropertyValue::Text("S-1".to_owned()),
+    )];
+    let scene = [copy, part];
+    let payload = plane_face_body();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    let places = [Some(Place::Part(0)), Some(Place::Part(0))];
+    let placed = super::place(
+        &ctx,
+        &mut ir,
+        &[(None, Vec::new())],
+        &scene,
+        &places,
+        &[],
+        &mut losses,
+    )
+    .unwrap();
+    assert_eq!(placed.len(), 2);
+    assert_eq!(ir.model.product_definitions.len(), 1);
+    let definition = &ir.model.product_definitions[0];
+    assert_eq!(definition.source_name.as_deref(), Some("Stool"));
+    assert_eq!(definition.part_number.as_deref(), Some("S-1"));
+}
+
+#[test]
+fn part_results_in_unbound_assembly_nodes_are_charged_as_flattened() {
+    let scene = [scene_record("a", true, 1.0)];
+    let objects = [crate::shape_contents::SceneObject {
+        id: 1,
+        name: "a".to_owned(),
+        end: 100,
+        kind: crate::shape_contents::ObjectKind::Body,
+    }];
+    let spans = [crate::binding::ResultSpan {
+        child_start: 10,
+        end: 100,
+        assembly: Some(0),
+    }];
+    let tree = [crate::tree::Assembly {
+        parent: None,
+        end: 200,
+    }];
+    let mut losses = Vec::new();
+    let places = super::identity_binding(&scene, &objects, &spans, &tree, &mut losses);
+    assert_eq!(places, [Some(crate::binding::Place::Part(0))]);
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 1);
 }

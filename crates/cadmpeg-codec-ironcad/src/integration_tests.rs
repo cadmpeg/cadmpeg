@@ -390,6 +390,7 @@ fn a_brep_data_stream_that_does_not_open_is_one_unreadable_give_up() {
         ![
             IronCadLossCode::KernelUnverified,
             IronCadLossCode::PlacementBoundByOrder,
+            IronCadLossCode::PlacementBoundByIdentity,
             IronCadLossCode::FeatureShapeRetained,
             IronCadLossCode::BodyExtensionsRetained,
         ]
@@ -756,9 +757,9 @@ fn parasolid_records_rewrite_into_framed_neutral_transmits() {
 #[test]
 fn scene_parts_are_placed_by_their_public_access_matrices() {
     let result = decode(SCENE);
-    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByIdentity), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 0);
     assert_eq!(count(&result, IronCadLossCode::PlacementUnbound), 0);
-    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
     assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
     let model = &result.ir().model;
     let mut names: Vec<_> = model
@@ -925,7 +926,7 @@ fn a_rotated_block_is_turned_30_degrees_about_z() {
 #[test]
 fn an_assembly_matrix_places_its_member_parts() {
     let result = decode("Assembly_moved.ics");
-    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByIdentity), 1);
     assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
     assert_placement(
         placement(&result, "Assembly1"),
@@ -991,7 +992,7 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
         ),
     ] {
         let result = decode(name);
-        assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+        assert_eq!(count(&result, IronCadLossCode::PlacementBoundByIdentity), 1);
         assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
         assert_eq!(members(&result, None), ["Outer"]);
         assert_eq!(members(&result, Some("Outer")), ["PartC", "Inner"]);
