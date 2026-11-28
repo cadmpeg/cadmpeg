@@ -54,7 +54,7 @@ class DependentGoldens(harness.FixtureCase):
         self.assertEqual(harness.statuses(results), ["WARN"])
         self.assertIn("cadmpeg-codec-sat", results[0].details)
         self.assertNotIn("cadmpeg-codec-step", results[0].details)
-        self.assertIn("run: cargo test -q --no-fail-fast -p cadmpeg-codec-sat golden",
+        self.assertIn("run: cargo test-fast golden",
                       results[0].details)
 
     def test_leaf_codec_passes(self) -> None:
@@ -65,13 +65,12 @@ class DependentGoldens(harness.FixtureCase):
         self.repo.commit({"scripts/tool.py": "\n"})
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
 
-    def test_full_runs_and_reports_drift(self) -> None:
+    def test_full_still_advises_workspace_golden_command(self) -> None:
         self.repo.commit({"crates/cadmpeg-asm/src/lib.rs": "// body kind\n"})
-        context = self.repo.context(full=True)
-        context.run = lambda command, env=None: (101, "golden mismatch: body kind sheet -> solid")
-        results = harness.run_check(check, context)
-        self.assertEqual(harness.statuses(results), ["FAIL"])
-        self.assertIn("golden mismatch: body kind sheet -> solid", results[0].details)
+        results = harness.run_check(check, self.repo.context(full=True))
+        self.assertEqual(harness.statuses(results), ["WARN"])
+        self.assertIn("regenerate intended changes with UPDATE_GOLDEN=1 cargo test-fast golden",
+                      results[0].details)
 
 
 if __name__ == "__main__":

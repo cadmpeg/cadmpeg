@@ -192,7 +192,7 @@ fn sync_configuration_design_state(
         ));
     };
     let mut current_projection = ir.clone();
-    let unprojected = project_configuration_design_states(
+    let projection = project_configuration_design_states(
         hash_ctx,
         &mut current_projection,
         &native.feature_histories,
@@ -201,7 +201,7 @@ fn sync_configuration_design_state(
         form_padding,
         None,
     )?;
-    if unprojected > 0 {
+    if projection.unprojected > 0 {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration design states exceed the local projection work cap".into(),
         ));
@@ -296,7 +296,7 @@ fn sync_configuration_design_state(
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
-    let unprojected = project_configuration_design_states(
+    let projection = project_configuration_design_states(
         hash_ctx,
         &mut projected,
         &native.feature_histories,
@@ -305,7 +305,7 @@ fn sync_configuration_design_state(
         form_padding,
         None,
     )?;
-    if unprojected > 0 {
+    if projection.unprojected > 0 {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration design states exceed the local projection work cap".into(),
         ));

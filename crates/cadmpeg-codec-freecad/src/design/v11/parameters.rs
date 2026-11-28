@@ -189,9 +189,9 @@ pub(super) fn project(
             )
         } else {
             (
-                name(parameter),
+                name(parameter, carrier == Some(CONSTRAINT_LIST)),
                 None,
-                BTreeMap::default(),
+                shadowed_name(parameter),
                 BTreeMap::default(),
             )
         };
@@ -786,11 +786,33 @@ fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// The source's name of the parameter: a named constraint's name, or the
-/// property's name.
-fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
-    let name = property(parameter, "source_name").unwrap_or(&parameter.name);
+/// The source's name of the parameter: the name of a sketch constraint
+/// (`constraint`) that `FreeCAD` resolves it by, or the property's name
+/// (§5.12).
+fn name(parameter: &LegacyParameter, constraint: bool) -> Option<NonBlankString> {
+    let name = property(parameter, "source_name");
+    let name = if constraint {
+        name?
+    } else {
+        name.unwrap_or(&parameter.name)
+    };
     NonBlankString::new(name.to_owned())
+}
+
+/// The `Name` of a sketch constraint that an earlier constraint of its
+/// sketch also stores, as the native option `fcstd:constraint_name`
+/// (§5.12).
+fn shadowed_name(parameter: &LegacyParameter) -> BTreeMap<CodecName, NativeOption> {
+    property(parameter, "shadowed_name")
+        .and_then(|name| NonBlankString::new(name.to_owned()))
+        .map(|name| {
+            (
+                cadmpeg_ir::codec_name!("fcstd:constraint_name"),
+                NativeOption::Text(Dimension::Literal(name)),
+            )
+        })
+        .into_iter()
+        .collect()
 }
 
 /// A cell's kind, value, and expression (§5.12), read as `FreeCAD` reads

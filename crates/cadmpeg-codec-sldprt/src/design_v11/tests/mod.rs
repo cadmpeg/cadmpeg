@@ -315,143 +315,6 @@ fn a_configuration_is_placed_by_its_history_list() {
     assert_no_design_findings(&ir);
 }
 
-/// A configuration is restated without its custom properties, and one other
-/// than the active one without the feature suppressions that differ from the
-/// active one's and that its overrides do not state. Configurations whose
-/// positions follow their ordinals keep the ordinals.
-#[test]
-fn a_configuration_is_restated_without_what_its_record_does_not_state() {
-    use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
-    use cadmpeg_ir::design::projection::restated::Restater;
-    use cadmpeg_ir::features::parameters::{
-        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Model,
-    };
-    use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
-    use std::collections::{BTreeMap, BTreeSet};
-
-    let id =
-        |key: &str| ConfigurationId::mint(format!("sldprt:model:configuration#{key}")).unwrap();
-    let boss = FeatureId::mint("sldprt:model:feature#boss").unwrap();
-    let state = |evaluation| ConfigurationFeatureState {
-        evaluation,
-        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
-        definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-    };
-    let model = |key: &str, ordinal, evaluation, properties: &[(&str, &str)]| Model {
-        id: id(key),
-        ordinal,
-        active: ordinal == 0,
-        source_index: Some(ordinal),
-        name: Some(key.to_owned()),
-        material: None,
-        properties: properties
-            .iter()
-            .map(|(name, value)| {
-                (
-                    cadmpeg_core::text::NonBlankString::new(*name).unwrap(),
-                    (*value).to_owned(),
-                )
-            })
-            .collect(),
-        parameter_overrides: BTreeMap::new(),
-        bodies: None,
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::from([(boss.clone(), state(evaluation))]),
-        native_ref: None,
-    };
-    let design = |key: &str| DesignConfiguration {
-        id: id(key),
-        scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
-        name: key.to_owned(),
-        position: None,
-        parent: None,
-        comment: None,
-        overrides: Overrides::default(),
-        active_arrangements: BTreeSet::new(),
-        materials: Vec::new(),
-        native_ref: Some(key.to_owned()),
-    };
-    let mut ir = CadIr::empty();
-    ir.model.configurations = vec![
-        model(
-            "default",
-            0,
-            ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
-            },
-            &[],
-        ),
-        model(
-            "short",
-            1,
-            ConfigurationEvaluation::Suppressed {},
-            &[("PartNo", "2")],
-        ),
-    ];
-    let configurations = super::configurations::Configurations {
-        records: vec![design("default"), design("short")],
-        active: Some(id("default")),
-    };
-    super::configurations::restate(&mut ir, &configurations, &[], &[]);
-    let default = ir.model.restated().get(id("default").as_str()).unwrap();
-    let active = Restater::Record(id("default").as_str().to_owned());
-    assert_eq!(
-        default.cut_by(|restater| restater == &active),
-        Some(BTreeSet::from(["ordinal"]))
-    );
-    let short = ir.model.restated().get(id("short").as_str()).unwrap();
-    let by = Restater::Record(id("short").as_str().to_owned());
-    assert_eq!(
-        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
-        Some(vec!["feature_states", "ordinal", "properties"])
-    );
-
-    let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
-    ir.model.configurations[1].properties.clear();
-    ir.model.configurations[1].feature_states = BTreeMap::from([(
-        boss.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
-            },
-            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other])
-                .unwrap(),
-            definition: FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane,
-            }),
-        },
-    )]);
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        boss.clone(),
-        state(ConfigurationEvaluation::Active {
-            outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
-        }),
-    )]);
-    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
-    super::configurations::restate(&mut ir, &configurations, &[], &[]);
-    let short = ir.model.restated().get(id("short").as_str()).unwrap();
-    assert_eq!(
-        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
-        Some(vec![
-            "feature_states.definition",
-            "feature_states.dependencies",
-            "ordinal"
-        ])
-    );
-
-    let mut configurations = configurations;
-    for (record, position) in configurations.records.iter_mut().zip(0..) {
-        record.position = Some(position);
-    }
-    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
-    super::configurations::restate(&mut ir, &configurations, &[], &[]);
-    let default = ir.model.restated().get(id("default").as_str()).unwrap();
-    assert_eq!(
-        default.cut_by(|restater| restater == &active),
-        Some(BTreeSet::new())
-    );
-}
-
 #[test]
 fn a_lone_configuration_without_source_index_is_the_active_one() {
     let keywords: [&[u8]; 2] = [
@@ -813,17 +676,25 @@ pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
 /// sketch `Sketch1` and its extrude `Boss`, with the v10 records the decoder
 /// types them from.
 fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNative) {
-    let mut ir = part_with_history(
-        keywords,
-        &[
-            ("moRefPlane_c", "Front", 2),
-            ("moRefPlane_c", "Top", 3),
-            ("moRefPlane_c", "Right", 4),
-            ("moOriginProfileFeature_c", "Origin", 106),
-            ("moProfileFeature_c", "Sketch1", 8),
-            ("moExtrusion_c", "Boss", 7),
-        ],
-    );
+    sketch_and_extrude_with(keywords, &[])
+}
+
+/// [`sketch_and_extrude_from`] whose history also declares the tree nodes
+/// `nodes`, by class, name and id.
+fn sketch_and_extrude_with(
+    keywords: &[u8],
+    nodes: &[(&str, &str, u32)],
+) -> (CadIr, crate::native::SldprtNative) {
+    let mut classes = vec![
+        ("moRefPlane_c", "Front", 2),
+        ("moRefPlane_c", "Top", 3),
+        ("moRefPlane_c", "Right", 4),
+        ("moOriginProfileFeature_c", "Origin", 106),
+        ("moProfileFeature_c", "Sketch1", 8),
+        ("moExtrusion_c", "Boss", 7),
+    ];
+    classes.extend_from_slice(nodes);
+    let mut ir = part_with_history(keywords, &classes);
     let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
@@ -1016,7 +887,12 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     let (mut ir, native) = sketch_and_extrude();
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -1181,7 +1057,12 @@ fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
     ir.model.sketch_entities = json::from_value(entities).unwrap();
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -1225,7 +1106,12 @@ fn typed_timeline<'a>(
     super::typed::Typed,
 ) {
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -1711,7 +1597,12 @@ fn members_follow_the_features_they_depend_on() {
     );
 
     let definition = ir.design.scopes[0].definition.clone();
-    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -1952,6 +1843,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 }
 
 mod configuration_states;
+mod configurations;
 mod datum;
 mod dimension_curves;
 pub(super) mod outside_history;

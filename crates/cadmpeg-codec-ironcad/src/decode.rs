@@ -42,10 +42,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut scene = Scene::default();
     if !ctx.container_only() {
         let brep = streams.read(ctx, &snapshot, BREP_DATA, |stream| {
-            tree::read(frame::payload(ctx, stream)?).map_err(CodecError::from)
+            let frame = frame::payload(ctx, stream)?;
+            trailing_loss(BREP_DATA, frame.trailing, &mut losses);
+            tree::read(frame.payload).map_err(CodecError::from)
         })?;
         let access = streams.read(ctx, &snapshot, PUBLIC_ACCESS, |stream| {
-            frame::payload(ctx, stream)
+            let frame = frame::payload(ctx, stream)?;
+            trailing_loss(PUBLIC_ACCESS, frame.trailing, &mut losses);
+            Ok(frame.payload)
         })?;
         let document = streams.read(ctx, &snapshot, DOCUMENT_DATA, Ok)?;
         if snapshot.stream(BREP_DATA).is_none() {
@@ -282,6 +286,15 @@ fn transfer(
     })
 }
 
+/// Charges the bytes of stream `name` after the last block of its frame.
+fn trailing_loss(name: &str, trailing: usize, losses: &mut Vec<LossNote>) {
+    if trailing > 0 {
+        losses.push(IronCadLossCode::FrameTrailingBytes.note(format!(
+            "`{name}`: {trailing} byte(s) after the last block of the frame are not read"
+        )));
+    }
+}
+
 /// Adds a dialect layer for every kernel record and decodes the body of each
 /// part result record.
 fn classify<'a>(
@@ -304,10 +317,10 @@ fn classify<'a>(
     for (ordinal, record) in records.iter().enumerate() {
         let carrier = format!("{BREP_DATA}/record {ordinal}");
         if !record.canonical_header {
-            losses.push(
-                IronCadLossCode::RecordHeaderUnrecognized
-                    .note(format!("{carrier}: header words differ from 1, 1, 1, 0")),
-            );
+            losses.push(IronCadLossCode::RecordHeaderUnrecognized.note(format!(
+                "{carrier}: the marker low byte differs from 0x01 or the header words \
+                         differ from 1, 1, 1, 0; the record is read by its kernel tag"
+            )));
         }
         match record.kernel {
             Kernel::Parasolid => {
