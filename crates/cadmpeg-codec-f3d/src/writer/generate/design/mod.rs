@@ -1256,6 +1256,16 @@ pub(super) fn root_scope(target: &CadIr) -> Option<&DesignScope> {
     root_scope_at(target).map(|at| &target.design.scopes[at])
 }
 
+/// Whether the root scope states a timeline: an ordered container among its
+/// roots.
+pub(super) fn states_timeline(target: &CadIr) -> bool {
+    root_scope(target).is_some_and(|scope| {
+        target.design.containers.iter().any(|container| {
+            matches!(container, Container::Ordered { .. }) && scope.roots.contains(container.id())
+        })
+    })
+}
+
 /// The position of [`root_scope`] among the document's scopes.
 pub(super) fn root_scope_at(target: &CadIr) -> Option<usize> {
     match target.design.scopes.as_slice() {

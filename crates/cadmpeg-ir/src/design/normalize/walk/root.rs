@@ -316,7 +316,8 @@ impl Walk for NativeOption {
             | Self::Real(_)
             | Self::Length(_)
             | Self::Angle(_)
-            | Self::Text(_) => Ok(()),
+            | Self::Text(_)
+            | Self::Blank(_) => Ok(()),
         }
     }
 }

@@ -12,8 +12,9 @@
 //! tree is one reference or the document's values confirm it. Any other
 //! text is a `Source` expression in the `SolidWorks` dialect, its references
 //! to parameters as reference tokens. A value is the cache the file stores:
-//! the literal, the dimension's stored `Value`, or the value the decoder
-//! read from a record that stores it in a stated unit.
+//! the value of the scalar record the dimension is bound to where it is the
+//! literal's number, else the literal, the dimension's stored `Value`, or the
+//! value the decoder read from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -340,6 +341,31 @@ impl<'a> Decoded<'a> {
     fn pmi_bound(&self, id: &ParameterId, name: &str) -> bool {
         self.parameter(id, name)
             .is_some_and(|parameter| parameter.pmi.is_some())
+    }
+
+    /// The cache the scalar record bound to the decoder's parameter of id
+    /// `id` named `name` stores for a parameter of `kind`, where it is the
+    /// number `literal` of the dimension's literal text: the stored value
+    /// (§5.12).
+    fn bound_cache(
+        &self,
+        id: &ParameterId,
+        name: &str,
+        kind: &ValueKind,
+        literal: &ParameterValue,
+    ) -> Option<ParameterValue> {
+        let parameter = self
+            .parameter(id, name)
+            .filter(|parameter| parameter.native_ref.is_some())?;
+        let cache = typed_cache(kind, parameter.value.clone()?)?;
+        match (&cache, literal) {
+            (ParameterValue::Number(stored), ParameterValue::Number(read))
+                if same_stored(stored.get(), read.get()) =>
+            {
+                Some(cache)
+            }
+            _ => None,
+        }
     }
 
     /// The decoder's parameter of id `id` named `name`.
@@ -903,7 +929,10 @@ fn parameter(
         comment: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-        native_ref: None,
+        native_ref: readings
+            .decoded
+            .parameter(&entry.id, entry.name.as_str())
+            .and_then(|parameter| parameter.native_ref.clone()),
     }
 }
 
@@ -1000,6 +1029,9 @@ fn read(
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
     if let Some((node, kind, value)) = literal(text, user) {
+        let value = decoded
+            .bound_cache(&entry.id, name, &kind, &value)
+            .unwrap_or(value);
         return Reading {
             kind,
             expression: Expression::Neutral(Neutral(node)),
@@ -1059,7 +1091,12 @@ fn read(
     let mut assumed = false;
     let mut decided = false;
     let (kind, value) = match parsed.and_then(cache) {
-        Some((kind, value)) => (kind, Some(value)),
+        Some((kind, value)) => {
+            let value = decoded
+                .bound_cache(&entry.id, name, &kind, &value)
+                .unwrap_or(value);
+            (kind, Some(value))
+        }
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
         None => match decoded
             .dimension(

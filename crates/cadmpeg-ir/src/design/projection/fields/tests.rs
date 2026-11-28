@@ -162,7 +162,8 @@ fn a_model_sketch_and_entity_serialize_with_the_keys_of_their_field_enums() {
         line.try_into().unwrap(),
     )
     .with_native_ref(Some("test:native#line".to_owned()))
-    .with_geometry_ref(Some("test:native#carrier".to_owned()));
+    .with_geometry_ref(Some("test:native#carrier".to_owned()))
+    .with_center_ref(Some("test:native#center".to_owned()));
     let mut sketch_keys = keys(super::ModelSketchField::ALL);
     sketch_keys.sort();
     assert_eq!(

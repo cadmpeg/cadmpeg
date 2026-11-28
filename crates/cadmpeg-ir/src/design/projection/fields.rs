@@ -324,6 +324,8 @@ pub enum ModelSketchEntityField {
     GeometryRef,
     /// `endpoint_refs`
     EndpointRefs,
+    /// `center_ref`
+    CenterRef,
     /// `geometry`
     Geometry,
 }
@@ -334,6 +336,7 @@ field_keys!(ModelSketchEntityField {
     native_ref => NativeRef,
     geometry_ref => GeometryRef,
     endpoint_refs => EndpointRefs,
+    center_ref => CenterRef,
     geometry => Geometry,
 });
 
