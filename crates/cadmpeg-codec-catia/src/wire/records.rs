@@ -18,7 +18,7 @@ type NativePcurveLanes = (
     Vec<FiniteVector<2>>,
 );
 
-use std::{borrow::Borrow, collections::HashSet, ops::Range};
+use std::{borrow::Borrow, ops::Range};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -618,6 +618,49 @@ impl ConsolidatedRecord {
     pub(crate) fn source_index(&self) -> usize {
         self.source_index
     }
+    pub(crate) fn payload_bytes<'a>(
+        &self,
+        data: &'a [u8],
+        sources: &[Vec<SourceExtent>],
+    ) -> Option<std::borrow::Cow<'a, [u8]>> {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { payload, .. } => {
+                Some(std::borrow::Cow::Borrowed(data.get(payload.clone())?))
+            }
+            ConsolidatedPlacement::Spanning { .. } => {
+                let header_len = match self.family {
+                    ConsolidatedFamily::A => a_frame::LEN,
+                    ConsolidatedFamily::B => b_frame::LEN,
+                };
+                let prefix = header_len.checked_add(usize::from(u8::from(self.width())))?;
+                let payload_start = self.source_range.start.checked_add(prefix)?;
+                let payload_end = self.source_range.end;
+                if payload_start > payload_end {
+                    return None;
+                }
+                let extents = sources.get(self.source_index)?;
+                let mut out = Vec::with_capacity(payload_end - payload_start);
+                let mut logical = 0usize;
+                for extent in extents {
+                    let range = extent.range();
+                    let ext_len = range.end.checked_sub(range.start)?;
+                    let ext_end = logical.checked_add(ext_len)?;
+                    if ext_end > payload_start && logical < payload_end {
+                        let copy_start = payload_start.max(logical) - logical;
+                        let copy_end = payload_end.min(ext_end) - logical;
+                        out.extend_from_slice(
+                            data.get(range.start + copy_start..range.start + copy_end)?,
+                        );
+                    }
+                    logical = ext_end;
+                    if logical >= payload_end {
+                        break;
+                    }
+                }
+                (out.len() == payload_end - payload_start).then_some(std::borrow::Cow::Owned(out))
+            }
+        }
+    }
     pub(crate) fn source_range(&self) -> &Range<usize> {
         &self.source_range
     }
@@ -795,73 +838,85 @@ where
                 source_ranges.push(range);
             }
         }
-        let mut source_records = Vec::new();
-        let mut source_offset = 0usize;
+        let mut source_records: Vec<ConsolidatedRecord> = Vec::new();
+        let mut extent_logical_starts = Vec::with_capacity(source_ranges.len());
+        let mut source_length = 0usize;
         for range in &source_ranges {
-            let start = range.start;
-            let end = range.end;
-            let mut pos = start;
-            while pos < end {
-                let Some(mut record) = parse_consolidated_record(data, pos, end) else {
-                    pos += 1;
-                    continue;
-                };
+            extent_logical_starts.push(source_length);
+            let Some(next_length) = source_length.checked_add(range.end - range.start) else {
+                return Ok(records);
+            };
+            source_length = next_length;
+        }
+        let mut extent_idx = 0usize;
+        let mut logical_pos = 0usize;
+        while logical_pos < source_length {
+            while extent_idx < source_ranges.len() {
+                let ext_start = extent_logical_starts[extent_idx];
+                let ext_len = source_ranges[extent_idx].end - source_ranges[extent_idx].start;
+                if logical_pos < ext_start + ext_len {
+                    break;
+                }
+                extent_idx += 1;
+            }
+            let Some(range) = source_ranges.get(extent_idx) else {
+                break;
+            };
+            let ext_logical_start = extent_logical_starts[extent_idx];
+            let phys_pos = range.start + (logical_pos - ext_logical_start);
+            let continuing_run = source_records
+                .last()
+                .is_some_and(|prev| prev.source_range.end == logical_pos);
+
+            if let Some(mut record) =
+                parse_consolidated_record(data, phys_pos, range.end).or_else(|| {
+                    continuing_run.then(|| {
+                        parse_consolidated_allocation_record(data, phys_pos, range.end).filter(
+                            |rec| {
+                                rec.flag() == ConsolidatedFrameFlag::Flag03
+                                    && WidthCodedToken::new(rec.width(), rec.header_token())
+                                        .ok()
+                                        .and_then(WidthCodedToken::compact_operand)
+                                        .is_some()
+                            },
+                        )
+                    })?
+                })
+            {
                 let Some(physical_range) = record.range() else {
                     return Ok(records);
                 };
-                record.source_index = source_index;
-                let Some(source_start) = source_offset.checked_add(physical_range.start - start)
+                let Some(source_start) =
+                    ext_logical_start.checked_add(physical_range.start - range.start)
                 else {
                     return Ok(records);
                 };
-                let Some(source_end) = source_offset.checked_add(physical_range.end - start) else {
+                let Some(source_end) =
+                    ext_logical_start.checked_add(physical_range.end - range.start)
+                else {
                     return Ok(records);
                 };
-                pos = physical_range.end;
+                record.source_index = source_index;
                 record.source_range = source_start..source_end;
+                logical_pos = source_end;
                 source_records.push(record);
+                continue;
             }
-            let Some(next_source_offset) = source_offset.checked_add(end - start) else {
-                return Ok(records);
-            };
-            source_offset = next_source_offset;
-        }
-        let mut record_starts = HashSet::new();
-        let mut record_ranges = HashSet::new();
-        for record in &source_records {
-            record_starts.insert(record.source_range.start);
-            record_ranges.insert((record.source_range.start, record.source_range.end));
-        }
-        loop {
-            let mut added = Vec::new();
-            let mut source_ends = HashSet::new();
 
-            for record in &source_records {
-                source_ends.insert(record.source_range.end);
-            }
-            for source_start in source_ends {
-                if record_starts.contains(&source_start) {
-                    continue;
-                }
-                let Some(record) = parse_spanning_consolidated_record(
+            if continuing_run {
+                if let Some(record) = parse_spanning_consolidated_record(
                     data,
                     &source_ranges,
                     source_index,
-                    source_start,
-                ) else {
+                    logical_pos,
+                ) {
+                    logical_pos = record.source_range.end;
+                    source_records.push(record);
                     continue;
-                };
-                if record_ranges.insert((record.source_range.start, record.source_range.end)) {
-                    record_starts.insert(record.source_range.start);
-                    added.push(record);
                 }
             }
-            if added.is_empty() {
-                break;
-            }
 
-            source_records.extend(added);
-            source_records.sort_by_key(|left| left.source_range.start);
+            logical_pos += 1;
         }
 
         records.extend(source_records);
@@ -896,10 +951,14 @@ fn parse_spanning_consolidated_record(
         None
     };
     let first = source_byte(source_start)?;
-    let (family, width, header_len, length) = if let Some(width) = first
-        .checked_sub(0xa4)
-        .and_then(ConsolidatedFrameWidth::from_byte)
-    {
+    let (family, width, header_len, length) = if let Some(width) =
+        first.checked_sub(0xa4).and_then(|raw| {
+            if raw == 4 {
+                Some(ConsolidatedFrameWidth::Four)
+            } else {
+                ConsolidatedFrameWidth::from_byte(raw)
+            }
+        }) {
         let length_bytes = [
             source_byte(source_start.checked_add(3)?)?,
             source_byte(source_start.checked_add(4)?)?,
@@ -910,9 +969,10 @@ fn parse_spanning_consolidated_record(
             View::u32_le_at(&length_bytes, 0).and_then(|value| usize::try_from(value).ok())?;
         (ConsolidatedFamily::A, width, a_frame::LEN, length)
     } else {
-        let width = first
-            .checked_sub(0xb1)
-            .and_then(ConsolidatedFrameWidth::from_byte)?;
+        let width = match first {
+            0xb5 => ConsolidatedFrameWidth::Four,
+            marker => ConsolidatedFrameWidth::from_byte(marker.checked_sub(0xb1)?)?,
+        };
         (
             ConsolidatedFamily::B,
             width,
@@ -956,12 +1016,18 @@ fn parse_spanning_consolidated_record(
             None
         }
     })?;
+    let token = WidthCodedToken::new(width, header_token).ok()?;
+    if width == ConsolidatedFrameWidth::Four
+        && (flag != ConsolidatedFrameFlag::Flag03 || token.compact_operand().is_none())
+    {
+        return None;
+    }
     Some(ConsolidatedRecord {
         source_index,
         source_range: source_start..source_end,
         placement: ConsolidatedPlacement::Spanning { byte_offset },
         family,
-        token: WidthCodedToken::new(width, header_token).ok()?,
+        token,
         flag,
         class,
     })
@@ -1511,5 +1577,59 @@ mod width_token_admission_tests {
             assert_eq!(record.header_token(), maximum);
             assert!(super::WidthCodedToken::new(width, maximum + 1).is_err());
         }
+    }
+
+    #[test]
+    fn width_four_allocation_record_continues_contiguous_journal() {
+        // Record 0: B2 (width 1, token 0x05 -> increment 1), empty payload.
+        // Record 1: B5 (width 4, flag 0x03, token 0x00_01_00_0c -> compact 3-byte u24 increment 0x00_01_00 = 256), empty payload.
+        // Record 2: B2 (width 1, token 0x05 -> increment 1), empty payload.
+        let bytes = [
+            0xb2, 0x03, 0x24, 0x00, 0x05, 0xb5, 0x03, 0x20, 0x00, 0x0c, 0x00, 0x01, 0x00, 0xb2,
+            0x03, 0x5f, 0x00, 0x05,
+        ];
+        let records = super::consolidated_records(&bytes);
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[1].width(), super::ConsolidatedFrameWidth::Four);
+        let journal = crate::families::consolidated::allocation::AllocationJournal::new(&records);
+        assert_eq!(journal.absolute_address(0), Some(1));
+        assert_eq!(journal.absolute_address(1), Some(257));
+        assert_eq!(journal.absolute_address(2), Some(258));
+    }
+
+    #[test]
+    fn spanning_record_skips_interior_marker_and_preserves_journal() {
+        let mut bytes = vec![0xb2, 0x03, 0x20, 0x01, 0x05, 0xaa];
+        let spanning_start = bytes.len();
+        // Spanning A5_34 frame whose payload embeds a decoy `b2 03 5f 00 05` inside extent 1.
+        let payload = [0x11, 0x22, 0xb2, 0x03, 0x5f, 0x00, 0x05, 0x33];
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x34]);
+        bytes.extend_from_slice(
+            &u32::try_from(payload.len())
+                .expect("payload len fits in u32")
+                .to_le_bytes(),
+        );
+        bytes.push(0x05);
+        bytes.extend_from_slice(&payload);
+        let split = spanning_start + 9; // splits inside payload before decoy
+        let after_start = bytes.len();
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, 0x01, 0x05, 0xbb]);
+
+        let sources = [vec![
+            super::SourceExtent::within(&bytes, 0, split).expect("ext 0"),
+            super::SourceExtent::within(&bytes, split, bytes.len()).expect("ext 1"),
+        ]];
+        let records =
+            super::consolidated_records_in_sources(&bytes, &sources).expect("scan spanning source");
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[1].source_range(), &(spanning_start..after_start));
+        assert_eq!(
+            records[1].payload_bytes(&bytes, &sources).as_deref(),
+            Some(payload.as_slice())
+        );
+        let journal = crate::families::consolidated::allocation::AllocationJournal::new(&records);
+        assert_eq!(journal.absolute_address(0), Some(1));
+        assert_eq!(journal.absolute_address(1), Some(2));
+        assert_eq!(journal.absolute_address(2), Some(3));
     }
 }

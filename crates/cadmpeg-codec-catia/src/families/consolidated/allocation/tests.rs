@@ -129,3 +129,58 @@ fn allocation_invalid_compact_headers_preserve_the_known_prefix() {
     }
     assert_eq!(journal.resolve_owned_child(0, 0), Some(&records[1]));
 }
+
+#[test]
+fn allocation_with_sources_bridges_skipped_width4_flag13_frames() {
+    let first = frame(0x27, 1);
+    // A width-4 Flag13 allocation frame (`b5 13 5b`, payload_len=0, compact 3-byte
+    // operand `0x0c 0x00 0x01 0x00` => increment 256) omitted between `first` and `second`.
+    let skipped_flag13 = [0xb5u8, 0x13, 0x5b, 0x00, 0x0c, 0x00, 0x01, 0x00];
+    let second = frame(0x25, 2);
+    let data = [
+        first.as_slice(),
+        skipped_flag13.as_slice(),
+        second.as_slice(),
+    ]
+    .concat();
+    let sources = vec![vec![crate::wire::records::SourceExtent::whole(&data)]];
+    let all_records =
+        consolidated_records_in_range_sources(&data, [std::iter::once(0..data.len())]);
+    let records = vec![
+        all_records.first().expect("first record").clone(),
+        all_records.last().expect("second record").clone(),
+    ];
+    assert!(records[1].source_range().start > records[0].source_range().end);
+
+    // Without source gap bridging, the logical gap starts a new run and breaks
+    // absolute address continuity across the gap.
+    let unbridged = AllocationJournal::new(&records);
+    assert_eq!(unbridged.absolute_address(0), Some(1));
+    assert!(unbridged.absolute_address(1).is_none());
+    assert!(unbridged.resolve_weighted_distance(1, 258).is_none());
+
+    // With source bytes, the skipped width-4 frame increment is accumulated cleanly.
+    let bridged = AllocationJournal::with_sources(&data, &sources, &records);
+    assert_eq!(bridged.absolute_address(0), Some(1));
+    assert_eq!(bridged.absolute_address(1), Some(259));
+    assert_eq!(bridged.resolve_weighted_distance(1, 258), Some(&records[0]));
+}
+
+#[test]
+fn allocation_signed_negative_header_deltas_track_backward_addresses() {
+    // Tokens: +10 (0x29), -1 (0x03), +5 (0x15), -3 (0x0b)
+    // Addresses: 10, 9, 14, 11
+    let mut data = Vec::new();
+    for (class, tok) in [(0x27u8, 0x29u8), (0x18, 0x03), (0x24, 0x15), (0x5d, 0x0b)] {
+        data.extend_from_slice(&[0xb2, 0x03, class, 0x01, tok, 0x00]);
+    }
+    let records = consolidated_records_in_range_sources(&data, [std::iter::once(0..data.len())]);
+    assert_eq!(records.len(), 4);
+    let journal = AllocationJournal::new(&records);
+    assert_eq!(journal.address(0), Some(10));
+    assert_eq!(journal.address(1), Some(9));
+    assert_eq!(journal.address(2), Some(14));
+    assert_eq!(journal.address(3), Some(11));
+    assert_eq!(journal.resolve_weighted_distance(3, 1), Some(&records[0]));
+    assert_eq!(journal.resolve_address(1, 14), Some(&records[2]));
+}

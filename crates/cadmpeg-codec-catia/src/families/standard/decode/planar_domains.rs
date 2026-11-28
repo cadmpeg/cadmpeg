@@ -16,6 +16,7 @@ use cadmpeg_ir::CadIr;
 
 const CURVED_EDGE_SUBDIVISIONS: u32 = 16;
 const PLANAR_SOURCE_ROUNDOFF_FACTOR: f64 = 3.0;
+const PLANAR_CURVE_FIT_TOLERANCE_MM: f64 = 0.002;
 
 pub(super) fn repair(
     ctx: &DecodeContext<'_>,
@@ -298,8 +299,9 @@ fn project_source_point(point: Point3, plane: &PlaneSurface) -> Option<Point3> {
         .into_iter()
         .map(f64::abs)
         .fold(1.0, f64::max);
-    (distance.abs() <= PLANAR_SOURCE_ROUNDOFF_FACTOR * f64::from(f32::EPSILON) * scale)
-        .then(|| point.translated(normal, -distance))
+    let tolerance = (PLANAR_SOURCE_ROUNDOFF_FACTOR * f64::from(f32::EPSILON) * scale)
+        .max(PLANAR_CURVE_FIT_TOLERANCE_MM);
+    (distance.abs() <= tolerance).then(|| point.translated(normal, -distance))
 }
 
 fn signed_area(points: &[Point3], plane: &PlaneSurface) -> f64 {

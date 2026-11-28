@@ -19,10 +19,9 @@ mod counted_owner;
 mod edge_geometry;
 mod surface_membership;
 use edge_geometry::{
-    attach_standard_circles, attach_standard_lines, build_standard_edge_curve,
-    canonical_unoriented_axis, circle_endpoint_range_choices,
-    circular_range_choices_have_simple_selection, point_on_surface, point_on_surface_if_supported,
-    standard_circle_axis_from_carrier, standard_pcurve_geometry,
+    attach_standard_circles, attach_standard_lines, canonical_unoriented_axis,
+    circle_endpoint_range_choices, circular_range_choices_have_simple_selection, point_on_surface,
+    point_on_surface_if_supported, standard_circle_axis_from_carrier, standard_pcurve_geometry,
 };
 
 use crate::families::standard::fbb::EdgeTableForm;
@@ -2210,7 +2209,15 @@ fn try_decode_standard_population(
         curved_surfaces.push(surface);
     }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let mut plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let journal_planes = crate::families::freeform::standard_carriers::recover_missing_plane_normals(
+        &scan.data,
+        &sources,
+        &consolidated_records,
+        brep,
+        &records,
+        &mut plane_normals,
+    );
     let plane_rows = crate::families::standard::records::plane_params(brep, &records, &plane_normals);
     let mut planes = HashMap::new();
     for plane in plane_rows {
@@ -2338,6 +2345,13 @@ fn try_decode_standard_population(
             planes
                 .get(&prefix.target)
                 .and_then(crate::families::standard::records::decode_plane)
+                .or_else(|| {
+                    journal_planes
+                        .get(&prefix.target)
+                        .copied()
+                        .map(SolvedSurfaceGeometry::Plane)
+                        .map(SurfaceGeometry::Solved)
+                })
         } else {
             curved_surfaces[i].clone()
         };
@@ -2828,6 +2842,20 @@ fn try_decode_standard_population(
         Err(_) => return None,
     };
     consolidated_curve_bindings.standard_face_surfaces +=
+        match crate::families::freeform::standard_carriers::bind_journal_standard_surfaces(
+            &mut ir,
+            &mut annotations,
+            &scan.data,
+            &sources,
+            &consolidated_records,
+            &a5_carriers,
+            refusal,
+        ) {
+            Ok(bound) => bound,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        };
+    consolidated_curve_bindings.standard_face_surfaces +=
         match counted_owner::bind_counted_owner_surfaces(
             ctx,
             &mut ir,
@@ -2847,8 +2875,11 @@ fn try_decode_standard_population(
     let weighted = match crate::families::freeform::weighted_edges::attach(
         &mut ir,
         &mut annotations,
-        &scan.data,
-        &consolidated_records,
+        crate::families::freeform::weighted_edges::ConsolidatedSource {
+            data: &scan.data,
+            sources: &sources,
+            records: &consolidated_records,
+        },
         &a5_carriers,
         refusal,
         &mut admission,
@@ -2862,10 +2893,11 @@ fn try_decode_standard_population(
     }
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
-    let source_jet_pcurves = match crate::families::freeform::owner_pcurves::attach(
+    let source_jet_pcurves = match crate::families::freeform::owner_pcurves::attach_in_sources(
         &mut ir,
         &mut annotations,
         &scan.data,
+        &sources,
         &consolidated_records,
         refusal,
         &mut admission,
@@ -4705,1048 +4737,1142 @@ fn attach_standard_topology(
         impl cadmpeg_ir::annotations::AnnotationStorage,
     >,
 ) -> Result<(), StandardTopologyError> {
-    let AttachStandardTopologyInputs {
-        ir,
-        annotations,
-        bindings,
-        records,
-        face_bounds,
-        spine,
-        edge_table_form,
-        brep,
-        support_override,
-        source,
-        e5_record_range,
-        use_vertex_roster,
-        native_edge_faces,
-        native_edge_supports,
-        limit_curves,
-        work_budget,
-        diagnostics,
-        bound_limit_curve_count,
-        refusal,
-        admission,
-    } = inputs;
-    let mesh_cache = missing_edge::StandardMeshCache::new();
-
-    let face_count = ir.geometry.faces.len();
-    let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
-        crate::families::standard::fbb::fbb_only_edge_count(spine)
-    } else {
-        crate::families::standard::fbb::standard_edge_count(ctx, spine)
-            .map_err(StandardTopologyError::Codec)?
+    let reborrowed = AttachStandardTopologyInputs {
+        ir: &mut *inputs.ir,
+        annotations: &mut *inputs.annotations,
+        bindings: inputs.bindings,
+        records: inputs.records,
+        face_bounds: inputs.face_bounds,
+        spine: inputs.spine,
+        edge_table_form: inputs.edge_table_form,
+        brep: inputs.brep,
+        support_override: inputs.support_override,
+        source: inputs.source,
+        e5_record_range: inputs.e5_record_range.clone(),
+        use_vertex_roster: inputs.use_vertex_roster,
+        native_edge_faces: inputs.native_edge_faces,
+        native_edge_supports: inputs.native_edge_supports,
+        limit_curves: inputs.limit_curves,
+        work_budget: inputs.work_budget,
+        diagnostics: &mut *inputs.diagnostics,
+        bound_limit_curve_count: &mut *inputs.bound_limit_curve_count,
+        refusal: &mut *inputs.refusal,
+        admission: &mut *inputs.admission,
     };
-    let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
-        return Err(StandardTopologyFailure::NoCurveSupports.into());
-    };
-    let mut supports = support_override
-        .map_or_else(
-            || {
-                crate::families::standard::records::standard_curve_supports(
-                    ctx,
-                    brep,
-                    face_count,
-                    Some(edge_count),
-                )
-            },
-            |supports| Ok(supports.to_vec()),
-        )
-        .map_err(StandardTopologyError::Codec)?;
-    if supports.is_empty() {
-        return Err(StandardTopologyFailure::NoCurveSupports.into());
-    }
-    diagnostics.curve_supports = supports.len();
-    let serialized_edge_faces = supports
-        .iter()
-        .map(|support| support.faces)
-        .collect::<Vec<_>>();
-    let Some(mut edge_faces) =
-        missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
-            .map_err(StandardTopologyError::Codec)?
-    else {
-        return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
-    };
-    let mut deferred_port_edges = ctx
-        .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
-        .map_err(StandardTopologyError::Codec)?;
-    let mut open_face_domains = None;
-    let mut endpoint_face_assignments = None;
-    apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
-    for (support, faces) in supports.iter_mut().zip(&edge_faces) {
-        support.faces = *faces;
-    }
-    let mut surface_indices = HashMap::new();
-    for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
-        let id = surface.id.clone();
-        surface_indices.insert(id, index);
-    }
-    let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
-    let point_faces =
-        standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
-            .map_err(StandardTopologyError::Codec)?;
-    let point_on_face = |face: usize, point: usize| {
-        point_faces
-            .get(point)
-            .is_some_and(|faces| faces.binary_search(&face).is_ok())
-    };
-    let mut face_points = ctx
-        .alloc_filled(bindings.len(), Vec::new(), "catia_face_point_membership")
-        .map_err(StandardTopologyError::Codec)?;
-    for (point, faces) in point_faces.iter().enumerate() {
-        for &face in faces {
-            face_points[face].push(point);
-        }
-    }
-    let limit_curve_bindings = standard_limit_curve_bindings(
-        ctx,
-        ir,
-        bindings,
-        &surface_indices,
-        &supports,
-        limit_curves,
-        refusal,
-    )
-    .map_err(StandardTopologyError::Codec)?;
-    let mut ordered_endpoint_pairs = ctx
-        .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
-        .map_err(StandardTopologyError::Codec)?;
-    let mut point_coordinates = Vec::new();
-    for point in &ir.geometry.points {
-        point_coordinates.push([
-            f32_from_f64(point.position().get().x)
-                .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-            f32_from_f64(point.position().get().y)
-                .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-            f32_from_f64(point.position().get().z)
-                .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-        ]);
-    }
-    let visualization_endpoint_pairs =
-        missing_edge::standard_edge_rows(ctx, spine).map_err(StandardTopologyError::Codec)?;
-    let visualization_endpoint_pairs = match visualization_endpoint_pairs {
-        Some(rows) => missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates),
-        None => None,
-    };
-    if let Some(pairs) = &visualization_endpoint_pairs {
-        if pairs.len() != ordered_endpoint_pairs.len() {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-    }
-    let mut endpoint_candidates = Vec::new();
-    let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
-    for support in &supports {
-        let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
-            return Err(StandardTopologyFailure::MissingFaceSurface.into());
-        };
-        let Some(surface1) = face_surface(ir, bindings, &surface_indices, support.faces[1]) else {
-            return Err(StandardTopologyFailure::MissingFaceSurface.into());
-        };
-        let candidates = match &support.geometry {
-            crate::families::standard::records::StandardCurveGeometry::Circle {
-                center,
-                radius,
-            } => standard_circle_endpoint_candidates(
-                ctx,
-                &ir.geometry.points,
-                center.get(),
-                radius.get(),
-                Some([
-                    (
-                        &surface0.geometry,
-                        face_bounds
-                            .as_ref()
-                            .and_then(|bounds| bounds[support.faces[0]]),
-                    ),
-                    (
-                        &surface1.geometry,
-                        face_bounds
-                            .as_ref()
-                            .and_then(|bounds| bounds[support.faces[1]]),
-                    ),
-                ]),
-            )
-            .map_err(StandardTopologyError::Codec)?,
-            crate::families::standard::records::StandardCurveGeometry::Line
-            | crate::families::standard::records::StandardCurveGeometry::Bspline => {
-                let mut faces = support.faces;
-                faces.sort_unstable_by(Ord::cmp);
-                incidence_candidates.entry(faces).or_insert_with(|| {
-                    face_points[faces[0]]
-                        .iter()
-                        .copied()
-                        .filter(|point| point_on_face(faces[1], *point))
-                        .collect()
-                });
-                incidence_candidates[&faces].clone()
-            }
-        };
-        endpoint_candidates.push(candidates);
-    }
-    let edge_classes = standard_curve_edge_classes(&supports);
-    let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
-    let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
-        .map_err(StandardTopologyError::Codec)?;
-    let native_edges = match topology_graph.as_ref() {
-        Some(graph) => graph.referenced_edge_vertex_references(),
-        None => None,
-    };
-    let mut native_edges = match native_edges {
-        Some(edges) => edges,
-        None => crate::families::b5::graph::edge_vertex_references(source),
-    };
-    let e5_topology = match e5_record_range {
-        Some(range) => crate::families::e5::graph::parse_topology(&source[range]),
-        None => None,
-    };
-    if let Some(e5_topology) = e5_topology {
-        let e5_edges = e5_topology
-            .edges
-            .into_iter()
-            .map(|(record_id, edge)| (record_id, [edge.start_vertex, edge.end_vertex]));
-        if !merge_standard_edge_vertex_references(&mut native_edges, e5_edges) {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-    }
-    let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
-        topology_graph.as_ref(),
-        &supports,
-        &native_edges,
-        &ir.geometry.points,
-    );
-    let mut native_port_options = Vec::new();
-    native_port_options.extend(
-        supports
-            .iter()
-            .map(|support| native_edges.get(&support.tag).copied()),
-    );
-    let mut native_ports = Vec::new();
-    let mut all_ports = true;
-    for pair in native_port_options.iter().copied() {
-        let Some(pair) = pair else {
-            all_ports = false;
-            break;
-        };
-        native_ports.push(pair);
-    }
-    let native_ports = all_ports.then_some(native_ports);
-    let vertex_roster = if use_vertex_roster {
-        crate::families::standard::records::standard_vertex_roster(source, ir.geometry.points.len())
-    } else {
-        None
-    };
-    let allocation_endpoint_points = vertex_roster
-        .as_ref()
-        .map(|roster| standard_successor_endpoint_points(&supports, roster));
-    let roster_endpoint_pairs = vertex_roster
-        .as_ref()
-        .and_then(|roster| standard_serialized_endpoint_pairs(&supports, &native_edges, roster));
-    let mut native_support_ids = HashSet::new();
-    for id in native_edge_supports.keys().copied() {
-        native_support_ids.insert(id);
-    }
-    let native_support_edge_ids = standard_native_support_edge_ids(&supports, &native_support_ids);
-    let mut native_supports_by_row = Vec::new();
-    native_supports_by_row.extend(
-        native_support_edge_ids
-            .iter()
-            .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge))),
-    );
-    let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
-        graph_endpoint_pairs.as_deref(),
-        roster_endpoint_pairs.as_deref(),
-    ) else {
-        return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-    };
-    diagnostics.native_endpoint_pairs = native_endpoint_evidence
-        .as_ref()
-        .map_or(0, |pairs| pairs.iter().flatten().count());
-    if let Some(pairs) = &native_endpoint_evidence {
-        for (edge, pair) in pairs
-            .iter()
-            .enumerate()
-            .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
+    let (result, narrowed_by_successors) = attach_standard_topology_inner(ctx, reborrowed, true);
+    match result {
+        Err(StandardTopologyError::Semantic(failure))
+            if narrowed_by_successors
+                && !inputs.work_budget.exhausted()
+                && !matches!(
+                    failure,
+                    StandardTopologyFailure::InadmissibleNeutralModel
+                        | StandardTopologyFailure::InvalidTopologySolution
+                ) =>
         {
-            if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-            }
+            *inputs.diagnostics = StandardTopologyDiagnostics::default();
+            *inputs.bound_limit_curve_count = 0;
+            attach_standard_topology_inner(ctx, inputs, false).0
         }
+        other => other,
     }
-    if let Some(pairs) = visualization_endpoint_pairs {
-        for (edge, pair) in pairs.into_iter().enumerate() {
-            if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-            }
-        }
-    }
-    for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
-        let Ok([binding]) = <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice()) else {
-            continue;
-        };
-        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-    }
-    if let Some(pairs) = &native_endpoint_evidence {
-        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
-    }
-    let mut endpoint_options = resolve_standard_endpoint_pairs(
-        ctx,
-        ir,
-        bindings,
-        &surface_indices,
-        &supports,
-        &endpoint_candidates,
-        refusal,
-    )
-    .map_err(StandardTopologyError::Codec)?;
-    if let Some(options) = &mut endpoint_options {
-        for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
-            if bindings.is_empty() {
-                continue;
-            }
-            let mut limit_pairs = Vec::new();
-            for binding in bindings {
-                let mut points = binding.points;
-                points.sort_unstable_by(Ord::cmp);
-                limit_pairs.push(points);
-            }
-            limit_pairs.sort_unstable_by(Ord::cmp);
-            limit_pairs.dedup();
-            if options[edge].is_empty() {
-                options[edge] = limit_pairs;
-            }
-        }
-    }
-    for edge in 0..supports.len() {
-        let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
-            Some(native) => standard_native_support_endpoint_pair(
-                ctx,
-                native,
-                &ir.geometry.points,
-                &endpoint_candidates[edge],
-                native_endpoint_evidence
-                    .as_ref()
-                    .and_then(|pairs| pairs[edge]),
-            )?,
-            None => None,
-        };
-        let Some(pair) = native_pair else { continue };
-        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-        if let Some(options) = &mut endpoint_options {
-            if options[edge]
-                .iter()
-                .any(|candidate| missing_edge::same_unordered_pair(*candidate, pair))
-            {
-                options[edge] = vec![pair];
-            }
-        }
-    }
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
-        for (options, pair) in options.iter_mut().zip(pairs) {
-            if let Some(pair) = pair {
-                *options = vec![*pair];
-            }
-        }
-    }
-    if let (Some(options), Some(points)) = (&mut endpoint_options, &allocation_endpoint_points) {
-        corroborate_successor_endpoint_points(options, points);
-    }
-    let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
-        Some(pairs) => {
-            let Some(propagated) =
-                missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
-                    ctx,
-                    &native_port_options,
-                    pairs,
-                    &ordered_endpoint_pairs,
-                )
-                .map_err(StandardTopologyError::Codec)?
-            else {
-                return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
-            };
-            Some(propagated)
-        }
-        None => None,
-    };
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_propagated_endpoint_pairs)
-    {
-        for (options, pair) in options.iter_mut().zip(pairs) {
-            if let Some(pair) = pair {
-                *options = vec![*pair];
-            }
-        }
-    }
-    if let Some(pairs) = &graph_propagated_endpoint_pairs {
-        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
-    }
-    if let Some(options) = &mut endpoint_options {
-        let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
-            ctx,
+}
+
+fn attach_standard_topology_inner(
+    ctx: &DecodeContext<'_>,
+    inputs: AttachStandardTopologyInputs<
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        '_,
+        impl cadmpeg_ir::annotations::AnnotationStorage,
+    >,
+    corroborate_successors: bool,
+) -> (Result<(), StandardTopologyError>, bool) {
+    let mut narrowed_by_successors = false;
+    let result = (|| -> Result<(), StandardTopologyError> {
+        let AttachStandardTopologyInputs {
+            ir,
+            annotations,
+            bindings,
+            records,
+            face_bounds,
             spine,
-            &serialized_edge_faces,
+            edge_table_form,
+            brep,
+            support_override,
+            source,
+            e5_record_range,
+            use_vertex_roster,
+            native_edge_faces,
+            native_edge_supports,
+            limit_curves,
+            work_budget,
+            diagnostics,
+            bound_limit_curve_count,
+            refusal,
+            admission,
+        } = inputs;
+        let mesh_cache = missing_edge::StandardMeshCache::new();
+
+        let face_count = ir.geometry.faces.len();
+        let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
+            crate::families::standard::fbb::fbb_only_edge_count(spine)
+        } else {
+            crate::families::standard::fbb::standard_edge_count(ctx, spine)
+                .map_err(StandardTopologyError::Codec)?
+        };
+        let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
+            return Err(StandardTopologyFailure::NoCurveSupports.into());
+        };
+        let mut supports = support_override
+            .map_or_else(
+                || {
+                    crate::families::standard::records::standard_curve_supports(
+                        ctx,
+                        brep,
+                        face_count,
+                        Some(edge_count),
+                    )
+                },
+                |supports| Ok(supports.to_vec()),
+            )
+            .map_err(StandardTopologyError::Codec)?;
+        if supports.is_empty() {
+            return Err(StandardTopologyFailure::NoCurveSupports.into());
+        }
+        diagnostics.curve_supports = supports.len();
+        let serialized_edge_faces = supports
+            .iter()
+            .map(|support| support.faces)
+            .collect::<Vec<_>>();
+        let Some(mut edge_faces) =
+            missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
+                .map_err(StandardTopologyError::Codec)?
+        else {
+            return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
+        };
+        let mut deferred_port_edges = ctx
+            .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
+            .map_err(StandardTopologyError::Codec)?;
+        let mut open_face_domains = None;
+        let mut endpoint_face_assignments = None;
+        apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
+        for (support, faces) in supports.iter_mut().zip(&edge_faces) {
+            support.faces = *faces;
+        }
+        let mut surface_indices = HashMap::new();
+        for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
+            let id = surface.id.clone();
+            surface_indices.insert(id, index);
+        }
+        let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
+        let point_faces =
+            standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
+                .map_err(StandardTopologyError::Codec)?;
+        let point_on_face = |face: usize, point: usize| {
+            point_faces
+                .get(point)
+                .is_some_and(|faces| faces.binary_search(&face).is_ok())
+        };
+        let mut face_points = ctx
+            .alloc_filled(bindings.len(), Vec::new(), "catia_face_point_membership")
+            .map_err(StandardTopologyError::Codec)?;
+        for (point, faces) in point_faces.iter().enumerate() {
+            for &face in faces {
+                face_points[face].push(point);
+            }
+        }
+        let limit_curve_bindings = standard_limit_curve_bindings(
+            ctx,
+            ir,
+            bindings,
+            &surface_indices,
+            &supports,
+            limit_curves,
             refusal,
         )
         .map_err(StandardTopologyError::Codec)?;
-        let mut allowed_faces = Vec::new();
-        for (edge, support) in supports.iter().enumerate() {
-            let mut faces = Vec::new();
-            if support.faces[0] == support.faces[1] {
-                let mut candidates = options[edge]
-                    .iter()
-                    .filter_map(|pair| point_faces.get(pair[0]))
-                    .flatten()
-                    .copied()
-                    .filter(|face| *face < face_count && *face != support.faces[0])
-                    .collect::<Vec<_>>();
-                candidates.sort_unstable();
-                candidates.dedup();
-                for face in candidates {
-                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
-                        continue;
-                    };
-                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                    for pair in &options[edge] {
-                        if pair.iter().all(|point| point_on_face(face, *point))
-                            && standard_nurbs_line_pair_on_face(
-                                ctx,
-                                &surface.geometry,
-                                support,
-                                pair,
-                                &ir.geometry.points,
-                                bounds,
-                            )
-                            .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Codec)?
-                        {
-                            faces.push(face);
-                            break;
-                        }
-                    }
-                }
-            }
-            allowed_faces.push(faces);
+        let mut ordered_endpoint_pairs = ctx
+            .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
+            .map_err(StandardTopologyError::Codec)?;
+        let mut point_coordinates = Vec::new();
+        for point in &ir.geometry.points {
+            point_coordinates.push([
+                f32_from_f64(point.position().get().x)
+                    .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+                f32_from_f64(point.position().get().y)
+                    .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+                f32_from_f64(point.position().get().z)
+                    .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+            ]);
         }
-        let mut face_geometries = Vec::new();
-        let mut all_face_geometries = true;
-        for face in 0..face_count {
-            let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
-                all_face_geometries = false;
+        let visualization_endpoint_pairs =
+            missing_edge::standard_edge_rows(ctx, spine).map_err(StandardTopologyError::Codec)?;
+        let visualization_endpoint_pairs = match visualization_endpoint_pairs {
+            Some(rows) => {
+                missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
+            }
+            None => None,
+        };
+        if let Some(pairs) = &visualization_endpoint_pairs {
+            if pairs.len() != ordered_endpoint_pairs.len() {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+            }
+        }
+        let mut endpoint_candidates = Vec::new();
+        let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
+        for support in &supports {
+            let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0])
+            else {
+                return Err(StandardTopologyFailure::MissingFaceSurface.into());
+            };
+            let Some(surface1) = face_surface(ir, bindings, &surface_indices, support.faces[1])
+            else {
+                return Err(StandardTopologyFailure::MissingFaceSurface.into());
+            };
+            let candidates = match &support.geometry {
+                crate::families::standard::records::StandardCurveGeometry::Circle {
+                    center,
+                    radius,
+                } => standard_circle_endpoint_candidates(
+                    ctx,
+                    &ir.geometry.points,
+                    center.get(),
+                    radius.get(),
+                    Some([
+                        (
+                            &surface0.geometry,
+                            face_bounds
+                                .as_ref()
+                                .and_then(|bounds| bounds[support.faces[0]]),
+                        ),
+                        (
+                            &surface1.geometry,
+                            face_bounds
+                                .as_ref()
+                                .and_then(|bounds| bounds[support.faces[1]]),
+                        ),
+                    ]),
+                )
+                .map_err(StandardTopologyError::Codec)?,
+                crate::families::standard::records::StandardCurveGeometry::Line
+                | crate::families::standard::records::StandardCurveGeometry::Bspline => {
+                    let mut faces = support.faces;
+                    faces.sort_unstable_by(Ord::cmp);
+                    incidence_candidates.entry(faces).or_insert_with(|| {
+                        face_points[faces[0]]
+                            .iter()
+                            .copied()
+                            .filter(|point| point_on_face(faces[1], *point))
+                            .collect()
+                    });
+                    incidence_candidates[&faces].clone()
+                }
+            };
+            endpoint_candidates.push(candidates);
+        }
+        let edge_classes = standard_curve_edge_classes(&supports);
+        let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
+        let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
+            .map_err(StandardTopologyError::Codec)?;
+        let native_edges = match topology_graph.as_ref() {
+            Some(graph) => graph.referenced_edge_vertex_references(),
+            None => None,
+        };
+        let mut native_edges = match native_edges {
+            Some(edges) => edges,
+            None => crate::families::b5::graph::edge_vertex_references(source),
+        };
+        let e5_topology = match e5_record_range {
+            Some(range) => crate::families::e5::graph::parse_topology(&source[range]),
+            None => None,
+        };
+        if let Some(e5_topology) = e5_topology {
+            let e5_edges = e5_topology
+                .edges
+                .into_iter()
+                .map(|(record_id, edge)| (record_id, [edge.start_vertex, edge.end_vertex]));
+            if !merge_standard_edge_vertex_references(&mut native_edges, e5_edges) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+            }
+        }
+        let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
+            topology_graph.as_ref(),
+            &supports,
+            &native_edges,
+            &ir.geometry.points,
+        );
+        let mut native_port_options = Vec::new();
+        native_port_options.extend(
+            supports
+                .iter()
+                .map(|support| native_edges.get(&support.tag).copied()),
+        );
+        let mut native_ports = Vec::new();
+        let mut all_ports = true;
+        for pair in native_port_options.iter().copied() {
+            let Some(pair) = pair else {
+                all_ports = false;
                 break;
             };
-            face_geometries.push(&surface.geometry);
+            native_ports.push(pair);
         }
-        let face_geometries = all_face_geometries.then_some(face_geometries);
-        let mut edge_geometries = Vec::new();
-        edge_geometries.extend(supports.iter().map(|support| &support.geometry));
-        if let Some(handle_face_candidates) = handle_face_candidates {
-            missing_edge::refine_repeated_edge_face_candidates(
-                &edge_faces,
-                &mut allowed_faces,
-                &handle_face_candidates,
+        let native_ports = all_ports.then_some(native_ports);
+        let vertex_roster = if use_vertex_roster {
+            crate::families::standard::records::standard_vertex_roster(
+                source,
+                ir.geometry.points.len(),
             )
-            .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
-        }
-        refine_repeated_face_domains_by_geometry_and_bounds(
-            &edge_faces,
-            &mut allowed_faces,
-            face_bounds,
-            face_geometries.as_deref(),
-            &edge_geometries,
-        );
-        let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
-        let endpoint_pairs = if has_alternates {
-            let mut pairs = Vec::new();
-            let mut complete = true;
-            for choices in options.iter() {
-                let Ok([pair]) = <[[usize; 2]; 1]>::try_from(choices.as_slice()) else {
-                    complete = false;
-                    break;
-                };
-                pairs.push(pair);
-            }
-            complete.then_some(pairs)
         } else {
             None
         };
-        let endpoint_closures = match endpoint_pairs {
-            Some(pairs) => missing_edge::repeated_face_endpoint_closures(
-                ctx,
-                &edge_faces,
-                &allowed_faces,
-                &pairs,
-                face_count,
-            )
-            .map_err(StandardTopologyError::Codec)?,
-            None => None,
-        };
-        let endpoint_completed = match endpoint_closures.as_deref() {
-            Some([closure]) => Some(closure.clone()),
-            _ => None,
-        };
-        if endpoint_closures
+        let allocation_endpoint_points = vertex_roster
             .as_ref()
-            .is_some_and(|closures| closures.len() > 1)
-        {
-            endpoint_face_assignments = endpoint_closures;
+            .map(|roster| standard_successor_endpoint_points(&supports, roster));
+        let roster_endpoint_pairs = vertex_roster.as_ref().and_then(|roster| {
+            standard_serialized_endpoint_pairs(&supports, &native_edges, roster)
+        });
+        let mut native_support_ids = HashSet::new();
+        for id in native_edge_supports.keys().copied() {
+            native_support_ids.insert(id);
         }
-        // A non-empty domain remains open when endpoint degree closure does
-        // not select one complete incidence assignment. Face-local endpoint
-        // evidence cannot choose among multiple globally closed assignments.
-        let completed = if endpoint_completed.is_some() || has_alternates {
-            endpoint_completed
-        } else {
-            missing_edge::resolve_standard_duplicate_edge_faces(
-                ctx,
-                spine,
-                &edge_faces,
-                &allowed_faces,
-            )
-            .map_err(StandardTopologyError::Codec)?
+        let native_support_edge_ids =
+            standard_native_support_edge_ids(&supports, &native_support_ids);
+        let mut native_supports_by_row = Vec::new();
+        native_supports_by_row.extend(
+            native_support_edge_ids
+                .iter()
+                .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge))),
+        );
+        let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
+            graph_endpoint_pairs.as_deref(),
+            roster_endpoint_pairs.as_deref(),
+        ) else {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
         };
-        if let Some(completed) = completed {
-            edge_faces = completed;
-            for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
-                if support.faces == *faces {
+        diagnostics.native_endpoint_pairs = native_endpoint_evidence
+            .as_ref()
+            .map_or(0, |pairs| pairs.iter().flatten().count());
+        if let Some(pairs) = &native_endpoint_evidence {
+            for (edge, pair) in pairs
+                .iter()
+                .enumerate()
+                .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
+            {
+                if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                    return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                }
+            }
+        }
+        if let Some(pairs) = visualization_endpoint_pairs {
+            for (edge, pair) in pairs.into_iter().enumerate() {
+                if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                    return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                }
+            }
+        }
+        for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
+            let Ok([binding]) = <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice())
+            else {
+                continue;
+            };
+            if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+            }
+        }
+        if let Some(pairs) = &native_endpoint_evidence {
+            include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
+        }
+        let mut endpoint_options = resolve_standard_endpoint_pairs(
+            ctx,
+            ir,
+            bindings,
+            &surface_indices,
+            &supports,
+            &endpoint_candidates,
+            refusal,
+        )
+        .map_err(StandardTopologyError::Codec)?;
+        if let Some(options) = &mut endpoint_options {
+            for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
+                if bindings.is_empty() {
                     continue;
                 }
-                support.faces = *faces;
-                let Some(surface) = face_surface(ir, bindings, &surface_indices, faces[1]) else {
-                    return Err(StandardTopologyFailure::MissingFaceSurface.into());
-                };
-                let mut pair_index = 0;
-                while pair_index < options[edge].len() {
-                    let mut all_points = true;
-                    for point in options[edge][pair_index] {
-                        let Some(point) = ir.geometry.points.get(point) else {
-                            all_points = false;
-                            break;
-                        };
-                        if !point_on_standard_face(
-                            ctx,
-                            point.position().get(),
-                            &surface.geometry,
-                            face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
-                        )
-                        .map_err(CodecError::from)
-                        .map_err(StandardTopologyError::Codec)?
-                        {
-                            all_points = false;
-                            break;
-                        }
-                    }
-                    if all_points {
-                        pair_index += 1;
-                    } else {
-                        options[edge].remove(pair_index);
-                    }
+                let mut limit_pairs = Vec::new();
+                for binding in bindings {
+                    let mut points = binding.points;
+                    points.sort_unstable_by(Ord::cmp);
+                    limit_pairs.push(points);
                 }
+                limit_pairs.sort_unstable_by(Ord::cmp);
+                limit_pairs.dedup();
                 if options[edge].is_empty() {
-                    return Err(StandardTopologyFailure::EmptyEndpointDomain.into());
+                    options[edge] = limit_pairs;
                 }
-            }
-        } else {
-            for (edge, faces) in edge_faces.iter().enumerate() {
-                deferred_port_edges[edge] = faces[0] == faces[1]
-                    && allowed_faces
-                        .get(edge)
-                        .is_some_and(|faces| !faces.is_empty());
-            }
-            if allowed_faces.iter().any(|faces| !faces.is_empty()) {
-                open_face_domains = Some(allowed_faces);
             }
         }
-    }
-    let has_open_face_domains = open_face_domains
-        .as_ref()
-        .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
-    let endpoint_pair_on_incident_faces =
-        |edge: usize, pair: [usize; 2]| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-            for point in pair {
-                let Some(position) = ir
-                    .geometry
-                    .points
-                    .get(point)
-                    .map(|point| point.position().get())
+        for edge in 0..supports.len() {
+            let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
+                Some(native) => standard_native_support_endpoint_pair(
+                    ctx,
+                    native,
+                    &ir.geometry.points,
+                    &endpoint_candidates[edge],
+                    native_endpoint_evidence
+                        .as_ref()
+                        .and_then(|pairs| pairs[edge]),
+                )?,
+                None => None,
+            };
+            let Some(pair) = native_pair else { continue };
+            if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+            }
+            if let Some(options) = &mut endpoint_options {
+                if options[edge]
+                    .iter()
+                    .any(|candidate| missing_edge::same_unordered_pair(*candidate, pair))
+                {
+                    options[edge] = vec![pair];
+                }
+            }
+        }
+        if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
+            for (options, pair) in options.iter_mut().zip(pairs) {
+                if let Some(pair) = pair {
+                    *options = vec![*pair];
+                }
+            }
+        }
+        if corroborate_successors {
+            if let (Some(options), Some(points)) =
+                (&mut endpoint_options, &allocation_endpoint_points)
+            {
+                let before = options.clone();
+                corroborate_successor_endpoint_points(options, points);
+                narrowed_by_successors = *options != before;
+            }
+        }
+        let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
+            Some(pairs) => {
+                let Some(propagated) =
+                    missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
+                        ctx,
+                        &native_port_options,
+                        pairs,
+                        &ordered_endpoint_pairs,
+                    )
+                    .map_err(StandardTopologyError::Codec)?
                 else {
-                    return Ok(false);
+                    return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
                 };
-                for face in supports[edge].faces {
-                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
-                        return Ok(false);
-                    };
-                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                    if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
-                        || !standard_nurbs_line_pair_on_face(
-                            ctx,
-                            &surface.geometry,
-                            &supports[edge],
-                            &pair,
-                            &ir.geometry.points,
-                            bounds,
-                        )?
-                    {
-                        return Ok(false);
+                Some(propagated)
+            }
+            None => None,
+        };
+        if let (Some(options), Some(pairs)) =
+            (&mut endpoint_options, &graph_propagated_endpoint_pairs)
+        {
+            for (options, pair) in options.iter_mut().zip(pairs) {
+                if let Some(pair) = pair {
+                    *options = vec![*pair];
+                }
+            }
+        }
+        if let Some(pairs) = &graph_propagated_endpoint_pairs {
+            include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
+        }
+        if let Some(options) = &mut endpoint_options {
+            let handle_face_candidates =
+                missing_edge::standard_repeated_edge_face_handle_candidates(
+                    ctx,
+                    spine,
+                    &serialized_edge_faces,
+                    refusal,
+                )
+                .map_err(StandardTopologyError::Codec)?;
+            let mut allowed_faces = Vec::new();
+            for (edge, support) in supports.iter().enumerate() {
+                let mut faces = Vec::new();
+                if support.faces[0] == support.faces[1] {
+                    let mut candidates = options[edge]
+                        .iter()
+                        .filter_map(|pair| point_faces.get(pair[0]))
+                        .flatten()
+                        .copied()
+                        .filter(|face| *face < face_count && *face != support.faces[0])
+                        .collect::<Vec<_>>();
+                    candidates.sort_unstable();
+                    candidates.dedup();
+                    for face in candidates {
+                        let Some(surface) = face_surface(ir, bindings, &surface_indices, face)
+                        else {
+                            continue;
+                        };
+                        let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                        for pair in &options[edge] {
+                            if pair.iter().all(|point| point_on_face(face, *point))
+                                && standard_nurbs_line_pair_on_face(
+                                    ctx,
+                                    &surface.geometry,
+                                    support,
+                                    pair,
+                                    &ir.geometry.points,
+                                    bounds,
+                                )
+                                .map_err(CodecError::from)
+                                .map_err(StandardTopologyError::Codec)?
+                            {
+                                faces.push(face);
+                                break;
+                            }
+                        }
                     }
                 }
+                allowed_faces.push(faces);
             }
-            Ok(true)
-        };
-    if let Some(options) = &mut endpoint_options {
-        for (edge, pairs) in options.iter_mut().enumerate() {
-            let support = &supports[edge];
-            if matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Bspline
-            ) {
-                continue;
+            let mut face_geometries = Vec::new();
+            let mut all_face_geometries = true;
+            for face in 0..face_count {
+                let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                    all_face_geometries = false;
+                    break;
+                };
+                face_geometries.push(&surface.geometry);
             }
-            let unfiltered = pairs.clone();
-            let mut limit_error = None;
-            pairs.retain(|pair| {
-                if limit_error.is_some() {
-                    return true;
+            let face_geometries = all_face_geometries.then_some(face_geometries);
+            let mut edge_geometries = Vec::new();
+            edge_geometries.extend(supports.iter().map(|support| &support.geometry));
+            if let Some(handle_face_candidates) = handle_face_candidates {
+                missing_edge::refine_repeated_edge_face_candidates(
+                    &edge_faces,
+                    &mut allowed_faces,
+                    &handle_face_candidates,
+                )
+                .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
+            }
+            refine_repeated_face_domains_by_geometry_and_bounds(
+                &edge_faces,
+                &mut allowed_faces,
+                face_bounds,
+                face_geometries.as_deref(),
+                &edge_geometries,
+            );
+            let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
+            let endpoint_pairs = if has_alternates {
+                let mut pairs = Vec::new();
+                let mut complete = true;
+                for choices in options.iter() {
+                    let Ok([pair]) = <[[usize; 2]; 1]>::try_from(choices.as_slice()) else {
+                        complete = false;
+                        break;
+                    };
+                    pairs.push(pair);
                 }
-                let Some(start) = ir
-                    .geometry
-                    .points
-                    .get(pair[0])
-                    .map(|point| point.position().get())
-                else {
-                    return false;
-                };
-                let Some(end) = ir
-                    .geometry
-                    .points
-                    .get(pair[1])
-                    .map(|point| point.position().get())
-                else {
-                    return false;
-                };
-                for &face in &support.faces {
-                    let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
+                complete.then_some(pairs)
+            } else {
+                None
+            };
+            let endpoint_closures = match endpoint_pairs {
+                Some(pairs) => missing_edge::repeated_face_endpoint_closures(
+                    ctx,
+                    &edge_faces,
+                    &allowed_faces,
+                    &pairs,
+                    face_count,
+                )
+                .map_err(StandardTopologyError::Codec)?,
+                None => None,
+            };
+            let endpoint_completed = match endpoint_closures.as_deref() {
+                Some([closure]) => Some(closure.clone()),
+                _ => None,
+            };
+            if endpoint_closures
+                .as_ref()
+                .is_some_and(|closures| closures.len() > 1)
+            {
+                endpoint_face_assignments = endpoint_closures;
+            }
+            // A non-empty domain remains open when endpoint degree closure does
+            // not select one complete incidence assignment. Face-local endpoint
+            // evidence cannot choose among multiple globally closed assignments.
+            let completed = if endpoint_completed.is_some() || has_alternates {
+                endpoint_completed
+            } else {
+                missing_edge::resolve_standard_duplicate_edge_faces(
+                    ctx,
+                    spine,
+                    &edge_faces,
+                    &allowed_faces,
+                )
+                .map_err(StandardTopologyError::Codec)?
+            };
+            if let Some(completed) = completed {
+                edge_faces = completed;
+                for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
+                    if support.faces == *faces {
+                        continue;
+                    }
+                    support.faces = *faces;
+                    let Some(surface) = face_surface(ir, bindings, &surface_indices, faces[1])
+                    else {
+                        return Err(StandardTopologyFailure::MissingFaceSurface.into());
+                    };
+                    let mut pair_index = 0;
+                    while pair_index < options[edge].len() {
+                        let mut all_points = true;
+                        for point in options[edge][pair_index] {
+                            let Some(point) = ir.geometry.points.get(point) else {
+                                all_points = false;
+                                break;
+                            };
+                            if !point_on_standard_face(
+                                ctx,
+                                point.position().get(),
+                                &surface.geometry,
+                                face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
+                            )
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Codec)?
+                            {
+                                all_points = false;
+                                break;
+                            }
+                        }
+                        if all_points {
+                            pair_index += 1;
+                        } else {
+                            options[edge].remove(pair_index);
+                        }
+                    }
+                    if options[edge].is_empty() {
+                        return Err(StandardTopologyFailure::EmptyEndpointDomain.into());
+                    }
+                }
+            } else {
+                for (edge, faces) in edge_faces.iter().enumerate() {
+                    deferred_port_edges[edge] = faces[0] == faces[1]
+                        && allowed_faces
+                            .get(edge)
+                            .is_some_and(|faces| !faces.is_empty());
+                }
+                if allowed_faces.iter().any(|faces| !faces.is_empty()) {
+                    open_face_domains = Some(allowed_faces);
+                }
+            }
+        }
+        let has_open_face_domains = open_face_domains
+            .as_ref()
+            .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
+        let endpoint_pair_on_incident_faces =
+            |edge: usize, pair: [usize; 2]| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+                for point in pair {
+                    let Some(position) = ir
+                        .geometry
+                        .points
+                        .get(point)
+                        .map(|point| point.position().get())
+                    else {
+                        return Ok(false);
+                    };
+                    for face in supports[edge].faces {
+                        let Some(surface) = face_surface(ir, bindings, &surface_indices, face)
+                        else {
+                            return Ok(false);
+                        };
+                        let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                        if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
+                            || !standard_nurbs_line_pair_on_face(
+                                ctx,
+                                &surface.geometry,
+                                &supports[edge],
+                                &pair,
+                                &ir.geometry.points,
+                                bounds,
+                            )?
+                        {
+                            return Ok(false);
+                        }
+                    }
+                }
+                Ok(true)
+            };
+        if let Some(options) = &mut endpoint_options {
+            for (edge, pairs) in options.iter_mut().enumerate() {
+                let support = &supports[edge];
+                if matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Bspline
+                ) {
+                    continue;
+                }
+                let unfiltered = pairs.clone();
+                let mut limit_error = None;
+                pairs.retain(|pair| {
+                    if limit_error.is_some() {
+                        return true;
+                    }
+                    let Some(start) = ir
+                        .geometry
+                        .points
+                        .get(pair[0])
+                        .map(|point| point.position().get())
+                    else {
                         return false;
                     };
-                    match standard_endpoint_pair_supports_topology(
-                        ctx,
-                        &surface.geometry,
-                        support,
-                        start,
-                        end,
-                        crate::families::standard::records::standard_face_witness(
-                            brep,
-                            bindings[face].2,
-                        ),
-                        refusal,
-                    ) {
-                        Ok(true) => {}
-                        Ok(false) => return false,
-                        Err(error) => {
-                            limit_error = Some(error);
-                            return true;
+                    let Some(end) = ir
+                        .geometry
+                        .points
+                        .get(pair[1])
+                        .map(|point| point.position().get())
+                    else {
+                        return false;
+                    };
+                    for &face in &support.faces {
+                        let Some(surface) = face_surface(ir, bindings, &surface_indices, face)
+                        else {
+                            return false;
+                        };
+                        match standard_endpoint_pair_supports_topology(
+                            ctx,
+                            &surface.geometry,
+                            support,
+                            start,
+                            end,
+                            crate::families::standard::records::standard_face_witness(
+                                brep,
+                                bindings[face].2,
+                            ),
+                            refusal,
+                        ) {
+                            Ok(true) => {}
+                            Ok(false) => return false,
+                            Err(error) => {
+                                limit_error = Some(error);
+                                return true;
+                            }
                         }
                     }
+                    true
+                });
+                if let Some(error) = limit_error {
+                    return Err(StandardTopologyError::Codec(error));
                 }
-                true
-            });
-            if let Some(error) = limit_error {
-                return Err(StandardTopologyError::Codec(error));
-            }
-            if pairs.is_empty() {
-                *pairs = unfiltered;
+                if pairs.is_empty() {
+                    *pairs = unfiltered;
+                }
             }
         }
-    }
-    if let Some(options) = &mut endpoint_options {
-        loop {
-            let seeds = options
+        if let Some(options) = &mut endpoint_options {
+            loop {
+                let seeds = options
+                    .iter()
+                    .map(|pairs| {
+                        <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                            .ok()
+                            .map(|[pair]| pair)
+                    })
+                    .collect::<Vec<_>>();
+                let mut changed = false;
+                if let Some(placement_domains) =
+                    missing_edge::standard_mesh_placement_endpoint_pairs_with_cache(
+                        ctx,
+                        spine,
+                        &edge_faces,
+                        &seeds,
+                        &mesh_cache,
+                    )
+                    .map_err(StandardTopologyError::Codec)?
+                {
+                    for (edge, mut domain) in placement_domains.into_iter().enumerate() {
+                        if deferred_port_edges[edge] {
+                            continue;
+                        }
+                        let mut refusal = None;
+                        domain.retain(|pair| {
+                            if refusal.is_some() {
+                                return true;
+                            }
+                            match endpoint_pair_on_incident_faces(edge, *pair) {
+                                Ok(on_faces) => on_faces,
+                                Err(limit) => {
+                                    refusal = Some(limit);
+                                    false
+                                }
+                            }
+                        });
+                        if let Some(limit) = refusal {
+                            return Err(StandardTopologyError::Codec(CodecError::from(limit)));
+                        }
+                        if domain.is_empty() {
+                            continue;
+                        }
+                        let previous = options[edge].clone();
+                        if options[edge].is_empty() {
+                            options[edge] = domain;
+                        } else {
+                            options[edge].retain(|pair| {
+                                domain.iter().any(|candidate| {
+                                    missing_edge::same_unordered_pair(*pair, *candidate)
+                                })
+                            });
+                        }
+                        changed |= options[edge] != previous;
+                    }
+                }
+                let boundary_domains = if options.iter().all(|domain| !domain.is_empty()) {
+                    missing_edge::standard_mesh_prune_endpoint_candidates(
+                        ctx,
+                        spine,
+                        &edge_faces,
+                        options,
+                    )
+                    .map_err(StandardTopologyError::Codec)?
+                } else {
+                    None
+                };
+                if let Some(boundary_domains) = boundary_domains {
+                    for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
+                        if deferred_port_edges[edge] {
+                            continue;
+                        }
+                        let mut refusal = None;
+                        domain.retain(|pair| {
+                            if refusal.is_some() {
+                                return true;
+                            }
+                            match endpoint_pair_on_incident_faces(edge, *pair) {
+                                Ok(on_faces) => on_faces,
+                                Err(limit) => {
+                                    refusal = Some(limit);
+                                    false
+                                }
+                            }
+                        });
+                        if let Some(limit) = refusal {
+                            return Err(StandardTopologyError::Codec(CodecError::from(limit)));
+                        }
+                        let previous = options[edge].clone();
+                        if options[edge].is_empty() {
+                            options[edge] = domain;
+                        } else {
+                            options[edge].retain(|pair| {
+                                domain.iter().any(|candidate| {
+                                    missing_edge::same_unordered_pair(*pair, *candidate)
+                                })
+                            });
+                        }
+                        changed |= options[edge] != previous;
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+            for (edge, pairs) in options.iter_mut().enumerate() {
+                let mut refusal = None;
+                pairs.retain(|pair| {
+                    if refusal.is_some() {
+                        return true;
+                    }
+                    match endpoint_pair_on_incident_faces(edge, *pair) {
+                        Ok(on_faces) => on_faces,
+                        Err(limit) => {
+                            refusal = Some(limit);
+                            false
+                        }
+                    }
+                });
+                if let Some(limit) = refusal {
+                    return Err(StandardTopologyError::Codec(CodecError::from(limit)));
+                }
+                pairs.sort_unstable_by(Ord::cmp);
+                pairs.dedup();
+            }
+            for (candidates, options) in endpoint_candidates.iter_mut().zip(&mut *options) {
+                for point in options.iter().flatten() {
+                    if !candidates.contains(point) {
+                        candidates.push(*point);
+                    }
+                }
+            }
+        }
+        let graph_propagated_pairs = graph_propagated_endpoint_pairs
+            .as_ref()
+            .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
+        let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
+            Some(pairs)
+        } else if let Some((options, ports)) = endpoint_options.as_ref().zip(native_ports.as_ref())
+        {
+            native_port_endpoint_pairs(ctx, options, ports, &ordered_endpoint_pairs, refusal)
+                .map_err(StandardTopologyError::Codec)?
+        } else {
+            None
+        };
+        let propagated_endpoint_pairs = if let Some((options, ports)) =
+            endpoint_options.as_ref().zip(
+                missing_edge::edge_port_identities(ctx, spine)
+                    .map_err(StandardTopologyError::Codec)?,
+            ) {
+            let pairs = options
                 .iter()
                 .map(|pairs| {
                     <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                         .ok()
-                        .map(|[pair]| pair)
+                        .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            let mut changed = false;
-            if let Some(placement_domains) =
-                missing_edge::standard_mesh_placement_endpoint_pairs_with_cache(
-                    ctx,
-                    spine,
-                    &edge_faces,
-                    &seeds,
-                    &mesh_cache,
-                )
-                .map_err(StandardTopologyError::Codec)?
-            {
-                for (edge, mut domain) in placement_domains.into_iter().enumerate() {
-                    if deferred_port_edges[edge] {
-                        continue;
-                    }
-                    let mut refusal = None;
-                    domain.retain(|pair| {
-                        if refusal.is_some() {
-                            return true;
-                        }
-                        match endpoint_pair_on_incident_faces(edge, *pair) {
-                            Ok(on_faces) => on_faces,
-                            Err(limit) => {
-                                refusal = Some(limit);
-                                false
-                            }
-                        }
-                    });
-                    if let Some(limit) = refusal {
-                        return Err(StandardTopologyError::Codec(CodecError::from(limit)));
-                    }
-                    if domain.is_empty() {
-                        continue;
-                    }
-                    let previous = options[edge].clone();
-                    if options[edge].is_empty() {
-                        options[edge] = domain;
-                    } else {
-                        options[edge].retain(|pair| {
-                            domain.iter().any(|candidate| {
-                                missing_edge::same_unordered_pair(*pair, *candidate)
-                            })
-                        });
-                    }
-                    changed |= options[edge] != previous;
-                }
-            }
-            let boundary_domains = if options.iter().all(|domain| !domain.is_empty()) {
-                missing_edge::standard_mesh_prune_endpoint_candidates(
-                    ctx,
-                    spine,
-                    &edge_faces,
-                    options,
-                )
-                .map_err(StandardTopologyError::Codec)?
-            } else {
-                None
-            };
-            if let Some(boundary_domains) = boundary_domains {
-                for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
-                    if deferred_port_edges[edge] {
-                        continue;
-                    }
-                    let mut refusal = None;
-                    domain.retain(|pair| {
-                        if refusal.is_some() {
-                            return true;
-                        }
-                        match endpoint_pair_on_incident_faces(edge, *pair) {
-                            Ok(on_faces) => on_faces,
-                            Err(limit) => {
-                                refusal = Some(limit);
-                                false
-                            }
-                        }
-                    });
-                    if let Some(limit) = refusal {
-                        return Err(StandardTopologyError::Codec(CodecError::from(limit)));
-                    }
-                    let previous = options[edge].clone();
-                    if options[edge].is_empty() {
-                        options[edge] = domain;
-                    } else {
-                        options[edge].retain(|pair| {
-                            domain.iter().any(|candidate| {
-                                missing_edge::same_unordered_pair(*pair, *candidate)
-                            })
-                        });
-                    }
-                    changed |= options[edge] != previous;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        for (edge, pairs) in options.iter_mut().enumerate() {
-            let mut refusal = None;
-            pairs.retain(|pair| {
-                if refusal.is_some() {
-                    return true;
-                }
-                match endpoint_pair_on_incident_faces(edge, *pair) {
-                    Ok(on_faces) => on_faces,
-                    Err(limit) => {
-                        refusal = Some(limit);
-                        false
-                    }
-                }
-            });
-            if let Some(limit) = refusal {
-                return Err(StandardTopologyError::Codec(CodecError::from(limit)));
-            }
-            pairs.sort_unstable_by(Ord::cmp);
-            pairs.dedup();
-        }
-        for (candidates, options) in endpoint_candidates.iter_mut().zip(&mut *options) {
-            for point in options.iter().flatten() {
-                if !candidates.contains(point) {
-                    candidates.push(*point);
-                }
-            }
-        }
-    }
-    let graph_propagated_pairs = graph_propagated_endpoint_pairs
-        .as_ref()
-        .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
-    let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
-        Some(pairs)
-    } else if let Some((options, ports)) = endpoint_options.as_ref().zip(native_ports.as_ref()) {
-        native_port_endpoint_pairs(ctx, options, ports, &ordered_endpoint_pairs, refusal)
+            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                ctx,
+                &ports,
+                &pairs,
+                &ordered_endpoint_pairs,
+                &deferred_port_edges,
+            )
             .map_err(StandardTopologyError::Codec)?
-    } else {
-        None
-    };
-    let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options
-        .as_ref()
-        .zip(missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Codec)?)
-    {
-        let pairs = options
-            .iter()
-            .map(|pairs| {
-                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                    .ok()
-                    .map(|pair| pair[0])
-            })
-            .collect::<Vec<_>>();
-        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-            ctx,
-            &ports,
-            &pairs,
-            &ordered_endpoint_pairs,
-            &deferred_port_edges,
-        )
-        .map_err(StandardTopologyError::Codec)?
-        .map(|propagated| {
-            propagated
-                .into_iter()
-                .zip(options)
-                .map(|(pair, candidates)| {
-                    pair.filter(|pair| {
-                        candidates.iter().any(|candidate| {
-                            *candidate == *pair || *candidate == [pair[1], pair[0]]
+            .map(|propagated| {
+                propagated
+                    .into_iter()
+                    .zip(options)
+                    .map(|(pair, candidates)| {
+                        pair.filter(|pair| {
+                            candidates.iter().any(|candidate| {
+                                *candidate == *pair || *candidate == [pair[1], pair[0]]
+                            })
                         })
                     })
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            None
+        };
+        let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
+            endpoint_options.as_ref().zip(
+                mesh_cache
+                    .edge_ports(ctx, spine)
+                    .map_err(StandardTopologyError::Codec)?,
+            ) {
+            let pairs = options
+                .iter()
+                .map(|pairs| {
+                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                        .ok()
+                        .map(|pair| pair[0])
                 })
-                .collect::<Vec<_>>()
-        })
-    } else {
-        None
-    };
-    let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
-        endpoint_options.as_ref().zip(
+                .collect::<Vec<_>>();
+            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                ctx,
+                &ports,
+                &pairs,
+                &ordered_endpoint_pairs,
+                &deferred_port_edges,
+            )
+            .map_err(StandardTopologyError::Codec)?
+        } else {
+            None
+        };
+        let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
+            propagated_endpoint_pairs,
+            mesh_propagated_endpoint_pairs,
+        );
+        let mut constrained_endpoint_options = if let Some(options) = endpoint_options.as_ref() {
+            let mut copied = Vec::new();
+            for (edge, pairs) in options.iter().enumerate() {
+                let row = if let Some(pair) = propagated_endpoint_pairs
+                    .as_ref()
+                    .and_then(|propagated| propagated.get(edge).copied().flatten())
+                {
+                    vec![pair]
+                } else {
+                    pairs.clone()
+                };
+                copied.push(row);
+            }
+            Some(copied)
+        } else {
+            None
+        };
+        if let (Some(options), Some(ports)) = (
+            constrained_endpoint_options.as_mut(),
             mesh_cache
                 .edge_ports(ctx, spine)
                 .map_err(StandardTopologyError::Codec)?,
         ) {
-        let pairs = options
+            let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
+                fbb::prune_edge_candidates_by_port_domains_with_deferred(
+                    ctx,
+                    &ports,
+                    options,
+                    &deferred_port_edges,
+                )
+            } else {
+                fbb::prune_edge_candidates_by_port_domains(ctx, &ports, options)
+            }
+            .map_err(StandardTopologyError::Codec)?;
+            if let Some(pruned) = pruned {
+                *options = pruned;
+            }
+            let unique_pairs = if deferred_port_edges.iter().any(|deferred| *deferred) {
+                missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
+                    ctx,
+                    &ports,
+                    options,
+                    &deferred_port_edges,
+                )
+                .map_err(StandardTopologyError::Codec)?
+            } else {
+                missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
+                    .map_err(StandardTopologyError::Codec)?
+                    .map(|pairs| pairs.into_iter().map(Some).collect::<Vec<_>>())
+            };
+            if let Some(pairs) = unique_pairs {
+                for (domain, pair) in options
+                    .iter_mut()
+                    .zip(pairs)
+                    .filter_map(|(domain, pair)| pair.map(|pair| (domain, pair)))
+                {
+                    domain.retain(|candidate| missing_edge::same_unordered_pair(*candidate, pair));
+                }
+            }
+        }
+        if let Some(options) = &mut constrained_endpoint_options {
+            // A same-incidence row relation is not an endpoint identity. Keep its
+            // complete candidate domain for exact identity and mesh constraints.
+            diagnostics.empty_endpoint_domains =
+                options.iter().filter(|domain| domain.is_empty()).count();
+            diagnostics.singleton_endpoint_domains =
+                options.iter().filter(|domain| domain.len() == 1).count();
+            diagnostics.multiple_endpoint_domains =
+                options.iter().filter(|domain| domain.len() > 1).count();
+            diagnostics.endpoint_domain_choices = options.iter().map(Vec::len).sum();
+        }
+        let resolved_endpoint_pairs = propagated_endpoint_pairs
+            .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
+        if let Some(pairs) = &resolved_endpoint_pairs {
+            let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
+            include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
+        }
+        let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
+            mesh_cache
+                .edge_ports(ctx, spine)
+                .map_err(StandardTopologyError::Codec)?
+        } else {
+            None
+        };
+        let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
+            let native = if let Some(ports) = fbb_mesh_ports.as_deref() {
+                topology::parse_fbb_with_native_vertices(ctx, spine, ports)
+                    .map_err(StandardTopologyError::Codec)?
+            } else {
+                None
+            };
+            if native.is_some() {
+                native
+            } else {
+                topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Codec)?
+            }
+        } else {
+            let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Codec)?;
+            if standard.is_some() {
+                standard
+            } else if let Some(ports) = native_ports.as_ref() {
+                topology::parse_fbb_with_native_vertices(ctx, spine, ports)
+                    .map_err(StandardTopologyError::Codec)?
+            } else {
+                None
+            }
+        };
+        let mesh_bound = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+            let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
+                return Ok(None);
+            };
+            let candidate_pairs = match resolved_endpoint_pairs.as_ref() {
+                Some(pairs) => Some(pairs.clone()),
+                None => endpoint_candidates
+                    .iter()
+                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                    .collect::<Option<Vec<_>>>(),
+            };
+            let endpoint_pairs = if let Some(pairs) = candidate_pairs {
+                Some(pairs)
+            } else {
+                let Some(vertices) = topology.edge_vertices(ctx)? else {
+                    return Ok(None);
+                };
+                let ports = vertices
+                    .into_iter()
+                    .map(|[left, right]| {
+                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let Some(ports) = ports else {
+                    return Ok(None);
+                };
+                let Some(options) = constrained_endpoint_options.as_ref() else {
+                    return Ok(None);
+                };
+                missing_edge::bind_edge_port_candidates(ctx, &ports, options)?
+            };
+            let Some(endpoint_pairs) = endpoint_pairs else {
+                return Ok(None);
+            };
+            let Some(point_assignment) = topology.bind_vertex_points(ctx, &endpoint_pairs)? else {
+                return Ok(None);
+            };
+            Ok(Some((topology, point_assignment)))
+        })();
+        let mesh_bound = match mesh_bound {
+            Ok(bound) => bound,
+            Err(error) => return Err(StandardTopologyError::Codec(error)),
+        };
+        let circle_anchors = supports
             .iter()
-            .map(|pairs| {
-                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                    .ok()
-                    .map(|pair| pair[0])
+            .zip(&endpoint_candidates)
+            .map(|(support, candidates)| match &support.geometry {
+                crate::families::standard::records::StandardCurveGeometry::Circle { .. } => {
+                    <[usize; 2]>::try_from(candidates.as_slice()).ok()
+                }
+                crate::families::standard::records::StandardCurveGeometry::Line
+                | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
             })
             .collect::<Vec<_>>();
-        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-            ctx,
-            &ports,
-            &pairs,
-            &ordered_endpoint_pairs,
-            &deferred_port_edges,
-        )
-        .map_err(StandardTopologyError::Codec)?
-    } else {
-        None
-    };
-    let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
-        propagated_endpoint_pairs,
-        mesh_propagated_endpoint_pairs,
-    );
-    let mut constrained_endpoint_options = if let Some(options) = endpoint_options.as_ref() {
-        let mut copied = Vec::new();
-        for (edge, pairs) in options.iter().enumerate() {
-            let row = if let Some(pair) = propagated_endpoint_pairs
-                .as_ref()
-                .and_then(|propagated| propagated.get(edge).copied().flatten())
-            {
-                vec![pair]
+        let native_fbb_topology =
+            if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains {
+                if let Some(pairs) = native_endpoint_pairs.as_ref() {
+                    fbb::parse_fbb_endpoints_with_edge_classes(
+                        ctx,
+                        work_budget,
+                        spine,
+                        &edge_faces,
+                        pairs,
+                        Some(&edge_classes),
+                    )
+                    .map_err(StandardTopologyError::Codec)?
+                } else {
+                    None
+                }
             } else {
-                pairs.clone()
+                None
             };
-            copied.push(row);
-        }
-        Some(copied)
-    } else {
-        None
-    };
-    if let (Some(options), Some(ports)) = (
-        constrained_endpoint_options.as_mut(),
-        mesh_cache
-            .edge_ports(ctx, spine)
-            .map_err(StandardTopologyError::Codec)?,
-    ) {
-        let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
-            fbb::prune_edge_candidates_by_port_domains_with_deferred(
-                ctx,
-                &ports,
-                options,
-                &deferred_port_edges,
-            )
-        } else {
-            fbb::prune_edge_candidates_by_port_domains(ctx, &ports, options)
-        }
-        .map_err(StandardTopologyError::Codec)?;
-        if let Some(pruned) = pruned {
-            *options = pruned;
-        }
-        let unique_pairs = if deferred_port_edges.iter().any(|deferred| *deferred) {
-            missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
-                ctx,
-                &ports,
-                options,
-                &deferred_port_edges,
-            )
-            .map_err(StandardTopologyError::Codec)?
-        } else {
-            missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
-                .map_err(StandardTopologyError::Codec)?
-                .map(|pairs| pairs.into_iter().map(Some).collect::<Vec<_>>())
-        };
-        if let Some(pairs) = unique_pairs {
-            for (domain, pair) in options
-                .iter_mut()
-                .zip(pairs)
-                .filter_map(|(domain, pair)| pair.map(|pair| (domain, pair)))
-            {
-                domain.retain(|candidate| missing_edge::same_unordered_pair(*candidate, pair));
-            }
-        }
-    }
-    if let Some(options) = &mut constrained_endpoint_options {
-        // A same-incidence row relation is not an endpoint identity. Keep its
-        // complete candidate domain for exact identity and mesh constraints.
-        diagnostics.empty_endpoint_domains =
-            options.iter().filter(|domain| domain.is_empty()).count();
-        diagnostics.singleton_endpoint_domains =
-            options.iter().filter(|domain| domain.len() == 1).count();
-        diagnostics.multiple_endpoint_domains =
-            options.iter().filter(|domain| domain.len() > 1).count();
-        diagnostics.endpoint_domain_choices = options.iter().map(Vec::len).sum();
-    }
-    let resolved_endpoint_pairs =
-        propagated_endpoint_pairs.and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
-    if let Some(pairs) = &resolved_endpoint_pairs {
-        let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
-        include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
-    }
-    let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
-        mesh_cache
-            .edge_ports(ctx, spine)
-            .map_err(StandardTopologyError::Codec)?
-    } else {
-        None
-    };
-    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
-        let native = if let Some(ports) = fbb_mesh_ports.as_deref() {
-            topology::parse_fbb_with_native_vertices(ctx, spine, ports)
-                .map_err(StandardTopologyError::Codec)?
-        } else {
-            None
-        };
-        if native.is_some() {
-            native
-        } else {
-            topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Codec)?
-        }
-    } else {
-        let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Codec)?;
-        if standard.is_some() {
-            standard
-        } else if let Some(ports) = native_ports.as_ref() {
-            topology::parse_fbb_with_native_vertices(ctx, spine, ports)
-                .map_err(StandardTopologyError::Codec)?
-        } else {
-            None
-        }
-    };
-    let mesh_bound = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
-        let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
-            return Ok(None);
-        };
-        let candidate_pairs = match resolved_endpoint_pairs.as_ref() {
-            Some(pairs) => Some(pairs.clone()),
-            None => endpoint_candidates
-                .iter()
-                .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                .collect::<Option<Vec<_>>>(),
-        };
-        let endpoint_pairs = if let Some(pairs) = candidate_pairs {
-            Some(pairs)
-        } else {
-            let Some(vertices) = topology.edge_vertices(ctx)? else {
-                return Ok(None);
-            };
-            let ports = vertices
-                .into_iter()
-                .map(|[left, right]| Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?]))
-                .collect::<Option<Vec<_>>>();
-            let Some(ports) = ports else {
-                return Ok(None);
-            };
-            let Some(options) = constrained_endpoint_options.as_ref() else {
-                return Ok(None);
-            };
-            missing_edge::bind_edge_port_candidates(ctx, &ports, options)?
-        };
-        let Some(endpoint_pairs) = endpoint_pairs else {
-            return Ok(None);
-        };
-        let Some(point_assignment) = topology.bind_vertex_points(ctx, &endpoint_pairs)? else {
-            return Ok(None);
-        };
-        Ok(Some((topology, point_assignment)))
-    })();
-    let mesh_bound = match mesh_bound {
-        Ok(bound) => bound,
-        Err(error) => return Err(StandardTopologyError::Codec(error)),
-    };
-    let circle_anchors = supports
-        .iter()
-        .zip(&endpoint_candidates)
-        .map(|(support, candidates)| match &support.geometry {
-            crate::families::standard::records::StandardCurveGeometry::Circle { .. } => {
-                <[usize; 2]>::try_from(candidates.as_slice()).ok()
-            }
-            crate::families::standard::records::StandardCurveGeometry::Line
-            | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
-        })
-        .collect::<Vec<_>>();
-    let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
-    {
-        if let Some(pairs) = native_endpoint_pairs.as_ref() {
-            fbb::parse_fbb_endpoints_with_edge_classes(
-                ctx,
-                work_budget,
-                spine,
-                &edge_faces,
-                pairs,
-                Some(&edge_classes),
-            )
-            .map_err(StandardTopologyError::Codec)?
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let mut selected_face_assignment = None;
-    let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
+        let mut selected_face_assignment = None;
+        let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_fbb_topology {
         let point_assignment = (0..ir.geometry.points.len()).collect::<Vec<_>>();
@@ -6091,73 +6217,75 @@ fn attach_standard_topology(
         )
         .into());
     };
-    if let Some(faces) = selected_face_assignment {
-        edge_faces = faces;
-        for (support, faces) in supports.iter_mut().zip(&edge_faces) {
-            support.faces = *faces;
+        if let Some(faces) = selected_face_assignment {
+            edge_faces = faces;
+            for (support, faces) in supports.iter_mut().zip(&edge_faces) {
+                support.faces = *faces;
+            }
         }
-    }
-    let Some(edge_vertices) = validate_standard_topology(
-        ctx,
-        ir,
-        annotations,
-        &mut topology,
-        &point_assignment,
-        StandardTopologyValidation {
-            supports: &supports,
-            endpoint_candidates: &endpoint_candidates,
-        },
-        admission,
-    )
-    .map_err(StandardTopologyError::Codec)?
-    else {
-        return Err(StandardTopologyFailure::InvalidTopologySolution.into());
-    };
-    let Some(topology) =
-        crate::families::standard::topology::admitted::StandardTopology::new(topology)
-    else {
-        return Err(StandardTopologyFailure::InvalidTopologySolution.into());
-    };
-    let mut resolved_limit_curve_bindings = Vec::new();
-    for (edge, logical_vertices) in edge_vertices.iter().enumerate() {
-        let points = [
-            point_assignment[logical_vertices[0]],
-            point_assignment[logical_vertices[1]],
-        ];
-        resolved_limit_curve_bindings.push(resolve_standard_limit_curve_binding(
-            &limit_curve_bindings[edge],
-            points,
-        ));
-    }
-    *bound_limit_curve_count = resolved_limit_curve_bindings
-        .iter()
-        .filter(|binding| binding.is_some())
-        .count();
-    emit_standard_topology(
-        ctx,
-        crate::families::standard::decode::EmitStandardTopologyInputs {
+        let Some(edge_vertices) = validate_standard_topology(
+            ctx,
             ir,
             annotations,
-            bindings,
-            brep,
-            face_bounds: face_bounds.unwrap_or(&[]),
-            surface_indices: &surface_indices,
-            supports: &supports,
-            edge_vertices: &edge_vertices,
-            point_assignment: &point_assignment,
-            topology: &topology,
-            native_edge_supports: &native_supports_by_row,
-            limit_curve_bindings: &resolved_limit_curve_bindings,
-            limit_curves,
-            refusal,
+            &mut topology,
+            &point_assignment,
+            StandardTopologyValidation {
+                supports: &supports,
+                endpoint_candidates: &endpoint_candidates,
+            },
             admission,
-        },
-    )
-    .map_err(|error| match error {
-        cadmpeg_core::CodecError::ResourceLimit(_) => StandardTopologyError::Codec(error),
-        _ => StandardTopologyError::Semantic(StandardTopologyFailure::InadmissibleNeutralModel),
-    })?;
-    Ok(())
+        )
+        .map_err(StandardTopologyError::Codec)?
+        else {
+            return Err(StandardTopologyFailure::InvalidTopologySolution.into());
+        };
+        let Some(topology) =
+            crate::families::standard::topology::admitted::StandardTopology::new(topology)
+        else {
+            return Err(StandardTopologyFailure::InvalidTopologySolution.into());
+        };
+        let mut resolved_limit_curve_bindings = Vec::new();
+        for (edge, logical_vertices) in edge_vertices.iter().enumerate() {
+            let points = [
+                point_assignment[logical_vertices[0]],
+                point_assignment[logical_vertices[1]],
+            ];
+            resolved_limit_curve_bindings.push(resolve_standard_limit_curve_binding(
+                &limit_curve_bindings[edge],
+                points,
+            ));
+        }
+        *bound_limit_curve_count = resolved_limit_curve_bindings
+            .iter()
+            .filter(|binding| binding.is_some())
+            .count();
+        emit_standard_topology(
+            ctx,
+            crate::families::standard::decode::EmitStandardTopologyInputs {
+                ir,
+                annotations,
+                bindings,
+                brep,
+                face_bounds: face_bounds.unwrap_or(&[]),
+                surface_indices: &surface_indices,
+                supports: &supports,
+                edge_vertices: &edge_vertices,
+                point_assignment: &point_assignment,
+                topology: &topology,
+                native_edge_supports: &native_supports_by_row,
+                limit_curve_bindings: &resolved_limit_curve_bindings,
+                limit_curves,
+                refusal,
+                admission,
+            },
+        )
+        .map_err(|error| match error {
+            cadmpeg_core::CodecError::ResourceLimit(_) => StandardTopologyError::Codec(error),
+            _ => StandardTopologyError::Semantic(StandardTopologyFailure::InadmissibleNeutralModel),
+        })?;
+        Ok(())
+    })();
+    (result, narrowed_by_successors)
 }
 
 #[derive(Clone, Copy)]
@@ -6321,6 +6449,119 @@ fn standard_face_loops(
     crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows, refusal)
 }
 
+/// Align an axis-free standard sphere's arbitrary polar frame to its boundary
+/// small-circle axis when all incident circular edges become latitudes or
+/// meridians in that chart.
+///
+/// Rotating a sphere's right-handed orthonormal frame preserves both its 3D
+/// locus and its outward radial normal while turning off-Z spherical-cap rims
+/// into exact isoparametric pcurves.
+fn align_standard_sphere_polar_axes(
+    ir: &mut CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    curve_indices: &HashMap<CurveId, usize>,
+    topology: &crate::families::standard::topology::admitted::StandardTopology,
+) {
+    let mut sphere_faces: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (face_index, (surface_id, _, _)) in bindings.iter().enumerate() {
+        let Some(&surface_index) = surface_indices.get(surface_id) else {
+            continue;
+        };
+        if matches!(
+            ir.geometry.surfaces.get(surface_index).map(|s| &s.geometry),
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)))
+        ) {
+            sphere_faces
+                .entry(surface_index)
+                .or_default()
+                .push(face_index);
+        }
+    }
+    for (surface_index, faces) in sphere_faces {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+            &ir.geometry.surfaces[surface_index].geometry
+        else {
+            continue;
+        };
+        let sphere_center = sphere.center().get();
+        let current_axis = *sphere.frame().axis().as_raw();
+        let mut circles = Vec::new();
+        let mut has_procedural = false;
+        for &face_index in &faces {
+            let Some(face_topology) = topology.faces().get(face_index) else {
+                continue;
+            };
+            for boundary in face_topology.boundaries() {
+                for edge_use in boundary.coedges() {
+                    let Some(curve_id) = ir
+                        .geometry
+                        .edges
+                        .get(edge_use.edge_row)
+                        .and_then(|edge| edge.curve())
+                    else {
+                        continue;
+                    };
+                    let Some(curve) = curve_indices
+                        .get(curve_id)
+                        .and_then(|&index| ir.geometry.curves.get(index))
+                    else {
+                        continue;
+                    };
+                    match &curve.geometry {
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+                            circles.push(*circle);
+                        }
+                        CurveGeometry::Procedural { .. } => {
+                            has_procedural = true;
+                        }
+                        CurveGeometry::Solved(_) => {}
+                    }
+                }
+            }
+        }
+        if has_procedural || circles.is_empty() {
+            continue;
+        }
+        let Some(candidate_axis) = circles.iter().find_map(|circle| {
+            (circle.center().get().distance(sphere_center) > SPHERE_CENTER_COINCIDENCE_TOLERANCE)
+                .then_some(*circle.frame().axis())
+        }) else {
+            continue;
+        };
+        let target = *candidate_axis.as_raw();
+        if current_axis.dot(target).abs() >= 1.0 - 1.0e-4 {
+            continue;
+        }
+        let all_isoparametric = circles.iter().all(|circle| {
+            let dot = circle.frame().axis().as_raw().dot(target).abs();
+            if circle.center().get().distance(sphere_center) > SPHERE_CENTER_COINCIDENCE_TOLERANCE {
+                dot >= 1.0 - 1.0e-4
+            } else {
+                dot >= 1.0 - 1.0e-4 || dot <= 1.0e-4
+            }
+        });
+        if !all_isoparametric {
+            continue;
+        }
+        let Some(ref_dir) =
+            UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(target))
+        else {
+            continue;
+        };
+        let Some(frame) = OrthonormalFrame3::from_units(candidate_axis, ref_dir) else {
+            continue;
+        };
+        ir.geometry.surfaces[surface_index].geometry = SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Sphere(cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                sphere.center(),
+                frame,
+                sphere.radius(),
+            )),
+        );
+    }
+}
+
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
 struct EmitStandardTopologyInputs<
     'input0,
@@ -6409,6 +6650,7 @@ fn emit_standard_topology(
     }
 
     let mut edge_reversed = Vec::new();
+    let mut deferred_conics = Vec::<(usize, edge_geometry::DeferredConicFallback)>::new();
 
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -6432,7 +6674,8 @@ fn emit_standard_topology(
             }
             _ => None,
         };
-        let (curve, param_range) = build_standard_edge_curve(
+        let mut deferred_slot = None;
+        let (curve, param_range) = edge_geometry::build_standard_edge_curve_with_deferred(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
                 ir,
@@ -6449,7 +6692,11 @@ fn emit_standard_topology(
                 refusal,
                 admission,
             },
+            Some(&mut deferred_slot),
         )?;
+        if let Some(fallback) = deferred_slot {
+            deferred_conics.push((edge_index, fallback));
+        }
         let reversed = param_range.is_some_and(|range| range[0] > range[1]);
         edge_reversed.push(reversed);
         let param_range = param_range.map(ordered_range);
@@ -6502,19 +6749,51 @@ fn emit_standard_topology(
         })
     };
     let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
-        ir,
-        bindings,
-        surface_indices,
-        &curve_indices,
-        supports,
-        topology,
+        ctx,
+        &edge_geometry::cylindrical_arcs::CylindricalArcInputs {
+            ir,
+            bindings,
+            surface_indices,
+            curve_indices: &curve_indices,
+            supports,
+            face_bounds,
+            topology,
+        },
         edge_endpoints,
-    );
+    )?;
     for (&row, &range) in &cylindrical_arc_ranges {
         let Some([start, end]) = range else {
             continue;
         };
         let edge = &mut ir.geometry.edges[row];
+        let had_range = edge.param_range().is_some();
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            edge.curve().cloned(),
+            Some(ordered_range([start, end])),
+        )
+        .map_err(CodecError::malformed)?;
+        if !had_range {
+            annotations.derived(&edge.id, "carrier.param_range")?;
+        }
+        let want_reversed = start > end;
+        if want_reversed != edge_reversed[row] {
+            if let Some(ends) = &mut edge.ends {
+                std::mem::swap(&mut ends.start, &mut ends.end);
+            }
+            edge_reversed[row] = want_reversed;
+        }
+    }
+    for (row, fallback) in deferred_conics {
+        if ir.geometry.edges[row].param_range().is_some() {
+            continue;
+        }
+        refusal.push_conic_branch_bounds_inferred(fallback.source_pos, fallback.gap);
+        if let Some(&curve_idx) = curve_indices.get(&fallback.curve_id) {
+            ir.geometry.curves[curve_idx].geometry =
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(fallback.ellipse));
+        }
+        let edge = &mut ir.geometry.edges[row];
+        let [start, end] = fallback.range;
         edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
             edge.curve().cloned(),
             Some(ordered_range([start, end])),
@@ -6528,6 +6807,7 @@ fn emit_standard_topology(
             edge_reversed[row] = true;
         }
     }
+    align_standard_sphere_polar_axes(ir, bindings, surface_indices, &curve_indices, topology);
     let mut edge_coedges = ctx.alloc_filled(
         ir.geometry.edges.len(),
         Vec::new(),
@@ -6602,16 +6882,19 @@ fn emit_standard_topology(
                     ) && (matches!(
                         ir.geometry.surfaces[surface_indices[&bindings[face_index].0]].geometry,
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-                    ) || edge_geometry::arc_bounds::bounded_circle_branch(
-                        circle.center().get(),
-                        circle.radius().get(),
-                        *circle.frame().axis(),
-                        [start, end],
-                        &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
-                    )
-                    .is_some_and(|(axis, _, bounded_range)| {
-                        axis == *circle.frame().axis() && bounded_range == range.get()
-                    })) =>
+                    ) || cylindrical_arc_ranges
+                        .get(&edge_use.edge_row)
+                        .is_some_and(Option::is_some)
+                        || edge_geometry::arc_bounds::bounded_circle_branch(
+                            circle.center().get(),
+                            circle.radius().get(),
+                            *circle.frame().axis(),
+                            [start, end],
+                            &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
+                        )
+                        .is_some_and(|(axis, _, bounded_range)| {
+                            axis == *circle.frame().axis() && bounded_range == range.get()
+                        })) =>
                     {
                         let [lower, upper] = range.get();
                         cadmpeg_ir::eval::finite_or_refusal(

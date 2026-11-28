@@ -48,7 +48,7 @@ pub(super) struct PlaneParams {
 
 /// An analytic surface marker kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AnalyticSurfaceKind {
+pub(in crate::families) enum AnalyticSurfaceKind {
     /// A plane carrier.
     Plane,
     /// A cylinder carrier.
@@ -125,14 +125,14 @@ pub(crate) struct SurfacePrefix {
     /// Offset of the `00 33 <kind>` signature within the BREP stream.
     pub(super) pos: usize,
     /// The little-endian u24 tag that identifies this carrier.
-    pub(super) target: u32,
+    pub(in crate::families) target: u32,
     /// The kind byte (`0x32`..=`0x38`).
-    pub(super) kind: AnalyticSurfaceKind,
+    pub(in crate::families) kind: AnalyticSurfaceKind,
 }
 
 /// One face-local record in the standard `SurfacicReps` surface roster.
 #[derive(Debug, Clone, Copy)]
-pub(super) enum StandardSurfaceRecord {
+pub(in crate::families) enum StandardSurfaceRecord {
     /// Fixed-length analytic carrier record.
     Analytic(SurfacePrefix),
     /// Face bounds and orientation for a carrier linked through an outer alias.
@@ -150,15 +150,15 @@ pub(super) enum StandardSurfaceRecord {
 
 /// Spatial bounds stored by one standard face roster core.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct StandardFaceBounds {
+pub(in crate::families) struct StandardFaceBounds {
     /// Axis-aligned bounding-box centre.
-    pub(super) aabb_center: [FiniteReal; 3],
+    pub(in crate::families) aabb_center: [FiniteReal; 3],
     /// Non-negative axis-aligned bounding-box half-extents.
-    pub(super) aabb_half_extents: [NonNegativeLength; 3],
+    pub(in crate::families) aabb_half_extents: [NonNegativeLength; 3],
     /// Bounding-sphere centre.
-    pub(super) sphere_center: [FiniteReal; 3],
+    pub(in crate::families) sphere_center: [FiniteReal; 3],
     /// Non-negative bounding-sphere radius.
-    pub(super) sphere_radius: NonNegativeLength,
+    pub(in crate::families) sphere_radius: NonNegativeLength,
 }
 
 fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
@@ -209,7 +209,7 @@ fn f32_ulp(value: f32) -> f64 {
 
 /// Read the spatial bounds of one complete face-local surface record.
 #[must_use]
-pub(super) fn standard_face_bounds(
+pub(in crate::families) fn standard_face_bounds(
     brep: &[u8],
     record: &StandardSurfaceRecord,
 ) -> Option<StandardFaceBounds> {

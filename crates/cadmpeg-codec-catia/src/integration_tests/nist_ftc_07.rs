@@ -87,10 +87,7 @@ fn nist_ftc_07_transfers_every_solid_face_carrier(decoded: &EditableDecodeResult
         .iter()
         .filter(|loss| loss.code.local_code() == "geometry.conic-branch-bounds-inferred")
         .collect();
-    assert_eq!(inferences.len(), 28);
-    assert!(inferences
-        .iter()
-        .all(|loss| loss.message.contains("stored-box excess")));
+    assert!(inferences.is_empty());
 }
 
 fn nist_ftc_07_circular_edge_agrees_with_both_face_curves(decoded: &EditableDecodeResult) {
