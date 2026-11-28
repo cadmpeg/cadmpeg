@@ -25,6 +25,9 @@
     "tolerances": {
       "$ref": "#/$defs/Tolerances"
     },
+    "up_axis": {
+      "$ref": "#/$defs/UpAxis"
+    },
     "geometry": {
       "$ref": "#/$defs/Topology"
     },
@@ -66186,6 +66189,21 @@
           "description": "A shell's face, wire edge, free vertex, or cage, or a body's region.",
           "type": "string",
           "const": "members"
+        }
+      ]
+    },
+    "UpAxis": {
+      "description": "The model-space axis that points up in the source document's own view of\nit: `Y` for a Y-up document, `Z` for a Z-up document. Stored geometry is\nnot rotated by it. `CadIr::up_axis` is `None` when the source states no up\naxis.",
+      "oneOf": [
+        {
+          "description": "The +Y axis points up.",
+          "type": "string",
+          "const": "y"
+        },
+        {
+          "description": "The +Z axis points up.",
+          "type": "string",
+          "const": "z"
         }
       ]
     },

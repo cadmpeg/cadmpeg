@@ -254,6 +254,9 @@ Native mesh bytes and placement properties remain retained for preserving writes
 A link to a link, a link to an ordinary document group, or a link that selects mesh subelements
 has no complete mesh projection. The affected use is withheld with blocking
 `geometry.mesh-placement-not-transferred`; independent source meshes and supported uses remain.
+A placement on the path of an own mesh that is stored in a form the decoder cannot read is charged
+the same way; the mesh is stated at its own `Placement`, which FreeCAD applies to its kernel, or at
+its stored coordinates where that `Placement` is unreadable.
 This boundary does not change point-cloud transform handling.
 
 Mesh occurrence expansion admits at least 65,536 visits, or 64 times the combined native product

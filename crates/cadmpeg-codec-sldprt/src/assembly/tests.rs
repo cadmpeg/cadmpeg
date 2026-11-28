@@ -88,28 +88,20 @@ fn synthetic_scan(
     }
 }
 
-/// The structure loss `message`, and one part for each component tree
-/// stream of `streams` that gives the stream up.
+/// One part for each component tree stream of `streams` that gives the
+/// stream up as `cause` and states `message`, and no other loss: the
+/// give-ups are the one loss of the structure.
 fn assert_structure_given_up(
     projection: &super::AssemblyProjection,
     message: &str,
     streams: &[&str],
+    cause: cadmpeg_ir::unknown::part::Cause,
 ) {
-    let [loss] = projection.losses() else {
-        panic!("one structure loss: {:?}", projection.losses());
-    };
-    assert_eq!(
-        loss.code,
-        SldprtLossCode::AssemblyStructureNotTransferred.kind()
-    );
-    assert_eq!(loss.message, message);
+    assert!(projection.losses().is_empty(), "{:?}", projection.losses());
     assert_eq!(projection.given_up().len(), streams.len());
     for (part, stream) in projection.given_up().iter().zip(streams) {
         let given_up = part.loss();
-        assert_eq!(
-            given_up.code,
-            cadmpeg_ir::unknown::part::record_unreadable_kind()
-        );
+        assert_eq!(given_up.code, cause.kind());
         assert!(given_up.message.starts_with(&format!(
             "part component-tree {stream:?} stream={stream:?} offset=0 "
         )));
@@ -302,15 +294,9 @@ fn a_tree_without_one_active_configuration_transfers_nothing() {
     assert!(projection.occurrences().is_empty());
     assert_eq!(
         codes(&projection),
-        [
-            SldprtLossCode::AssemblyStructureNotTransferred
-                .kind()
-                .local_code()
-                .to_string(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind()
-                .local_code()
-                .to_string(),
-        ]
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()
+            .local_code()
+            .to_string()]
     );
 }
 
@@ -323,8 +309,7 @@ fn a_reference_to_an_undefined_model_is_omitted_and_reported() {
         .iter()
         .all(|occurrence| !occurrence.id.as_str().ends_with("#7")));
     assert!(codes(&projection).contains(
-        &SldprtLossCode::AssemblyPlacementUnresolved
-            .kind()
+        &cadmpeg_ir::unknown::part::record_unreadable_kind()
             .local_code()
             .to_string()
     ));
@@ -895,6 +880,7 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         "The `swXmlContents/COMPINSTANCETREE` section root is `notSolidWorks`. No occurrence \
          is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
     );
 
     let text = tree().replace(
@@ -906,6 +892,7 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         &projection,
         "The component tree names 0 active configurations. No occurrence is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
     );
 
     let text = tree().replace(
@@ -918,6 +905,7 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         "The active configuration names model `99`, which the component tree does not define. \
          No occurrence is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -936,6 +924,7 @@ fn a_document_without_a_component_tree_states_the_exact_structure_loss() {
         "The assembly document has no readable `swXmlContents/COMPINSTANCETREE` section. No \
          occurrence, placement, or component reference is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -1037,8 +1026,7 @@ fn a_reference_cycle_is_omitted_and_reported() {
         project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
     assert_eq!(projection.occurrences().len(), 1);
     assert!(codes(&projection).contains(
-        &SldprtLossCode::AssemblyPlacementUnresolved
-            .kind()
+        &cadmpeg_ir::unknown::part::record_unreadable_kind()
             .local_code()
             .to_string()
     ));
@@ -1098,6 +1086,7 @@ fn a_tree_that_is_not_xml_states_the_exact_structure_loss() {
         "The `swXmlContents/COMPINSTANCETREE` section is not well-formed XML. No occurrence is \
          transferred.",
         &[super::TREE_SECTION],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -1182,6 +1171,7 @@ fn a_document_with_different_trees_states_the_exact_structure_loss() {
         "The document holds different `swXmlContents/COMPINSTANCETREE` sections. No occurrence \
          is transferred.",
         &[super::TREE_SECTION, "swXmlContents/COMPINSTANCETREE__ZLB"],
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
     );
 }
 
@@ -1194,6 +1184,7 @@ fn a_repeated_model_identity_states_the_exact_structure_loss() {
         &projection,
         "The component tree repeats the `swModel` id `8`. No occurrence is transferred.",
         &[super::TREE_SECTION],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -1227,13 +1218,13 @@ fn a_mirrored_placement_is_omitted_and_reported_as_mirrored() {
             .contains("1 component instance(s) have a mirrored placement")));
 }
 
-/// The `record.unreadable` losses of the projection that name `id` given up.
+/// The give-ups of the projection that name `id` given up.
 fn charges<'p>(projection: &'p super::AssemblyProjection, id: &str) -> Vec<&'p str> {
     let head = format!("record {id} ");
     projection
         .losses()
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .filter(|loss| loss.message.starts_with(&head))
         .map(|loss| loss.message.as_str())
         .collect()
@@ -1331,4 +1322,19 @@ fn an_instance_without_an_identity_or_with_a_repeated_one_charges_no_record() {
         .losses()
         .iter()
         .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()));
+}
+
+#[test]
+fn an_active_model_whose_id_is_not_a_decimal_is_given_up_as_unreadable() {
+    let text = tree_with("", "")
+        .replace(r#"<swModel id="2""#, r#"<swModel id="2#2""#)
+        .replace(r#"swModelRef="2""#, r#"swModelRef="2#2""#);
+    let projection = project(&ctx(), &text).expect("project");
+    assert_structure_given_up(
+        &projection,
+        "The active configuration's model `2#2` has no valid identity. No occurrence is \
+         transferred.",
+        &[super::TREE_SECTION],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
+    );
 }

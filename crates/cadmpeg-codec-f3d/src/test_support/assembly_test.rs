@@ -189,6 +189,16 @@ fn xref_placement_record(role: &str, transform: [[f64; 4]; 4], index: u32) -> Ve
 
 /// Build an F3D with caller-supplied Redirections bytes for admission tests.
 pub(crate) fn f3d_with_redirections_json(doc_type: &str, redirections: &[u8]) -> Vec<u8> {
+    f3d_with_reference_entries(doc_type, b"{}", redirections)
+}
+
+/// [`f3d_with_redirections_json`] with caller-supplied
+/// `ComponentReferenceData.json` bytes.
+pub(crate) fn f3d_with_reference_entries(
+    doc_type: &str,
+    component_references: &[u8],
+    redirections: &[u8],
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
@@ -201,7 +211,7 @@ pub(crate) fn f3d_with_redirections_json(doc_type: &str, redirections: &[u8]) ->
     zip.write_all(properties.as_bytes()).unwrap();
     zip.start_file("ComponentReferenceData.json", stored)
         .unwrap();
-    zip.write_all(b"{}").unwrap();
+    zip.write_all(component_references).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
     zip.write_all(redirections).unwrap();
     zip.finish().unwrap().into_inner()

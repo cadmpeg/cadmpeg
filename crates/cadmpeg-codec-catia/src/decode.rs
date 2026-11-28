@@ -236,7 +236,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
-        given_up,
+        mut given_up,
         untyped,
         mut admitted_model_entities,
         standard_face_population,
@@ -254,6 +254,11 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    let image = unknowns
+        .iter()
+        .find(|record| record.data() == Some(scan.data.as_ref()))
+        .map(|record| cadmpeg_ir::ids::Identity::from(record.id().clone()));
+    given_up.extend(refusal.take_given_up(ctx, image.as_ref())?);
     ctx.admit_entities(
         u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
@@ -270,6 +275,7 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    given_up.extend(refusal.take_given_up(ctx, image.as_ref())?);
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
     crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
@@ -3714,7 +3720,9 @@ fn finish_decode(
             "catia",
             &mut ir,
             &mut report.losses,
-            |ir, losses| crate::design_v11::project(ctx, ir, losses),
+            |ir, losses| {
+                crate::design_v11::project(ctx, ir, &native, &modeling_graph_scope, losses)
+            },
         )?;
         let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
         crate::design_v11::restate_exactness(&ir, &mut restated)?;

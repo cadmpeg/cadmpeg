@@ -280,15 +280,6 @@ pub(super) enum RingLoss {
 }
 
 impl RingLoss {
-    pub(super) fn code(self) -> crate::loss::SldprtLossCode {
-        match self {
-            Self::AmbiguousFin => crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
-            Self::NonReciprocal | Self::Open => {
-                crate::loss::SldprtLossCode::TopologyFinLinkUnresolved
-            }
-        }
-    }
-
     pub(super) const fn why(self) -> &'static str {
         match self {
             Self::AmbiguousFin => "the ring of the loop holds an ambiguous FIN",

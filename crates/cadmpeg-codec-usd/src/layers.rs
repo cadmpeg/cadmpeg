@@ -114,6 +114,24 @@ impl<'a> Layers<'a> {
         out
     }
 
+    /// Whether every sublayer of the layer stack of layer `index` opened.
+    pub(crate) fn stack_is_whole(&self, index: usize) -> bool {
+        self.stack(index)
+            .into_iter()
+            .all(|layer| self.sublayers_open(layer))
+    }
+
+    /// Whether every sublayer of every layer opened.
+    pub(crate) fn stacks_are_whole(&self) -> bool {
+        (0..self.all.len()).all(|layer| self.sublayers_open(layer))
+    }
+
+    fn sublayers_open(&self, layer: usize) -> bool {
+        self.all.get(layer).is_some_and(|loaded| {
+            sublayer_assets(&loaded.layer).all(|asset| loaded.assets.contains_key(asset))
+        })
+    }
+
     fn collect_stack(&self, index: usize, out: &mut Vec<usize>) {
         if out.contains(&index) {
             return;

@@ -66,9 +66,9 @@ fn records_follow_the_class_token_in_stream_order() {
     let stream = resolved(&objects);
     let marks = mark_records(&stream, MARK_INDEX)
         .iter()
-        .map(|record| record.mark)
+        .map(|record| (record.mark, record.valid))
         .collect::<Vec<_>>();
-    assert_eq!(marks, [7, 9, 12]);
+    assert_eq!(marks, [(7, true), (9, true), (12, true), (13, false)]);
     let first = mark_records(&stream, MARK_INDEX)[0];
     assert_eq!(
         first.at,
@@ -87,7 +87,8 @@ fn a_class_index_past_the_short_range_takes_the_long_token() {
         mark_records(&stream, index),
         [MarkRecord {
             at: 6 + 6,
-            mark: 31
+            mark: 31,
+            valid: true,
         }]
     );
     assert!(mark_records(&stream, MARK_INDEX).is_empty());
@@ -144,6 +145,7 @@ fn records(marks: &[u32]) -> Vec<MarkRecord> {
         .map(|(index, &mark)| MarkRecord {
             at: 100 * (index + 1),
             mark,
+            valid: true,
         })
         .collect()
 }

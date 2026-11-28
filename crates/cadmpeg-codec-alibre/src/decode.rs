@@ -14,6 +14,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::DecodeParts;
 
 use crate::container::{AlibreContainer, SAB_STREAM, STEP_STREAM};
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
@@ -60,7 +61,15 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             message: message.into(),
         });
     };
-    let (brep, removed) = decode_kernel_stream(ctx, bytes, &kernel)?;
+    let (mut brep, removed) = decode_kernel_stream(ctx, bytes, &kernel)?;
+    let stream = cadmpeg_ir::stream_name!("alibre:").with_suffix(SAB_STREAM);
+    let withheld = std::mem::take(&mut brep.withheld)
+        .iter()
+        .map(|record| {
+            let part = record.part(FORMAT).in_stream(stream.clone());
+            ctx.give_up_part(part, record.cause, record.error())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     losses.extend(extensions_loss(removed));
     losses.extend(container.undecoded_streams_loss());
     let step = container.stream(ctx, STEP_STREAM)?;
@@ -81,7 +90,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             }
             Err(error) => return Err(error),
         };
-    from_kernel(
+    let mut decoded = from_kernel(
         ctx,
         classification,
         &kernel,
@@ -89,7 +98,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         losses,
         digest,
         history.as_ref(),
-    )
+    )?;
+    for part in withheld {
+        let note = part.commit(ctx, &mut decoded.ir, &mut decoded.source_fidelity)?;
+        decoded.body.losses.push(note);
+    }
+    Ok(decoded)
 }
 
 fn read_history(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<History>, CodecError> {
@@ -216,6 +230,7 @@ fn from_kernel(
             stats,
             annotation_records,
             unbounded_faces,
+            withheld: _,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
     for face in &unbounded_faces {
