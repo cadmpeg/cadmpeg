@@ -675,7 +675,9 @@ pub(in crate::design::profile_select) fn added_candidate(
     state_ids: (i64, i64),
     sweep: Sweep<'_>,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
-    if matches!(sweep.extent, ExtrudeExtent::TwoSided { .. }) {
+    if matches!(sweep.extent, ExtrudeExtent::TwoSided { .. })
+        || matches!(sweep.start, ExtrudeStart::OffsetProfilePlane { .. })
+    {
         return two_sided::added_candidate(sketch, resolution, state_ids, sweep);
     }
     if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody) {

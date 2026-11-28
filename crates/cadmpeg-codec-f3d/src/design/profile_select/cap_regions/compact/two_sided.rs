@@ -19,9 +19,20 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::Sketch;
 
 fn travel(sweep: Sweep<'_>, planes: &[PlaneSides], tolerance: f64) -> Option<(f64, f64)> {
-    if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody)
-        || !matches!(sweep.start, ExtrudeStart::ProfilePlane {})
-    {
+    if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody) {
+        return None;
+    }
+    if matches!(sweep.start, ExtrudeStart::OffsetProfilePlane { .. }) {
+        let (low, high) = super::extent_interval(&sweep)?;
+        return (high - low > tolerance
+            && [low, high].into_iter().all(|height| {
+                planes
+                    .iter()
+                    .any(|plane| (plane.offset - height).abs() <= tolerance)
+            }))
+        .then_some((low, high));
+    }
+    if !matches!(sweep.start, ExtrudeStart::ProfilePlane {}) {
         return None;
     }
     let ExtrudeExtent::TwoSided { first, second } = sweep.extent else {
