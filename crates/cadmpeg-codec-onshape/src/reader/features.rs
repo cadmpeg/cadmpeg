@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::Report;
-const DRILL_TIP_ANGLE_TOLERANCE: f64 = 1e-9;
+pub(super) const DRILL_TIP_ANGLE_TOLERANCE: f64 = 1e-9;
 use super::{definition, id, number, push, rows, sketch, text, topology, Mapping};
 
 pub(super) fn parameter<'a>(feature: &'a Value, key: &str) -> Mapping<&'a Value> {
@@ -56,62 +56,45 @@ pub(super) fn quantity(
     model: &Model,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<f64> {
-    fn scale(unit: &str, angle: bool) -> Option<f64> {
-        match (angle, unit) {
-            (true, "radian" | "rad") => Some(1.0),
-            (true, "degree" | "deg") => Some(std::f64::consts::PI / 180.0),
-            (false, "meter" | "m") => Some(1000.0),
-            (false, "millimeter" | "mm") => Some(1.0),
-            (false, "centimeter" | "cm") => Some(10.0),
-            (false, "inch" | "in") => Some(25.4),
-            (false, "foot" | "ft") => Some(304.8),
-            _ => None,
-        }
-    }
-    if let Some(expression) = parameter.get("expression") {
-        let expression = expression
+    let dimension = if angle {
+        super::expression::Dimension::Angle
+    } else {
+        super::expression::Dimension::Length
+    };
+    let evaluated = parameter.get("expression").map(|source| {
+        let text = source
             .as_str()
             .ok_or("quantity expression must be a string")?;
-        let evaluated = super::expression::evaluate(
-            expression,
-            if angle {
-                super::expression::Dimension::Angle
-            } else {
-                super::expression::Dimension::Length
-            },
-            model,
-            unresolved,
-        );
-        if let Ok(value) = &evaluated {
-            return Ok(value.value);
-        }
-        if let Some((scalar, unit)) = expression.trim().rsplit_once(char::is_whitespace) {
-            if let Some(factor) = scale(unit, angle) {
-                if let Ok(value) = super::expression::evaluate(
+        super::expression::evaluate(text, dimension, model, unresolved)
+            .map(|value| value.value)
+            .or_else(|reason| {
+                let Some((scalar, unit)) = text.trim().rsplit_once(char::is_whitespace) else {
+                    return Err(reason);
+                };
+                let Some((factor, actual, _)) = super::expression::unit(unit) else {
+                    return Err(reason);
+                };
+                if actual != dimension {
+                    return Err(reason);
+                }
+                let value = super::expression::evaluate(
                     scalar,
                     super::expression::Dimension::Scalar,
                     model,
                     unresolved,
-                ) {
-                    let result = value.value * factor;
-                    if result.is_finite() {
-                        return Ok(result);
-                    }
-                }
-            }
-        }
-        if expression.contains('#') {
-            return evaluated.map(|value| value.value);
-        }
+                )?
+                .value
+                    * factor;
+                value.is_finite().then_some(value).ok_or(reason)
+            })
+    });
+    if let Some(Ok(value)) = evaluated {
+        return Ok(value);
     }
-    let factor =
-        scale(text(parameter, "units")?, angle).ok_or("quantity units are not supported yet")?;
-    let result = number(parameter, "value")? * factor;
-    if result.is_finite() {
-        Ok(result)
-    } else {
-        Err("quantity exceeds the finite range".into())
-    }
+    super::expression::stored(parameter, dimension).ok_or_else(|| match evaluated {
+        Some(Err(reason)) => reason,
+        _ => "quantity has no finite value in supported units".into(),
+    })
 }
 
 fn length(
@@ -158,6 +141,24 @@ fn present_scope(feature: &Value, key: &str) -> Mapping<bool> {
 }
 
 pub(super) fn profile(
+    feature: &Value,
+    key: &str,
+    model: &Model,
+    inputs: &topology::Inputs<'_>,
+) -> Mapping<Value> {
+    let selection = (text(feature, "featureId")?.to_owned(), key.to_owned());
+    if let Some(profile) = inputs.profiles.borrow().get(&selection) {
+        return profile.clone();
+    }
+    let profile = decode_profile(feature, key, model, inputs);
+    inputs
+        .profiles
+        .borrow_mut()
+        .insert(selection, profile.clone());
+    profile
+}
+
+fn decode_profile(
     feature: &Value,
     key: &str,
     model: &Model,
@@ -318,7 +319,7 @@ pub(super) fn sketch_entities_in_order(
         json!({"kind":"sketch_entities","value":{"sketch":selected_sketch.ok_or("the sketch selection is empty")?,"entities":ordered}}),
     )
 }
-fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
+pub(super) fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
     let profile = sketch_entities(queries(feature, "axis")?, model, "EDGE")?;
     let sketch_id = profile
         .pointer("/value/sketch")
@@ -400,7 +401,7 @@ pub(super) fn operation(feature: &Value) -> Mapping<&'static str> {
         _ => Err("the Boolean operation is not supported yet".into()),
     }
 }
-fn owned_variable(
+pub(super) fn owned_formula(
     feature: &Value,
     ordinal: usize,
     key: &str,
@@ -409,31 +410,87 @@ fn owned_variable(
     model: &mut Model,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<()> {
+    if parameter(feature, key)?
+        .get("expression")
+        .and_then(Value::as_str)
+        .is_some_and(|expression| expression.contains('#'))
+    {
+        if let Some(parameter) = formula(
+            feature,
+            ordinal,
+            key,
+            source_kind,
+            dimension,
+            model,
+            unresolved,
+        )? {
+            model.parameters.push(parameter);
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn formula(
+    feature: &Value,
+    ordinal: usize,
+    key: &str,
+    source_kind: &str,
+    dimension: super::expression::Dimension,
+    model: &Model,
+    unresolved: &BTreeSet<String>,
+) -> Mapping<Option<cadmpeg_ir::features::parameters::DesignParameter>> {
     let source = parameter(feature, key)?;
     let Some(expression) = source
         .get("expression")
         .and_then(Value::as_str)
-        .filter(|e| e.contains('#'))
+        .filter(|expression| !super::expression::literal(expression))
     else {
-        return Ok(());
+        return Ok(None);
     };
-    let evaluated = super::expression::evaluate(expression, dimension, model, unresolved)?;
+    let stated = super::expression::definition(source, dimension, model, unresolved)?;
+    let evaluated = super::expression::evaluate(expression, dimension, model, unresolved)
+        .ok()
+        .map(|evaluated| evaluated.value)
+        .or_else(|| super::expression::stored(source, dimension));
     let native = text(feature, "featureId")?;
-    let kind = if dimension == super::expression::Dimension::Angle {
-        "angle"
-    } else {
-        "length"
+    let kind = match dimension {
+        super::expression::Dimension::Angle => "angle",
+        super::expression::Dimension::Length => "length",
+        super::expression::Dimension::Scalar => "real",
     };
-    push(
-        &mut model.parameters,
-        json!({"id":id("parameter",&format!("{native}/{key}")),"owner":id("feature",native),"ordinal":0,
-        "name":format!("{key}{ordinal}"),"expression":evaluated.expression,"value":{"kind":kind,"value":evaluated.value},
-        "dependencies":evaluated.dependencies,"properties":{"source_kind":source_kind}}),
-    )
+    let mut properties = stated.properties;
+    properties["source_kind"] = json!(source_kind);
+    if evaluated.is_none() {
+        properties["quantity_kind"] = json!(kind);
+    }
+    let owner = id("feature", native);
+    let ordinal_in_owner = model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .owner
+                .as_ref()
+                .is_some_and(|id| id.as_str() == owner)
+        })
+        .count();
+    let mut record = json!({
+        "id": id("parameter", &format!("{native}/{key}")), "owner": owner, "ordinal": ordinal_in_owner,
+        "name": format!("{key}{ordinal}"), "expression": stated.expression,
+        "dependencies": stated.dependencies, "properties": properties,
+    });
+    if let Some(value) = evaluated {
+        record["value"] = json!({"kind":kind,"value":value});
+    }
+    json::from_value(record)
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
+
 pub(super) fn report_evaluated_variables(
     feature: &Value,
     model: &Model,
+    extra: &[cadmpeg_ir::features::parameters::DesignParameter],
     report: &mut Report,
 ) -> Mapping<()> {
     let native = text(feature, "featureId")?;
@@ -456,12 +513,14 @@ pub(super) fn report_evaluated_variables(
             ("angle", Ok("revolve")) => {
                 value(feature, "revolveType") == Some("FULL") || enabled(feature, "fullRevolve")?
             }
+            ("tappedDepth", Ok("hole")) => !tapped_standard(feature) || tap_through(feature)?,
+            ("tipAngle", Ok("hole")) => tip_angle_preset(feature).is_some(),
             ("turns" | "angle" | "pitch", Ok("sweep")) => !enabled(feature, "hasTwist")?,
             ("scaleFactor", Ok("sweep")) => !enabled(feature, "hasScale")?,
             _ => false,
         };
         let driven = unused
-            || model.parameters.iter().any(|p| {
+            || model.parameters.iter().chain(extra).any(|p| {
                 p.owner.as_ref().is_some_and(|o| o.as_str() == owner)
                     && p.id.as_str() == id("parameter", &format!("{native}/{key}"))
             });
@@ -766,10 +825,12 @@ pub(super) fn map(
                 return Err("measured variables are not supported yet".into());
             }
             let name = value(feature, "name").ok_or("the variable name is missing")?;
-            if model
-                .parameters
-                .iter()
-                .any(|p| p.owner.is_none() && p.name == name)
+            let suppressed = super::suppression(feature)?;
+            if !suppressed
+                && model
+                    .parameters
+                    .iter()
+                    .any(|p| p.owner.is_none() && p.name == name)
             {
                 return Err("variable reassignment is not supported yet".into());
             }
@@ -784,22 +845,48 @@ pub(super) fn map(
                 _ => return Err("this variable type is not supported yet".into()),
             };
             let source = parameter(feature, key)?;
-            let expression = text(source, "expression")?;
-            let evaluated = super::expression::evaluate(expression, dimension, model, unresolved)?;
-            let ordinal = model
-                .parameters
-                .iter()
-                .filter(|p| p.owner.is_none())
-                .count();
-            let properties = evaluated.display_unit.as_ref().map_or_else(
-                || json!({"retain_without_sketches":"true"}),
-                |unit| json!({"display_unit": unit,"retain_without_sketches":"true"}),
-            );
-            push(
-                &mut model.parameters,
-                json!({"id":id("parameter",text(feature,"featureId")?),"ordinal":ordinal,"name":name,
-                "expression":evaluated.expression,"value":{"kind":kind,"value":evaluated.value},"dependencies":evaluated.dependencies,"properties":properties}),
-            )?;
+            let stated = super::expression::definition(source, dimension, model, unresolved)?;
+            let evaluated =
+                source
+                    .get("expression")
+                    .and_then(Value::as_str)
+                    .and_then(|expression| {
+                        super::expression::evaluate(expression, dimension, model, unresolved).ok()
+                    });
+            let cached = super::expression::stored(source, dimension);
+            if !suppressed && evaluated.is_none() && cached.is_none() {
+                let text = text(source, "expression")?;
+                super::expression::evaluate(text, dimension, model, unresolved)?;
+            }
+
+            let ordinal = if suppressed {
+                0
+            } else {
+                model
+                    .parameters
+                    .iter()
+                    .filter(|p| p.owner.is_none())
+                    .count()
+            };
+            let mut properties = stated.properties;
+            properties["retain_without_sketches"] = json!("true");
+            properties["quantity_kind"] = json!(kind);
+            if let Some(unit) = evaluated
+                .as_ref()
+                .and_then(|evaluated| evaluated.display_unit.as_ref())
+            {
+                properties["display_unit"] = json!(unit);
+            }
+            let native = text(feature, "featureId")?;
+            let mut parameter = json!({"id":id("parameter",native),"ordinal":ordinal,"name":name,
+                "expression":stated.expression,"dependencies":stated.dependencies,"properties":properties});
+            if suppressed {
+                parameter["owner"] = json!(id("feature", native));
+            }
+            if let Some(value) = evaluated.map(|value| value.value).or(cached) {
+                parameter["value"] = json!({"kind":kind,"value":value});
+            }
+            push(&mut model.parameters, parameter)?;
             Ok(definition(
                 "tree_node",
                 json!({"role":"equations", "children":{"children":[]}}),
@@ -851,7 +938,7 @@ pub(super) fn map(
                 _ => return Err("this extrude bound is not supported yet".into()),
             };
             if value(feature, "endBound") == Some("BLIND") {
-                owned_variable(
+                owned_formula(
                     feature,
                     ordinal,
                     "depth",
@@ -917,7 +1004,7 @@ pub(super) fn map(
                 );
             }
             if angle < std::f64::consts::TAU {
-                owned_variable(
+                owned_formula(
                     feature,
                     ordinal,
                     "angle",
@@ -967,7 +1054,7 @@ pub(super) fn map(
                         Some("TWO_OFFSETS") => {
                             json!({"kind": "two_distances", "first": length(feature, "width1", model, unresolved)?, "second": length(feature, "width2", model, unresolved)?})
                         }
-                        Some("DISTANCE_ANGLE") => {
+                        Some("OFFSET_ANGLE" | "DISTANCE_ANGLE") => {
                             json!({"kind": "distance_angle", "distance": length(feature, "width", model, unresolved)?, "angle": quantity(parameter(feature, "angle")?, true, model, unresolved)?})
                         }
                         _ => return Err("this chamfer type is not supported yet".into()),
@@ -978,6 +1065,30 @@ pub(super) fn map(
                 .as_object_mut()
                 .ok_or("blend group is missing")?
                 .insert(key.into(), spec);
+            let owned: &[(&str, &str, bool)] = match (kind, value(feature, "chamferType")) {
+                ("fillet", _) => &[("radius", "Radius", false)],
+                (_, Some("EQUAL_OFFSETS")) => &[("width", "Distance", false)],
+                (_, Some("TWO_OFFSETS")) => &[
+                    ("width1", "FirstDistance", false),
+                    ("width2", "SecondDistance", false),
+                ],
+                _ => &[("width", "Distance", false), ("angle", "Angle", true)],
+            };
+            for (key, role, angle) in owned {
+                owned_formula(
+                    feature,
+                    ordinal,
+                    key,
+                    role,
+                    if *angle {
+                        super::expression::Dimension::Angle
+                    } else {
+                        super::expression::Dimension::Length
+                    },
+                    model,
+                    unresolved,
+                )?;
+            }
             push(&mut model.feature_input_topologies, state.row)?;
             let operation = if kind == "chamfer" {
                 json!({"groups": [group], "flip_direction": enabled(feature, "oppositeDirection")?})
@@ -1049,9 +1160,7 @@ fn shell(
         ));
     }
     if enabled(feature, "oppositeDirection")? {
-        return Err(shell_refusal(
-            "outward walls are not supported yet (ONSHAPE-030)",
-        ));
+        return Err(shell_refusal("the legacy shell form supports inward walls"));
     }
     let faces = state.selection(feature, "entities", "faces")?;
     if faces
@@ -1062,7 +1171,7 @@ fn shell(
         return Err(shell_refusal("no faces to remove are selected"));
     }
     let thickness = length(feature, "thickness", model, unresolved)?;
-    owned_variable(
+    owned_formula(
         feature,
         ordinal,
         "thickness",
@@ -1162,7 +1271,11 @@ fn hole(
     if through {
         fields.insert("extent".into(), json!({"kind": "through_all"}));
     } else {
-        let tip = quantity(parameter(feature, "tipAngle")?, true, model, unresolved)?;
+        let tip = if let Some(preset) = tip_angle_preset(feature) {
+            preset
+        } else {
+            quantity(parameter(feature, "tipAngle")?, true, model, unresolved)?
+        };
         let bottom = if (tip - std::f64::consts::PI).abs() < DRILL_TIP_ANGLE_TOLERANCE {
             json!({"kind": "flat"})
         } else if tip > 0.0 && tip < std::f64::consts::PI {
@@ -1175,6 +1288,47 @@ fn hole(
             json!({"kind": "blind", "length": length(feature, "holeDepth", model, unresolved)?}),
         );
         fields.insert("bottom".into(), bottom);
+    }
+    let mut owned = vec![(
+        if tapped && parameter(feature, "tapDrillDiameter").is_ok() {
+            "tapDrillDiameter"
+        } else {
+            "holeDiameter"
+        },
+        "Diameter",
+        false,
+    )];
+    match value(feature, "style") {
+        Some("C_BORE") => owned.extend([
+            ("cBoreDiameter", "CounterboreDiameter", false),
+            ("cBoreDepth", "CounterboreDepth", false),
+        ]),
+        Some("C_SINK") => owned.extend([
+            ("cSinkDiameter", "CountersinkDiameter", false),
+            ("cSinkAngle", "CountersinkAngle", true),
+        ]),
+        _ => {}
+    }
+    if !through {
+        owned.push(("holeDepth", "Depth", false));
+        if tip_angle_preset(feature).is_none() {
+            owned.push(("tipAngle", "TipAngle", true));
+        }
+    }
+    for (key, role, angle) in owned {
+        owned_formula(
+            feature,
+            ordinal,
+            key,
+            role,
+            if angle {
+                super::expression::Dimension::Angle
+            } else {
+                super::expression::Dimension::Length
+            },
+            model,
+            unresolved,
+        )?;
     }
     Ok(definition("hole", operation))
 }
@@ -1237,22 +1391,7 @@ fn specification(
         fields.insert("designation".into(), json!(size));
     }
     if let Some(source_pitch) = standard.get("pitch") {
-        let pitch = source_pitch.as_str().and_then(|pitch| {
-            let mut parts = pitch.split_whitespace();
-            let (Some(Ok(n)), Some(unit), None) = (
-                parts.next().map(str::parse::<f64>),
-                parts.next(),
-                parts.next(),
-            ) else {
-                return None;
-            };
-            match unit {
-                "mm" => Some(n),
-                "in" => Some(n * 25.4),
-                "tpi" if n > 0.0 => Some(25.4 / n),
-                _ => None,
-            }
-        });
+        let pitch = source_pitch.as_str().and_then(pitch_mm);
         if let Some(pitch) = pitch.filter(|p| p.is_finite() && *p > 0.0) {
             fields.insert("pitch".into(), json!(pitch));
         } else {
@@ -1270,6 +1409,57 @@ fn specification(
         );
     }
     Ok(threaded)
+}
+
+pub(super) fn tip_angle_preset(feature: &Value) -> Option<f64> {
+    let degrees: f64 = match value(feature, "tipAngleStyle") {
+        Some("FLAT") => 180.0,
+        Some("DEGREE118") => 118.0,
+        Some("DEGREE135") => 135.0,
+        _ => return None,
+    };
+    Some(degrees.to_radians())
+}
+
+pub(super) fn tapped_standard(feature: &Value) -> bool {
+    parameter(feature, "standardTappedOrClearance")
+        .is_ok_and(|param| param["value"]["type"] == "Tapped")
+}
+
+pub(super) fn through_hole(feature: &Value) -> bool {
+    matches!(value(feature, "endStyle"), Some("THROUGH" | "THROUGH_ALL"))
+}
+
+pub(super) fn tap_through(feature: &Value) -> Mapping<bool> {
+    Ok(through_hole(feature) && enabled(feature, "isTappedThrough")?)
+}
+
+pub(super) fn pitch_mm(source: &str) -> Option<f64> {
+    let mut source = source.trim();
+    if let Some(prefix) = source.strip_suffix(')') {
+        let (pitch, suffix) = prefix.rsplit_once('(')?;
+        if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_alphabetic()) {
+            return None;
+        }
+        source = pitch.trim_end();
+    }
+    let (number, units) = ["mm", "tpi", "in"]
+        .into_iter()
+        .find_map(|unit| source.strip_suffix(unit).map(|number| (number, unit)))?;
+    let mut parts = number.split_whitespace();
+    let mut number = parts.next()?.parse::<f64>().ok()?;
+    if let Some(fraction) = parts.next() {
+        let (numerator, denominator) = fraction.split_once('/')?;
+        number += numerator.parse::<f64>().ok()? / denominator.parse::<f64>().ok()?;
+    }
+    if parts.next().is_some() || !number.is_finite() || number <= 0.0 {
+        return None;
+    }
+    Some(match units {
+        "mm" => number,
+        "tpi" => 25.4 / number,
+        _ => number * 25.4,
+    })
 }
 
 #[cfg(test)]
