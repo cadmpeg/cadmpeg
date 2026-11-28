@@ -61,7 +61,10 @@ impl Parser<'_, '_, '_> {
         omitted: &mut Vec<Range<usize>>,
     ) {
         if let Some(statement) = self.given_up.get_mut(part) {
-            statement.dropped.push(name);
+            statement.dropped.push(super::DroppedStatement {
+                name,
+                offset: span.start,
+            });
         }
         omitted.push(span);
     }

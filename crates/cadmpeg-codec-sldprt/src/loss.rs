@@ -28,7 +28,8 @@ pub(crate) enum SldprtLossCode {
     MetadataPartRootUnsupported,
     /// Configuration-manager class has no proven scalar roles or serializer.
     MetadataConfigurationManagerOpaque,
-    /// Default-property carrier has no complete supported reading.
+    /// Default-property carrier stores its properties in a form the decoder
+    /// does not read.
     MetadataDefaultCarrierUnsupported,
     /// Default properties have multiple physical namespace owners.
     MetadataDefaultOwnerAmbiguous,
@@ -40,7 +41,8 @@ pub(crate) enum SldprtLossCode {
     MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
-    /// Configuration-property XML has no complete unambiguous reading.
+    /// Configuration-property carrier stores its properties in a form the
+    /// decoder does not read.
     MetadataConfigurationPropertyCarrierUnsupported,
     /// Configuration-property record has no supported literal scalar fact.
     MetadataConfigurationPropertyValueUnsupported,
@@ -119,6 +121,9 @@ pub(crate) enum SldprtLossCode {
     HistoryIncompleteReferences,
     /// The stored marks do not fix the rollback position of the feature tree.
     HistoryRollbackUnread,
+    /// A configuration stores states between features that its states
+    /// between features do not state.
+    HistoryStatesUnread,
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
@@ -331,12 +336,16 @@ pub(crate) enum SldprtLossCode {
     TessellationReusedTagAmbiguous,
     /// `DisplayLists` meshes transferred without B-rep geometry ownership.
     TessellationDisplayWithoutGeometry,
-    /// No body record was available; a body hierarchy was derived.
+    /// No body record links up with the faces; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
-    /// A face has no decoded loop, so the face and its surface are withheld.
+    /// A face names no loop and does not cover a whole closed surface, so
+    /// the face and its surface are withheld.
     TopologyFaceWithheld,
+    /// A face's loop chain names a loop that is missing or that another face
+    /// owns; the face keeps the loops before it and is stated partial.
+    TopologyLoopChainCut,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
     /// Referenced FIN records have conflicting complete frames.
@@ -345,17 +354,18 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN forward link names no reciprocal same-loop backward link, so
-    /// its ring is withheld instead of walked on doubt.
+    /// A FIN ring does not close, or a FIN forward link names no reciprocal
+    /// same-loop backward link, so its loop is withheld instead of walked on
+    /// doubt; the face keeps its other loops.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
-    /// A vertex loop names no resolved vertex, so its face and surface are
-    /// withheld.
+    /// A vertex loop names no resolved vertex, so the loop is withheld; the
+    /// face keeps its other loops.
     TopologyVertexLoopWithheld,
-    /// A loop of a face holds an ambiguous FIN, so the face and its surface
-    /// are withheld.
+    /// The ring of a loop holds an ambiguous FIN, so the loop is withheld;
+    /// the face keeps its other loops.
     TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
@@ -468,6 +478,9 @@ pub(crate) enum SldprtLossCode {
     WriterActiveConfigurationAssumed,
     /// Export writes no history record for the named design records.
     WriterFeaturesOmitted,
+    /// Export writes no history record for the named features, whose result
+    /// body the output does not hold, nor for the records that need them.
+    WriterFeatureResultAbsent,
     /// Export writes the sketches without the named constraints.
     WriterSketchConstraintsOmitted,
     /// Export bounds the named edges by their vertices, without their range.
@@ -553,8 +566,8 @@ pub(crate) enum SldprtLossCode {
     /// Suppressed component instances, and the instances below them, are
     /// omitted from the occurrence tree.
     AssemblySuppressedComponentsOmitted,
-    /// A component instance has no valid placement or names no component
-    /// model; the instance and the instances below it are omitted.
+    /// A component instance has no valid identity, placement, or component
+    /// model; the instance is omitted.
     AssemblyPlacementUnresolved,
     /// Assembly configurations other than the active one are not transferred.
     AssemblyConfigurationsNotTransferred,
@@ -571,6 +584,8 @@ pub(crate) enum SldprtLossCode {
     /// A feature folder whose members regeneration order does not keep in
     /// one run is not stated.
     DesignFolderDropped,
+    /// A stored producer falls outside the shared CADIR timeline position.
+    DesignStateNameNative,
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
@@ -699,6 +714,7 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
         Self::HistoryRollbackUnread,
+        Self::HistoryStatesUnread,
         Self::HistoryRollbackMarkClassInferred,
         Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
@@ -781,6 +797,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFaceWithheld,
+        Self::TopologyLoopChainCut,
         Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
@@ -833,6 +850,7 @@ impl SldprtLossCode {
         Self::WriterSubdOmitted,
         Self::WriterActiveConfigurationAssumed,
         Self::WriterFeaturesOmitted,
+        Self::WriterFeatureResultAbsent,
         Self::WriterSketchConstraintsOmitted,
         Self::WriterEdgeRangesOmitted,
         Self::WriterPmiOmitted,
@@ -867,6 +885,7 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignDatumUnresolved,
         Self::DesignFolderDropped,
+        Self::DesignStateNameNative,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignParameterReferenceAsText,
@@ -936,6 +955,7 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryStatesUnread => "history.states-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
@@ -1023,6 +1043,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyFaceWithheld => "topology.face-withheld",
+            Self::TopologyLoopChainCut => "topology.loop-chain-cut",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
@@ -1080,6 +1101,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => "writer.subd-omitted",
             Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
             Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterFeatureResultAbsent => "writer.feature-result-absent",
             Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
             Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
             Self::WriterPmiOmitted => "writer.pmi-omitted",
@@ -1138,6 +1160,7 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignDatumUnresolved => "design.datum-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignStateNameNative => "design.state-name-native",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
@@ -1188,6 +1211,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => Severity::Warning,
             Self::WriterActiveConfigurationAssumed => Severity::Warning,
             Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterFeatureResultAbsent => Severity::Warning,
             Self::WriterSketchConstraintsOmitted => Severity::Warning,
             Self::WriterEdgeRangesOmitted => Severity::Warning,
             Self::WriterPmiOmitted => Severity::Warning,
@@ -1260,6 +1284,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
             | Self::HistoryRollbackUnread
+            | Self::HistoryStatesUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1336,6 +1361,7 @@ impl SldprtLossCode {
             | Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -1366,6 +1392,7 @@ impl SldprtLossCode {
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
+            | Self::DesignStateNameNative
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignParameterReferenceAsText
@@ -1429,6 +1456,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
             Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
             Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureResultAbsent => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
@@ -1492,6 +1520,7 @@ impl SldprtLossCode {
             | Self::DesignDatumUnresolved
             | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignStateNameNative => LossTaxonomy::AttributesNotTransferred,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
@@ -1517,6 +1546,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -1597,6 +1627,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
             | Self::HistoryRollbackUnread
+            | Self::HistoryStatesUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1874,6 +1905,7 @@ mod tests {
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
                 "history.rollback-unread",
+                "history.states-unread",
                 "history.rollback-mark-class-inferred",
                 "history.unread",
                 "history.application-not-transferred",
@@ -1956,6 +1988,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-unclaimed",
                 "topology.face-withheld",
+                "topology.loop-chain-cut",
                 "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
@@ -2008,6 +2041,7 @@ mod tests {
                 "writer.subd-omitted",
                 "writer.active-configuration-assumed",
                 "writer.features-omitted",
+                "writer.feature-result-absent",
                 "writer.sketch-constraints-omitted",
                 "writer.edge-ranges-omitted",
                 "writer.pmi-omitted",
@@ -2042,6 +2076,7 @@ mod tests {
                 "design.feature-unresolved",
                 "design.datum-unresolved",
                 "design.folder-dropped",
+                "design.state-name-native",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.parameter-reference-as-text",

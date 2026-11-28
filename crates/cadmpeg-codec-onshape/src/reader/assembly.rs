@@ -20,6 +20,24 @@ mod index;
 mod mates;
 
 const ASSEMBLY_DEPTH: usize = 64;
+
+/// The rows of an optional array field of a source record.
+enum Rows<'v> {
+    /// The field is absent or holds an array within the row limit.
+    Read(&'v [Value]),
+    /// The field holds an array over the row limit.
+    Bounded(String),
+    /// The field holds no array.
+    Malformed(String),
+}
+
+fn split_rows<'v>(row: &'v Value, field: &str) -> Rows<'v> {
+    match optional_rows(row, field) {
+        Ok(rows) => Rows::Read(rows),
+        Err(reason) if row.get(field).is_some_and(Value::is_array) => Rows::Bounded(reason),
+        Err(_) => Rows::Malformed(format!("{field} is not an array")),
+    }
+}
 const MATE_NOTES_PER_LEVEL: usize = 16;
 const MATE_NOTE_LIMIT: usize = 256;
 
@@ -242,7 +260,8 @@ pub(super) fn read<'a>(
         return Ok(model);
     }
     let definition_path = format!("assemblies/{root_id}/definition.json");
-    let definition = match bundle.json(&definition_path) {
+    let definition_path = definition_path.as_str();
+    let definition = match bundle.json(definition_path) {
         Ok(value) => value,
         Err(error) => {
             report.push_coded(
@@ -257,7 +276,7 @@ pub(super) fn read<'a>(
     let index = index::Index::build(
         ctx,
         definition,
-        &definition_path,
+        definition_path,
         manifest,
         bundle,
         mid,
@@ -283,20 +302,31 @@ pub(super) fn read<'a>(
         single_bodies: &single_bodies,
         microversion: mid,
         root_element: root_id,
+        definition: definition_path,
         placements: BTreeMap::new(),
+        given_up: BTreeMap::new(),
         products,
         joint_ids,
+        joint_paths: BTreeMap::new(),
         count: 0,
         mate_work: 0,
         mate_notes: 0,
         omitted_mate_notes: 0,
         mate_exhausted: false,
     };
+    let mut structure_root = None;
     if let Some(root) = definition
         .get("rootAssembly")
         .filter(|root| root.is_object())
     {
-        let product = structure.level(root, &[], Some(Transform::identity()), false)?;
+        let product = structure.level(
+            root,
+            &[],
+            Some(Transform::identity()),
+            false,
+            &format!("{definition_path}#/rootAssembly"),
+        )?;
+        structure_root = Some(product.clone());
         if let Some(position) = structure.products.get(&product) {
             if let Some(product) = structure
                 .model
@@ -313,7 +343,7 @@ pub(super) fn read<'a>(
         }
     } else {
         structure.report.give_up_as(
-            &definition_path,
+            definition_path,
             root_id,
             OnshapeLossCode::AssemblyRecordUnsupported,
             "rootAssembly is missing or malformed",
@@ -330,7 +360,18 @@ pub(super) fn read<'a>(
         );
     }
 
+    let root = structure_root;
+    let joint_paths = structure.resolved_paths();
     release_bound_bodies(&mut model.ir.model.product_definitions, studio_definitions);
+    if let Some(root) = root {
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "Onshape assembly",
+            &mut model.ir,
+            &mut report.notes,
+            |ir, _| crate::reader::design::assembly::project(ctx, ir, &root, &joint_paths),
+        )?;
+    }
     Ok(model)
 }
 
@@ -471,6 +512,12 @@ struct Placement {
     id: OccurrenceId,
     world: Option<Transform>,
 }
+/// The native paths of a mate: of each connector's occurrence, and of the
+/// sub-assembly that lists it, empty at the root.
+struct NativePaths {
+    connectors: [Vec<String>; 2],
+    listed: Vec<String>,
+}
 struct Structure<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
     report: &'a mut Report,
@@ -482,14 +529,70 @@ struct Structure<'a, 'ctx> {
     single_bodies: &'a BTreeMap<String, Option<BodyId>>,
     microversion: &'a str,
     root_element: &'a str,
+    /// The member path of the assembly definition.
+    definition: &'a str,
     placements: BTreeMap<Vec<String>, Placement>,
+    /// The source address of each instance the decode gives up, by its
+    /// occurrence path.
+    given_up: BTreeMap<Vec<String>, String>,
     products: BTreeMap<ProductDefinitionId, usize>,
     joint_ids: BTreeSet<cadmpeg_ir::products::JointId>,
+    /// The native path from the root of each connector of each mate, and of
+    /// the sub-assembly that lists the mate.
+    joint_paths: BTreeMap<cadmpeg_ir::products::JointId, NativePaths>,
     count: usize,
     mate_work: usize,
     mate_notes: usize,
     omitted_mate_notes: usize,
     mate_exhausted: bool,
+}
+impl Structure<'_, '_> {
+    /// The occurrence path of each mate whose native paths every placement
+    /// resolves.
+    fn resolved_paths(&self) -> crate::reader::design::assembly::JointPaths {
+        let steps = |path: &[String]| {
+            (1..=path.len())
+                .map(|level| {
+                    self.placements
+                        .get(&path[..level])
+                        .map(|placement| placement.id.clone())
+                })
+                .collect::<Option<Vec<_>>>()
+        };
+        self.joint_paths
+            .iter()
+            .filter_map(|(joint, paths)| {
+                let component = if paths.listed.is_empty() {
+                    None
+                } else {
+                    let placed = self.placements.get(&paths.listed)?;
+                    Some(
+                        self.model
+                            .ir
+                            .model
+                            .occurrences
+                            .iter()
+                            .find(|occurrence| occurrence.id == placed.id)?
+                            .prototype
+                            .clone(),
+                    )
+                };
+                // A path starts at the definition that lists the mate.
+                let local = |path: &[String]| {
+                    let steps = steps(path)?;
+                    steps.get(paths.listed.len()..).map(<[_]>::to_vec)
+                };
+                let [first, second] = &paths.connectors;
+                Some((
+                    joint.clone(),
+                    crate::reader::design::assembly::Paths {
+                        connectors: [local(first)?, local(second)?],
+                        component,
+                    },
+                ))
+            })
+            .collect()
+    }
 }
 fn element_id(eid: &str) -> bool {
     !eid.is_empty()
@@ -571,20 +674,23 @@ impl Structure<'_, '_> {
         }
         Ok(())
     }
+    /// Maps the assembly `assembly`, the source record at `source`, at the
+    /// occurrence path `path`.
     fn level(
         &mut self,
         assembly: &Value,
         path: &[String],
         parent: Option<Transform>,
         suppressed: bool,
+        source: &str,
     ) -> Result<ProductDefinitionId, Error> {
         let _depth = self.ctx.enter_nested("Onshape assembly structure")?;
         let pid = product_id(&format!("assembly:{}", key(path)))?;
         let mut product = ProductDefinition::new(pid.clone(), Storage::Embedded);
         product.kind = Some(ProductDefinitionKind::Assembly);
-        let instances = match optional_rows(assembly, "instances") {
-            Ok(rows) => rows,
-            Err(reason) => {
+        let instances = match split_rows(assembly, "instances") {
+            Rows::Read(rows) => rows,
+            Rows::Bounded(reason) => {
                 self.report.push_coded(
                     &key(path),
                     OnshapeLossCode::AssemblyRecordUnsupported,
@@ -592,8 +698,18 @@ impl Structure<'_, '_> {
                 );
                 &[]
             }
+            Rows::Malformed(reason) => {
+                self.report.give_up_as(
+                    &format!("{source}/instances"),
+                    &key(path),
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    reason,
+                );
+                &[]
+            }
         };
-        for instance in instances {
+        let mut kept = BTreeMap::<&str, &Value>::new();
+        for (position, instance) in instances.iter().enumerate() {
             if self.count >= ROWS {
                 self.report.push_coded(
                     &key(path),
@@ -604,35 +720,75 @@ impl Structure<'_, '_> {
             }
             self.count += 1;
             self.ctx.charge_entities(3, "Onshape assembly instance")?;
-            match self.instance(instance, path, parent, suppressed) {
-                Ok(occurrence) => product.occurrences.push(occurrence),
-                Err(Error::Decode(reason)) => self.report.push_coded(
-                    &key(path),
-                    OnshapeLossCode::AssemblyRecordUnsupported,
-                    reason,
-                ),
+            let record = format!("{source}/instances/{position}");
+            let native = match text(instance, "id") {
+                Ok(native) => native,
+                Err(reason) => {
+                    self.report.give_up_as(
+                        &record,
+                        &key(path),
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                        reason,
+                    );
+                    continue;
+                }
+            };
+            let mut child = path.to_vec();
+            child.push(native.to_owned());
+            if let Some(&first) = kept.get(native) {
+                if first == instance {
+                    self.report.push_coded(
+                        &key(&child),
+                        OnshapeLossCode::AssemblyRecordRepeated,
+                        "instance path repeats with the same content; retained the first instance",
+                    );
+                } else {
+                    self.report.give_up_as(
+                        &record,
+                        &key(&child),
+                        OnshapeLossCode::AssemblyRecordRepeated,
+                        "instance path repeats with different content; retained the first instance",
+                    );
+                }
+                continue;
+            }
+            match self.instance(instance, native, &child, parent, suppressed) {
+                Ok(occurrence) => {
+                    product.occurrences.push(occurrence);
+                    kept.insert(native, instance);
+                    // A later instance that holds the path of a given-up one
+                    // keeps the mates that name the path.
+                    self.given_up.remove(&child);
+                }
+                Err(Error::Decode(reason)) => {
+                    self.report.give_up_as(
+                        &record,
+                        &key(&child),
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                        reason,
+                    );
+                    self.given_up.insert(child, record);
+                }
                 Err(error) => return Err(error),
             }
         }
         self.ctx.charge_entities(1, "Onshape assembly definition")?;
         self.insert_product(product);
-        mates::project(self, assembly, path, suppressed)?;
+        mates::project(self, assembly, path, suppressed, source)?;
         Ok(pid)
     }
 
+    /// Maps the instance `instance`, whose id is `native`, at the occurrence
+    /// path `path`.
     fn instance(
         &mut self,
         instance: &Value,
-        parent_path: &[String],
+        native: &str,
+        path: &[String],
         parent: Option<Transform>,
         inherited_suppressed: bool,
     ) -> Result<OccurrenceId, Error> {
-        let native = text(instance, "id").map_err(Error::Decode)?;
-        let mut path = parent_path.to_vec();
-        path.push(native.to_owned());
-        if self.placements.contains_key(&path) {
-            return Err(Error::Decode("instance path repeats".into()));
-        }
+        let path = path.to_vec();
         let occurrence = self.index.occurrences.get(&path).copied();
         let world = occurrence
             .and_then(|o| o.get("transform"))
@@ -693,8 +849,9 @@ impl Structure<'_, '_> {
                     .get(&self.index.definition_key(instance))
                     .copied();
                 match sub {
-                    Some(sub) if path.len() < ASSEMBLY_DEPTH => {
-                        self.level(sub, &path, trusted_world, suppressed)?
+                    Some((position, sub)) if path.len() < ASSEMBLY_DEPTH => {
+                        let source = format!("{}#/subAssemblies/{position}", self.definition);
+                        self.level(sub, &path, trusted_world, suppressed, &source)?
                     }
                     Some(_) => {
                         self.report.push_coded(

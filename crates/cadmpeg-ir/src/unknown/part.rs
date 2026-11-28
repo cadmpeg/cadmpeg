@@ -47,6 +47,7 @@ pub struct GivenUpRecord {
     provenance: Option<SourceProvenance>,
     length: Option<u64>,
     dropped: Vec<String>,
+    marked: Option<Vec<String>>,
 }
 
 impl GivenUpRecord {
@@ -58,6 +59,7 @@ impl GivenUpRecord {
             provenance: None,
             length: None,
             dropped: Vec::new(),
+            marked: None,
         }
     }
 
@@ -94,6 +96,30 @@ impl GivenUpRecord {
         self
     }
 
+    /// States what else the document lacks because the record was given up,
+    /// such as the transforms its value would have composed, as
+    /// [`Part::costing`] does for a part.
+    pub fn costing(mut self, consequence: impl std::fmt::Display) -> Self {
+        self.error = format!("{}; {consequence}", self.error);
+        self
+    }
+
+    /// The records that state their unstated children marked because this
+    /// record is dropped (§5.6).
+    pub fn marking<I>(mut self, records: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<Identity>,
+    {
+        join_sorted(
+            self.marked.get_or_insert_with(Vec::new),
+            records
+                .into_iter()
+                .map(|record| record.into().into_string()),
+        );
+        self
+    }
+
     /// The `record.unreadable` (Error) of the give-up.
     #[must_use]
     pub fn loss(self) -> LossNote {
@@ -112,6 +138,7 @@ impl GivenUpRecord {
         let head = format!("record {}{span} given up: {}", self.record, self.error);
         let tail = Tail {
             dropped: self.dropped,
+            marked: self.marked.filter(|marked| !marked.is_empty()),
             ..Tail::default()
         };
         let loss = charge(&head, self.record, tail).with_severity(Severity::Error);
@@ -297,6 +324,7 @@ pub struct Part<'a> {
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
+    marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
     digest_only: bool,
@@ -344,6 +372,7 @@ impl<'a> Part<'a> {
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
+            marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
             digest_only: false,
@@ -377,6 +406,14 @@ impl<'a> Part<'a> {
     #[must_use]
     pub fn dropping(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
         self.dropped.extend(records);
+        self
+    }
+
+    /// Names records the decoder states in a partial form or with a mark
+    /// because they lose this part's records (§5.6, Unstated children).
+    #[must_use]
+    pub fn marking(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
+        self.marked.extend(records);
         self
     }
 
@@ -748,6 +785,70 @@ impl GivenUpPart {
         Ok(())
     }
 
+    /// The part's retained record: its bytes, or their length and digest.
+    #[must_use]
+    pub const fn retained(&self) -> &RetainedSourceRecord {
+        &self.retained
+    }
+
+    /// Keeps `bytes`, the part's own bytes, in place of their length and
+    /// digest, for a decoder that gave the part up digest-only and then finds
+    /// that no other retained record keeps them.
+    ///
+    /// # Errors
+    ///
+    /// A resource refusal for the retained bytes, or
+    /// [`CodecError::Malformed`] when `bytes` are not the part's bytes.
+    pub fn keep_bytes(&mut self, ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
+        if self.retained.data().is_some() {
+            return Ok(());
+        }
+        let length = u64_from_index(bytes.len());
+        let digest = RetainedBytes::Digest {
+            byte_len: length,
+            sha256: Sha256Digest::digest(bytes),
+        };
+        if length != self.retained.byte_len() || digest.sha256() != self.retained.sha256() {
+            return Err(CodecError::malformed(format_args!(
+                "the bytes kept for given-up part {} are not its bytes",
+                self.stub.id
+            )));
+        }
+        ctx.retain_bytes(length, "given-up part source bytes")?;
+        let mut data = ctx.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
+        data.copy_from_slice(bytes);
+        let owner = self
+            .stream
+            .clone()
+            .map_or(SourceOwner::Root, SourceOwner::from);
+        self.retained = RetainedSourceRecord::from_bytes(
+            owner,
+            self.retained.offset(),
+            RetainedBytes::Inline { data },
+        )?
+        .with_untyped(self.retained.untyped().iter().copied());
+        Ok(())
+    }
+
+    /// States `consequence` in the loss, as [`Part::costing`] does, for a
+    /// decoder that learns it after it gave the part up.
+    ///
+    /// # Errors
+    ///
+    /// A resource refusal for the restated loss text.
+    pub fn costing(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        consequence: &str,
+    ) -> Result<(), CodecError> {
+        self.head.push_str("; ");
+        self.head.push_str(consequence);
+        let restated = message(&self.head, self.tail.as_ref());
+        ctx.retain_bytes(u64_from_index(restated.len()), "given-up part loss")?;
+        self.loss.message = restated;
+        Ok(())
+    }
+
     /// Links the stub to the innermost record that contains the part, for a
     /// decoder that creates that record after it gave the part up.
     #[must_use]
@@ -922,9 +1023,16 @@ impl DecodeParts for DecodeContext<'_> {
             part.kind,
             part.offset(),
         );
+        let mut marked: Vec<String> = part
+            .marked
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect();
+        marked.sort_unstable();
+        marked.dedup();
         let tail = Tail {
             dropped: dropped.into_iter().map(str::to_owned).collect(),
-            marked: None,
+            marked: (!marked.is_empty()).then_some(marked),
             stated: Vec::new(),
             lost: part.lost.clone(),
         };

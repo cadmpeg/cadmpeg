@@ -4,10 +4,10 @@
 use super::compact::{CompactIndexAtom, NullableCompactIndex};
 use super::discriminators::DraftIdentityBranch;
 use cadmpeg_core::decode::u64_from_index;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Decoded prefix fields used only at the native wire boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DraftIdentityForm {
     IndexedBranch {

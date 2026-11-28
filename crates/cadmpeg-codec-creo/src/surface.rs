@@ -3347,11 +3347,17 @@ pub(crate) fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
 /// frames are excluded so a prototype cannot join to a row in a neighboring
 /// frame through section-wide adjacency.
 pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize)> {
+    complete_surface_array_bounds_for_rows(payload, &rows(payload))
+}
+
+fn complete_surface_array_bounds_for_rows(
+    payload: &[u8],
+    rows: &[SurfaceRow],
+) -> Vec<(usize, usize)> {
     let mut frames = surface_array_frames(payload).peekable();
     if frames.peek().is_none() {
         return Vec::new();
     }
-    let rows = rows(payload);
     let mut bounds = Vec::new();
     for frame in frames {
         if frame.count != 0
@@ -3369,6 +3375,7 @@ pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize
 
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
+#[cfg(test)]
 pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
     cross_section_rows_with_packed_readings(payload).0
 }
@@ -4678,6 +4685,7 @@ pub(crate) fn parameter_records(
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
 /// surface namespace.
+#[cfg(test)]
 pub(crate) fn cross_section_parameter_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -5985,7 +5993,7 @@ pub(crate) fn parameter_records_for_rows(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
-    let bounds = complete_surface_array_bounds(payload);
+    let bounds = complete_surface_array_bounds_for_rows(payload, rows);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
         let Some(body_start) = positional_body_start(payload, row) else {
@@ -6213,6 +6221,7 @@ pub(crate) fn parameter_records_for_rows(
 /// Decode complete positional surface contour chains from the visible
 /// `srf_array` namespace. Framing a plane body can stop a local-system search
 /// at a work cap; its loss goes to `losses`.
+#[cfg(test)]
 pub(crate) fn contour_records_with_losses(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -6229,17 +6238,7 @@ pub(crate) fn contour_records(
     contour_records_with_losses(ctx, payload, &mut Vec::new())
 }
 
-/// Decode complete positional surface contour chains from a DEPDB
-/// cross-section namespace.
-pub(crate) fn cross_section_contour_records(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<SurfaceContourRecord>, CodecError> {
-    contour_records_for_rows(ctx, payload, &cross_section_rows(payload), losses)
-}
-
-fn contour_records_for_rows(
+pub(crate) fn contour_records_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
@@ -7092,16 +7091,11 @@ fn scalar_surface_body_compound_close(
 }
 
 fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
-    const OUTLINE_PAIR_SEPARATOR: &[u8] = &[0x00, 0x0c, 0x98];
+    const OUTLINE_PAIR_SEPARATOR_CLOSE: &[u8] = &[0x00, 0x0c, 0x98, psb::token::COMPOUND_CLOSE];
 
-    let separator_close = payload
-        .get(start..end)?
-        .windows(OUTLINE_PAIR_SEPARATOR.len() + 1)
-        .position(|window| {
-            window.starts_with(OUTLINE_PAIR_SEPARATOR)
-                && window.last() == Some(&psb::token::COMPOUND_CLOSE)
-        })
-        .map(|offset| start + offset + OUTLINE_PAIR_SEPARATOR.len());
+    let separator_close =
+        cadmpeg_core::bytes::find_in(payload, OUTLINE_PAIR_SEPARATOR_CLOSE, start, end)
+            .map(|offset| offset + OUTLINE_PAIR_SEPARATOR_CLOSE.len() - 1);
     for token in psb::tokens(payload.get(start..end)?) {
         match token.kind {
             psb::TokenKind::CompoundClose => {
@@ -8354,6 +8348,7 @@ pub(crate) fn plane_local_system_reading(
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
+#[cfg(test)]
 pub(crate) fn plane_local_systems(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -8362,19 +8357,21 @@ pub(crate) fn plane_local_systems(
     plane_local_systems_for_rows(ctx, payload, &rows(payload), losses)
 }
 
-/// Decode plane local-system chunks from a DEPDB cross-section namespace.
-pub(crate) fn cross_section_plane_local_systems(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<PlaneLocalSystem>, CodecError> {
-    plane_local_systems_for_rows(ctx, payload, &cross_section_rows(payload), losses)
-}
-
 pub(crate) fn plane_local_systems_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
+    let parameters = parameter_records_for_rows(ctx, payload, rows, losses)?;
+    plane_local_systems_for_rows_with_parameters(ctx, payload, rows, &parameters, losses)
+}
+
+pub(crate) fn plane_local_systems_for_rows_with_parameters(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    rows: &[SurfaceRow],
+    parameters: &[SurfaceParameterRecord],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     struct Candidate<'a> {
@@ -8397,7 +8394,6 @@ pub(crate) fn plane_local_systems_for_rows(
     }
 
     let cache = scalar::ScalarCache::from_section_checked(payload);
-    let parameters = parameter_records_for_rows(ctx, payload, rows, losses)?;
     let headers = rows
         .iter()
         .enumerate()
@@ -8413,7 +8409,7 @@ pub(crate) fn plane_local_systems_for_rows(
         let Some(envelope_start) = positional_body_start(payload, row) else {
             continue;
         };
-        let parameter = unique_surface_parameter(&parameters, row.id)
+        let parameter = unique_surface_parameter(parameters, row.id)
             .filter(|parameter| parameter.offset == row.offset);
         let parameter_close = parameter
             .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
@@ -8652,6 +8648,7 @@ fn plane_frame_by_envelope(
 /// Decode plane positional envelope bodies into their two defined layouts.
 /// Framing a plane body can stop a local-system search at a work cap; its
 /// loss goes to `losses`.
+#[cfg(test)]
 pub(crate) fn plane_envelopes_with_losses(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -8669,6 +8666,7 @@ pub(crate) fn plane_envelopes(
 }
 
 /// Decode plane envelopes from a DEPDB cross-section namespace.
+#[cfg(test)]
 pub(crate) fn cross_section_plane_envelopes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -8685,7 +8683,7 @@ fn copied_plane_envelope_tokens(slots: &ScalarTokenTable<'_>) -> Vec<Vec<u8>> {
     tokens
 }
 
-fn plane_envelopes_for_rows(
+pub(crate) fn plane_envelopes_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     all_rows: &[SurfaceRow],
@@ -8810,25 +8808,24 @@ fn plane_envelopes_for_rows(
         let row_end = all_rows
             .get(index + 1)
             .map_or(payload.len(), |next| next.offset);
-        let named_end = payload[row.offset..row_end]
-            .windows(b"srf_prim_ptr(".len())
-            .position(|window| window == b"srf_prim_ptr(")
-            .map_or(row_end, |relative| {
-                let prototype = row.offset + relative;
-                prototype
-                    .checked_sub(2)
-                    .filter(|start| {
-                        payload.get(*start..prototype) == Some(&[psb::token::NAMED_RECORD, 0x00])
-                    })
-                    .unwrap_or(prototype)
-            });
-        let Some(relative) = payload[row.offset..named_end]
-            .windows(NAMED_OUTLINE.len())
-            .position(|window| window == NAMED_OUTLINE)
+        let named_end =
+            cadmpeg_core::bytes::find_in(payload, b"srf_prim_ptr(", row.offset, row_end).map_or(
+                row_end,
+                |prototype| {
+                    prototype
+                        .checked_sub(2)
+                        .filter(|start| {
+                            payload.get(*start..prototype)
+                                == Some(&[psb::token::NAMED_RECORD, 0x00])
+                        })
+                        .unwrap_or(prototype)
+                },
+            );
+        let Some(outline) =
+            cadmpeg_core::bytes::find_in(payload, NAMED_OUTLINE, row.offset, named_end)
         else {
             continue;
         };
-        let outline = row.offset + relative;
         let scalar_start = outline + NAMED_OUTLINE.len();
         let field_end = named_record_boundary(
             SurfaceKind::Plane,

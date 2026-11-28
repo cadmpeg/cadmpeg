@@ -3,7 +3,7 @@
 //! `CadIr` with no retained source.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Cursor, Seek, Write};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
@@ -13,13 +13,13 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::design_v11::configurations::rebase::{rebased, Rebased};
+use crate::design_v11::configurations::ActiveRows;
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
-use crate::writer::primitives::{
-    configuration_targets, decoded_configurations, f3d_native, validate_assembly_projection,
-};
+use crate::writer::primitives::{configuration_targets, decoded_configurations, f3d_native};
 mod attributes;
 pub(in crate::writer) mod configuration_root;
-mod configuration_table;
+pub(in crate::writer) mod configuration_table;
 mod design;
 mod index;
 mod native_bytes;
@@ -31,16 +31,19 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
-    validate_source_less_design_links, validate_source_less_design_ownership,
-    validate_source_less_history_graph, validate_source_less_procedural_carriers,
-    validate_source_less_recipes, validate_source_less_sketch_graph,
-    validate_source_less_topology_tolerances,
+    body_members_naming, replaced_by_stamp, shared_body_visibilities, sketch_curve_links_naming,
+    sketch_records_naming, unowned_sketch_records, unreachable_record_headers,
+    unwritable_link_records, unwritable_tolerant_coedges, unwritable_tolerant_tails,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_links,
+    validate_source_less_design_ownership, validate_source_less_history_graph,
+    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
-use reduce::{Failure, Reduction, Stage};
+use reduce::{DroppedRecords, Failure, Reduction, Stage};
 use smbh::encode_smbh;
+const DESIGN_BULK: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
 
 /// What [`write_new`] wrote: the model arenas it carries and the losses it
 /// charged for the content it dropped or degraded.
@@ -58,6 +61,7 @@ pub(super) struct Generated {
 /// states it cannot write (cadir-v11.md §3.4), and report the rest as losses
 /// (see [`reduce`]).
 pub(super) fn write_new(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     missing_states: MissingStateForm,
     writer: &mut dyn Write,
@@ -65,41 +69,46 @@ pub(super) fn write_new(
     // The history-true form writes the state at its timeline marker, which
     // an evaluation can hold in place of the current state.
     let staged = match missing_states {
-        MissingStateForm::HistoryTrue => design::state_at_marker(target),
+        MissingStateForm::HistoryTrue => design::state_at_marker(target, &ctx.policy().limits)?,
         MissingStateForm::GeometryTrue => None,
     };
     let (target, staged_loss) = match &staged {
         Some((staged, loss)) => (staged, loss.clone()),
         None => (target, None),
     };
+    // The Design stream stores the state of the active row (f3d.md §1.2).
+    let rebased = rebased(target);
+    let target = rebased.as_ref().map_or(target, |rebased| &rebased.ir);
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let SubsetLowering {
         ir: lowered,
         unlowered,
     } = lower_subset_curves(target, |_| true);
-    let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
+    let mut reduction = Reduction::new(ctx, lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
-    let (mut staged, mut coverage, design_losses) = loop {
-        let mut staged = tempfile::tempfile()?;
-        match attempt(
-            reduction.ir(),
-            reduction.writes_design(),
-            reduction.writes_neutral_design(),
+    let (staged, mut coverage, design_losses) = loop {
+        let mut staged = std::io::Cursor::new(Vec::new());
+        let form = AttemptForm {
+            write_design: reduction.writes_design(),
+            write_neutral: reduction.writes_neutral_design(),
             missing_states,
-            reduction.fallback(),
-            &mut staged,
-        ) {
+            fallback: reduction.fallback(),
+            dropped: reduction.dropped(),
+            rebased: rebased.as_ref(),
+        };
+        match attempt(ctx, reduction.ir(), &form, &mut staged) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
-            Err(failure) => reduction.degrade(failure, writes_alone)?,
+            Err(failure) => {
+                reduction.degrade(failure, |target, stage| writes_alone(ctx, target, stage))?;
+            }
         }
     };
     if reduction.drops_neutral_design() {
         coverage.design = design::DROPPED;
     }
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, writer)?;
+    writer.write_all(staged.get_ref())?;
     let geometry_true = missing_states == MissingStateForm::HistoryTrue
         && reduction.drops_neutral_design()
         && !reduction.ir().geometry.bodies.is_empty()
@@ -113,6 +122,7 @@ pub(super) fn write_new(
         .is_some_and(|design| design.rolls_back());
     let (mut losses, native) = reduction.finish();
     losses.extend(staged_loss);
+    losses.extend(rebased.iter().flat_map(|rebased| rebased.losses.clone()));
     losses.extend(design_losses);
     Ok(Generated {
         coverage,
@@ -122,20 +132,33 @@ pub(super) fn write_new(
     })
 }
 
-/// Whether `stage` writes `target` (one body of the document, without its
-/// native namespace) on its own, with `native` for the B-rep stream.
-fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage) -> bool {
+/// Whether `stage` writes `target` (one body of the document, or the
+/// document) on its own without native records: with the carrier metadata
+/// only those records carry cleared, as the reduction clears it once they are
+/// dropped.
+fn writes_alone(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &CadIr,
+    stage: Stage,
+) -> bool {
+    let target = reduce::without_native_carrier_metadata(target);
+    let native = crate::native::F3dNative::default();
     match stage {
         Stage::Brep => {
-            let attributes = attributes::AttributeIndex::new(target, native);
-            encode_brep(target, native, &attributes).is_ok()
+            let attributes = attributes::AttributeIndex::new(&target, &native);
+            encode_brep(ctx, &target, &native, &attributes).is_ok()
         }
         Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
-            target,
-            false,
-            false,
-            MissingStateForm::GeometryTrue,
-            &design::Fallback::default(),
+            ctx,
+            &target,
+            &AttemptForm {
+                write_design: false,
+                write_neutral: false,
+                missing_states: MissingStateForm::GeometryTrue,
+                fallback: &design::Fallback::default(),
+                dropped: &DroppedRecords::default(),
+                rebased: None,
+            },
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -143,6 +166,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
 }
 
 fn encode_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
     attributes: &attributes::AttributeIndex<'_>,
@@ -150,23 +174,42 @@ fn encode_brep(
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    encode_smbh(target, native, attributes)
+    encode_smbh(target, native, attributes, ctx)
 }
 
-/// Write `target` once. `write_design` states whether its native Design
-/// records are written, and `write_neutral` whether its design scope is, in
-/// the form `missing_states` names; `fallback` names the parts of the design
-/// scope's form dropped after a failure. A failure names the stage that
-/// failed. Returns the arena coverage and the losses of the design scope's
-/// records.
-fn attempt<W: Write + Seek>(
-    target: &CadIr,
+/// The parts of the document one [`attempt`] writes.
+struct AttemptForm<'a> {
+    /// Whether the native Design records are written.
     write_design: bool,
+    /// Whether the design scope is written, in the form `missing_states`
+    /// names.
     write_neutral: bool,
     missing_states: MissingStateForm,
-    fallback: &design::Fallback,
-    staged: W,
+    /// The parts of the design scope's form dropped after a failure.
+    fallback: &'a design::Fallback,
+    /// The keys of the dropped records, which no written record names.
+    dropped: &'a DroppedRecords,
+    /// The parameters whose own expression and value the document takes
+    /// from the active configuration of their scope.
+    rebased: Option<&'a Rebased>,
+}
+
+/// Write `target` once in `form`. A failure names the stage that failed.
+/// Returns the arena coverage and the losses of the design scope's records.
+fn attempt(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &CadIr,
+    form: &AttemptForm<'_>,
+    staged: &mut Cursor<Vec<u8>>,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
+    let &AttemptForm {
+        write_design,
+        write_neutral,
+        missing_states,
+        fallback,
+        dropped,
+        rebased,
+    } = form;
     #[cfg(test)]
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
         return Err(Failure::neutral_design(error));
@@ -183,9 +226,24 @@ fn attempt<W: Write + Seek>(
     } else {
         Failure::design
     };
-    let loaded_native = f3d_native(target).map_err(Failure::design)?;
+    let loaded_native = f3d_native(ctx, target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
+    for header in &mut native.design_entity_headers {
+        if let Some(list) = header.sketch_references_mut() {
+            list.references
+                .retain(|reference| !dropped.sketch_records.contains(&reference.value));
+            if list
+                .record_reference
+                .is_some_and(|index| dropped.sketch_records.contains(&index))
+            {
+                list.record_reference = None;
+            }
+        }
+    }
+    if write_design && records::holds_parameter_records(&native) {
+        return Err(Failure::parameter_records());
+    }
     let stamped = neutral
         .as_ref()
         .is_some_and(design::NeutralDesign::has_bodies);
@@ -196,12 +254,13 @@ fn attempt<W: Write + Seek>(
     // body writes no B-rep stream.
     let body_less = timeline && !stamped;
     if let Some(neutral) = neutral.as_mut() {
+        let mark = StampMark::of(&native);
         neutral
             .stamp(&mut native)
             .map_err(Failure::neutral_design)?;
-    }
-    if write_design {
-        validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
+        if let Some(unwritable) = replaced_by_stamp(&native, mark) {
+            return Err(Failure::unwritable(Stage::NeutralDesign, unwritable));
+        }
     }
     // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);
@@ -211,21 +270,34 @@ fn attempt<W: Write + Seek>(
         attributes
     };
     if has_native {
-        validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
+        if let Some(unwritable) = unwritable_link_records(target, &native)
+            .or_else(|| shared_body_visibilities(&native))
+            .or_else(|| body_members_naming(&native, &dropped.body_entities))
+            .or_else(|| {
+                write_design
+                    .then(|| sketch_curve_links_naming(&native, dropped))
+                    .flatten()
+            })
+        {
+            return Err(Failure::unwritable(Stage::Design, unwritable));
+        }
+        validate_source_less_design_links(target, &native).map_err(Failure::design)?;
     }
     let brep = if body_less {
         Ok(Vec::new())
     } else {
-        encode_brep(target, &native, &attributes)
+        if let Some(unwritable) = unwritable_tolerant_coedges(target, &native)
+            .or_else(|| unwritable_tolerant_tails(target, &native))
+        {
+            return Err(Failure::unwritable(Stage::Brep, unwritable));
+        }
+        encode_brep(ctx, target, &native, &attributes)
     };
     let smbh = match brep {
         Ok(smbh) => smbh,
         // The design scope's names fail the B-rep stream when it writes
         // without them.
-        Err(error)
-            if stamped
-                && writes_alone(target, &crate::native::F3dNative::default(), Stage::Brep) =>
-        {
+        Err(error) if stamped && writes_alone(ctx, target, Stage::Brep) => {
             return Err(Failure::neutral_design(error));
         }
         Err(error) => return Err(Failure::brep(error)),
@@ -240,12 +312,20 @@ fn attempt<W: Write + Seek>(
         }
         None => (smbh, Vec::new()),
     };
-    let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
+    let mut projected = None;
     if write_design {
-        let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
+        if let Some(unwritable) = unowned_sketch_records(&native)
+            .or_else(|| sketch_records_naming(&native, &dropped.sketch_records))
+            .or_else(|| unreachable_record_headers(&native))
+        {
+            return Err(Failure::unwritable(Stage::Design, unwritable));
+        }
+        let mut native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
             validate_source_less_history_graph(target, &native)?;
-            let parameters = design::parameters::native_or_neutral(target, &native)?;
+            let projection = design::parameters::native_projection(ctx, &native)?;
+            let parameters = design::parameters::native_or_neutral(target, &projection.parameters);
+            projected = Some(projection);
             validate_source_less_design_ownership(&native)?;
             validate_source_less_sketch_graph(&native)?;
             validate_source_less_recipes(&native)?;
@@ -258,9 +338,8 @@ fn attempt<W: Write + Seek>(
     } else {
         BodySelection::Stated
     };
-    let mut design_registry =
-        GeneratedDesignRegistry::new(target, design_bindings, &attributes, selection)
-            .map_err(design_failure)?;
+    let mut design_registry = GeneratedDesignRegistry::new(target, &native, &attributes, selection)
+        .map_err(design_failure)?;
     let unstated_visibility = cadmpeg_ir::codec::write::value_unwritable(
         "F3D",
         "writes these bodies as visible: the source did not record their visibility",
@@ -270,7 +349,7 @@ fn attempt<W: Write + Seek>(
         let snapshot = if body_less {
             None
         } else {
-            Some(snapshot_stream(target, &native).map_err(Failure::neutral_design)?)
+            Some(snapshot_stream(ctx, target, &native).map_err(Failure::neutral_design)?)
         };
         let members = design
             .archive(
@@ -334,42 +413,68 @@ fn attempt<W: Write + Seek>(
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
     let mut root = None;
     let mut table_losses = Vec::new();
+    let mut witness = configuration_table::read_back::Witness::default();
+    let mut own = Vec::new();
+    let mut expected_parameters = target.model.parameters.as_slice();
     if write_design {
-        let targets = configuration_targets(target, &native);
+        // A document read from CADIR holds its configurations in its
+        // `design` records, and its features and parameters in the native
+        // records.
+        let held = target.model.omitted_arenas_held();
+        let mut targets = configuration_targets(target, &native);
+        if let (false, Some(projected)) = (held, &projected) {
+            own.clone_from(&projected.parameters);
+            if let Some(rebased) = rebased {
+                rebased.apply(&mut own);
+            }
+            targets.neutral_parameters = &own;
+            targets.neutral_features = &projected.features;
+        }
+        expected_parameters = targets.neutral_parameters;
+        let destinations = match &native_parameters {
+            Some(design::parameters::ParameterSource::Native) => native
+                .design_parameters
+                .iter()
+                .map(|record| {
+                    (
+                        crate::ids::neutral_parameter_id(record),
+                        (record.record_index, record.name()),
+                    )
+                })
+                .collect(),
+            Some(design::parameters::ParameterSource::Neutral(plan)) => {
+                plan.destinations(&parameter_records.indices)
+            }
+            None => BTreeMap::new(),
+        };
+        witness = configuration_table::read_back::Witness::new(&destinations);
         let decoded = decoded_configurations(&native.design_configurations, &targets)
             .map_err(Failure::design)?;
-        let neutral = if target.model.omitted_arenas_held() {
-            target.model.configurations.as_slice()
-        } else {
-            decoded.configurations.as_slice()
-        };
-        let (written, losses) = configuration_table::regenerate(
-            &native.design_configurations,
-            &decoded,
-            neutral,
+        let stated = configuration_table::stated_rows(
+            target,
+            &decoded.configurations,
             &targets,
-        )
-        .map_err(Failure::design)?;
-        let plan = configuration_root::plan(
+            &rebased
+                .map(|rebased| rebased.parameters.keys().cloned().collect())
+                .unwrap_or_default(),
+            ActiveRows::Design,
+            &mut table_losses,
+        );
+        let (written, plan) = configuration_table::generated(
             target,
             &native.design_configurations,
-            decoded.table,
-            &written,
-            neutral,
-        );
-        table_losses = losses;
-        table_losses.extend(
-            written
-                .read_back(plan.active(), &targets)
-                .map_err(Failure::design)?,
-        );
+            &decoded,
+            &stated,
+            &targets,
+            Some(&destinations),
+            &mut table_losses,
+        )
+        .map_err(Failure::design)?;
         let names = configuration_entry_names(&written.documents);
         for (index, (configuration, (name, fault))) in
             written.documents.iter().zip(names).enumerate()
         {
-            let payload = plan
-                .payload(index, configuration)
-                .map_err(Failure::design)?;
+            let payload = plan.payload(index, configuration);
             if let Some(fault) = fault {
                 renamed.entry(fault).or_default().push(format!(
                     "{} from {} to {name}",
@@ -377,8 +482,15 @@ fn attempt<W: Write + Seek>(
                     configuration.entry_name()
                 ));
             }
-            configurations.push((name, payload));
+            let bytes =
+                crate::records::configuration::encode_configuration_payload(&name, &payload)
+                    .map_err(Failure::design)?;
+            witness
+                .add(&written, index, &name, payload.into_owned())
+                .map_err(Failure::design)?;
+            configurations.push((name, bytes));
         }
+        witness.expect_root(plan.active_ids());
         root = Some(plan);
     }
     let mut configuration_losses = table_losses;
@@ -409,7 +521,7 @@ fn attempt<W: Write + Seek>(
         .collect::<Result<Vec<_>, _>>()
         .map_err(Failure::design)?;
     write_archive(
-        staged,
+        &mut *staged,
         &ArchiveEntries::Generated {
             smbh: &smbh,
             configurations: &configurations,
@@ -421,6 +533,15 @@ fn attempt<W: Write + Seek>(
         },
     )
     .map_err(Failure::archive)?;
+    witness
+        .read_back(
+            ctx,
+            staged.get_ref(),
+            target,
+            expected_parameters,
+            &mut configuration_losses,
+        )
+        .map_err(Failure::design)?;
     let parameters = match native_parameters {
         Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
@@ -453,6 +574,7 @@ fn attempt<W: Write + Seek>(
 /// The snapshot stream of a Base Feature design: the B-rep stream of
 /// `target` whose bodies carry no name and the ASM body key `-1`.
 fn snapshot_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
 ) -> Result<Vec<u8>, CodecError> {
@@ -465,7 +587,7 @@ fn snapshot_stream(
     });
     let attributes =
         attributes::AttributeIndex::new(target, &unnamed).with_body_keys(target, |_| -1);
-    design::history::snapshot(&encode_brep(target, &unnamed, &attributes)?)
+    design::history::snapshot(&encode_brep(ctx, target, &unnamed, &attributes)?)
 }
 
 /// The losses of the appearances of a Base Feature archive, whose Protein
@@ -650,10 +772,7 @@ fn write_archive<W: Write + Seek>(
                 entry(name.clone(), payload)?;
             }
             if let Some(bulk_stream) = design_bulk {
-                entry(
-                    format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"),
-                    bulk_stream,
-                )?;
+                entry(DESIGN_BULK.to_owned(), bulk_stream)?;
             }
             if let Some(meta_stream) = meta_stream {
                 entry(

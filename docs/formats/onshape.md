@@ -313,9 +313,10 @@ feature in source operand order. Feature ordinals give timeline order.
 A `shell` feature stores `entities`, the faces to remove, as deterministic
 IDs in the consuming rollback state, `thickness` as a quantity, and
 `oppositeDirection` as a Boolean. `isHollow` and `parts` select the hollow
-form, which has no removed faces. A `false` `oppositeDirection` places the
-wall inside the original boundary: the outer extents of the shelled body equal
-those of the input body, and the removed face leaves an opening.
+form, which has no removed faces. A `false` `oppositeDirection` grows the
+wall into the input body and keeps its original outer boundary. A `true` value
+grows the wall outward and keeps the original boundary as the inner boundary.
+A removed face leaves an opening in either direction.
 
 ## 5. Admission bounds
 
@@ -392,6 +393,9 @@ and `matedCS`, a connector frame. A direct part path gives the frame in the
 part coordinates. `matedCS` stores
 three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. The origin uses
 metres. The axes are the columns of the connector rotation matrix.
+The evaluated `matedCS` frames include the effect of the mate's
+`flipPrimaryAxis`, `flipSecondaryAxis`, and `secondaryAxisAlignment`
+settings, so the solved connector frames carry those settings.
 
 | `mateType` | Joint family |
 | --- | --- |
@@ -405,6 +409,20 @@ metres. The axes are the columns of the connector rotation matrix.
 The solved connector world frame is the occurrence transform multiplied by
 the connector frame. The sign of the dot product of the two world z axes
 gives aligned or opposed sense. A zero dot product leaves the sense unstated.
+
+CADIR decision: a decoder names each assembly record that it gives up by its
+source address, the definition member path and the JSON pointer of the record
+(`assemblies/<id>/definition.json#/rootAssembly/instances/1`). It gives up an
+instance without an `id`, an instance that it cannot map, and an instance
+whose `id` repeats at its level with different content. An instance whose
+`id` repeats with the same content drops nothing; the first instance stands.
+A mate whose connector path passes through a given-up instance drops with
+that instance; the give-up names the joint that the mate maps to. A mate
+whose `id` repeats at its level with different content is given up; the
+first joint stands. An `instances`, `features`, `occurrences`,
+`subAssemblies`, or `parts` field that holds no array is given up as one
+record. A field that holds more rows than the row limit is a bound, and the
+rows are not read.
 
 ### Part identity and final geometry
 

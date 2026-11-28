@@ -396,7 +396,7 @@ fn a_failed_root_keeps_the_shell_a_second_root_built() {
          #70=MANIFOLD_SOLID_BREP('',#30);\n#69=STYLED_ITEM('',(#66),#30);",
     );
     let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .expect("decode a failed root beside a root that shares its shell");
     let ir = decoded.ir();
     assert!(decoded
@@ -409,6 +409,26 @@ fn a_failed_root_keeps_the_shell_a_second_root_built() {
         .bodies
         .iter()
         .any(|body| body.id.as_str() == "step:data:body#70"));
+    // The charge of the failed root names the void shell and its face by the
+    // ids that the root mints for them, and no member that root #70 keeps.
+    let root = source.find("#31=").expect("the failed root");
+    let head = format!("part data_record stream=\"\" offset={root} ");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind() && loss.message.starts_with(&head))
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge names the root: {charges:#?}");
+    };
+    assert!(
+        charge.message.ends_with(
+            "; dropped=[step:data:face#99-root-31-shell-34, step:data:shell#34-root-31]"
+        ),
+        "{}",
+        charge.message
+    );
     assert_eq!(ir.geometry.shells.len(), 1, "{:#?}", ir.geometry.shells);
     let [face] = ir.geometry.faces.as_slice() else {
         panic!("the face of the kept shell: {:#?}", ir.geometry.faces);
@@ -862,13 +882,14 @@ fn a_rejected_root_drops_its_shells_and_faces_and_keeps_their_supports() {
     let [charge] = charges.as_slice() else {
         panic!("one charge: {charges:#?}");
     };
-    // The oriented shell #33, its base shell #30, and the face #29 drop with
-    // the surface model #31, each named by the id its record takes.
+    // The base shell #30, its face #29, and the style binding of the face
+    // drop with the surface model #31, each named by the id the root mints
+    // for it. The oriented shell #33 mints no record of its own.
     assert!(charge.message.contains(" record="), "{}", charge.message);
     assert!(
-        charge
-            .message
-            .ends_with("; dropped=[step:data:face#29, step:data:shell#30, step:data:shell#33]"),
+        charge.message.ends_with(
+            "; dropped=[step:data:face#29, step:data:shell#30, step:presentation:binding#47:0-0]"
+        ),
         "{}",
         charge.message
     );
@@ -887,6 +908,7 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
         &ir,
         StepSchema::Ap242Edition3,
         std::collections::HashSet::new(),
+        crate::test_support::write_context(),
     )
     .unwrap();
     builder.build();

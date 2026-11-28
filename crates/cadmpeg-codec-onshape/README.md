@@ -5,7 +5,7 @@ STEP decoder. Both decoders share one decode context.
 
 <!-- generated: capability onshape -->
 
-Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
+Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
 
 <!-- /generated: capability onshape -->
 
@@ -24,20 +24,45 @@ fixed default. Tests require an offline process.
 A present thread pitch that cannot be admitted carries `onshape/record.malformed`.
 The hole keeps its thread specification without pitch.
 
-Admitted thin walls use typed design operations and Native model companions.
-The design timeline carries the decoded sketches, their placed frames and
-solved curves. Thin profile picks name those design sketch entities. Model
-sketches, constraints and parameters retain their decoded constructions.
-`onshape/extrude.thin-model-not-supported` names the model construction gap.
-The scoped design timeline includes every admitted model feature. Native design members
-carry `onshape/history.design-operation-native`; the model rows retain their
-decoded constructions. Final STEP bodies bind after the complete timeline.
-Failed thin sketch projection or scope installation restores the design state
-and reports `onshape/extrude.thin-not-supported`. The bundle retains its native
-model operations. Session resource limits propagate to the caller. Feature
-annotations use the first admitted source record for each model feature.
-Explicit historical provenance passes the stored rollback producer proof,
-including tangent-added edges.
+Each Part Studio states its v11 design layer. The scope is the studio's
+root definition, and one ordered timeline holds a design feature for each
+model feature, in `features.json` order, with the stored rollback bar. A
+design feature has the id of its model feature, and a suppressed feature
+keeps its definition beside its suppressed state. Sketches, extrudes of a
+whole sketch, its regions, or its entities (blind, through all, symmetric,
+up to next, up to a face), thin extrudes, revolves, sweeps, fillets,
+chamfers, shells, holes, derived Booleans, and offset datum planes take their
+typed operation. A selected face, edge, or Boolean body is a Native pick
+named by its deterministic ID. A Boolean body pick names its producer
+separately, and an edge pick carries the edge's stored sample as its witness.
+Tangent propagation is one Explicit term on the selected edges with
+G1 propagation. A chamfer with two setbacks reads the first on the face whose
+loop runs along the edge and charges `onshape/history.chamfer-side-assumed`
+(ONSHAPE-013). A feature whose model row the design cannot state takes its
+operation family, and `onshape/history.design-operation-unresolved` names
+the feature. A derived Part Studio states a linked stored operation with
+the source document, version and element pin. Its captured design stays
+in the model row. A sketch whose frame or curves the
+design cannot state falls back to its family alone. Each body that one
+feature before the rollback bar makes takes a generated name by that
+feature. Variables and feature and sketch dimensions are design parameters.
+An operation dimension with one literal stays literal. The reader
+translates supported expressions into neutral expressions and keeps the
+source text. A parameter whose literals state one unit declares it. The
+parameter keeps a compatible stored numeric cache when present. The reader
+retains unsupported expressions in source syntax with
+`onshape/parameter.expression-text`. Sketch constraints are design relations, on point
+entities for the curve ends and centres they name, and a curve end takes
+the point id Onshape stores as its native name.
+A thin extrude keeps a Native model operation, and
+`onshape/extrude.thin-model-not-supported` names the gap; a thin design
+feature that the projection refuses keeps its family and reports
+`onshape/extrude.thin-not-supported`. The root Assembly states its scope: a
+Joint feature for each mate, and a grounded entry for each fixed occurrence.
+Session resource limits propagate to the caller. Feature annotations use the
+first admitted source record for each model feature. Explicit historical
+provenance passes the stored rollback producer proof, including tangent-added
+edges.
 
 Unreadable members, invalid names, encryption, unsupported compression and repeated
 names carry `onshape/member.unreadable`. The first member with each name is

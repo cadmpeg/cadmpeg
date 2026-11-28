@@ -54,6 +54,7 @@ const ROOT_MEMBERS: &[&str] = &[
     "source",
     "units",
     "tolerances",
+    "up_axis",
     "geometry",
     "model",
     "design",
@@ -412,13 +413,7 @@ impl Reader<'_, '_> {
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
         let mut released = Vec::new();
-        let outcome = crate::give_up::release_lost(
-            self.ctx,
-            document,
-            &ids,
-            crate::give_up::Naming::Text,
-            &mut released,
-        );
+        let outcome = crate::give_up::release_lost(self.ctx, document, &ids, &mut released);
         self.removed = Removed::of_records(
             ids.iter()
                 .chain(released.iter().flat_map(|(_, release)| &release.dropped))
@@ -807,6 +802,7 @@ impl<'r, 'a> Reader<'r, 'a> {
         let fragment = self.required(&mut root, "fragment", false);
         let scope = self.required(&mut root, "scope", ContentScope::full());
         let tolerances = self.required(&mut root, "tolerances", Tolerances::default());
+        let up_axis = self.optional::<crate::up_axis::UpAxis>(&mut root, "up_axis");
         let repro = self.optional::<Box<crate::repro::BundleMetadata>>(&mut root, "repro");
         let source = self.optional::<super::SourceMeta>(&mut root, "source");
         let geometry = {
@@ -844,6 +840,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             scope,
             source,
             tolerances,
+            up_axis,
             geometry,
             model,
             design,

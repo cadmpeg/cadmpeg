@@ -303,7 +303,7 @@ Type 402 Form 18 defines seven classes under [IGES 5.3 §4.92](https://paulbourk
 
 Type 402 Form 20 defines piping flow associativity under [IGES 5.3 §4.94](https://paulbourke.net/dataformats/iges/IGES.pdf). `NCF=1` is required at Parameter index 1. The six class counts `NF`, `NC`, `NJ`, `NN`, `NT`, and `NP` occupy indexes 2 through 7; `TF` occupies index 8; and the associated-piping-flow, Connect Point, join, flow-name, Text Display Template, and continuation lists follow in that order from token index 9. The first trailing pointer-group count is therefore at token index `9 + NF + NC + NJ + NN + NT + NP`. Zero counts supply empty class lists. The CADIR boundary requires `NCF=1`, six nonnegative integer counts, and a checked sum whose lists fit the record. A missing, invalid, overflowing, or list-truncated count sequence has no usable entity-table boundary and does not enable generic suffix recovery.
 
-Type 402 Form 9 defines one parent and one or more ordered children under [IGES 5.3 §4.86](https://paulbourke.net/dataformats/iges/IGES.pdf). `NP` is required to be `1` at Parameter index 1; `NC` is the positive child count at index 2; the parent pointer is at index 3; and child pointers occupy indexes 4 through `3 + NC`. Both the parent and every child carry a trailing association pointer back to the Form 9 entity. The last specified primary index is `3 + NC`, so trailing pointer groups begin at token index `4 + NC`. The IGES 4.0 bounded-plane meaning is defined by [§3.6](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf): a Type 108 Form 1 parent and negative, physically dependent Type 108 children describe one bounded planar region with the parent boundary as the outer loop and each child boundary as an inner loop. The decoder applies that compatibility meaning to V4.0 and legacy V5.0 reads when the projected planes are coplanar and the referenced boundaries are closed, producing one neutral sheet face while retaining the native association. A Form 9 with other target types remains a generic native relationship and does not infer a face.
+Type 402 Form 9 defines one parent and one or more ordered children under [IGES 5.3 §4.86](https://paulbourke.net/dataformats/iges/IGES.pdf). `NP` is required to be `1` at Parameter index 1; `NC` is the positive child count at index 2; the parent pointer is at index 3; and child pointers occupy indexes 4 through `3 + NC`. Both the parent and every child carry a trailing association pointer back to the Form 9 entity. The last specified primary index is `3 + NC`, so trailing pointer groups begin at token index `4 + NC`. The IGES 4.0 bounded-plane meaning is defined by [§3.6](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf): a Type 108 Form 1 parent and negative, physically dependent Type 108 children describe one bounded planar region with the parent boundary as the outer loop and each child boundary as an inner loop. The decoder applies that compatibility meaning to V4.0 and legacy V5.0 reads when the projected planes are coplanar and the referenced boundaries are closed, producing one neutral sheet face while retaining the native association. A Form 9 with only resolved non-plane children remains a generic association. Its Type 108 Form 1 parent states a standalone face. If a pointer dangles beside resolved non-plane children, the relation face keeps the outer loop and gives up the dangling slot. On the bounded-plane route with a Type 108 child, each child slot supplies a hole boundary. A child pointer that names no Directory entry, a Type 108 child without its back pointer to the relation, a child that is not a negative, physically dependent Type 108 plane, or a child whose plane is not projected, not coplanar with the parent's, or bounded by a curve that does not close, bounds no hole of the face: the face keeps the holes of the other children and states its holes partial, since that child may bound a hole that is not decoded, and the loop of that child's slot is given up. When no child bounds a hole, the parent face keeps its outer loop and is stated partial. A negative Type 108 child that a Form 9 relation names and whose hole the relation's face does not state records an entity loss that names the relation.
 
 Type 230 Forms 0 and 1 put `BNDP`, `PATRN`, `XT`, `YT`, `ZT`, `DIST`, `ANGLE`, and island count `N` at Parameter indexes 1 through 8 under [IGES 5.3 §4.68](https://paulbourke.net/dataformats/iges/IGES.pdf). Form 0 requires a nonzero `BNDP` and permits `N=0`. Form 1 permits `BNDP=0` when no main boundary is defined and requires `N>0`; its island curves define the filled regions. In both forms, the `N` island pointers occupy indexes 9 through `8 + N`, so trailing pointer groups begin at token index `9 + N`. A missing, negative, or list-truncated `N` has no usable entity-table boundary. The IGES 4.0 profile admits Form 0 only; Form 1 was added for IGES 5.0 and later by ECO E570 ([NISTIR 4600, Appendix B](https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nistir4600.pdf)).
 
@@ -874,12 +874,35 @@ that it needs. After all passes, the projection examines each such entity:
    `record.dropped-with` against the `entity` part id of the needed entity or
    against the stub of the quarantine part.
 2. When the needed entity is itself a dependent of this type, the projection
-   records the dependent against the `entity` part id of the needed entity, and
-   step 1 or step 3 applies to the needed entity.
+   records the dependent against the record that names the needed entity, and
+   step 1 or step 3 applies to the needed entity. That record is the neutral
+   record that the projection mints for the needed entity. A needed entity
+   that mints no single neutral record is replaced by the entity that it needs,
+   in the same way.
 3. When no give-up reaches the needed entity, for example because no pass
    projects its type, the dependent charges its own `record.unreadable`. Of
    dependents that need each other in a cycle, one charges its own
    `record.unreadable` and the others are recorded against it.
+
+The projection records a dependent by the neutral record that it mints for
+that entity:
+
+| Types                                                           | Recorded neutral record   |
+| --------------------------------------------------------------- | ------------------------- |
+| 100, 102, 104, 110, 112, 126, 130                               | `iges:model:curve#D<n>`   |
+| 116, 125                                                        | `iges:model:point#D<n>`   |
+| 108, 114, 118, 120, 122, 128, 140, 190, 192, 194, 196, 198      | `iges:model:surface#D<n>` |
+| 143, 144                                                        | `iges:model:face#D<n>`    |
+| 186                                                             | `iges:model:body#D<n>`    |
+| 514 Form 2, and 514 Form 1 that is the shell of no Type 186     | `iges:model:shell#D<n>`   |
+| 106 that projects a path                                        | `iges:model:curve#D<n>`   |
+| 106 that projects one point                                     | `iges:model:point#D<n>-1` |
+
+`<n>` is the Directory Entry sequence number of the entity. A dependent of
+another type mints no single neutral record, so the projection records none for
+it. Each of its own dependents is recorded against the entity that it needs.
+The native `iges:entity:directory#<n>` record of a dependent stays in the
+document.
 
 An entity that a pass also drops for its own content keeps its own
 `record.unreadable`. The decode names each recorded dependent in the `dropped`
@@ -887,7 +910,22 @@ list of the `record.unreadable` that gives up the part it needs, directly or
 through the dependents between them. For example, an edge list whose Parameter
 Data is quarantined drops the loops that use it, the faces that bound those
 loops, and the shells and solids that use those faces. The give-up of the edge
-list's `parameter-data` part names all of them.
+list's `parameter-data` part names the recorded neutral record of each of them
+that has one, such as the `iges:model:body#D<n>` record of a Type 186 solid.
+
+The structure pass builds a face for a Type 108 Form 1 bounded plane and for
+the parent of a Type 402 Form 9 legacy single-parent associativity. When the
+pass drops a Type 108 Form 1 face, it gives up the face record
+`iges:model:face#bounded-plane-D<n>`, where `<n>` is the sequence of the
+Type 108. When the face needs a boundary curve or plane that the projection
+gives up, the projection records the face against that entity, as for a
+dependent above. When the pass cannot build the holes of a Type 402 Form 9
+parent, it builds the Type 108 face of the parent without them and records an
+`iges/entity.not-projected` note. When the pass drops a legacy single-parent
+face that it built, it gives up the face record
+`iges:model:face#legacy-single-parent-D<n>`, where `<n>` is the sequence of the
+Type 402. A Type 108 Form -1 bounded plane projects no face of its own. A
+finding on it is an `iges/entity.not-projected` note.
 
 A container inspection has no loss channel, because a container summary carries
 notes only. The inspection therefore reports each loss it resolves as one

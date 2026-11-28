@@ -9,7 +9,7 @@ use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::Tolerances;
-use cadmpeg_ir::unknown::part::{dropped_with, record_given_up};
+use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, Part};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
@@ -246,34 +246,42 @@ pub(super) fn attach(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Option<GivenUpPart>, CodecError> {
     let snapshot = AttachSnapshot::capture(ir, annotations, unknowns, losses);
     match attach_records(ctx, ir, model, scan, annotations, unknowns, losses) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(None),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             let attached = snapshot.attached_records(ir, unknowns);
             snapshot.restore(ir, annotations, unknowns, losses);
-            let attachment = cadmpeg_ir::ids::Identity::compose(
-                &cadmpeg_ir::identity_namespace!("nx", "container", "object-model"),
-                0_u64,
-            );
-            losses.extend(record_given_up(
-                attachment.clone(),
-                NxLossCode::NativeAttachmentFailed.note(format!(
-                    "Native object-model attachment failed: {error}. Decoded geometry and \
-                     topology are kept. None of the attachment's features, sketches, \
-                     parameters, configurations, appearances, attributes, display \
-                     tessellations, native records, or container passthrough records are kept."
-                )),
+            let why = NxLossCode::NativeAttachmentFailed.note(format!(
+                "Native object-model attachment failed: {error}. Decoded geometry and \
+                 topology are kept. None of the attachment's features, sketches, \
+                 parameters, configurations, appearances, attributes, display \
+                 tessellations, native records, or container passthrough records are kept."
             ));
+            let bytes: &[u8] = &scan.container.data;
+            let part = Part::at(
+                "nx",
+                "object-model",
+                0,
+                bytes,
+                [ArenaClass::Model, ArenaClass::Design],
+            )
+            .in_stream(cadmpeg_ir::stream_name!("nx:container"));
+            let part = ctx.give_up_part(
+                crate::decode::within_retained_ceiling(ctx, part, bytes.len()),
+                CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+            )?;
+            let attachment = cadmpeg_ir::ids::Identity::from(part.id().clone());
+            losses.push(why);
             for record in attached {
                 losses.push(dropped_with(
                     cadmpeg_ir::ids::Identity::new(record)?,
                     attachment.clone(),
                 ));
             }
-            Ok(())
+            Ok(Some(part))
         }
     }
 }
@@ -368,9 +376,15 @@ impl AttachSnapshot {
         }
     }
 
-    /// The ids of the native and retained records that the attachment added
-    /// since the capture.
-    fn attached_records(&self, ir: &CadIr, unknowns: &[UnknownRecord]) -> BTreeSet<String> {
+    /// The ids of the document, native and retained records that the
+    /// attachment added since the capture.
+    fn attached_records(&self, ir: &mut CadIr, unknowns: &[UnknownRecord]) -> BTreeSet<String> {
+        fn document_ids(ir: &CadIr) -> BTreeSet<String> {
+            cadmpeg_ir::index::ModelIndex::new_model_only(ir)
+                .identities(cadmpeg_ir::index::StandardIndex)
+                .map(ToOwned::to_owned)
+                .collect()
+        }
         fn native_ids(ir: &CadIr) -> impl Iterator<Item = &str> {
             ir.native
                 .namespace("nx")
@@ -378,15 +392,21 @@ impl AttachSnapshot {
                 .flat_map(|namespace| namespace.arenas().values().flatten())
                 .map(cadmpeg_ir::native::NativeRecord::id)
         }
+        let geometry = GeometryArenas::take(&mut ir.geometry);
+        let written = document_ids(ir);
+        geometry.put(&mut ir.geometry);
+        let before = document_ids(&self.document);
         let (kept, added) = unknowns.split_at(self.unknowns.min(unknowns.len()));
         let held = native_ids(&self.document)
             .chain(kept.iter().map(|unknown| unknown.id().as_str()))
             .collect::<BTreeSet<_>>();
-        native_ids(ir)
+        let mut attached = native_ids(ir)
             .chain(added.iter().map(|unknown| unknown.id().as_str()))
             .filter(|id| !held.contains(id))
             .map(ToOwned::to_owned)
-            .collect()
+            .collect::<BTreeSet<_>>();
+        attached.extend(written.into_iter().filter(|id| !before.contains(id)));
+        attached
     }
 
     fn restore(
@@ -473,7 +493,7 @@ fn attach_records(
                 ir,
                 annotations,
                 &annotation_stream,
-                (tessellation.id.as_str(), source_offset),
+                (&tessellation.id, source_offset),
                 color,
             )?;
         }
@@ -769,10 +789,11 @@ fn attach_display_jt_color(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
-    (tessellation, source_offset): (&str, u64),
+    (tessellation, source_offset): (&cadmpeg_ir::tessellation::TessellationId, u64),
     color: Color,
 ) -> Result<(), CodecError> {
     let key = tessellation
+        .as_str()
         .split_once('#')
         .map(|(_, key)| key)
         .ok_or_else(|| CodecError::malformed("NX Display-JT tessellation id has no key"))?;
@@ -820,7 +841,7 @@ fn attach_display_jt_color(
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding_id,
-        target: AppearanceTarget::Tessellation(tessellation.to_owned()).into(),
+        target: AppearanceTarget::Tessellation(tessellation.clone()).into(),
         appearance: id,
         precedence: None,
         source_entity_id: None,
@@ -5794,7 +5815,7 @@ fn text_semantic_annotation(
         assets: Vec::new(),
         ..SemanticAnnotation::new(
             id,
-            native_ref.to_owned(),
+            cadmpeg_ir::ids::Identity::try_from(native_ref).map_err(CodecError::malformed)?,
             SemanticAnnotationKind::Text,
             "TEXT".to_owned(),
             order,

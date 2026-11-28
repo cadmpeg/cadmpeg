@@ -32,7 +32,7 @@ impl From<Tagged28> for u32 {
 }
 
 /// A reference that identifies its family without a count frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum DirectReference {
     PersistentHandle(u32),

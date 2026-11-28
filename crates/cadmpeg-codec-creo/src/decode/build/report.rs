@@ -176,7 +176,7 @@ pub(in super::super) fn build_report(
     push_legacy_value_losses(&mut losses, &coverage);
     push_unread_legacy_rows(&mut losses, scan)?;
 
-    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections)?;
+    push_brep_transfer_note(&mut losses, brep_diagnostics, &ir.geometry, geom_sections)?;
 
     push_carrier_transfer_notes(&mut losses, scan, &coverage, container_only);
     push_structural_layer_notes(&mut losses, scan);

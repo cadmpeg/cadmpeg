@@ -43,6 +43,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
+use cadmpeg_ir::up_axis::UpAxis;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
@@ -85,7 +86,7 @@ pub(crate) struct Metrics {
     pub(crate) meters_per_unit: f64,
     /// Kilograms per scene mass unit (spec §16.1).
     pub(crate) kilograms_per_unit: f64,
-    pub(crate) up_axis: String,
+    pub(crate) up_axis: UpAxis,
     pub(crate) default_prim: Option<String>,
     /// `metersPerUnit` is authored and is not a positive finite number.
     pub(crate) malformed_units: bool,
@@ -130,9 +131,10 @@ pub(crate) fn metrics(layer: &Layer) -> Metrics {
         _ => None,
     };
     let (up_axis, malformed_up_axis) = match layer_value(layer, "upAxis") {
-        None => ("Y".to_owned(), false),
-        Some(Value::String(axis)) if axis == "Y" || axis == "Z" => (axis.clone(), false),
-        Some(_) => ("Y".to_owned(), true),
+        None => (UpAxis::Y, false),
+        Some(Value::String(axis)) if axis == "Y" => (UpAxis::Y, false),
+        Some(Value::String(axis)) if axis == "Z" => (UpAxis::Z, false),
+        Some(_) => (UpAxis::Y, true),
     };
     Metrics {
         scale: meters_per_unit * MILLIMETRES_PER_METRE,
@@ -206,7 +208,8 @@ struct Tallies {
     dropped_primvars: BTreeSet<String>,
     rejected_curves: usize,
     rejected_patches: Vec<String>,
-    rejected_joints: Vec<String>,
+    /// Joint prims left out of the document, with the cause.
+    rejected_joints: Vec<(physics::JointRejection, String)>,
     joint_properties: Vec<String>,
     /// `PhysX` properties that were not carried, by attribute path.
     solver_properties: Vec<String>,
@@ -918,7 +921,7 @@ impl Builder<'_, '_, '_, '_> {
                 visible: None,
             }));
         self.meshed.insert(key.to_owned());
-        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
+        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key));
         self.material(prim, key, target)?;
         for subset in &mesh.subsets {
             self.subset_material(&subset.path, key)?;
@@ -1141,7 +1144,7 @@ impl Builder<'_, '_, '_, '_> {
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::subset_binding(key, path),
             target: AppearanceTarget::TriangleGroup {
-                tessellation: crate::ids::tessellation(key).to_string(),
+                tessellation: crate::ids::tessellation(key),
                 group: path.to_owned(),
             }
             .into(),
@@ -1921,16 +1924,24 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             joined(tallies.rejected_patches.iter().cloned())
         ),
     );
-    push(
-        UsdLossCode::JointRejected,
-        !tallies.rejected_joints.is_empty(),
-        format!(
-            "{} joints name no body, or a body that is not a transferred prim, or have a \
-             malformed frame, and were not transferred: {}",
-            tallies.rejected_joints.len(),
-            joined(tallies.rejected_joints.iter().cloned())
-        ),
-    );
+    for cause in physics::JointRejection::ALL {
+        let paths: Vec<String> = tallies
+            .rejected_joints
+            .iter()
+            .filter(|(rejection, _)| *rejection == cause)
+            .map(|(_, path)| path.clone())
+            .collect();
+        push(
+            UsdLossCode::JointRejected,
+            !paths.is_empty(),
+            format!(
+                "{} joints {} and were not transferred: {}",
+                paths.len(),
+                cause.several(),
+                joined(paths)
+            ),
+        );
+    }
     push(
         UsdLossCode::PhysicsPropertyNotTransferred,
         !tallies.physics_properties.is_empty(),

@@ -89,6 +89,12 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
+/// Whether a Type 106 entity of `form` carries model geometry: points or a
+/// path.
+pub(crate) fn geometry_form(form: i64) -> bool {
+    expected_interpretation(form).is_some() && !presentation_form(form)
+}
+
 fn presentation_use_flag_valid(form: i64, use_flag: Option<UseFlag>) -> bool {
     !presentation_form(form) || use_flag == Some(UseFlag::Annotation)
 }
@@ -186,6 +192,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<CopiousProjectionOutcome, CodecError> {
@@ -201,7 +208,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
-    let planar_pairs = super::geometry::PlanarPairBudget::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new(limits);
 
     for entry in directory
         .iter()
@@ -301,6 +308,10 @@ pub(super) fn project(
             );
             continue;
         }
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13)
+                && tuple_count == 1
+                && matches!(global.global_table(), GlobalTable::V4_0));
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -313,9 +324,18 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
+                let stem = crate::ids::Stem::directory(entry.sequence);
+                let record: Option<cadmpeg_ir::ids::Identity> = if presentation_form(entry.form) {
+                    None
+                } else if projects_as_points {
+                    (tuple_count == 1).then(|| crate::ids::point(&stem.tail_index(1_usize)).into())
+                } else {
+                    Some(crate::ids::curve(&stem).into())
+                };
                 super::give_up_needing(
                     &mut losses,
                     entry,
+                    record,
                     message.needs(),
                     copious_note(entry, format_args!("{message}")),
                 );
@@ -411,10 +431,6 @@ pub(super) fn project(
             );
             continue;
         }
-        let projects_as_points = matches!(entry.form, 1..=3)
-            || (matches!(entry.form, 11..=13)
-                && tuple_count == 1
-                && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in positions.into_iter().enumerate() {
                 let point = crate::ids::point(

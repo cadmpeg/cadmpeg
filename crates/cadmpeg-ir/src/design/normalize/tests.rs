@@ -1216,7 +1216,7 @@ fn drawing_and_annotation_references_take_the_one_spelling() {
     let mut ir = placed();
     let mut drawing = Drawing::new(
         id("drawing", "view"),
-        "View".to_owned(),
+        crate::ids::Identity::new("test:source:object#view").unwrap(),
         DrawingKind::View,
         "View".to_owned(),
         0,
@@ -1228,7 +1228,7 @@ fn drawing_and_annotation_references_take_the_one_spelling() {
     ir.model.drawings.push(drawing);
     let mut note = SemanticAnnotation::new(
         id("annotation", "note"),
-        "Note".to_owned(),
+        crate::ids::Identity::new("test:source:object#note").unwrap(),
         SemanticAnnotationKind::Text,
         "Note".to_owned(),
         0,
