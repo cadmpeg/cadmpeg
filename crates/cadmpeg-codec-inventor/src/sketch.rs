@@ -326,7 +326,7 @@ cadmpeg_core::named_optional_field!(deserialize_parameter, PmDcReference, "param
 type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<FiniteReal>;
 type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchConstraintKind {
     SplinePoint {
@@ -519,7 +519,7 @@ impl PmDcSketchEntityPayload {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchEntityKind {
     Spline {
@@ -3535,7 +3535,8 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 use cadmpeg_core::serde_erase::json as json_wire;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    pub(crate) mod repeated_blocks;
     use super::{
         block_curve_offsets, block_definition_curves, distinct_operand_keys, entity_endpoint_refs,
         inventory, json_wire, parse_constraint, parse_direction, parse_entity, parse_sketch,

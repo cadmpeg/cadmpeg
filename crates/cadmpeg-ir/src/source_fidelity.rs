@@ -184,7 +184,7 @@ pub struct RetainedSourceRecord {
     /// Content classes the bytes can hold where the decoder keeps the record
     /// without decoding it.
     #[serde(serialize_with = "cadmpeg_core::distinct_keys::set::serialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<String>"))]
     untyped: BTreeSet<ArenaClass>,
 }
 
@@ -202,7 +202,7 @@ struct RetainedSourceRecordWire {
     /// Content classes the bytes can hold where the decoder keeps the record
     /// without decoding it.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<String>"))]
     untyped: BTreeSet<ArenaClass>,
 }
 
@@ -411,7 +411,7 @@ struct SourceFidelityWire {
     codec_digests: CodecDigests,
     /// Union of the retained records' untyped classes.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<String>"))]
     unrepresented: BTreeSet<ArenaClass>,
     /// Sparse source locations and conversion exactness.
     annotations: Annotations,

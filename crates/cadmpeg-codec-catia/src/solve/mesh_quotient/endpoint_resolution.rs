@@ -729,6 +729,7 @@ pub(super) fn resolve_standard_mesh_endpoint_candidates(
         '_,
     >,
 ) -> Result<MeshEndpointResolve, CodecError> {
+    // resource-cap: MAX_SELECTION_WORK = 4
     const MAX_SELECTION_WORK: usize = 100_000;
 
     let ResolveStandardMeshEndpointCandidatesInputs {

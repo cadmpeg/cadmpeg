@@ -18,6 +18,7 @@ use cadmpeg_ir::sketches::{
 const STREAM: &str = "stream";
 
 /// What the later curve of the fixture looks like to the resolver.
+#[derive(Clone, Copy)]
 struct Later {
     primary_id: u64,
     owner: u32,

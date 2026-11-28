@@ -32,6 +32,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
           }
         ],
@@ -62,6 +63,7 @@
             "name": "length",
             "native_options": {},
             "native_ref": "nx:om-entry-0:expression#399",
+            "position": 0,
             "scope": "nx:document:product-definition#root",
             "source_settings": {},
             "unit": [
@@ -595,6 +597,7 @@
               "definition": "derived",
               "kind": "derived",
               "native_ref": "derived",
+              "position": "derived",
               "unit": "derived",
               "value": "derived"
             },

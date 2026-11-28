@@ -4,7 +4,6 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::reader::give_up_instance;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -13,6 +12,7 @@ use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Meshed, Tessellation};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -222,21 +222,21 @@ pub(super) fn decode(
         let Some(coordinate_id) =
             inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
         else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning
                     .note(format!("{kind} #{id} has no COORDINATES_LIST reference")),
-            ));
+            );
             continue;
         };
         let Some(vertices) = coordinates.get(&coordinate_id) else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning
                     .note(format!("{kind} #{id} has no resolved COORDINATES_LIST")),
-            ));
+            );
             continue;
         };
         let offset = entity.own_parameter_offset();
@@ -254,23 +254,23 @@ pub(super) fn decode(
             }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no triangle indices")),
-            ));
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!("{kind} #{id} has no triangle indices")),
+            );
             continue;
         };
         let pnindex = match entity_parameter(record, kind, 0, offset) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
-                    losses.extend(give_up_instance(
-                        exchange,
+                    exchange.lost().give_up_for(
                         id,
-                        StepLossCode::DecodeWarning
+                        Cause::Unreadable,
+                        &StepLossCode::DecodeWarning
                             .note(format!("{kind} #{id} has an invalid pnindex")),
-                    ));
+                    );
                     continue;
                 };
                 indices
@@ -280,13 +280,13 @@ pub(super) fn decode(
             if triangles.iter().flatten().any(|index| {
                 *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
             }) {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up_for(
                     id,
-                    StepLossCode::DecodeWarning.note(format!(
+                    Cause::Unreadable,
+                    &StepLossCode::DecodeWarning.note(format!(
                         "{kind} #{id} has an out-of-range one-based coordinate index"
                     )),
-                ));
+                );
                 continue;
             }
             let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
@@ -318,13 +318,13 @@ pub(super) fn decode(
             }) || triangles.iter().flatten().any(|index| {
                 *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
             }) {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up_for(
                     id,
-                    StepLossCode::DecodeWarning.note(format!(
+                    Cause::Unreadable,
+                    &StepLossCode::DecodeWarning.note(format!(
                         "{kind} #{id} has an out-of-range one-based tessellation index"
                     )),
-                ));
+                );
                 continue;
             }
             (
@@ -436,11 +436,9 @@ pub(super) fn decode(
         ) {
             Ok(rows) => rows,
             Err(error) => {
-                losses.extend(give_up_instance(
-                    exchange,
-                    id,
-                    StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
-                ));
+                exchange
+                    .lost()
+                    .give_up(id, Cause::Unreadable, format!("{kind} #{id}: {error}"));
                 continue;
             }
         };
@@ -461,11 +459,9 @@ pub(super) fn decode(
         ) {
             Ok(mesh) => mesh,
             Err(error) => {
-                losses.extend(give_up_instance(
-                    exchange,
-                    id,
-                    StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
-                ));
+                exchange
+                    .lost()
+                    .give_up(id, Cause::Unreadable, format!("{kind} #{id}: {error}"));
                 continue;
             }
         };
@@ -577,6 +573,7 @@ enum AssociationMode {
 /// Distinct inherited placements that one association walk follows into a
 /// tessellated item. Past it, the item and the items it contains keep source
 /// coordinates.
+// resource-cap: MAX_ITEM_PLACEMENTS = 4
 const MAX_ITEM_PLACEMENTS: usize = 64;
 
 /// The state of one association walk.

@@ -9,7 +9,9 @@ use super::{
 use crate::records::configuration::{
     DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
 };
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopeTailFlags,
+};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, neutral_feature, neutral_parameter, object_target, owner,
     parameter, property_target, scope, string_cell, table_document, Natives, Row, STREAM,
@@ -17,9 +19,10 @@ use crate::test_support::configuration_table::{
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ConfigurationEvaluation;
-use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::BodyId;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const ENTRY: &str =
     "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.t.dsgcfg";
@@ -416,9 +419,10 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     let mut inactive = configuration.clone();
     inactive.active = false;
     inactive.feature_states.clear();
+    let undecided = BTreeSet::from([unstated.id.clone()]);
     let mut features = vec![unlisted, unstated, stored];
     let mut configurations = vec![configuration.clone(), inactive];
-    reconcile_active_configurations(&mut features, &mut configurations).unwrap();
+    reconcile_active_configurations(&mut features, &mut configurations, &undecided).unwrap();
     assert_eq!(inferred_configuration_suppression_count(&configurations), 0);
 
     // A suppressed feature no row names gains a row in the active configuration only.
@@ -428,8 +432,176 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     assert!(configurations[1].feature_states.is_empty());
     // A row supplies a state the feature does not have.
     assert_eq!(features[1].suppressed, Some(true));
-    // A stored non-Sketch state is not overwritten, so the checker still sees the conflict.
+    // A stored state is not overwritten, so the checker still sees the conflict.
     assert_eq!(features[2].suppressed, Some(false));
+}
+
+/// Features whose cell in active row `off` suppresses scope 314, computes
+/// scope 315 and suppresses scopes 316, 318 and 319: the Base Feature of 314
+/// and the Extrude of 315 store no suppression and carry the states feature
+/// projection infers for them, 316 stores its state in its tail, the Thread
+/// of 318 in its companion suppression flag, and the Sketch of 319 stores an
+/// active state in its tail. The suppressed feature of scope 317 has no
+/// column.
+#[test]
+fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
+    let mut natives = Natives::complete();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    natives.neutral_features[0] = neutral_feature(&natives.scopes[0], "f3d:test:feature#s");
+    let inferred_active = natives.neutral_features[0].id.clone();
+    let mut inferred_suppressed = neutral_feature(&scope(315), "f3d:test:feature#a");
+    inferred_suppressed.suppressed = Some(true);
+    let mut stored_scope = scope(316);
+    stored_scope.tail_flags = Some(DesignScopeTailFlags {
+        suppression: [false, false],
+        unevaluated: false,
+        wide_state: None,
+        state_offset: stored_scope.feature_ordinal_offset() + 1,
+        no_result: false,
+        rolled_back: false,
+        no_result_offset: stored_scope.feature_ordinal_offset() + 4,
+        envelope_offset: None,
+    });
+    let stored = neutral_feature(&stored_scope, "f3d:test:feature#b");
+    let mut unlisted = neutral_feature(&scope(317), "f3d:test:feature#c");
+    unlisted.suppressed = Some(true);
+    let mut thread_scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#318"),
+        DesignFeatureKind::Thread,
+        318,
+    );
+    thread_scope.companion_suppressed = Some(crate::records::identity::Located {
+        value: false,
+        offset: thread_scope.feature_ordinal_offset() + 62,
+    });
+    let thread = neutral_feature(&thread_scope, "f3d:test:feature#d");
+    let mut sketch_scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#319"),
+        DesignFeatureKind::Sketch,
+        319,
+    );
+    sketch_scope.tail_flags = stored_scope.tail_flags;
+    let mut sketch = neutral_feature(&sketch_scope, "f3d:test:feature#e");
+    sketch
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        }));
+    natives.scopes.extend([
+        scope(315),
+        stored_scope,
+        scope(317),
+        thread_scope,
+        sketch_scope,
+    ]);
+    natives.neutral_features.extend([
+        inferred_suppressed.clone(),
+        stored.clone(),
+        unlisted.clone(),
+        thread.clone(),
+        sketch.clone(),
+    ]);
+    let mut document = table(&table_document(
+        "1",
+        &[
+            ("F", object_target("314", "DcFeature")),
+            ("G", object_target("315", "DcFeature")),
+            ("H", object_target("316", "DcFeature")),
+            ("I", object_target("318", "DcFeature")),
+            ("J", object_target("319", "DcFeature")),
+        ],
+        &[(
+            "off",
+            "Off",
+            vec![
+                ("F", bool_cell(false)),
+                ("G", bool_cell(true)),
+                ("H", bool_cell(false)),
+                ("I", bool_cell(false)),
+                ("J", bool_cell(false)),
+            ],
+        )],
+        &["off"],
+    ));
+    document.set_active_row(active("1", "off")).unwrap();
+
+    let configurations = natives.attach(&[document]);
+    let state = |id: &cadmpeg_ir::features::FeatureId| {
+        natives
+            .neutral_features
+            .iter()
+            .find(|feature| &feature.id == id)
+            .unwrap()
+            .suppressed
+    };
+    assert_eq!(state(&inferred_active), Some(true));
+    assert_eq!(state(&inferred_suppressed.id), Some(false));
+    assert_eq!(state(&stored.id), Some(false));
+    assert_eq!(state(&thread.id), Some(false));
+    assert_eq!(state(&sketch.id), Some(false));
+    assert_eq!(state(&unlisted.id), Some(true));
+    assert_eq!(configurations.len(), 1);
+    assert!(configurations[0].feature_states[&unlisted.id]
+        .evaluation
+        .is_suppressed());
+}
+
+/// Active row `off` suppresses scopes 314 and 315, whose tails store no
+/// suppression. The Base Feature of 314 carries the active state feature
+/// projection infers, and the feature of 315 states none. Each produces a
+/// body, so each keeps its state and the row contradicts the features.
+#[test]
+fn a_feature_that_produces_a_body_keeps_its_state_under_a_suppressing_row() {
+    let mut natives = Natives::complete();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    let mut inferred = neutral_feature(&natives.scopes[0], "f3d:test:feature#s");
+    let mut unstated = neutral_feature(&scope(315), "f3d:test:feature#a");
+    unstated.suppressed = None;
+    for (feature, body) in [
+        (&mut inferred, "f3d:test:body#1"),
+        (&mut unstated, "f3d:test:body#2"),
+    ] {
+        feature
+            .evaluation
+            .edit(|_, outputs| outputs.extend([BodyId::mint(body).unwrap()]));
+    }
+    natives.neutral_features[0] = inferred.clone();
+    natives.scopes.push(scope(315));
+    natives.neutral_features.push(unstated.clone());
+    let mut document = table(&table_document(
+        "1",
+        &[
+            ("F", object_target("314", "DcFeature")),
+            ("G", object_target("315", "DcFeature")),
+        ],
+        &[(
+            "off",
+            "Off",
+            vec![("F", bool_cell(false)), ("G", bool_cell(false))],
+        )],
+        &["off"],
+    ));
+    document.set_active_row(active("1", "off")).unwrap();
+
+    let configurations = natives.attach(&[document]);
+    let state = |id: &cadmpeg_ir::features::FeatureId| {
+        natives
+            .neutral_features
+            .iter()
+            .find(|feature| &feature.id == id)
+            .unwrap()
+            .suppressed
+    };
+    assert_eq!(state(&inferred.id), Some(false));
+    assert_eq!(state(&unstated.id), None);
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features = natives.neutral_features.clone();
+    ir.model.configurations = configurations;
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(report.findings.iter().any(|finding| finding.rule.as_str()
+        == "topology.active-configuration-suppression-disagrees-current-feature"));
 }
 
 #[test]
@@ -456,7 +628,7 @@ fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved
     );
     let mut features = vec![feature];
     let mut configurations = vec![configuration];
-    reconcile_active_configurations(&mut features, &mut configurations).unwrap();
+    reconcile_active_configurations(&mut features, &mut configurations, &BTreeSet::new()).unwrap();
     assert!(configurations[0].feature_states[&features[0].id]
         .evaluation
         .is_suppressed());
@@ -469,7 +641,7 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     use std::io::{Cursor, Write};
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     let bad = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.bad.dsgcfg";
     zip.start_file(bad, stored).unwrap();
     zip.write_all(b"[").unwrap();
@@ -480,15 +652,10 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
-    let mut losses = Vec::new();
     let mut given_up = Vec::new();
-    let decoded = super::decode_configurations(&ctx, &scan, &mut losses, &mut given_up).unwrap();
+    let decoded = super::decode_configurations(&ctx, &scan, &mut given_up).unwrap();
     assert_eq!(decoded.documents.len(), 1);
     assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()]
-    );
     assert_eq!(given_up.len(), 1);
     assert_eq!(given_up[0].kind(), crate::container::ENTRY_PART);
     assert_eq!(given_up[0].name(), Some(bad));

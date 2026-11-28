@@ -1351,8 +1351,6 @@ cadmpeg_core::named_optional_field!(deserialize_boolean<T>, T, "boolean");
 cadmpeg_core::named_optional_field!(deserialize_cap_planar<T>, T, "cap_planar");
 cadmpeg_core::named_optional_field!(deserialize_closed<T>, T, "closed");
 cadmpeg_core::named_optional_field!(deserialize_condition<T>, T, "condition");
-// The deny census resolves this reader by bare name, so it is named apart from
-// `features::deserialize_continuity`.
 cadmpeg_core::named_optional_field!(deserialize_continuity_field<T>, T, "continuity");
 cadmpeg_core::named_optional_field!(deserialize_corner<T>, T, "corner");
 cadmpeg_core::named_optional_field!(deserialize_curvature_ratio<T>, T, "curvature_ratio");

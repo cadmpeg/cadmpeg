@@ -21,6 +21,7 @@ pub mod annotations;
 pub mod attributes;
 pub mod emit;
 pub mod geometry;
+pub mod given_up;
 pub mod key_maps;
 pub mod records;
 pub mod stats;
@@ -35,6 +36,7 @@ use crate::nurbs;
 use crate::nurbs::proc_curve::ProceduralCurveConstruction;
 use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::sab::Record;
+use cadmpeg_core::decode::ScratchContext;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
@@ -141,6 +143,10 @@ pub struct AsmBrep {
     /// arenas derive from parent pointers instead of storing.
     #[serde(skip)]
     pub chain_order: ChainOrder,
+    /// Topology records the model decode read and left out; the embedding
+    /// codec gives each up as a part (CADIR §3.3).
+    #[serde(skip)]
+    pub withheld: Vec<given_up::WithheldRecord>,
 }
 
 /// A face record that states no loop on a surface whose domain is unbounded.
@@ -170,6 +176,7 @@ pub struct ChainOrder {
 /// any other. The join maps are not on the wire: they are projections of the
 /// key records, derived on read through [`key_maps`].
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct AsmBrepWire {
     bodies: Vec<Body>,
@@ -201,6 +208,17 @@ struct AsmBrepWire {
     attributes: Vec<SourceAttribute>,
     unknowns: Vec<UnknownRecord>,
     stats: Stats,
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for AsmBrep {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AsmBrep".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        <AsmBrepWire as schemars::JsonSchema>::json_schema(generator)
+    }
 }
 
 impl<'de> Deserialize<'de> for AsmBrep {
@@ -239,6 +257,7 @@ impl<'de> Deserialize<'de> for AsmBrep {
             annotation_records: Vec::new(),
             unbounded_faces: Vec::new(),
             chain_order: ChainOrder::default(),
+            withheld: Vec::new(),
         })
     }
 }
@@ -284,6 +303,7 @@ impl AsmBrep {
             unknowns,
             annotation_records,
             unbounded_faces,
+            withheld,
         );
         self.stats.merge(other.stats);
     }
@@ -371,6 +391,13 @@ pub enum DecodePurpose {
     Model,
     /// Transfer stable topology plus measurements used by history binding.
     History,
+}
+
+#[derive(Clone, Copy)]
+enum Purpose<'a> {
+    Model(&'a [u8]),
+    Inspect(Option<&'a [u8]>),
+    History(&'a [u8]),
 }
 
 /// Decode a framed active slice into the ASM B-rep graph.
@@ -482,6 +509,85 @@ pub fn decode_with_table(
     format: IdFormat,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let purpose = match purpose {
+        DecodePurpose::Model => Purpose::Model(bytes),
+        DecodePurpose::History => Purpose::History(bytes),
+    };
+    decode_graph(ctx, records, tables, stream, format, purpose)
+}
+
+/// Decode a framed slice into a graph that the caller reads and drops, such
+/// as the decode of one history state.
+///
+/// The decode runs on a [`ScratchContext`], which releases the bytes the graph
+/// retains. The caller charges what it keeps. The graph includes shell
+/// membership marks. The Model path supplies source records and annotations.
+pub fn inspect_with_header(
+    scratch: &ScratchContext<'_>,
+    records: &[Record],
+    header: Option<&crate::kernel_header::KernelHeader>,
+    stream: &str,
+    format: IdFormat,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let token_table = nurbs::toks::SubtypeTable::from_records(records)
+        .with_save_format_version(header.and_then(|header| header.save_format_version));
+    inspect_with_table(scratch, records, (header, &token_table), stream, format)
+}
+
+/// [`inspect_with_header`] with the stream subtype ordinals of a materialized
+/// record table.
+pub fn inspect_with_table(
+    scratch: &ScratchContext<'_>,
+    records: &[Record],
+    tables: (
+        Option<&crate::kernel_header::KernelHeader>,
+        &nurbs::toks::SubtypeTable,
+    ),
+    stream: &str,
+    format: IdFormat,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    decode_graph(
+        scratch,
+        records,
+        tables,
+        stream,
+        format,
+        Purpose::Inspect(None),
+    )
+}
+
+/// Inspect a materialized state with its source bytes and record locations.
+pub fn inspect_with_source(
+    scratch: &ScratchContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    header: Option<&crate::kernel_header::KernelHeader>,
+    stream: &str,
+    format: IdFormat,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let token_table = nurbs::toks::SubtypeTable::from_records(records)
+        .with_save_format_version(header.and_then(|header| header.save_format_version));
+    decode_graph(
+        scratch,
+        records,
+        (header, &token_table),
+        stream,
+        format,
+        Purpose::Inspect(Some(bytes)),
+    )
+}
+
+fn decode_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    tables: (
+        Option<&crate::kernel_header::KernelHeader>,
+        &nurbs::toks::SubtypeTable,
+    ),
+    stream: &str,
+    format: IdFormat,
+    purpose: Purpose<'_>,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let (header, token_table) = tables;
     let mut out = AsmBrep::default();
 
@@ -501,16 +607,20 @@ pub fn decode_with_table(
     let saved_entity_limit = header
         .and_then(|header| header.entity_count)
         .and_then(|count| i64::try_from(count).ok());
-    let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records)?;
     let mut reach = Reachable::default();
 
+    let (topology, shell_bytes, source_bytes, withheld_bytes) = match purpose {
+        Purpose::Model(bytes) => (DecodePurpose::Model, Some(bytes), Some(bytes), Some(bytes)),
+        Purpose::Inspect(bytes) => (DecodePurpose::Model, bytes, bytes, None),
+        Purpose::History(bytes) => (DecodePurpose::History, Some(bytes), None, None),
+    };
     let topology_context = TopologyContext {
         ctx,
         by_index: &by_index,
         token_table,
-        purpose,
+        purpose: topology,
         format,
     };
     keep_faces_and_carriers(
@@ -583,20 +693,32 @@ pub fn decode_with_table(
         &mut out,
         ContainerInputs {
             records,
-            bytes,
+            shell_bytes,
             by_index: &by_index,
             reach: &reach,
             wire: &wire,
             stream,
-            header_scale,
             format,
         },
     )?;
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
-    if purpose == DecodePurpose::Model {
+    if let Some(bytes) = source_bytes {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
+    }
+    if topology == DecodePurpose::Model {
+        given_up::list_withheld(
+            ctx,
+            &mut out,
+            records,
+            withheld_bytes,
+            &by_index,
+            &reach,
+            format,
+        )?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
-        emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
+        if source_bytes.is_some() {
+            emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
+        }
 
         attach_point_edge_carriers(&mut out, records, format);
         let collapsed = collapsed_edges(records, &by_index, &reach.edges, format)?;

@@ -386,7 +386,7 @@ fn writer_writes_the_design_stream_beside_a_joint_it_does_not_write() {
     )
     .joints;
     assert_eq!(target.model.assembly_joints.len(), 1);
-    crate::test_support::native_test::f3d_native_mut(&mut target).design_types =
+    crate::test_support::native_fixture::f3d_native_mut(&mut target).design_types =
         vec![assemble_type()];
 
     let joint = target.model.assembly_joints[0].id.to_string();

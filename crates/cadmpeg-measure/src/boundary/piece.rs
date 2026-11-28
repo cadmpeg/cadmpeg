@@ -2,8 +2,8 @@
 //! One boundary piece: a parameter interval with its image in the carrier's
 //! parameter plane and in model space.
 
+use crate::{fast_map, FastMap};
 use std::cell::{OnceCell, RefCell};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use cadmpeg_ir::features::geometry::FiniteVector3;
@@ -20,18 +20,22 @@ use crate::reason::UnavailableReason;
 use crate::report::UvSource;
 
 /// Samples of one piece's unwrap reference or polyline.
+// resource-cap: MAX_NESTING_SAMPLES_PER_PIECE = 4
 const MAX_NESTING_SAMPLES_PER_PIECE: usize = 1 << 10;
 
 /// Golden-section steps of the search for a singular point of the carrier
 /// between two samples whose parameter image jumps.
+// resource-cap: MAX_SINGULAR_APPROACH_STEPS = 4
 const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
 
 /// Bisection steps of the search for the parameter where a piece enters the
 /// allowance of a singular point of the carrier.
+// resource-cap: MAX_SINGULAR_ENTRY_STEPS = 4
 const MAX_SINGULAR_ENTRY_STEPS: usize = 64;
 
 /// False-position steps of the search for the parameter where a piece's
 /// parameter image crosses a knot value.
+// resource-cap: MAX_KNOT_CROSSING_STEPS = 4
 const MAX_KNOT_CROSSING_STEPS: usize = 64;
 
 /// The step, relative to the piece's parameter span, at which the search
@@ -40,6 +44,7 @@ const KNOT_CROSSING_RESOLUTION: f64 = 1.0e-9;
 
 /// Passes through singular points of the carrier at which one inverted
 /// curve interval splits into pieces.
+// resource-cap: MAX_SINGULAR_CROSSINGS_PER_PIECE = 4
 const MAX_SINGULAR_CROSSINGS_PER_PIECE: usize = 4;
 
 /// An inverted curve interval: its piece, or the parameter inside it where
@@ -111,7 +116,7 @@ pub(crate) struct Piece<'ir> {
     knot_crossings: OnceCell<Vec<f64>>,
     /// Cached unshifted samples keyed by `t.to_bits()` for inverted NURBS /
     /// extrusion curve pieces shared across area and flux quadratures.
-    sample_cache: RefCell<HashMap<u64, Sample>>,
+    sample_cache: RefCell<FastMap<u64, Sample>>,
 }
 
 impl<'ir> Piece<'ir> {
@@ -135,7 +140,7 @@ impl<'ir> Piece<'ir> {
             alpha: 0.0,
             held: [None, None],
             knot_crossings: OnceCell::new(),
-            sample_cache: RefCell::new(HashMap::new()),
+            sample_cache: RefCell::new(fast_map()),
         }
     }
 
@@ -162,7 +167,7 @@ impl<'ir> Piece<'ir> {
             alpha: use_.alpha,
             held: [None, None],
             knot_crossings: OnceCell::new(),
-            sample_cache: RefCell::new(HashMap::new()),
+            sample_cache: RefCell::new(fast_map()),
         }
     }
 
@@ -341,7 +346,7 @@ impl<'ir> Piece<'ir> {
             alpha,
             held,
             knot_crossings: OnceCell::new(),
-            sample_cache: RefCell::new(HashMap::new()),
+            sample_cache: RefCell::new(fast_map()),
         })))
     }
 

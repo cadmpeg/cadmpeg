@@ -64,6 +64,10 @@ pub struct KernelHeader {
 /// Flag bit selecting the optional construction-history partition.
 pub const HISTORY_PARTITION_FLAG: u64 = 1;
 
+/// Save formats whose ACIS binary stream stores the extended entity base and
+/// ends its header with the optional key string.
+pub const EXTENDED_ACIS_SAVE_FORMATS: std::ops::Range<u32> = 1100..10_000;
+
 /// Flag bits 1 to 7, which hold the save format's revision number.
 pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
 

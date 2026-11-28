@@ -31,6 +31,7 @@ use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::{Coedge, Edge, EdgeCarrier, PcurveUse};
 
+// resource-cap: MAX_RECOVERY_WORK = N
 const MAX_RECOVERY_WORK: usize = 1 << 26;
 const AGREEMENT_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 

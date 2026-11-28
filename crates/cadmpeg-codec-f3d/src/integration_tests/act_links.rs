@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::WritePath;
 
 use crate::test_support::act_links::f3d_with_act_component_links;
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 use crate::F3dCodec;
 
 #[test]

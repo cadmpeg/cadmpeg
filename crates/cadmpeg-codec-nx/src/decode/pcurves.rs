@@ -2908,6 +2908,7 @@ const COMPLETION_TRANSFER_SAMPLES_PER_CHART: usize = 8;
 /// The candidate-scaled slice prevents a large valid model from starving
 /// later charts behind an arbitrary fixed prefix. The ceiling still bounds
 /// models whose charts or adaptive subdivisions are pathological.
+// resource-cap: MAX_COMPLETION_TRANSFER_SAMPLES = 4
 pub(super) const MAX_COMPLETION_TRANSFER_SAMPLES: usize = 65_536;
 
 pub(super) fn completion_transfer_budget_limit(chart_count: usize) -> usize {
@@ -2927,6 +2928,7 @@ pub(super) fn completion_transfer_budget_limit(chart_count: usize) -> usize {
 /// A partial pcurve would not satisfy the fit contract. This model-wide ceiling
 /// keeps unusually curved boundaries from consuming an unbounded amount of
 /// work while preserving the adaptive budget needed by valid carriers.
+// resource-cap: MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES = 4
 pub(super) const MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES: usize = 131_072;
 
 #[derive(Clone, Copy)]

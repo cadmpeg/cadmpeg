@@ -37,7 +37,9 @@ fn selected(
     .unwrap()
 }
 
-fn lines(sketch: &Sketch, specs: &[(&str, (f64, f64), (f64, f64))]) -> Vec<SketchEntity> {
+type LineSpec<'a> = (&'a str, (f64, f64), (f64, f64));
+
+fn lines(sketch: &Sketch, specs: &[LineSpec<'_>]) -> Vec<SketchEntity> {
     specs
         .iter()
         .map(|(name, start, end)| {

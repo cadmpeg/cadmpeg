@@ -36,9 +36,21 @@ use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 use std::fmt;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    IGES_1_0_FIXED_ASCII, IGES_2_0_FIXED_ASCII, IGES_3_0_FIXED_ASCII, IGES_4_0_BINARY,
+    IGES_4_0_COMPRESSED_ASCII, IGES_4_0_FIXED_ASCII, IGES_5_0_BINARY, IGES_5_0_COMPRESSED_ASCII,
+    IGES_5_0_FIXED_ASCII, IGES_5_1_BINARY, IGES_5_1_COMPRESSED_ASCII, IGES_5_1_FIXED_ASCII,
+    IGES_5_2_BINARY, IGES_5_2_COMPRESSED_ASCII, IGES_5_2_FIXED_ASCII, IGES_5_3_BINARY,
+    IGES_5_3_COMPRESSED_ASCII, IGES_5_3_FIXED_ASCII, IGES_ANSI_Y14_26M_1981_FIXED_ASCII,
+    IGES_ASME_ANSI_Y14_26M_1987_FIXED_ASCII, IGES_ASME_Y14_26M_1989_FIXED_ASCII, IGES_UNKNOWN,
+};
 
-/// The dialect-unverified loss required by a resolved Global declaration.
+/// The dialect loss required by a resolved Global declaration:
+/// `source.version-flag-invalid` where field 23 is not an integer or is
+/// below `1`, which no version flag is, and `source.dialect-unverified`
+/// where the effective version is outside the verified set.
 ///
 /// [`classify`] and this function consume the same recovery fact. A verified
 /// Global therefore cannot enter the unverified message construction, and no
@@ -56,6 +68,11 @@ pub(crate) fn dialect_loss(global: &GlobalRecord) -> Option<LossNote> {
     let declared = global.declared_version_flag();
     let version = global.version_name();
     let names = VerifiedVersionNames;
+    let invalid = match recovery {
+        UnverifiedDialectRecovery::UnreadableDeclaration(_) => true,
+        UnverifiedDialectRecovery::Clamped => declared < 1,
+        UnverifiedDialectRecovery::UnverifiedVersion => false,
+    };
     let message = match recovery {
         UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => format!(
             "IGES Global field 23 (version flag) is malformed: the declaration \
@@ -76,7 +93,11 @@ pub(crate) fn dialect_loss(global: &GlobalRecord) -> Option<LossNote> {
              verified for versions {names}"
         ),
     };
-    let code = IgesLossCode::SourceDialectUnverified;
+    let code = if invalid {
+        IgesLossCode::SourceVersionFlagInvalid
+    } else {
+        IgesLossCode::SourceDialectUnverified
+    };
 
     Some(code.note(message))
 }

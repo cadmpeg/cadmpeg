@@ -67,6 +67,7 @@ pub mod surface_payloads;
 /// result past this depth and stores the depth it holds, so no value of the
 /// three carriers nests deeper however it was built or deserialized, and every
 /// consumer that reads through a basis is bounded without a check of its own.
+// resource-cap: MAX_GEOMETRY_NESTING = 1
 pub const MAX_GEOMETRY_NESTING: usize = 256;
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.

@@ -11,7 +11,7 @@ use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use std::collections::{HashMap, HashSet};
 
 mod legacy;
@@ -21,6 +21,7 @@ mod tests;
 struct Failure {
     start: usize,
     end: usize,
+    cause: Cause,
     error: CodecError,
 }
 
@@ -51,20 +52,32 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn fail(&mut self, start: usize, end: usize, error: CodecError) {
-        if let Some(previous) = self
-            .failures
-            .last_mut()
-            .filter(|previous| previous.end >= start)
-        {
+    /// Records a failure over `start..end`. A failure that starts inside the
+    /// previous failure comes from a read past it, so the previous cause and
+    /// text state both. An adjacent failure of another cause is its own part.
+    fn fail(&mut self, start: usize, end: usize, cause: Cause, error: CodecError) {
+        if let Some(previous) = self.failures.last_mut().filter(|previous| {
+            previous.end > start
+                || (previous.end == start && (previous.cause == cause || start == end))
+        }) {
             previous.end = previous.end.max(end);
         } else {
-            self.failures.push(Failure { start, end, error });
+            self.failures.push(Failure {
+                start,
+                end,
+                cause,
+                error,
+            });
         }
     }
 
-    fn tail(&mut self, start: usize, message: &'static str) {
-        self.fail(start, self.view.end(), CodecError::malformed(message));
+    fn tail(&mut self, start: usize, cause: Cause, message: &'static str) {
+        self.fail(
+            start,
+            self.view.end(),
+            cause,
+            crate::design::decode::record::give_up_error(cause, message),
+        );
         self.view.seek_to_end();
     }
 
@@ -76,7 +89,7 @@ impl<'a> Reader<'a> {
         match read(&mut self.view) {
             Ok(value) => ReadField::Value(value),
             Err(error) => {
-                self.fail(start, self.view.end(), error.into());
+                self.fail(start, self.view.end(), Cause::Unreadable, error.into());
                 self.view.seek_to_end();
                 ReadField::Unread
             }
@@ -92,6 +105,7 @@ impl<'a> Reader<'a> {
                     self.fail(
                         start,
                         self.view.position(),
+                        Cause::Unreadable,
                         CodecError::malformed("nonfinite WorkAxis scalar"),
                     );
                     ReadField::Unread
@@ -116,7 +130,11 @@ impl<'a> Reader<'a> {
             .map(cadmpeg_core::decode::BoundedCount::get)
             .filter(|length| *length <= maximum)
         else {
-            self.tail(start, "WorkAxis text length exceeds its frame");
+            self.tail(
+                start,
+                Cause::Unreadable,
+                "WorkAxis text length exceeds its frame",
+            );
             return ReadField::Unread;
         };
         match self.view.req_take(length) {
@@ -124,11 +142,15 @@ impl<'a> Reader<'a> {
                 ReadField::Value(String::from_utf8_lossy(raw).into_owned())
             }
             Ok(_) => {
-                self.tail(start, "WorkAxis text contains invalid ASCII");
+                self.tail(
+                    start,
+                    Cause::Unreadable,
+                    "WorkAxis text contains invalid ASCII",
+                );
                 ReadField::Unread
             }
             Err(error) => {
-                self.fail(start, self.view.end(), error.into());
+                self.fail(start, self.view.end(), Cause::Unreadable, error.into());
                 self.view.seek_to_end();
                 ReadField::Unread
             }
@@ -145,6 +167,7 @@ impl<'a> Reader<'a> {
         if self.read(View::req_u32_le) != ReadField::Value(record_index) {
             self.tail(
                 self.view.position(),
+                Cause::Unreadable,
                 "WorkAxis carrier header identity disagrees",
             );
             return Ok(false);
@@ -169,7 +192,11 @@ impl<'a> Reader<'a> {
             ReadField::Value(_) => self.fail(
                 leading_at,
                 self.view.end(),
-                CodecError::malformed("WorkAxis carrier leading block layout is assumed"),
+                Cause::Undecoded,
+                crate::design::decode::record::give_up_error(
+                    Cause::Undecoded,
+                    "WorkAxis carrier leading block layout is assumed",
+                ),
             ),
             ReadField::Absent | ReadField::Unread => return Ok(false),
         }
@@ -182,7 +209,11 @@ impl<'a> Reader<'a> {
             }
             ReadField::Value(1) => {}
             _ => {
-                self.tail(presence_at, "invalid WorkAxis property presence");
+                self.tail(
+                    presence_at,
+                    Cause::Unreadable,
+                    "invalid WorkAxis property presence",
+                );
                 return Ok(false);
             }
         }
@@ -199,7 +230,11 @@ impl<'a> Reader<'a> {
             )
             .map(cadmpeg_core::decode::BoundedCount::get)
         else {
-            self.tail(count_at, "WorkAxis property count exceeds its frame");
+            self.tail(
+                count_at,
+                Cause::Unreadable,
+                "WorkAxis property count exceeds its frame",
+            );
             return Ok(false);
         };
         ctx.retain_bytes(
@@ -222,6 +257,7 @@ impl<'a> Reader<'a> {
                 prefix.properties.truncate(index);
                 self.tail(
                     count_at,
+                    Cause::Unreadable,
                     "WorkAxis property count exceeds its readable prefix",
                 );
                 return Ok(false);
@@ -252,7 +288,11 @@ impl<'a> Reader<'a> {
                 },
                 _ => {
                     prefix.properties.truncate(index + 1);
-                    self.tail(value_at, "WorkAxis property type has no admitted layout");
+                    self.tail(
+                        value_at,
+                        Cause::Undecoded,
+                        "WorkAxis property type has no admitted layout",
+                    );
                     return Ok(false);
                 }
             };
@@ -265,6 +305,7 @@ impl<'a> Reader<'a> {
         if u64_from_index(count) != u64::from(declared) {
             self.tail(
                 count_at,
+                Cause::Unreadable,
                 "WorkAxis property count exceeds its readable prefix",
             );
             return Ok(false);
@@ -292,6 +333,7 @@ impl<'a> Reader<'a> {
         else {
             self.tail(
                 at,
+                Cause::Unreadable,
                 "WorkAxis input count is zero, truncated or exceeds its frame",
             );
             return Ok(run);
@@ -311,7 +353,11 @@ impl<'a> Reader<'a> {
         for index in 0..count {
             if self.view.remaining() == 0 {
                 run.references.truncate(index);
-                self.tail(at, "WorkAxis input count exceeds its readable prefix");
+                self.tail(
+                    at,
+                    Cause::Unreadable,
+                    "WorkAxis input count exceeds its readable prefix",
+                );
                 return Ok(run);
             }
             let start = self.view.position();
@@ -322,7 +368,11 @@ impl<'a> Reader<'a> {
             run.references[index] = read.fields.into_owned();
             if !complete {
                 run.references.truncate(index + 1);
-                self.tail(start, "unreadable WorkAxis input reference");
+                self.tail(
+                    start,
+                    Cause::Undecoded,
+                    "unreadable WorkAxis input reference",
+                );
                 return Ok(run);
             }
             self.view
@@ -336,7 +386,11 @@ impl<'a> Reader<'a> {
                 CodecError::malformed("WorkAxis retained reference count exceeds u32")
             })?)
         {
-            self.tail(at, "WorkAxis input count exceeds its readable prefix");
+            self.tail(
+                at,
+                Cause::Unreadable,
+                "WorkAxis input count exceeds its readable prefix",
+            );
             return Ok(run);
         }
         Ok(run)
@@ -349,7 +403,11 @@ impl<'a> Reader<'a> {
             if next_indexed_record_offset(self.source.window(), at)
                 != Some(self.view.end() - self.source.start())
             {
-                self.tail(position, "WorkAxis carrier has an unreadable class tail");
+                self.tail(
+                    position,
+                    Cause::Undecoded,
+                    "WorkAxis carrier has an unreadable class tail",
+                );
             }
         }
         self.failures.is_empty()
@@ -383,7 +441,7 @@ impl<'a> Reader<'a> {
                     .map_err(CodecError::malformed)?,
             )
             .contained_in(scope.id.clone().try_into().map_err(CodecError::malformed)?);
-            given_up.push(ctx.give_up_part(part, failure.error)?);
+            given_up.push(ctx.give_up_part(part, failure.cause, failure.error)?);
         }
         Ok(())
     }
@@ -457,7 +515,11 @@ fn point_data(
         let field = ReadField::Value(read.fields.into_owned());
         if !complete {
             reading.pick_point_parameter = field;
-            reader.tail(start, "unreadable WorkAxis endpoint pick parameter");
+            reader.tail(
+                start,
+                Cause::Undecoded,
+                "unreadable WorkAxis endpoint pick parameter",
+            );
             return Ok(());
         }
         reader
@@ -638,7 +700,12 @@ pub(super) fn decode_work_axis(
             if let Err(error) =
                 ctx.run_part(|| point_direction(ctx, &mut reader, &mut candidate, version))?
             {
-                reader.fail(reader.view.position(), reader.view.end(), error);
+                reader.fail(
+                    reader.view.position(),
+                    reader.view.end(),
+                    Cause::Unreadable.of(&error),
+                    error,
+                );
             }
             reader.commit(ctx, scope, stream, given_up)?;
             if let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) = &candidate.source {
@@ -705,7 +772,12 @@ pub(super) fn decode_work_axis(
                         if let Err(error) = ctx.run_part(|| {
                             point_data(ctx, &mut reader, &mut reading, target, version)
                         })? {
-                            reader.fail(reader.view.position(), reader.view.end(), error);
+                            reader.fail(
+                                reader.view.position(),
+                                reader.view.end(),
+                                Cause::Unreadable.of(&error),
+                                error,
+                            );
                         }
                         reader.commit(ctx, scope, stream, given_up)?;
                         endpoint.readings.push(reading);

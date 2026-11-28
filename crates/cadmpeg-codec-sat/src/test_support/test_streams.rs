@@ -45,7 +45,13 @@ pub(crate) enum BinaryFixtureKind {
     /// `ACIS BinaryFile` declaring [`UNVERIFIED_SAVE_FORMAT`]: the same records
     /// under a band no row verifies.
     AcisUnverifiedBand,
+    /// `ACIS BinaryFile` at a save format of the extended entity base
+    /// ([`EXTENDED_SAVE_FORMAT`]): every record stores an integer between its
+    /// id and its pattern reference, and `body` one more before its lump.
+    AcisExtendedBase,
 }
+
+pub(crate) const EXTENDED_SAVE_FORMAT: u32 = 2_200;
 
 pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -58,10 +64,13 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
             bytes.extend_from_slice(&2u64.to_le_bytes()); // revision 1, no history
             8
         }
-        BinaryFixtureKind::Acis | BinaryFixtureKind::AcisUnverifiedBand => {
+        BinaryFixtureKind::Acis
+        | BinaryFixtureKind::AcisUnverifiedBand
+        | BinaryFixtureKind::AcisExtendedBase => {
             bytes.extend_from_slice(b"ACIS BinaryFile");
             let save_format = match kind {
                 BinaryFixtureKind::AcisUnverifiedBand => UNVERIFIED_SAVE_FORMAT,
+                BinaryFixtureKind::AcisExtendedBase => EXTENDED_SAVE_FORMAT,
                 _ => 21_800,
             };
             for value in [save_format, 0, 2, 2] {
@@ -104,6 +113,12 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
         bytes.push(0x06);
         bytes.extend_from_slice(&value.to_le_bytes());
     };
+    let extended = matches!(kind, BinaryFixtureKind::AcisExtendedBase);
+    let base_integer = |bytes: &mut Vec<u8>| {
+        if extended {
+            long(bytes, 7);
+        }
+    };
     // asmheader (index 0)
     ident(&mut bytes, 0x0d, "asmheader");
     reference(&mut bytes, -1);
@@ -115,14 +130,19 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     ident(&mut bytes, 0x0d, "body");
     reference(&mut bytes, -1);
     long(&mut bytes, -1);
-    for value in [-1i64, 2, -1, -1] {
+    base_integer(&mut bytes);
+    for (position, value) in [-1i64, 2, -1, -1].into_iter().enumerate() {
         reference(&mut bytes, value);
+        if position == 0 && extended {
+            long(&mut bytes, 9);
+        }
     }
     bytes.push(0x11);
     // lump (2) -> shell 3, owner 1
     ident(&mut bytes, 0x0d, "lump");
     reference(&mut bytes, -1);
     long(&mut bytes, -1);
+    base_integer(&mut bytes);
     for value in [-1i64, -1, 3, 1] {
         reference(&mut bytes, value);
     }
@@ -131,6 +151,7 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     ident(&mut bytes, 0x0d, "shell");
     reference(&mut bytes, -1);
     long(&mut bytes, -1);
+    base_integer(&mut bytes);
     for value in [-1i64, -1, -1, 4, -1, 2] {
         reference(&mut bytes, value);
     }
@@ -139,6 +160,7 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     ident(&mut bytes, 0x0d, "face");
     reference(&mut bytes, -1);
     long(&mut bytes, -1);
+    base_integer(&mut bytes);
     for value in [-1i64, -1, -1, 3, -1, 5] {
         reference(&mut bytes, value);
     }
@@ -148,6 +170,7 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     ident(&mut bytes, 0x0d, "surface");
     reference(&mut bytes, -1);
     long(&mut bytes, -1);
+    base_integer(&mut bytes);
     reference(&mut bytes, -1);
     bytes.push(0x13);
     for value in [0.0f64, 0.0, 0.0] {

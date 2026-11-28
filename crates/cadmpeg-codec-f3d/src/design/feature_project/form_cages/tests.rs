@@ -690,7 +690,7 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, options);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, options);
         for uuid in [FIRST_CAGE_UUID, SECOND_CAGE_UUID, THIRD] {
             archive
                 .start_file(
@@ -708,7 +708,7 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
             neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID),
             neutral_form_cage("f3d:model:subd#3", THIRD),
         ];
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 let mut facts = super::FormFacts {
                     inputs: super::form_inputs(&scope)?,
@@ -1094,10 +1094,19 @@ fn body_construction(
     scope: &crate::records::feature::scope::DesignParameterScope,
     cages: &[cadmpeg_ir::SubdSurface],
 ) -> FormConstruction {
+    body_construction_with_losses(bytes, meta, scope, cages).0
+}
+
+fn body_construction_with_losses(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    cages: &[cadmpeg_ir::SubdSurface],
+) -> (FormConstruction, Vec<cadmpeg_ir::report::loss::LossNote>) {
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     for uuid in [FIRST_CAGE_UUID, SECOND_CAGE_UUID] {
         archive
             .start_file(
@@ -1109,7 +1118,8 @@ fn body_construction(
     }
     let archive = archive.finish().unwrap().into_inner();
     let mut result = None;
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let mut losses = Vec::new();
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
             let mut facts = super::FormFacts {
@@ -1143,7 +1153,7 @@ fn body_construction(
                 (&types, &serializers),
                 (&mut facts, &mut groups),
                 None,
-                &mut Vec::new(),
+                &mut losses,
             )?;
             result = Some(
                 FormConstruction::try_new(facts.inputs, facts.observations, membership).unwrap(),
@@ -1152,7 +1162,7 @@ fn body_construction(
         })
     })
     .unwrap();
-    result.unwrap()
+    (result.unwrap(), losses)
 }
 
 #[test]
@@ -1355,6 +1365,79 @@ fn form_body_records_bind_the_owning_scope_cages_in_body_record_order() {
 }
 
 #[test]
+fn form_body_record_index_order_is_the_source_cage_order() {
+    let bytes = two_body_form_stream();
+    let cages = [
+        neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID),
+        neutral_form_cage("f3d:model:subd#1", FIRST_CAGE_UUID),
+    ];
+    let scope = form_scope(201, vec![205, 207]);
+    let (complete, losses) =
+        body_construction_with_losses(&bytes, &two_body_form_meta(), &scope, &cages);
+    assert!(losses.is_empty(), "{losses:?}");
+    let FormMembership::Complete { order, .. } = complete.membership() else {
+        panic!("complete");
+    };
+    assert_eq!(*order, FormKnownOrder::Source);
+    let (partial, _) =
+        body_construction_with_losses(&bytes, &two_body_form_meta(), &scope, &cages[..1]);
+    let FormMembership::Partial { order, members, .. } = partial.membership() else {
+        panic!("partial");
+    };
+    assert_eq!(*order, FormOrder::Source);
+    let bindings = members
+        .iter()
+        .map(|member| &partial.observations()[member.observation.0].binding)
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(bindings.as_slice(), [FormCageBinding::Undecoded { .. }, FormCageBinding::Decoded { cage, .. }] if cage.as_str() == "f3d:model:subd#2"),
+        "{bindings:?}"
+    );
+    let open = [
+        form_selection_group_frame(207, 201, 1),
+        form_serializer_frame(299, 296, FIRST_CAGE_UUID),
+        form_body_frame(300, 7, [201, 22, 296, 301], None),
+        form_serializer_frame(499, 496, SECOND_CAGE_UUID),
+        form_body_frame(500, 23, [201, 22, 496, 999], None),
+    ]
+    .concat();
+    let (open, _) = body_construction_with_losses(&open, &two_body_form_meta(), &scope, &cages);
+    let FormMembership::Partial {
+        cardinality: None,
+        order,
+        members,
+    } = open.membership()
+    else {
+        panic!("open");
+    };
+    assert_eq!(*order, FormOrder::Source);
+    assert_eq!(members.len(), 2);
+}
+
+#[test]
+fn form_body_order_disagreeing_with_an_owned_list_order_leaves_order_unknown() {
+    let complete = FormConstruction::complete(vec![
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#a").unwrap(),
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#b").unwrap(),
+    ])
+    .unwrap();
+    let claim = |members: [usize; 2]| FormMembership::Complete {
+        members: members.into_iter().map(FormObservationIndex).collect(),
+        order: FormKnownOrder::Source,
+        certainty: FormKnownOrder::Source,
+    };
+    let mut facts = super::FormFacts {
+        inputs: FormInputs::default(),
+        observations: complete.observations().to_vec(),
+    };
+    let membership = facts.reconcile(claim([0, 1]), claim([1, 0]));
+    assert!(
+        matches!(membership, FormMembership::Partial { order: FormOrder::Unknown, ref members, .. } if members.len() == 2),
+        "{membership:?}"
+    );
+}
+
+#[test]
 fn form_registry_aliases_do_not_duplicate_bodies_or_serializer_alternatives() {
     let bytes = two_body_form_stream();
     let mut meta = two_body_form_meta();
@@ -1433,12 +1516,12 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
     let mut rows = vec![row.clone()];
     let mut losses = Vec::new();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
     let archive = archive.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let mut projection = super::FormProjection::new(scan);
             projection.project(
@@ -1498,7 +1581,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         form_scope(202, vec![208, 209]),
     ];
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
@@ -1524,7 +1607,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         let original = feature.clone();
         let mut features = [feature];
         let mut losses = Vec::new();
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 super::FormProjection::new(scan).project(
                     ctx,
@@ -1628,7 +1711,7 @@ fn form_resource_activity_uses_the_exact_active_asset_without_a_parse_diagnosis(
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     archive
         .start_file(
             format!("FusionAssetName[Active]/TSplines.BlobParts/TSpline.{FIRST_CAGE_UUID}.tsm"),
@@ -1751,7 +1834,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::io::Cursor;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
@@ -1767,7 +1850,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
     let mut rows = vec![json::from_value(cadmpeg_core::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
     let original = rows.clone();
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         assert!(matches!(
             super::FormProjection::new(scan).project(&ctx, &[], &mut rows, &[], &mut losses),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))

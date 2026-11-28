@@ -62,7 +62,8 @@ fi
 # unchecked as under `cargo fmt --all`. CI lints the dependents of a shared
 # crate. Manifest, lockfile, Cargo-config, and toolchain changes fall back to
 # the full workspace, as does any staged Rust file that no workspace crate owns.
-if staged_matches '(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
+workspace_staged=$(printf '%s\n' "$staged" | grep -v '^crates/cadmpeg-fuzz/' || true)
+if printf '%s\n' "$workspace_staged" | grep -qE '(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
   owners="WORKSPACE"
 else
   owners=$(python3 scripts/staged-crates.py)
@@ -83,4 +84,16 @@ elif [ -n "$owners" ]; then
   cargo clippy $pkg_flags --all-targets
 else
   echo "pre-commit: staged Rust/Cargo files belong to no workspace crate; skipping"
+fi
+
+if staged_matches '^crates/cadmpeg-fuzz/.*(\.rs|Cargo\.(toml|lock))$'; then
+  printf '%s\n' "$staged" | while IFS= read -r path; do
+    case "$path" in
+      crates/cadmpeg-fuzz/*.rs)
+        [ -f "$path" ] || continue
+        echo "pre-commit: rustfmt --edition 2021 --check $path"
+        rustfmt --edition 2021 --check "$path"
+        ;;
+    esac
+  done
 fi

@@ -21,6 +21,7 @@ const SECTION_HEADER_WIDTH: usize = 5;
 const BINARY_FLAG_WIDTH: usize = 80;
 const BINARY_FLAG_COUNT: u32 = 75;
 const BINARY_INTEGER_POINTER_BITS: u8 = 32;
+// resource-cap: MAX_SEQUENCE = 1
 const MAX_SEQUENCE: u32 = 9_999_999;
 
 #[derive(Debug, Clone, Copy)]

@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The v11 design layer of a CATIA part, projected from the decoded records.
-//!
-//! The part's design scope and its parameters are restated from the records
-//! the decoder already transferred; no source byte is read here. The decoder
-//! reads no body or geometrical-set membership, so it states no feature,
-//! container or sketch: §5.2 makes every feature a member of exactly one
-//! container, and a container the source holds cannot be named before its
-//! membership is read (interim, spec gap G2-05).
+//! The v11 design layer of a CATIA part, projected from the decoded records:
+//! its feature tree (§5.2), its features and sketches (§6.1, §6.2), and its
+//! parameters. No source byte is read here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,30 +16,49 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
+use crate::decode::ModelingGraphScope;
 use crate::loss::CatiaLossCode;
+use crate::native::CatiaNative;
 
+pub(crate) mod classes;
+mod datums;
+mod history;
 mod parameters;
+mod sketches;
+mod tree;
 
 /// Project the decoded design records of `ir` into its v11 design layer, and
 /// add to `losses` what the projection drops.
 ///
-/// A part whose decode transfers no parameter states no design record. The
-/// scope's bodies are stated unproduced once the root lists them
-/// ([`state_unproduced`]).
+/// A part whose decode reads no feature tree and transfers no feature or
+/// parameter states no design record. The scope's bodies are stated
+/// unproduced once the root lists them ([`state_unproduced`]).
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    native: &CatiaNative,
+    scope: &ModelingGraphScope,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if ir.model.parameters.is_empty() {
+    let tree = tree::read(native, scope).unwrap_or_else(|reason| {
+        losses.push(CatiaLossCode::DesignTreeRecordsUnstated.note(format!(
+            "the part's feature tree is not read ({reason}); its bodies, sets, and their members are not stated"
+        )));
+        None
+    });
+    if tree.is_none() && ir.model.features.is_empty() && ir.model.parameters.is_empty() {
         return Ok(());
     }
     let definition = root_definition(ctx, ir)?;
     parameters::project(ctx, ir, &definition, losses)?;
+    let roots = history::project(ctx, ir, tree.as_ref(), losses)?;
+    if roots.is_empty() && ir.design.parameters.is_empty() {
+        return Ok(());
+    }
     ctx.charge_entities(1, "project the CATIA v11 scope")?;
     ir.design.scopes.push(DesignScope {
         definition,
-        roots: Vec::new(),
+        roots,
         active_configuration: None,
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
@@ -74,27 +88,29 @@ pub(crate) fn restate_exactness(
         Restatement {
             feature: feature_inputs,
             parameter: parameters::inputs,
+            arrangement: |_| &[],
+            active_arrangements: &[],
         },
     )
 }
 
-/// The projection states no design feature.
+/// The model fields a restated feature's fields are built from.
 #[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
+        FeatureField::Definition => &[ModelFeatureField::Definition],
+        FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
         FeatureField::Name
         | FeatureField::Suppressed
-        | FeatureField::Definition
         | FeatureField::Placement
         | FeatureField::Component
-        | FeatureField::DrivenBy
-        | FeatureField::NativeRef => &[],
+        | FeatureField::DrivenBy => &[],
     }
 }
 
 /// List as unproduced each body of a definition the scope spans that no
-/// current state holds (§5.5): the decoder reads no member that produces
-/// one. Returns the loss that names the unread history where it lists any.
+/// current state holds (§5.5): the decoder reads no feature result. Returns
+/// the loss that names the unread results where it lists any.
 pub(crate) fn state_unproduced(ir: &mut CadIr) -> Option<LossNote> {
     let scope = ir.design.scopes.first()?;
     let spanned = ir.spanned_definitions(&scope.definition);
@@ -131,7 +147,7 @@ pub(crate) fn state_unproduced(ir: &mut CadIr) -> Option<LossNote> {
     let count = unproduced.len();
     ir.design.scopes[0].unproduced = unproduced;
     Some(CatiaLossCode::HistoryFeaturesUnread.note(format!(
-        "the part's feature history is not read; {count} body(ies) of its scope are unproduced"
+        "no feature result of the part is read; {count} body(ies) of its scope are unproduced"
     )))
 }
 

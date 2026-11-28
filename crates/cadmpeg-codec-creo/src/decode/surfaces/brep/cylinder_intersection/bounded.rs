@@ -2,7 +2,7 @@
 //! Equal-cylinder arcs selected by complete source parameter bounds.
 
 use crate::surface::PositionalCylinderFrame;
-use crate::vecmath::{add, cross, dot, normalize, scale};
+use crate::vecmath::{add, dot, normalize, scale};
 use cadmpeg_ir::geometry::{
     analytic::CylinderSurface, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
@@ -50,7 +50,9 @@ fn endpoints_in_angular_bounds(
     let origin: [f64; 3] = cylinder.origin().get().into();
     let axis: [f64; 3] = (*cylinder.frame().axis().as_raw()).into();
     let reference: [f64; 3] = (*cylinder.frame().reference().as_raw()).into();
-    let transverse = cross(axis, reference);
+    let transverse = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(reference)),
+    );
     let radius = cylinder.radius().get();
     endpoints.into_iter().all(|point| {
         let delta = subtract(point, origin);
@@ -125,7 +127,9 @@ pub(in crate::decode::surfaces::brep) fn carrier(
     let cosine = dot(a, b);
     let denominator = 1.0 - cosine * cosine;
     (denominator > EPS_AXIS).then_some(())?;
-    let normal = normalize(cross(a, b))?;
+    let normal = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(a).cross(cadmpeg_ir::math::Vector3::from(b)),
+    ))?;
     let first_origin: [f64; 3] = first.origin().get().into();
     let second_origin: [f64; 3] = second.origin().get().into();
     let displacement = subtract(second_origin, first_origin);

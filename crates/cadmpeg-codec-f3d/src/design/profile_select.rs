@@ -1035,6 +1035,39 @@ fn bind_one_extrude_profile_selection(
                                     break 'feature_edit;
                                 }
                             }
+                            if let Some(states) = scope
+                                .history_state_id()
+                                .zip(effective_previous_history_state_id)
+                            {
+                                let named = operand
+                                    .planar_region_selection()
+                                    .and_then(DesignSketchProfileRegionSelection::resolution_regions)
+                                    .into_iter()
+                                    .flatten()
+                                    .flat_map(|region| region.members.iter())
+                                    .filter_map(|member| {
+                                        sketch_profile_member_entity(
+                                            stream,
+                                            u32::try_from(operand.entity_id.suffix()).ok()?,
+                                            member,
+                                            sketch,
+                                            curve_resolution.curve_identities,
+                                            curve_resolution.sketch_entities,
+                                        )
+                                        .cloned()
+                                    })
+                                    .collect::<HashSet<_>>();
+                                if let Some(selected) = cap_regions::compact::intersect_candidate(
+                                    sketch,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                    &named,
+                                )? {
+                                    *profile = ProfileRef::Planar(selected);
+                                    break 'feature_edit;
+                                }
+                            }
                             unresolved_region_operand = Some((operand, stream));
                         }
                     }
@@ -2478,7 +2511,7 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
         }
     }
 
-    let mut best_match: Option<(f64, Option<f64>, &cadmpeg_ir::sketches::Sketch, Vec<u32>)> = None;
+    let mut best_match: Option<BestSketchMatch<'_>> = None;
     let mut best_match_inferred_delta = (0, 0);
     for candidate_sketch in sketches.iter().rev() {
         let Some((sk_origin, sk_normal, sk_u)) = candidate_sketch.resolved_placement() else {
@@ -2640,19 +2673,27 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
             let plane_dist = signed_plane_offset.map_or(f64::INFINITY, f64::abs);
             if best_match
                 .as_ref()
-                .is_none_or(|(best_d, _, _, _)| plane_dist < *best_d)
+                .is_none_or(|best| plane_dist < best.plane_dist)
             {
-                best_match = Some((
+                best_match = Some(BestSketchMatch {
                     plane_dist,
                     signed_plane_offset,
-                    candidate_sketch,
-                    matched_loops,
-                ));
+                    sketch: candidate_sketch,
+                    loops: matched_loops,
+                    dist,
+                });
                 best_match_inferred_delta = candidate_inferred_delta;
             }
         }
     }
-    if let Some((_, signed_plane_offset, candidate_sketch, matched_loops)) = best_match {
+    if let Some(BestSketchMatch {
+        signed_plane_offset,
+        sketch: candidate_sketch,
+        loops: matched_loops,
+        dist,
+        ..
+    }) = best_match
+    {
         let cur = resolution.profile_work.inferred_counts();
         resolution.profile_work.set_inferred_counts((
             cur.0 + best_match_inferred_delta.0,
@@ -2663,21 +2704,60 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
             .map(u32::to_string)
             .collect::<Vec<_>>()
             .join(",");
-        let dist = historical_extrude_to_distance(
-            candidate_sketch,
-            signed_plane_offset.unwrap_or(0.0),
-            histories,
-            state_id,
-            previous_state_id,
-        );
         return Some((
             candidate_sketch.id.as_str().to_string(),
             prof_str,
             signed_plane_offset,
-            dist,
+            Some(dist),
         ));
     }
     None
+}
+
+struct FirstKeyedRows<'a, T> {
+    rows: &'a [T],
+    order: Option<Vec<usize>>,
+}
+
+impl<'a, T: crate::history_records::AsmHistoricalRow> FirstKeyedRows<'a, T> {
+    fn new(rows: &'a [T]) -> Self {
+        let order = (!rows.is_sorted_by_key(T::key)).then(|| {
+            let mut order = (0..rows.len()).collect::<Vec<_>>();
+            order.sort_by_key(|&idx| rows[idx].key());
+            order
+        });
+        Self { rows, order }
+    }
+
+    fn get(&self, key: i64) -> Option<&'a T> {
+        let row = match &self.order {
+            Some(order) => {
+                let pos = order.partition_point(|&idx| self.rows[idx].key() < key);
+                &self.rows[*order.get(pos)?]
+            }
+            None => {
+                let pos = self.rows.partition_point(|row| row.key() < key);
+                self.rows.get(pos)?
+            }
+        };
+        (row.key() == key).then_some(row)
+    }
+}
+
+struct BestSketchMatch<'a> {
+    plane_dist: f64,
+    signed_plane_offset: Option<f64>,
+    sketch: &'a cadmpeg_ir::sketches::Sketch,
+    loops: Vec<u32>,
+    dist: f64,
+}
+
+struct DistanceStepIndexes<'a> {
+    transition: &'a crate::history_records::AsmHistoricalTransition,
+    topology: &'a crate::history_records::AsmHistoricalTopology,
+    point_positions: FirstKeyedRows<'a, crate::history_records::AsmHistoricalPoint>,
+    curve_axes: FirstKeyedRows<'a, crate::history_records::AsmHistoricalCurveAxis>,
+    surface_planes: FirstKeyedRows<'a, crate::history_records::AsmHistoricalPlane>,
 }
 
 pub(crate) fn historical_extrude_to_distance(
@@ -2697,6 +2777,9 @@ pub(crate) fn historical_extrude_to_distance(
         return None;
     }
     let end_topology = history.topology(end_state)?;
+    let end_points = crate::history::selection::FamilySlots::new(&end_topology.points);
+    let end_curves = crate::history::selection::FamilySlots::new(&end_topology.curves);
+    let end_surfaces = crate::history::selection::FamilySlots::new(&end_topology.surfaces);
     let mut chain = Vec::new();
     let mut cur = end_state;
     while cur.state_id != previous_state_id && chain.len() < 8 {
@@ -2719,31 +2802,34 @@ pub(crate) fn historical_extrude_to_distance(
             *best = d;
         }
     };
-    for step_state in &chain {
-        let Some(transition) = step_state.transition.as_ref() else {
-            continue;
-        };
-        let Some(topology) = history.topology(step_state) else {
-            continue;
-        };
-        for &pt_id in &transition.topology.points.inserted {
-            if !end_topology.points.contains(&pt_id) {
+    let step_indexes: Vec<DistanceStepIndexes<'_>> = chain
+        .iter()
+        .filter_map(|&step_state| {
+            let transition = step_state.transition.as_ref()?;
+            let topology = history.topology(step_state)?;
+            Some(DistanceStepIndexes {
+                transition,
+                topology,
+                point_positions: FirstKeyedRows::new(&topology.point_positions),
+                curve_axes: FirstKeyedRows::new(&topology.curve_axes),
+                surface_planes: FirstKeyedRows::new(&topology.surface_planes),
+            })
+        })
+        .collect();
+    for step in &step_indexes {
+        for &pt_id in &step.transition.topology.points.inserted {
+            if !end_points.contains(pt_id) {
                 continue;
             }
-            if let Some(p) = topology
-                .point_positions
-                .iter()
-                .find(|p| p.point == pt_id)
-                .map(|p| p.position)
-            {
+            if let Some(p) = step.point_positions.get(pt_id).map(|p| p.position) {
                 update_best(&mut best, signed_dist(p));
             }
         }
-        for &curve_id in &transition.topology.curves.inserted {
-            if !end_topology.curves.contains(&curve_id) {
+        for &curve_id in &step.transition.topology.curves.inserted {
+            if !end_curves.contains(curve_id) {
                 continue;
             }
-            if let Some(ca) = topology.curve_axes.iter().find(|c| c.curve == curve_id) {
+            if let Some(ca) = step.curve_axes.get(curve_id) {
                 let align = ca.direction.x * sketch_normal.x
                     + ca.direction.y * sketch_normal.y
                     + ca.direction.z * sketch_normal.z;
@@ -2752,15 +2838,11 @@ pub(crate) fn historical_extrude_to_distance(
                 }
             }
         }
-        for &surf_id in &transition.topology.surfaces.inserted {
-            if !end_topology.surfaces.contains(&surf_id) {
+        for &surf_id in &step.transition.topology.surfaces.inserted {
+            if !end_surfaces.contains(surf_id) {
                 continue;
             }
-            if let Some(sp) = topology
-                .surface_planes
-                .iter()
-                .find(|s| s.surface == surf_id)
-            {
+            if let Some(sp) = step.surface_planes.get(surf_id) {
                 let align = sp.normal.x * sketch_normal.x
                     + sp.normal.y * sketch_normal.y
                     + sp.normal.z * sketch_normal.z;
@@ -2771,31 +2853,21 @@ pub(crate) fn historical_extrude_to_distance(
         }
     }
     if best.abs() <= 1.0e-4 {
-        for step_state in &chain {
-            let Some(transition) = step_state.transition.as_ref() else {
-                continue;
-            };
-            let Some(topology) = history.topology(step_state) else {
-                continue;
-            };
-            let max_cyl_r = transition
+        for step in &step_indexes {
+            let surface_cylinders = FirstKeyedRows::new(&step.topology.surface_cylinders);
+            let max_cyl_r = step
+                .transition
                 .topology
                 .surfaces
                 .inserted
                 .iter()
-                .filter_map(|&sid| {
-                    topology
-                        .surface_cylinders
-                        .iter()
-                        .find(|c| c.surface == sid)
-                        .map(|c| c.radius)
-                })
+                .filter_map(|&sid| surface_cylinders.get(sid).map(|c| c.radius))
                 .fold(0.0_f64, f64::max);
-            for &curve_id in &transition.topology.curves.inserted {
-                if !end_topology.curves.contains(&curve_id) {
+            for &curve_id in &step.transition.topology.curves.inserted {
+                if !end_curves.contains(curve_id) {
                     continue;
                 }
-                if let Some(ca) = topology.curve_axes.iter().find(|c| c.curve == curve_id) {
+                if let Some(ca) = step.curve_axes.get(curve_id) {
                     let align = ca.direction.x * sketch_normal.x
                         + ca.direction.y * sketch_normal.y
                         + ca.direction.z * sketch_normal.z;
@@ -2809,15 +2881,11 @@ pub(crate) fn historical_extrude_to_distance(
                     }
                 }
             }
-            for &surf_id in &transition.topology.surfaces.inserted {
-                if !end_topology.surfaces.contains(&surf_id) {
+            for &surf_id in &step.transition.topology.surfaces.inserted {
+                if !end_surfaces.contains(surf_id) {
                     continue;
                 }
-                if let Some(sp) = topology
-                    .surface_planes
-                    .iter()
-                    .find(|s| s.surface == surf_id)
-                {
+                if let Some(sp) = step.surface_planes.get(surf_id) {
                     let align = sp.normal.x * sketch_normal.x
                         + sp.normal.y * sketch_normal.y
                         + sp.normal.z * sketch_normal.z;

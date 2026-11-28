@@ -431,11 +431,10 @@ fn a_discarded_topology_root_counts_no_admitted_relation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode discarded-root witness");
 
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == StepLossCode::TopologyRootRejected.kind() }));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
+    }));
     assert!(decoded.ir().geometry.coedges.is_empty());
     assert!(!decoded
         .report()

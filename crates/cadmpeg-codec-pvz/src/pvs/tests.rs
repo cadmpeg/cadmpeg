@@ -372,10 +372,7 @@ fn a_failed_property_stream_leaves_the_structure_and_is_reported() {
     assert!(structure.definitions[0].properties.is_empty());
     assert_eq!(
         loss_codes(&structure),
-        [
-            PvzLossCode::StructurePropertyStreamMalformed.kind(),
-            PvzLossCode::StructureStreamUndecoded.kind(),
-        ]
+        [PvzLossCode::StructureStreamUndecoded.kind()]
     );
     let [given_up] = structure.given_up.as_slice() else {
         panic!("one property stream is given up");

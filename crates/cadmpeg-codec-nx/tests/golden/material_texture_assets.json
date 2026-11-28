@@ -365,6 +365,14 @@
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:container:material-texture#0:asset": {
+            "fields": {
+              "id": "derived",
+              "media_type": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
           "nx:container:parasolid#0": {
             "entity": "derived",
             "fields": {
@@ -423,6 +431,11 @@
           }
         },
         "provenance": {
+          "nx:container:material-texture#0:asset": {
+            "offset": 400,
+            "stream": "nx:container",
+            "tag": "MATERIAL_TEXTURE_ASSET"
+          },
           "nx:container:parasolid#0": {
             "offset": 178,
             "stream": "nx:container",

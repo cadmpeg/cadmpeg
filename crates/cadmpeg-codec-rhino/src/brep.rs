@@ -45,6 +45,7 @@ const TL_BREP: Uuid = Uuid::from_canonical([
     0xf0, 0x6f, 0xc2, 0x43, 0xa3, 0x2a, 0x46, 0x08, 0x9d, 0xd8, 0xa7, 0xd2, 0xc4, 0xce, 0x2a, 0x36,
 ]);
 /// Maximum number of records in one Brep array.
+// resource-cap: MAX_BREP_ITEMS = 2
 const MAX_BREP_ITEMS: usize = 1 << 20;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
@@ -2749,7 +2750,10 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
     }
     let count = usize::try_from(value).map_err(|_| error(reader.position(), "count overflow"))?;
     if count > cap {
-        return Err(error(reader.position() - 4, "Brep count exceeds cap"));
+        return Err(GeometryError::undecoded(
+            reader.position() - 4,
+            "Brep count exceeds cap",
+        ));
     }
     let minimum = count
         .checked_mul(4)

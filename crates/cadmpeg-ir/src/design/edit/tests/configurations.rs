@@ -28,6 +28,7 @@ fn configuration_with(
         id: configuration(key),
         scope: definition(),
         name: format!("C{key}"),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {

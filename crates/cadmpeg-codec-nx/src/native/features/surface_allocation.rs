@@ -24,7 +24,7 @@ impl TryFrom<Vec<String>> for SurfaceConstructionBranches {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "operation_kind", rename_all = "snake_case")]
 pub(in crate::native) enum SurfaceAllocationSources {
     Skin {

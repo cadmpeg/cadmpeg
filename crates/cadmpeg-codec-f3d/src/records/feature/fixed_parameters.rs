@@ -57,7 +57,7 @@ pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
 }
 
 /// Exact carrier of an Extrude's one-sided distance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
 pub(crate) enum DesignFixedExtrudeDistance {
     /// Signed distance in an owner-local scalar lane.
@@ -146,7 +146,7 @@ mod tests {
             id: "f3d:native:fixed-fillet-group#0",
             value: &group,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || FIXED_FILLET_GROUP_CLONE_COUNT.with(|count| count.set(0)),
@@ -545,7 +545,7 @@ pub(crate) struct DesignFixedFilletScalar {
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignFixedChamferParameters {
     /// One equal setback distance applies to both incident faces.

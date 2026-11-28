@@ -35,9 +35,13 @@ const EMPTY_CONTENT_SHA1: [u8; 20] = [
     0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55, 0xbf, 0xef, 0x95, 0x60, 0x18, 0x90,
     0xaf, 0xd8, 0x07, 0x09,
 ];
+// resource-cap: MAX_LEVELS = 2
 const MAX_LEVELS: usize = 64;
+// resource-cap: MAX_COMPONENTS_PER_LEVEL = 2
 const MAX_COMPONENTS_PER_LEVEL: usize = 4_000_000;
+// resource-cap: MAX_INCIDENT_COMPONENTS = 1
 const MAX_INCIDENT_COMPONENTS: usize = 65_535;
+// resource-cap: MAX_SAVED_LIMIT_POINTS = 1
 const MAX_SAVED_LIMIT_POINTS: usize = 65_535;
 
 /// A validated level-zero Catmull-Clark control cage and its decode metadata.
@@ -98,6 +102,9 @@ pub(crate) enum SubdError {
     UnsupportedVersion { offset: usize, message: String },
     /// The bounded payload is malformed.
     Malformed { offset: usize, message: String },
+    /// The bounded payload has a form the decoder has no reading for, or a
+    /// value past a decoder bound.
+    Undecoded { message: String },
     /// The bounded payload is malformed by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
@@ -112,6 +119,7 @@ impl fmt::Display for SubdError {
                 write!(formatter, "{message} at byte {offset}")
             }
             Self::Malformed { offset, message } => write!(formatter, "{message} at byte {offset}"),
+            Self::Undecoded { message } => formatter.write_str(message),
             Self::Unpositioned { message } => formatter.write_str(message),
             Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(formatter),
         }
@@ -119,6 +127,17 @@ impl fmt::Display for SubdError {
 }
 
 impl std::error::Error for SubdError {}
+
+impl crate::wire::DecoderBound for SubdError {
+    fn decoder_bound(self) -> Self {
+        match self {
+            Self::Malformed { offset, message } => Self::Undecoded {
+                message: format!("{message} at byte {offset}"),
+            },
+            other => other,
+        }
+    }
+}
 
 fn insert_incidence(incidence: &mut HashMap<u32, HashSet<u32>>, key: u32, value: u32) -> bool {
     let values = incidence.entry(key).or_default();
@@ -145,6 +164,9 @@ impl From<FramingError> for SubdError {
         let message = value.to_string();
         match value {
             FramingError::Resource(limit) => Self::Resource(limit),
+            FramingError::Unsupported { .. } | FramingError::Unbound { .. } => {
+                Self::Undecoded { message }
+            }
             FramingError::Truncated { offset, .. }
             | FramingError::InvalidLength { offset, .. }
             | FramingError::Structural { offset, .. }
@@ -1171,14 +1193,23 @@ fn materialize(
         let point = vertex.point.get();
         vertices.push(SubdVertex::from_parts(
             FinitePoint3::from_coordinates(
-                crate::wire::scaled_coordinate(point.x, scale).ok_or_else(|| {
-                    malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                crate::wire::scaled_coordinate(point.x, scale).map_err(|unscaled| {
+                    unscaled.charge(malformed(
+                        vertex.base.source_offset,
+                        "scaled SubD vertex is invalid",
+                    ))
                 })?,
-                crate::wire::scaled_coordinate(point.y, scale).ok_or_else(|| {
-                    malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                crate::wire::scaled_coordinate(point.y, scale).map_err(|unscaled| {
+                    unscaled.charge(malformed(
+                        vertex.base.source_offset,
+                        "scaled SubD vertex is invalid",
+                    ))
                 })?,
-                crate::wire::scaled_coordinate(point.z, scale).ok_or_else(|| {
-                    malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                crate::wire::scaled_coordinate(point.z, scale).map_err(|unscaled| {
+                    unscaled.charge(malformed(
+                        vertex.base.source_offset,
+                        "scaled SubD vertex is invalid",
+                    ))
                 })?,
             ),
             tag,

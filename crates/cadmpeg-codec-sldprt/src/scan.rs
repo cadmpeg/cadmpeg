@@ -184,7 +184,7 @@ impl crate::SldprtCodec {
 
     /// Scans with a meter shared by detection and nested readers.
     pub fn scan_design_with_budget(input: View<'_>, budget: &ScanBudget<'_>) -> DesignScan {
-        let mut scan = DesignScan::new(Some(crate::dialect::FORMAT));
+        let mut scan = DesignScan::new(Some(crate::dialect::registry_ids::FORMAT));
         let result = if input
             .window()
             .starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])

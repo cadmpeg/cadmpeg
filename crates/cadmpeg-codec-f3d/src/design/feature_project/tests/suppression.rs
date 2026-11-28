@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A scope's suppression comes from state bytes 0 and 1 of its tail, else
-//! from the suppression flag of a Thread companion tail, else from its null
-//! history states. A tail with the no-result flag and no
+//! from the suppression stored in a Thread companion or reciprocal Hole tail,
+//! else from its null history states. A tail with the no-result flag and no
 //! suppression state byte is an active feature with no current result.
 
 use crate::loss::F3dLossCode;

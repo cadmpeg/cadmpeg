@@ -23,7 +23,10 @@ fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {
     body[99..103].copy_from_slice(&3u32.to_le_bytes());
     body[107..115].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
-    assert_eq!(legacy_offset_plane_face_alias(&body), Some((0, 175)));
+    assert_eq!(
+        legacy_offset_plane_face_alias(&body),
+        Some((0, 0x4c41_ac95, 175))
+    );
     body[91..95].fill(0);
     assert_eq!(legacy_offset_plane_face_alias(&body), None);
     body[91..95].copy_from_slice(&175u32.to_le_bytes());

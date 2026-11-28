@@ -50,12 +50,15 @@ const CERTIFIED_SWEEP_BOUNDS_SLACK: f64 = 1.0e-9;
 
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
+// resource-cap: MAX_ARRANGEMENT_WALK_WORK = 4
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 50_000_000;
 
+// resource-cap: MAX_CROSSING_RUN_MATCH_WORK = 4
 const MAX_CROSSING_RUN_MATCH_WORK: usize = 50_000_000;
 
 /// Local cap on the certified tubes of one NURBS span. A span that needs
 /// more skips the certification that uses it.
+// resource-cap: MAX_SUBDIVISIONS = 4
 const MAX_SUBDIVISIONS: f64 = 100_000.0;
 
 /// Local work caps of the sketch-profile geometry that binds extrude profile
@@ -425,7 +428,7 @@ impl ProfileGeometryWork {
         self.region_hole_inferred_selections.set(counts.1);
     }
 
-    pub(crate) fn assumed_flags(&self) -> [bool; 12] {
+    pub(crate) fn assumed_flags(&self) -> [bool; 11] {
         [
             self.crossing_loop_assumed.get(),
             self.loop_flags_assumed.get(),
@@ -438,11 +441,10 @@ impl ProfileGeometryWork {
             self.cap_carrier_assumed.get(),
             self.crossing_runs_assumed.get(),
             self.piece_partition_assumed.get(),
-            self.later_curve_boundary_assumed.get(),
         ]
     }
 
-    pub(crate) fn set_assumed_flags(&self, flags: [bool; 12]) {
+    pub(crate) fn set_assumed_flags(&self, flags: [bool; 11]) {
         self.crossing_loop_assumed.set(flags[0]);
         self.loop_flags_assumed.set(flags[1]);
         self.coincident_direction_assumed.set(flags[2]);
@@ -454,7 +456,6 @@ impl ProfileGeometryWork {
         self.cap_carrier_assumed.set(flags[8]);
         self.crossing_runs_assumed.set(flags[9]);
         self.piece_partition_assumed.set(flags[10]);
-        self.later_curve_boundary_assumed.set(flags[11]);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -2307,6 +2308,7 @@ pub(super) fn arrangement_regions_holding_named_curves(
 
 /// Most atomic regions whose boundaries lie in one stored loop that the
 /// subset search weighs.
+// resource-cap: MAX_CROSSING_LOOP_CANDIDATES = 4
 const MAX_CROSSING_LOOP_CANDIDATES: usize = 16;
 
 /// The regions a self-crossing stored loop bounds.

@@ -22,7 +22,9 @@ const NAME: &str = "OverrideTransformAttribute";
 const COUNTED_NAME: &[u8] =
     b"\x1a\0\0\0O\0v\0e\0r\0r\0i\0d\0e\0T\0r\0a\0n\0s\0f\0o\0r\0m\0A\0t\0t\0r\0i\0b\0u\0t\0e\0";
 const PATH_CLASS: &str = "PersistentPassiveNodePath";
+// resource-cap: MAX_PATH_ELEMENTS = 2
 const MAX_PATH_ELEMENTS: usize = 1024;
+// resource-cap: MAX_STRING_UNITS = 2
 const MAX_STRING_UNITS: u32 = 128;
 const EPS_SCENE_ORTHONORMAL: f64 = 1e-6;
 const EPS_SCENE_DETERMINANT: f64 = 1e-6;
@@ -31,7 +33,7 @@ const TAGGED_HIGH_WORD: u32 = 0x0100_0000;
 
 pub(crate) type Sources = BTreeMap<String, [u64; 2]>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum SceneBinding {
     Bound { occurrence: OccurrenceId },

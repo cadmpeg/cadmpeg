@@ -309,7 +309,7 @@ struct ExportReportProbe {
     losses: Vec<LossProbe>,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ExportIdentityProbe {
     Cadir {},
@@ -594,7 +594,9 @@ fn run_aggregate(view: &AggregateView) -> Result<()> {
     }
 }
 
+// resource-cap: MAX_QUERY_INPUT_BYTES = N
 const MAX_QUERY_INPUT_BYTES: u64 = 256 * 1024 * 1024;
+// resource-cap: MAX_COUNTS_INPUT_BYTES = N
 const MAX_COUNTS_INPUT_BYTES: u64 = 1024 * 1024 * 1024;
 
 fn counts_large_file(args: &QueryArgs) -> Result<()> {

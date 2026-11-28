@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind historical snapshots by replacing the dependency closure of each delta.
 
+use super::chamfer_supports::StreamChamferSenses;
+#[cfg(test)]
 use super::topology_rows::historical_topology_with_tags;
+use super::topology_rows::{
+    historical_topology_with_senses, historical_topology_with_tags_and_senses,
+};
 use super::{
     archived_active_record_count, decode_record_archive_with_preframed,
     insert_only_active_record_count, walk_entity_versions_hashed, HistoricalRecordArchive,
@@ -67,6 +72,7 @@ use indexed::IndexedTopology;
 /// work grows with the state count times the live record count. A stream
 /// that reaches the cap keeps its bulletin boards and history records
 /// without historical topology.
+// resource-cap: MAX_HISTORY_BINDING_WORK = 4
 pub(crate) const MAX_HISTORY_BINDING_WORK: usize = 1 << 23;
 
 #[derive(Debug, Default)]
@@ -89,6 +95,7 @@ pub(crate) fn bind(
     bind_with_cache_and_preframed(ctx, states, bytes, width, work, None).map(|(stats, _)| stats)
 }
 
+#[cfg(test)]
 pub(crate) fn bind_with_cache_and_preframed(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &mut [AsmDeltaState],
@@ -96,6 +103,24 @@ pub(crate) fn bind_with_cache_and_preframed(
     width: RefWidth,
     work: &WorkBudget,
     preframed: Option<&mut HashMap<usize, Record>>,
+) -> Result<
+    (
+        Statistics,
+        Option<crate::history_records::CachedRecordArchive>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    bind_with_cache_and_preframed_senses(ctx, states, bytes, width, work, preframed, None)
+}
+
+pub(super) fn bind_with_cache_and_preframed_senses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &mut [AsmDeltaState],
+    bytes: &[u8],
+    width: RefWidth,
+    work: &WorkBudget,
+    preframed: Option<&mut HashMap<usize, Record>>,
+    mut chamfer_senses: Option<&mut StreamChamferSenses>,
 ) -> Result<
     (
         Statistics,
@@ -156,6 +181,7 @@ pub(crate) fn bind_with_cache_and_preframed(
                 workers,
                 started,
             },
+            chamfer_senses.as_deref_mut(),
         ) {
             return Ok((
                 parallel_stats,
@@ -166,6 +192,9 @@ pub(crate) fn bind_with_cache_and_preframed(
             ));
         }
     }
+    binder.chamfer_senses = chamfer_senses
+        .as_ref()
+        .map(|_| StreamChamferSenses::default());
     let mut newer_index: Option<usize> = None;
     let mut current = IndexedTopology::default();
     let mut newer_versions = FastMap::default();
@@ -268,6 +297,11 @@ pub(crate) fn bind_with_cache_and_preframed(
             }
             newer_index = Some(ordinal);
         });
+    if let (Some(out), Some(collected)) = (chamfer_senses, binder.chamfer_senses.take()) {
+        if walked && complete && failure.is_none() {
+            out.extend(collected);
+        }
+    }
     drop(binder);
     if let Some(error) = failure {
         return Err(error);
@@ -436,8 +470,11 @@ impl FaceUnit {
         }
     }
 
-    fn contains(&self, slot: i64) -> bool {
-        self.parts.values().any(|own| own.contains(&slot))
+    /// Every slot of every part of `units`.
+    fn slots<'a>(units: impl Iterator<Item = &'a Self>) -> FastSlots {
+        units
+            .flat_map(|unit| unit.parts.values().flatten().copied())
+            .collect()
     }
 
     fn is_subset(&self, slots: &FastSlots) -> bool {
@@ -920,6 +957,7 @@ fn container_rows(
     live: &Live<'_>,
     slots: &[i64],
     bytes: &[u8],
+    senses: Option<&mut StreamChamferSenses>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     use cadmpeg_asm::brep::{
         emit::{emit_attributes, emit_containers, ContainerInputs},
@@ -962,17 +1000,16 @@ fn container_rows(
         &mut out,
         ContainerInputs {
             records: &records,
-            bytes,
+            shell_bytes: Some(bytes),
             by_index: &by_index,
             reach: &reach,
             wire: &WireShellTopology::default(),
             stream: "",
-            header_scale: 1.0,
             format: crate::ids::ID_FORMAT,
         },
     )?;
     emit_attributes(&mut out, &records, &by_index, &reach, crate::ids::ID_FORMAT)?;
-    Ok(super::topology_rows::historical_topology(&out)?.filter(IndexedTopology::ordered))
+    Ok(historical_topology_with_senses(&out, senses)?.filter(IndexedTopology::ordered))
 }
 
 fn container_rows_precollected(
@@ -980,6 +1017,7 @@ fn container_rows_precollected(
     records: &[&Record],
     kept_faces: &[i64],
     bytes: &[u8],
+    senses: Option<&mut StreamChamferSenses>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     use cadmpeg_asm::brep::{
         emit::{emit_attributes, emit_containers, ContainerInputs},
@@ -1002,17 +1040,16 @@ fn container_rows_precollected(
         &mut out,
         ContainerInputs {
             records: &owned,
-            bytes,
+            shell_bytes: Some(bytes),
             by_index: &by_index,
             reach: &reach,
             wire: &WireShellTopology::default(),
             stream: "",
-            header_scale: 1.0,
             format: crate::ids::ID_FORMAT,
         },
     )?;
     emit_attributes(&mut out, &owned, &by_index, &reach, crate::ids::ID_FORMAT)?;
-    Ok(super::topology_rows::historical_topology(&out)?.filter(IndexedTopology::ordered))
+    Ok(historical_topology_with_senses(&out, senses)?.filter(IndexedTopology::ordered))
 }
 
 fn decode_record_refs(
@@ -1021,6 +1058,7 @@ fn decode_record_refs(
     bytes: &[u8],
     header: Option<&cadmpeg_asm::kernel_header::KernelHeader>,
     subtypes: &cadmpeg_asm::nurbs::toks::SubtypeTable,
+    senses: Option<&mut StreamChamferSenses>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     let owned: Vec<Record> = records.iter().map(|record| (*record).clone()).collect();
     let result = crate::brep::decode_history_with_subtypes(ctx, &owned, bytes, header, subtypes);
@@ -1029,7 +1067,10 @@ fn decode_record_refs(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    Ok(historical_topology_with_tags(&decoded)?.filter(IndexedTopology::ordered))
+    Ok(
+        historical_topology_with_tags_and_senses(&decoded, senses)?
+            .filter(IndexedTopology::ordered),
+    )
 }
 
 enum ParallelContainerPlan<'a> {
@@ -1144,6 +1185,7 @@ fn try_bind_parallel(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &mut [AsmDeltaState],
     env: &ParallelBindEnv<'_>,
+    chamfer_senses: Option<&mut StreamChamferSenses>,
 ) -> Option<Statistics> {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1248,29 +1290,42 @@ fn try_bind_parallel(
     order.sort_by(|&a, &b| plans[b].work_cost().cmp(&plans[a].work_cost()));
     let next_cursor = AtomicUsize::new(0);
     let checkpoint = ctx.checkpoint();
+    let collect_senses = chamfer_senses.is_some();
     let plans_ref = &plans;
     let order_ref = &order;
     let cursor_ref = &next_cursor;
 
-    let worker_results = std::thread::scope(|scope| {
+    let worker_results = crate::scoped::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {
                 let cp = checkpoint.clone();
                 scope.spawn(move || {
                     let arena = cadmpeg_core::decode::DecodeArena::new();
                     let local_ctx = cp.resume(&arena);
-                    let mut produced: Vec<(usize, Option<ParallelStepOutput>)> = Vec::new();
+                    let mut produced: Vec<(
+                        usize,
+                        Option<ParallelStepOutput>,
+                        Option<StreamChamferSenses>,
+                    )> = Vec::new();
                     let mut resource_err: Option<cadmpeg_core::CodecError> = None;
                     loop {
                         let pos = cursor_ref.fetch_add(1, Ordering::Relaxed);
                         let Some(&plan_idx) = order_ref.get(pos) else {
                             break;
                         };
+                        let mut step_senses = collect_senses.then(StreamChamferSenses::default);
                         let res = match &plans_ref[plan_idx] {
                             ParallelStepPlan::Initial { records, .. }
                             | ParallelStepPlan::ReplaceFull { records, .. } => {
-                                decode_record_refs(&local_ctx, records, bytes, header, source_subtypes)
-                                    .map(|opt| opt.map(|t| ParallelStepOutput::Full(Box::new(t))))
+                                decode_record_refs(
+                                    &local_ctx,
+                                    records,
+                                    bytes,
+                                    header,
+                                    source_subtypes,
+                                    step_senses.as_mut(),
+                                )
+                                .map(|opt| opt.map(|t| ParallelStepOutput::Full(Box::new(t))))
                             }
                             ParallelStepPlan::Incremental {
                                 input_records,
@@ -1283,6 +1338,7 @@ fn try_bind_parallel(
                                     bytes,
                                     header,
                                     source_subtypes,
+                                    step_senses.as_mut(),
                                 )?
                                 else {
                                     return Ok(None);
@@ -1298,6 +1354,7 @@ fn try_bind_parallel(
                                             records,
                                             kept_faces,
                                             bytes,
+                                            step_senses.as_mut(),
                                         )?
                                         else {
                                             return Ok(None);
@@ -1311,6 +1368,7 @@ fn try_bind_parallel(
                                             bytes,
                                             header,
                                             source_subtypes,
+                                            step_senses.as_mut(),
                                         )?
                                         else {
                                             return Ok(None);
@@ -1325,7 +1383,7 @@ fn try_bind_parallel(
                             })(),
                         };
                         match res {
-                            Ok(output) => produced.push((plan_idx, output)),
+                            Ok(output) => produced.push((plan_idx, output, step_senses)),
                             Err(err) => {
                                 resource_err = Some(err);
                                 break;
@@ -1343,15 +1401,18 @@ fn try_bind_parallel(
     });
 
     let mut outputs: Vec<Option<ParallelStepOutput>> = (0..plans.len()).map(|_| None).collect();
+    let mut step_senses_by_plan: Vec<Option<StreamChamferSenses>> =
+        (0..plans.len()).map(|_| None).collect();
     let mut traces = Vec::with_capacity(worker_results.len());
     for outcome in worker_results {
         let (produced, resource_err, trace) = outcome?;
         if resource_err.is_some() {
             return None;
         }
-        for (idx, item) in produced {
+        for (idx, item, step_senses) in produced {
             let item = item?;
             outputs[idx] = Some(item);
+            step_senses_by_plan[idx] = step_senses;
         }
         traces.push(trace);
     }
@@ -1539,7 +1600,7 @@ fn try_bind_parallel(
             let num_threads = workers.min(full_transition_jobs.len());
             let mut results: Vec<Option<(usize, AsmHistoricalTransition)>> =
                 (0..full_transition_jobs.len()).map(|_| None).collect();
-            let batches = std::thread::scope(|scope| {
+            let batches = crate::scoped::scope(|scope| {
                 let handles: Vec<_> = (0..num_threads)
                     .map(|_| {
                         scope.spawn(move || {
@@ -1608,6 +1669,11 @@ fn try_bind_parallel(
     for (ordinal, transition) in transitions {
         states[ordinal].transition = Some(transition);
     }
+    if let Some(out) = chamfer_senses {
+        for senses in step_senses_by_plan.into_iter().flatten() {
+            out.extend(senses);
+        }
+    }
     stats.elapsed = started.elapsed();
     Some(stats)
 }
@@ -1634,6 +1700,7 @@ fn decode_slots(
             subtypes,
         },
         stats,
+        None,
     )
 }
 
@@ -1650,6 +1717,7 @@ fn decode_ordered_slots(
     bytes: &[u8],
     env: &DecodeSlotsEnv<'_>,
     stats: &mut Statistics,
+    senses: Option<&mut StreamChamferSenses>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     let records = slots
         .iter()
@@ -1670,7 +1738,10 @@ fn decode_ordered_slots(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    Ok(historical_topology_with_tags(&decoded)?.filter(IndexedTopology::ordered))
+    Ok(
+        historical_topology_with_tags_and_senses(&decoded, senses)?
+            .filter(IndexedTopology::ordered),
+    )
 }
 
 struct Definition {
@@ -1695,6 +1766,7 @@ struct Binder<'a> {
     source_subtypes: Option<&'a cadmpeg_asm::nurbs::toks::SubtypeTable>,
     definitions: Vec<Definition>,
     work: &'a WorkBudget,
+    chamfer_senses: Option<StreamChamferSenses>,
 }
 
 impl<'a> Binder<'a> {
@@ -1707,6 +1779,7 @@ impl<'a> Binder<'a> {
             saved_limit,
             header: None,
             work,
+            chamfer_senses: None,
             subtype_table: None,
             source_subtypes: None,
             definitions: Vec::new(),
@@ -2131,11 +2204,14 @@ impl<'a> Binder<'a> {
             self.wires = wire_slots(&self.live);
             wire_changed |= changed.iter().any(|slot| self.wires.contains(slot));
         }
+        let mut rebuilt_slots = None;
         let old_covered = changed.iter().all(|slot| {
             self.units.reverse.contains_key(slot)
                 || old_container_covered.contains(slot)
                 || self.container_reverse.contains_key(slot)
-                || next_units.values().any(|unit| unit.contains(*slot))
+                || rebuilt_slots
+                    .get_or_insert_with(|| FaceUnit::slots(next_units.values()))
+                    .contains(slot)
         });
         let old_edge_ownership: FastMap<_, _> = rebuilt
             .iter()
@@ -2510,11 +2586,14 @@ impl<'a> Binder<'a> {
             self.wires = wire_slots(&self.live);
             wire_changed |= changed.iter().any(|slot| self.wires.contains(slot));
         }
+        let mut rebuilt_slots = None;
         let old_covered = changed.iter().all(|slot| {
             self.units.reverse.contains_key(slot)
                 || old_container_covered.contains(slot)
                 || self.container_reverse.contains_key(slot)
-                || next_units.values().any(|unit| unit.contains(*slot))
+                || rebuilt_slots
+                    .get_or_insert_with(|| FaceUnit::slots(next_units.values()))
+                    .contains(slot)
         });
         // Only a rebuilt face unit can change an edge's face ownership.
         let old_edge_ownership: FastMap<_, _> = rebuilt
@@ -2661,6 +2740,7 @@ impl<'a> Binder<'a> {
                 subtypes: self.source_subtypes.or(self.subtype_table.as_ref()),
             },
             stats,
+            self.chamfer_senses.as_mut(),
         )?
         else {
             *stats.fallbacks.entry("subset-decode").or_default() += 1;
@@ -2694,7 +2774,13 @@ impl<'a> Binder<'a> {
             None
         } else if fast_containers {
             let ordered_container_input = sorted_slots(&container_input);
-            match container_rows(ctx, &self.live, &ordered_container_input, bytes) {
+            match container_rows(
+                ctx,
+                &self.live,
+                &ordered_container_input,
+                bytes,
+                self.chamfer_senses.as_mut(),
+            ) {
                 Ok(Some(part)) => Some(part),
                 Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
                 Ok(None) | Err(_) => {
@@ -2719,6 +2805,7 @@ impl<'a> Binder<'a> {
                     subtypes: self.source_subtypes.or(self.subtype_table.as_ref()),
                 },
                 stats,
+                self.chamfer_senses.as_mut(),
             )?
             else {
                 *stats.fallbacks.entry("container-decode").or_default() += 1;
@@ -2825,6 +2912,7 @@ impl<'a> Binder<'a> {
                 subtypes: self.source_subtypes,
             },
             stats,
+            self.chamfer_senses.as_mut(),
         )
     }
 }

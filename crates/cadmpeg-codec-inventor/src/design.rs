@@ -118,7 +118,7 @@ pub(crate) struct PmDcExpressionPayload {
     pub(crate) kind: PmDcExpressionKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcExpressionKind {
     Value {
@@ -245,7 +245,7 @@ impl Serialize for PmDcUnitKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 enum PmDcUnitKindWire {
     Definition {
@@ -913,6 +913,7 @@ fn resolve_unit<'a>(
 
 /// Bytes one rendered parameter expression may span. Each use of a shared
 /// operand is rendered in full, so text can double with every graph level.
+// resource-cap: MAX_EXPRESSION_TEXT_BYTES = 4
 pub(crate) const MAX_EXPRESSION_TEXT_BYTES: usize = 1 << 16;
 
 /// What an expression renders to, decided before any text is built.

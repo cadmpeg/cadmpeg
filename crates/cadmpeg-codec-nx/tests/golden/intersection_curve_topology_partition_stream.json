@@ -377,7 +377,7 @@
               "namespace": "nx"
             }
           },
-          "message": "1 surface-intersection record(s) without a unique identity, unambiguous supports, and a complete validated CHART_s and term-endpoint witness remain opaque constructions. Support-UV values govern optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each Parasolid stream is preserved verbatim as an unknown passthrough record so the unresolved source bytes remain available. Rejections: 0 missing support, 0 duplicate identity, 1 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch.",
+          "message": "1 surface-intersection record(s) without unambiguous supports and a complete validated CHART_s and term-endpoint witness remain opaque constructions. Support-UV values govern optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each Parasolid stream is preserved verbatim as an unknown passthrough record so the unresolved source bytes remain available. Rejections: 0 missing support, 1 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch.",
           "severity": "warning"
         },
         {
@@ -524,6 +524,11 @@
           "nx:s0:intersection-crv#0": {
             "offset": 473,
             "stream": "nx:parasolid#0:partition",
+            "tag": "INTERSECTION"
+          },
+          "nx:s0:intersection-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
             "tag": "INTERSECTION"
           },
           "nx:s0:loop#5": {
