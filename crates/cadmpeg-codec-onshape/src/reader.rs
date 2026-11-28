@@ -1481,6 +1481,7 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
         }
         ParameterField::NativeRef => &[ModelParameterField::NativeRef],
         ParameterField::Scope
+        | ParameterField::Position
         | ParameterField::Display
         | ParameterField::Tolerance
         | ParameterField::Decimals

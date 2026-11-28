@@ -2216,6 +2216,7 @@ mod source_less_lane_tests {
                 scope: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:id#part")
                     .unwrap(),
                 owner: None,
+                position: None,
                 name: Some(cadmpeg_core::nonblank_literal!("D1")),
                 kind: cadmpeg_ir::design::units::ValueKind::Quantity(
                     cadmpeg_ir::design::units::Quantity::LENGTH,

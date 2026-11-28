@@ -204,8 +204,7 @@ fn native_validation_rejects_an_altered_attachment_pick() {
         &mut ir,
         &inventory,
         &sketches,
-        &[],
-        &[],
+        crate::design_v11::ParameterRecords::default(),
         &mut Vec::new(),
     )
     .expect("projection");

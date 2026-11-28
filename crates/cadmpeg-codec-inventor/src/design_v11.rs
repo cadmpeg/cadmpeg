@@ -27,15 +27,23 @@ pub(crate) mod sheet_metal;
 mod sketches;
 mod topologies;
 
+/// The native records the parameters of a part project from.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ParameterRecords<'a> {
+    pub(crate) parameters: &'a [crate::design::PmDcParameter],
+    pub(crate) units: &'a [crate::design::PmDcUnit],
+    pub(crate) tables: &'a [crate::design::scope::PmDcParameterTable],
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     features: &crate::feature::FeatureInventory,
     sketches: &crate::sketch::SketchInventory,
-    parameters: &[crate::design::PmDcParameter],
-    units: &[crate::design::PmDcUnit],
+    records: ParameterRecords<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let parameters = records.parameters;
     let flags = features
         .features
         .iter()
@@ -60,7 +68,7 @@ pub(crate) fn project(
         )
         .collect();
     project_history(ctx, ir, &flags, !features.sheet_metal_styles.is_empty())?;
-    parameters::project(ctx, ir, parameters, units)?;
+    parameters::project(ctx, ir, records)?;
     losses.extend(sketches::project(ctx, ir)?);
     datums::project(ctx, ir)?;
     sheet_metal::project(ctx, ir, features, parameters, losses)?;
@@ -178,8 +186,7 @@ pub(crate) fn validate_operations(
     ir: &CadIr,
     features: &crate::feature::FeatureInventory,
     sketches: &crate::sketch::SketchInventory,
-    parameters: &[crate::design::PmDcParameter],
-    units: &[crate::design::PmDcUnit],
+    records: ParameterRecords<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
     // The projection reads the arenas the CADIR wire omits.
     if !ir.model.omitted_arenas_held() {
@@ -211,8 +218,7 @@ pub(crate) fn validate_operations(
         &mut expected,
         features,
         sketches,
-        parameters,
-        units,
+        records,
         &mut Vec::new(),
     )?;
     // The evaluations and the current states' native records come from the

@@ -276,7 +276,7 @@ fn scan_units_xml(
         };
         out.push(attribute(
             section,
-            node.range().start,
+            document.source_range(node.range()).start,
             &cadmpeg_ir::identity_component!("source_linear_unit_code"),
             b"SW_UnitsLinear",
             vec![AttributeValue::Integer(code)],
