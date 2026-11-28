@@ -37,6 +37,15 @@ pub struct DesignParameter {
         deserialize_with = "deserialize_owner"
     )]
     pub owner: Option<ParameterOwner>,
+    /// The parameter's place, from 0, in the one list where the source lists
+    /// the parameters of its owner, or of its scope where `owner` is `None`.
+    /// It orders display only. `None` where the source lists none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_position"
+    )]
+    pub position: Option<u32>,
     /// The source's name without its owner's name. `None` only for a
     /// spreadsheet cell with no alias.
     #[serde(
@@ -289,6 +298,7 @@ cadmpeg_core::named_optional_field!(deserialize_mate<T>, T, "mate");
 cadmpeg_core::named_optional_field!(deserialize_name<T>, T, "name");
 cadmpeg_core::named_optional_field!(deserialize_native_ref<T>, T, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_owner<T>, T, "owner");
+cadmpeg_core::named_optional_field!(deserialize_position<T>, T, "position");
 cadmpeg_core::named_optional_field!(deserialize_tolerance<T>, T, "tolerance");
 cadmpeg_core::named_optional_field!(deserialize_unit<T>, T, "unit");
 cadmpeg_core::named_optional_field!(deserialize_value<T>, T, "value");

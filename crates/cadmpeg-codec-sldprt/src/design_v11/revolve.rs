@@ -224,8 +224,8 @@ fn revolve(
     if !before.preceding.contains(sketch) {
         return Err("the revolve's sketch follows it in the timeline");
     }
-    let profile = swept::differences(sketch, context);
-    if matches!(profile, Err(Unchecked::NoProfileCurve)) {
+    let profile = swept::profile(sketch, context, solid == Some(true))?;
+    if matches!(profile.differences, Err(Unchecked::NoProfileCurve)) {
         return Err("the revolve's sketch holds no profile curve");
     }
     let record = feature.native_ref.as_deref().and_then(|native| {
@@ -252,9 +252,9 @@ fn revolve(
     } else {
         "the decoder reads no Boolean operation"
     });
-    notes.profile = Some(profile);
+    notes.profile = Some(profile.differences);
     Ok(Revolve {
-        profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
+        profile: profile.picks,
         loops: None,
         axis: Some(axis),
         span: Some(span),

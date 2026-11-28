@@ -12,6 +12,8 @@ use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
+use crate::container::{contains_ascii_case_insensitive, Section};
+
 #[derive(Default)]
 pub(super) struct Retention {
     records: BTreeMap<String, BTreeSet<ArenaClass>>,
@@ -30,6 +32,42 @@ impl Retention {
 
     pub(super) fn record(&mut self, id: &str, class: ArenaClass) {
         self.records.entry(id.to_owned()).or_default().insert(class);
+    }
+
+    /// Marks retained streams that carry the feature tree or stored states.
+    pub(super) fn undelivered_design(
+        &mut self,
+        records: &[UnknownRecord],
+        annotations: &Annotations,
+    ) {
+        for record in records {
+            let Some(provenance) = annotations.provenance.get(record.id().as_str()) else {
+                continue;
+            };
+            let stream = provenance.stream().to_ascii_lowercase();
+            if ["keywords", "resolvedfeatures", "deltas"]
+                .iter()
+                .any(|family| stream.contains(family))
+            {
+                self.record(record.id().as_str(), ArenaClass::Design);
+            }
+        }
+    }
+
+    /// Marks a partition member whose embedded Deltas transmit was not replayed.
+    pub(super) fn unreplayed_states(&mut self, section: Section<'_>) {
+        if section
+            .ps_streams()
+            .iter()
+            .any(|stream| contains_ascii_case_insensitive(&stream.header.description, "deltas"))
+        {
+            self.record(section.native_id().as_str(), ArenaClass::Design);
+        }
+    }
+
+    /// Marks the source image for design records without a retained stream.
+    pub(super) fn undelivered_embedded_design(&mut self) {
+        self.record("sldprt:file:source-image#0", ArenaClass::Design);
     }
 
     /// Mark every record no parser identified the content family of.

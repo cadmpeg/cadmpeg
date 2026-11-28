@@ -9,7 +9,9 @@
 //! in this crate: it fixes the category and severity from the code and
 //! leaves only the per-instance message to the caller.
 
-use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+use cadmpeg_ir::report::loss::{
+    LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind,
+};
 use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("usd");
@@ -26,8 +28,13 @@ pub(crate) enum UsdLossCode {
     CompositionExternalArc,
     /// A layer that the layer names did not open or did not parse.
     CompositionLayerUnavailable,
-    /// An internal reference or payload names no prim of the layer.
+    /// A reference or payload names a prim that the layer stack of its
+    /// target does not hold, in a layer stack that the decoder read in full.
     CompositionTargetMissing,
+    /// An arc names a prim that the layer specifications the decoder read do
+    /// not hold, where an unread sublayer, variant, or ancestor arc can hold
+    /// it.
+    CompositionTargetUnresolved,
     /// Variants that no selection names were not composed.
     CompositionVariantNotSelected,
     /// An `over` that no arc of the layer defines was not composed.
@@ -57,16 +64,17 @@ pub(crate) enum UsdLossCode {
     /// USDC field values of a type the crate reader does not decode were
     /// not read.
     CrateValueNotRead,
-    /// A transform-op stack does not resolve; the prim was placed at its
+    /// A transform-op stack breaks the op rules; the prim was placed at its
     /// parent.
     XformMalformed,
+    /// A transform-op stack has no affine map that the decoder transfers;
+    /// the prim was placed at its parent.
+    XformNotTransferred,
     /// A subdivision mesh was transferred as its control cage.
     MeshSubdivisionNotApplied,
     /// Mesh faces that are degenerate or index no point were not
     /// transferred.
     MeshFaceRejected,
-    /// A mesh failed tessellation admission and was not transferred.
-    MeshRejected,
     /// Mesh primvars other than normals and display color were not
     /// transferred.
     MeshPrimvarNotTransferred,
@@ -75,11 +83,11 @@ pub(crate) enum UsdLossCode {
     MeshNormalsNotTransferred,
     /// Geometry subsets that do not partition faces were not transferred.
     MeshSubsetNotTransferred,
-    /// A curve batch, or one curve of it, does not satisfy its topology and
-    /// was not transferred.
+    /// Curves of a batch that break the curve rules were not transferred.
     CurvesRejected,
-    /// A NURBS patch does not satisfy its counts and was not transferred.
-    NurbsPatchRejected,
+    /// Curves of a batch with no NURBS form that the decoder transfers were
+    /// not transferred.
+    CurvesNotTransferred,
     /// Trim curves of a NURBS patch were not transferred; the face is bounded
     /// by the sides of its parameter range.
     NurbsTrimNotTransferred,
@@ -99,9 +107,6 @@ pub(crate) enum UsdLossCode {
     /// A texture path names no package member and no companion file; the
     /// texture keeps the path as written.
     TextureUnlocated,
-    /// A `BrepArray` prim, or one B-rep of it, whose arrays do not describe
-    /// a neutral B-rep was not transferred.
-    BrepRejected,
     /// Wire edges and point shells of a `BrepArray` prim were not
     /// transferred.
     BrepElementNotTransferred,
@@ -112,9 +117,6 @@ pub(crate) enum UsdLossCode {
     /// holds an edge or a vertex, so it states no extent. The face is stated
     /// partial.
     TopologyFaceBoundaryUnstated,
-    /// A joint whose bodies, frames, or coupled joints do not resolve was not
-    /// transferred.
-    JointRejected,
     /// Joint properties with no neutral form were not transferred.
     JointPropertyNotTransferred,
     /// A `PhysX` property was not carried: its value or its target did not
@@ -170,6 +172,7 @@ impl UsdLossCode {
         Self::CompositionExternalArc,
         Self::CompositionLayerUnavailable,
         Self::CompositionTargetMissing,
+        Self::CompositionTargetUnresolved,
         Self::CompositionVariantNotSelected,
         Self::CompositionOverUndefined,
         Self::CompositionCycle,
@@ -183,14 +186,14 @@ impl UsdLossCode {
         Self::MetadataNotTransferred,
         Self::CrateValueNotRead,
         Self::XformMalformed,
+        Self::XformNotTransferred,
         Self::MeshSubdivisionNotApplied,
         Self::MeshFaceRejected,
-        Self::MeshRejected,
         Self::MeshPrimvarNotTransferred,
         Self::MeshNormalsNotTransferred,
         Self::MeshSubsetNotTransferred,
         Self::CurvesRejected,
-        Self::NurbsPatchRejected,
+        Self::CurvesNotTransferred,
         Self::NurbsTrimNotTransferred,
         Self::NurbsTrimRegionAssumed,
         Self::NurbsBoundaryNotTransferred,
@@ -198,11 +201,9 @@ impl UsdLossCode {
         Self::DisplayColorNotTransferred,
         Self::MaterialNotTransferred,
         Self::TextureUnlocated,
-        Self::BrepRejected,
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
         Self::TopologyFaceBoundaryUnstated,
-        Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
         Self::PhysicsPropertyNotTransferred,
@@ -251,6 +252,11 @@ impl UsdLossCode {
             ),
             Self::CompositionTargetMissing => (
                 "composition.target-missing",
+                Warning,
+                T::ReferenceGraphNotClosed,
+            ),
+            Self::CompositionTargetUnresolved => (
+                "composition.target-unresolved",
                 Warning,
                 T::ReferenceGraphNotClosed,
             ),
@@ -309,11 +315,15 @@ impl UsdLossCode {
                 Warning,
                 T::AssemblyPlacementsNotTransferred,
             ),
+            Self::XformNotTransferred => (
+                "xform.not-transferred",
+                Warning,
+                T::AssemblyPlacementsNotTransferred,
+            ),
             Self::MeshSubdivisionNotApplied => {
                 ("mesh.subdivision-not-applied", Info, T::SubdOmitted)
             }
             Self::MeshFaceRejected => ("mesh.face-rejected", Warning, T::GeometryNotTransferred),
-            Self::MeshRejected => ("mesh.rejected", Warning, T::GeometryNotTransferred),
             Self::MeshPrimvarNotTransferred => (
                 "mesh.primvar-not-transferred",
                 Info,
@@ -330,8 +340,8 @@ impl UsdLossCode {
                 T::AttributesNotTransferred,
             ),
             Self::CurvesRejected => ("curves.rejected", Warning, T::GeometryNotTransferred),
-            Self::NurbsPatchRejected => {
-                ("nurbs.patch-rejected", Warning, T::GeometryNotTransferred)
+            Self::CurvesNotTransferred => {
+                ("curves.not-transferred", Warning, T::GeometryNotTransferred)
             }
             Self::NurbsTrimNotTransferred => {
                 ("nurbs.trim-not-transferred", Warning, T::PcurveOmitted)
@@ -366,7 +376,6 @@ impl UsdLossCode {
                 Info,
                 T::ReferenceGraphNotClosed,
             ),
-            Self::BrepRejected => ("brep.rejected", Warning, T::TopologyNotTransferred),
             Self::BrepElementNotTransferred => (
                 "brep.element-not-transferred",
                 Info,
@@ -381,11 +390,6 @@ impl UsdLossCode {
                 "topology.face-boundary-unstated",
                 Warning,
                 T::TopologyNotTransferred,
-            ),
-            Self::JointRejected => (
-                "physics.joint-rejected",
-                Warning,
-                T::AssemblyPlacementsNotTransferred,
             ),
             Self::JointPropertyNotTransferred => (
                 "physics.joint-property-not-transferred",
@@ -479,10 +483,26 @@ impl UsdLossCode {
         self.spec().0
     }
 
+    /// The strict floor `usd.md` §18 states: each code that reports
+    /// recovery from input that breaks the format pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::CompositionTargetMissing
+            | Self::AttributeValueMalformed
+            | Self::XformMalformed
+            | Self::MeshFaceRejected
+            | Self::CurvesRejected
+            | Self::NurbsRangeNotTransferred => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code.
     pub(crate) fn kind(self) -> LossKind {
         let (code, _, taxonomy) = self.spec();
-        LossKind::namespaced(NAMESPACE, code, taxonomy)
+        NamespacedLossKind::new(NAMESPACE, code, taxonomy)
+            .with_strict_floor(self.strict_floor())
+            .into()
     }
 
     /// Builds a [`LossNote`] for this code with the per-instance message.

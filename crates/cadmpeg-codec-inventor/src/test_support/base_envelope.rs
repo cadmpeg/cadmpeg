@@ -146,6 +146,7 @@ pub(crate) fn fixtures() -> (SyntheticRecords, BaseEnvelopeRecords) {
             )],
             pairs,
             pair_count: None,
+            revision_count: None,
             revisions,
             references,
         },

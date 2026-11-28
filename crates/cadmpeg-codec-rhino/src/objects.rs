@@ -729,7 +729,7 @@ pub(crate) fn parse_user_string_list(
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             list.body().start,
             "user-string list version is unsupported",
         ));
@@ -744,7 +744,7 @@ pub(crate) fn parse_user_string_list(
         let entry_major = entry_reader.i32()?;
         let entry_minor = entry_reader.i32()?;
         if entry_major != 1 || entry_minor < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 entry.body().start,
                 "user-string entry version is unsupported",
             ));
@@ -964,7 +964,7 @@ pub(crate) fn parse_attributes(
             && writer_version.is_some_and(|version| version >= LEGACY_OBJECT_ATTRIBUTES_CUTOFF))
             || version.1 > 8
         {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 body_range.start,
                 "unsupported fixed object-attributes version",
             ));
@@ -1123,7 +1123,7 @@ pub(crate) fn parse_attributes(
         });
     }
     if version.0 != 2 || archive.value() < 50 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             body_range.start,
             "unsupported tagged object-attributes version",
         ));
@@ -1368,7 +1368,7 @@ pub(crate) fn read_uuid_list(
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "UUID list version is unsupported",
         ));
@@ -1550,7 +1550,7 @@ fn parse_per_object_mesh_userdata(
         let major = outer_reader.i32()?;
         let _minor = outer_reader.i32()?;
         if major != 1 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 outer.body().start,
                 "per-object mesh userdata version is unsupported",
             ));

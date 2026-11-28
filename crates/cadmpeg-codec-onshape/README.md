@@ -71,10 +71,10 @@ are omitted with the same loss. `sketches.json` retains its member bytes when
 its JSON or microversion is unreadable. Malformed feature arrays carry
 `onshape/history.not-supported` and retain readable final geometry.
 
-Member size, remaining bundle capacity and expansion limits omit the affected member with
-`onshape/member.too-large`. Topology row limits omit the affected rollback
-table with `onshape/topology.too-large`; dependent features use Native
-construction and their mapping loss. Unreadable STEP exports retain readable
+Member size, remaining bundle capacity and expansion limits give up the affected
+member with `record.undecoded`. Topology row limits give up the affected rollback
+table with `record.undecoded`; dependent features use Native construction and
+their mapping loss. Unreadable STEP exports retain readable
 history with `onshape/step.unreadable` and missing final geometry. Session
 expansion, retained-byte and entity budgets remain decode errors. A bundle
 with empty history and unreadable final geometry remains a decode error.

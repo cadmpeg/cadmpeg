@@ -2749,7 +2749,10 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
     }
     let count = usize::try_from(value).map_err(|_| error(reader.position(), "count overflow"))?;
     if count > cap {
-        return Err(error(reader.position() - 4, "Brep count exceeds cap"));
+        return Err(GeometryError::undecoded(
+            reader.position() - 4,
+            "Brep count exceeds cap",
+        ));
     }
     let minimum = count
         .checked_mul(4)

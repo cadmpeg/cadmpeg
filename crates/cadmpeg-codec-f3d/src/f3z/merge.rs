@@ -45,7 +45,7 @@ pub(super) fn merge_archive(
         decoded,
         stack,
         members: std::collections::BTreeMap::new(),
-        failed: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeSet::new(),
         operation_poses,
         scene_sources,
         operation_protected: std::collections::BTreeSet::new(),
@@ -159,9 +159,9 @@ struct MergeSession<'r, 'a> {
     decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
-    /// Members given up, by path, with the failure text. A member is given up
-    /// once; every later reference reports the same loss.
-    failed: std::collections::BTreeMap<String, String>,
+    /// Members given up, by path. A member is given up once, and its one
+    /// give-up states the failure for every reference to it.
+    failed: std::collections::BTreeSet<String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     scene_sources: &'r mut crate::scene::Sources,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
@@ -341,11 +341,7 @@ impl MergeSession<'_, '_> {
             }
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
-            if let Some(error) = self.failed.get(reference.relative_path.as_str()) {
-                super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
-                    "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
-                    reference.relative_path
-                ));
+            if self.failed.contains(reference.relative_path.as_str()) {
                 continue;
             }
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
@@ -360,22 +356,20 @@ impl MergeSession<'_, '_> {
                     if let Some(part) = self.scan.give_up_entry(
                         self.ctx,
                         &reference.relative_path,
-                        CodecError::malformed("F3Z member is not an F3D document"),
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        crate::design::decode::record::give_up_error(
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
+                            "F3Z member is not an F3D document",
+                        ),
                     )? {
-                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
-                            "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
-                            reference.relative_path
-                        ));
                         parent_report.losses.extend(crate::decode::commit_parts(
                             self.ctx,
                             [part],
                             parent_ir,
                             parent_fidelity,
                         )?);
-                        self.failed.insert(
-                            reference.relative_path.as_str().to_owned(),
-                            "it is not an F3D document member".to_owned(),
-                        );
+                        self.failed
+                            .insert(reference.relative_path.as_str().to_owned());
                     } else {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberMissing, format_args!(
                             "xref {label}: member {} is not present in the archive; the occurrence was not resolved",
@@ -410,15 +404,10 @@ impl MergeSession<'_, '_> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        let text = error.to_string();
-                        let note = F3dLossCode::XrefMemberUndecoded.note(format!(
-                            "xref {label}: member {} failed to decode ({text}); the occurrence was not resolved",
-                            reference.relative_path
-                        ));
-                        parent_report.losses.push(note);
                         let part = self.scan.give_up_entry(
                             self.ctx,
                             reference.relative_path.as_str(),
+                            cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error),
                             error,
                         )?;
                         parent_report.losses.extend(crate::decode::commit_parts(
@@ -428,7 +417,7 @@ impl MergeSession<'_, '_> {
                             parent_fidelity,
                         )?);
                         self.failed
-                            .insert(reference.relative_path.as_str().to_owned(), text);
+                            .insert(reference.relative_path.as_str().to_owned());
                         continue;
                     }
                 };

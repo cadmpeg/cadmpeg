@@ -62,6 +62,7 @@ use crate::layout::fillet_edge_item;
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod cell_content;
 mod first_feature;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
@@ -1093,23 +1094,35 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
         })
 }
 
-/// The value a spreadsheet cell states by itself: a `'`-quoted string, or a
-/// number with an optional length or angle unit, written directly or as the
-/// whole `=` expression. A cell computed from other cells or functions has no
-/// stated value.
+/// The value a spreadsheet cell states by itself: the text of a text cell,
+/// the length, angle, or real of a value cell (`cell_content`), or a number
+/// with an optional length or angle unit written as the whole `=` formula. A
+/// cell computed from other cells or functions, and a value of another
+/// quantity, has no stated value.
 const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
 const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
 
 fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
-    let (expression, text) = match content.strip_prefix('=') {
-        Some(text) => (true, text),
-        None => (false, content),
-    };
-    if !expression {
-        if let Some(text) = text.strip_prefix('\'') {
-            return Some(ParameterValue::String(text.to_owned()));
+    use cadmpeg_ir::design::units::Quantity;
+    use cell_content::{CellContent, CellKind};
+    let text = match cell_content::read(content) {
+        CellContent::Formula(formula) => formula,
+        CellContent::Text(text) => return Some(ParameterValue::String(text.to_owned())),
+        CellContent::Value(value) => {
+            return match value.kind {
+                CellKind::Quantity(Quantity::LENGTH) => {
+                    Length::new(value.number).map(ParameterValue::Length)
+                }
+                CellKind::Quantity(Quantity::ANGLE) => {
+                    cadmpeg_ir::scalar::Angle::new(value.number).map(ParameterValue::Angle)
+                }
+                CellKind::Quantity(Quantity::REAL) => {
+                    cadmpeg_ir::scalar::FiniteReal::new(value.number).map(ParameterValue::Real)
+                }
+                CellKind::Quantity(_) | CellKind::Native(_) => None,
+            }
         }
-    }
+    };
     let text = text.trim();
     let number_end = text
         .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))
@@ -1174,7 +1187,7 @@ fn append_spreadsheet(
             };
             CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
         })?;
-    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
+    let cells = direct_spreadsheet_value(xml.tree(), "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -1333,7 +1346,7 @@ fn spreadsheet_dimensions(
                 property.id
             ))
         })?;
-    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
+    let root = direct_spreadsheet_value(xml.tree(), container, &property.id)?;
     let found = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -1506,55 +1519,77 @@ fn append_operation_parameters(
         let Some(value) = scalar_value(ctx, property)? else {
             continue;
         };
-        let expression = expression_binding(properties, &property.name);
-        let is_angle = property.type_name.contains("Angle");
-        let mut retained = BTreeMap::new();
-        if let Some((native_ref, _)) = &expression {
-            retained.insert(
-                cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                native_ref.to_owned(),
-            );
-        }
-        let expression = match expression {
-            Some((_, expression)) => expression,
+        let binding = expression_binding(properties, &property.name);
+        let (engine, expression) = match binding {
+            Some((engine, expression)) => (Some(engine), expression),
             None => match scalar_text(ctx, property, str::to_owned)? {
-                Some(text) => text,
-                None => format!("{}", value.get()),
+                Some(text) => (None, text),
+                None => (None, format!("{}", value.get())),
             },
         };
-        parameters.push(DesignParameter {
-            product_definition: None,
-            id: ParameterId::mint(design_identity_text(
-                "parameter",
-                object,
-                format_args!(
-                    ":{}",
-                    cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
-                ),
-            ))
-            .map_err(CodecError::malformed)?,
-            owner: Some(owner.clone()),
-            ordinal: u32::try_from(property.order).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "FreeCAD ordinal {} exceeds u32",
-                    property.order
-                ))
-            })?,
-            name: property.name.clone(),
+        parameters.push(property_parameter(
+            object,
+            owner.clone(),
+            property,
+            value,
             expression,
-            display: None,
-            value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
-            } else {
-                Some(ParameterValue::Length(Length::from_assigned_real(value)))
-            },
-            dependencies: DistinctMembers::default(),
-            properties: retained,
-            pmi: None,
-            native_ref: Some(property.id.clone()),
-        });
+            engine,
+        )?);
     }
     Ok(())
+}
+
+/// The parameter of scalar property `property` of `object`, owned by
+/// `owner`: its stored value `value`, a length or, for an angle carrier, an
+/// angle stored in degrees, and its expression `expression`, which the
+/// `ExpressionEngine` property `engine` binds where it is `Some`.
+fn property_parameter(
+    object: &ObjectRecord,
+    owner: FeatureId,
+    property: &PropertyRecord,
+    value: FiniteReal,
+    expression: String,
+    engine: Option<String>,
+) -> Result<DesignParameter, CodecError> {
+    let is_angle = property.type_name.contains("Angle");
+    let mut retained = BTreeMap::new();
+    if let Some(native_ref) = engine {
+        retained.insert(
+            cadmpeg_core::nonblank_literal!("expression_native_ref"),
+            native_ref,
+        );
+    }
+    Ok(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint(design_identity_text(
+            "parameter",
+            object,
+            format_args!(
+                ":{}",
+                cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
+            ),
+        ))
+        .map_err(CodecError::malformed)?,
+        owner: Some(owner),
+        ordinal: u32::try_from(property.order).map_err(|_| {
+            CodecError::malformed(format_args!(
+                "FreeCAD ordinal {} exceeds u32",
+                property.order
+            ))
+        })?,
+        name: property.name.clone(),
+        expression,
+        display: None,
+        value: if is_angle {
+            cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
+        } else {
+            Some(ParameterValue::Length(Length::from_assigned_real(value)))
+        },
+        dependencies: DistinctMembers::default(),
+        properties: retained,
+        pmi: None,
+        native_ref: Some(property.id.clone()),
+    })
 }
 
 struct SketchTransfer {
@@ -1875,7 +1910,7 @@ fn parse_sketch(
                     geometry.id
                 ))
             })?;
-        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
+        let records = direct_counted_records(xml.tree(), "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -2557,7 +2592,7 @@ fn parse_constraints(
                 property.id
             ))
         })?;
-    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(xml.tree(), "ConstraintList", "Constrain", &property.id)?;
     let mut name_counts = BTreeMap::<&str, usize>::new();
     for node in &records {
         if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
@@ -3262,6 +3297,14 @@ fn bind_parameter_dependencies(
         let source_name = parameter.properties.get("source_name");
         let mut names = Vec::new();
         names.push(parameter.name.clone());
+        // An expression names an aliased cell by its alias or its address.
+        if let Some(address) = parameter
+            .properties
+            .get("address")
+            .filter(|address| **address != parameter.name)
+        {
+            names.push(address.to_owned());
+        }
         if let Some(source_name) = source_name {
             let constraint = parameter
                 .native_ref
@@ -3464,6 +3507,10 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
     let bytes = expression.as_bytes();
     let mut identifiers = Vec::new();
     let mut cursor = 0;
+    let identifier_len = |text: &str| {
+        text.find(|character: char| !character.is_alphanumeric() && !matches!(character, '_' | '.'))
+            .unwrap_or(text.len())
+    };
     while cursor < bytes.len() {
         if matches!(bytes[cursor], b'\'' | b'"') {
             let quote = bytes[cursor];
@@ -3493,27 +3540,20 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
             cursor = end + 2;
             if bytes.get(cursor) == Some(&b'.') {
                 cursor += 1;
-                while cursor < bytes.len()
-                    && (bytes[cursor].is_ascii_alphanumeric()
-                        || matches!(bytes[cursor], b'_' | b'.'))
-                {
-                    cursor += 1;
-                }
+                cursor += identifier_len(&expression[cursor..]);
             }
             continue;
         }
-        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+        let Some(character) = expression[cursor..].chars().next() else {
+            break;
+        };
+        if character.is_alphabetic() || character == '_' {
             let start = cursor;
-            cursor += 1;
-            while cursor < bytes.len()
-                && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'_' | b'.'))
-            {
-                cursor += 1;
-            }
+            cursor += identifier_len(&expression[cursor..]);
             identifiers.push(&expression[start..cursor]);
             continue;
         }
-        cursor += 1;
+        cursor += character.len_utf8();
     }
     identifiers
 }

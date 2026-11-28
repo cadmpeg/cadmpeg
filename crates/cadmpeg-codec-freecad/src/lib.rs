@@ -969,6 +969,7 @@ impl CodecBackend for FcstdCodec {
                 ctx,
                 &mut graph.properties,
                 &scan.data,
+                &scan.unreadable_names,
                 &mut scan.losses,
             )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
@@ -1003,7 +1004,8 @@ impl CodecBackend for FcstdCodec {
             let deferred = std::mem::take(&mut product_layer.deferred);
             let product_nodes = &product_layer.records;
             namespace.set_arena(ctx, "product_nodes", product_nodes)?;
-            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
+            let joint_records =
+                joint::transfer(ctx, &graph.objects, &graph.properties, &mut transfer_losses)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
@@ -1149,6 +1151,7 @@ impl CodecBackend for FcstdCodec {
                         cadmpeg_ir::unknown::part::GivenUpRecord::new(
                             cadmpeg_ir::ids::Identity::try_from(root.as_str())
                                 .map_err(CodecError::malformed)?,
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
                             format_args!("the product structure does not project: {error}"),
                         )
                         .loss(),
@@ -1212,7 +1215,11 @@ impl CodecBackend for FcstdCodec {
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
-                    &product_layer,
+                    &design::v11::Assembly {
+                        nodes: &product_layer,
+                        joints: &joint_records,
+                        topology: &topology_occurrences,
+                    },
                     &mut transfer_losses,
                 )?;
             }

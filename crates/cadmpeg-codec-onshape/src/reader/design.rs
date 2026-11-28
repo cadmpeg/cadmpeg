@@ -22,11 +22,11 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
+use super::parameter_usage::ParameterUsage;
 use super::{expression, features, id, push, topology, RollbackBar};
 use crate::loss::OnshapeLossCode;
 
 pub(in crate::reader) mod assembly;
-mod audit;
 mod constraints;
 mod operation;
 mod parameters;
@@ -37,6 +37,7 @@ mod sketches;
 pub(super) struct Source<'a> {
     pub(super) record: &'a Value,
     ordinal: usize,
+    pub(super) usage: ParameterUsage<'a>,
     pub(super) thin: Option<Value>,
     quantities: BTreeMap<&'static str, f64>,
     pub(super) legacy_loss: Option<LossNote>,
@@ -48,6 +49,7 @@ impl<'a> Source<'a> {
         record: &'a Value,
         ordinal: usize,
         thin: Option<Value>,
+        usage: ParameterUsage<'a>,
         model: &cadmpeg_ir::document::Model,
         unresolved: &BTreeSet<String>,
     ) -> Self {
@@ -55,6 +57,7 @@ impl<'a> Source<'a> {
             record,
             ordinal,
             thin,
+            usage,
             quantities: BTreeMap::new(),
             legacy_loss: None,
             parameters: Vec::new(),
@@ -63,7 +66,7 @@ impl<'a> Source<'a> {
             let Ok(row) = features::parameter(record, key) else {
                 continue;
             };
-            if audit::dormant(&source, key, row) {
+            if !source.quantity_active(key) {
                 continue;
             }
             let value = row
@@ -137,26 +140,42 @@ impl<'a> Source<'a> {
         }
     }
 
-    fn tag(&self, key: &str) -> Option<&str> {
+    fn peek_tag(&self, key: &str) -> Option<&str> {
         features::value(self.record, key)
     }
 
+    fn tag(&self, key: &'static str) -> Option<&str> {
+        let value = self.peek_tag(key)?;
+        self.usage.account(&[key]);
+        Some(value)
+    }
+
     fn symmetric_extrude(&self) -> super::Mapping<bool> {
-        Ok(
-            self.flag("symmetric")?
-                && matches!(self.tag("endBound"), Some("BLIND" | "THROUGH_ALL")),
-        )
+        Ok(self.peek_flag("symmetric")?
+            && matches!(self.peek_tag("endBound"), Some("BLIND" | "THROUGH_ALL")))
     }
 
-    fn default_scope(&self, key: &str) -> super::Mapping<bool> {
-        Ok(self.flag(key)? || features::parameter(self.record, key).is_err())
-    }
-
-    fn flag(&self, key: &str) -> Result<bool, String> {
+    fn peek_flag(&self, key: &str) -> Result<bool, String> {
         features::enabled(self.record, key)
     }
 
+    fn flag(&self, key: &'static str) -> Result<bool, String> {
+        let value = self.peek_flag(key)?;
+        self.usage.account(&[key]);
+        Ok(value)
+    }
+
     fn quantity<Q>(
+        &self,
+        key: &'static str,
+        convert: impl FnOnce(f64) -> Option<Q>,
+    ) -> Result<Q, String> {
+        let value = self.quantity_value(key, convert)?;
+        self.usage.account(&[key]);
+        Ok(value)
+    }
+
+    fn quantity_value<Q>(
         &self,
         key: &'static str,
         convert: impl FnOnce(f64) -> Option<Q>,
@@ -228,6 +247,78 @@ fn quantity_roles(record: &Value) -> &'static [QuantityRole] {
 }
 
 impl Source<'_> {
+    fn quantity_active(&self, key: &str) -> bool {
+        let tag = |key| self.peek_tag(key);
+        let flag = |key| self.peek_flag(key) == Ok(true);
+        match (self.kind(), key) {
+            (Some("extrude"), "depth") => tag("endBound") == Some("BLIND"),
+            (Some("extrude"), "thickness") => tag("bodyType") == Some("THIN") && flag("midplane"),
+            (Some("extrude"), "thickness1" | "thickness2") => {
+                tag("bodyType") == Some("THIN") && !flag("midplane")
+            }
+            (Some("extrude"), "secondDirectionDepth" | "secondDirectionDraftAngle") => {
+                self.symmetric_extrude() != Ok(true)
+                    && flag("hasSecondDirection")
+                    && if key == "secondDirectionDepth" {
+                        tag("secondDirectionBound") == Some("BLIND")
+                    } else {
+                        flag("hasSecondDirectionDraft")
+                    }
+            }
+            (Some("extrude"), "draftAngle") => flag("hasDraft"),
+            (Some("extrude"), "offsetDistance") => {
+                flag("hasOffset") && !matches!(tag("endBound"), Some("BLIND" | "THROUGH_ALL"))
+            }
+            (Some("extrude"), "startOffsetDistance") => {
+                flag("startOffset") && tag("startOffsetBound") == Some("BLIND")
+            }
+            (Some("revolve"), "angle") => {
+                !flag("fullRevolve") && tag("revolveType") != Some("FULL")
+            }
+            (Some("revolve"), "angleBack") => flag("hasStartBound"),
+            (Some("fillet"), "radius") => tag("blendControlType") != Some("WIDTH"),
+            (Some("fillet"), "width") => tag("blendControlType") == Some("WIDTH"),
+            (Some("fillet"), "otherRadius") => {
+                flag("isAsymmetric") && tag("blendControlType") != Some("WIDTH")
+            }
+            (Some("chamfer"), "width1" | "width2") => tag("chamferType") == Some("TWO_OFFSETS"),
+            (Some("chamfer"), "width") => tag("chamferType") != Some("TWO_OFFSETS"),
+            (Some("chamfer"), "angle") => {
+                matches!(tag("chamferType"), Some("OFFSET_ANGLE" | "DISTANCE_ANGLE"))
+            }
+            (Some("hole"), "cBoreDiameter" | "cBoreDepth") => tag("style") == Some("C_BORE"),
+            (Some("hole"), "cSinkDiameter" | "cSinkAngle") => tag("style") == Some("C_SINK"),
+            (Some("hole"), "holeDepth") => tag("endStyle") == Some("BLIND"),
+            (Some("hole"), "tipAngle") => {
+                tag("endStyle") == Some("BLIND")
+                    && features::tip_angle_preset(self.record).is_none()
+            }
+            (Some("hole"), "majorDiameter" | "tapDrillDiameter") => {
+                features::tapped_standard(self.record)
+            }
+            (Some("hole"), "holeDiameter") => {
+                !features::tapped_standard(self.record)
+                    || features::parameter(self.record, "tapDrillDiameter").is_err()
+            }
+            (Some("hole"), "tappedDepth") => {
+                features::tapped_standard(self.record)
+                    && features::tap_through(self.record) != Ok(true)
+            }
+            (Some("sweep"), "scaleFactor") => flag("hasScale"),
+            (Some("sweep"), "turns" | "angle" | "pitch") => {
+                flag("hasTwist")
+                    && !matches!(tag("profileControl"), Some("LOCK_FACES" | "LOCK_DIRECTION"))
+                    && key
+                        == match tag("twistType") {
+                            Some("ANGLE") => "angle",
+                            Some("PITCH") => "pitch",
+                            _ => "turns",
+                        }
+            }
+            _ => true,
+        }
+    }
+
     pub(super) fn prepare_quantities(
         &mut self,
         model: &cadmpeg_ir::document::Model,
@@ -235,10 +326,7 @@ impl Source<'_> {
     ) -> super::Mapping<()> {
         let native = super::text(self.record, "featureId")?;
         for &(key, role, dimension) in quantity_roles(self.record) {
-            let Ok(row) = features::parameter(self.record, key) else {
-                continue;
-            };
-            if audit::dormant(self, key, row) {
+            if features::parameter(self.record, key).is_err() || !self.quantity_active(key) {
                 continue;
             }
             let parameter_id = id("parameter", &format!("{native}/{key}"));
@@ -343,6 +431,7 @@ pub(super) fn project(
             ))
         })
         .collect();
+    let (mut parameters, texts) = parameters::project(&ir.model.parameters, &definition, sources);
     let arrangements = cadmpeg_ir::design::regions::Arrangements::default();
     let mut designed = Vec::with_capacity(ir.model.features.len());
     let mut preceding = BTreeSet::new();
@@ -393,6 +482,7 @@ pub(super) fn project(
         if let Some(loss) = legacy_loss.filter(|_| !restated) {
             notes.push(loss.clone());
         }
+        let projected = typed.is_ok();
         let operation = match typed {
             Ok((operation, assumed)) => {
                 if let Some(assumed) = assumed {
@@ -428,18 +518,17 @@ pub(super) fn project(
                 );
             }
         }
-        if let Some(source) = source {
-            let variable = source
-                .record
-                .get("featureId")
-                .and_then(Value::as_str)
-                .is_some_and(|native| {
+        if let Some(source) = source.filter(|source| !features::is_custom(source.record)) {
+            let assignment = source.kind() == Some("assignVariable")
+                && source.record["featureId"].as_str().is_some_and(|native| {
                     ir.model
                         .parameters
                         .iter()
-                        .any(|parameter| parameter.id.as_str() == id("parameter", native))
+                        .any(|p| p.id.as_str() == id("parameter", native))
                 });
-            audit::report(source, &operation, variable, name, notes);
+            if projected || assignment {
+                source.usage.report(name, notes);
+            }
         }
         if let FeatureOperation::Sketch(sketch) = &operation {
             preceding.insert(sketch.as_str().to_owned());
@@ -461,7 +550,6 @@ pub(super) fn project(
         });
     }
     ir.design.features.extend(designed);
-    let (mut parameters, texts) = parameters::project(&ir.model.parameters, &definition, sources);
     parameters.extend(derived_parameters.into_inner());
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(parameters.len()),

@@ -142,7 +142,7 @@ fn check_repeated_owners(placements: usize) {
         decoded: &mut std::collections::BTreeMap::new(),
         stack: vec!["root.f3d".to_owned()],
         members: std::collections::BTreeMap::new(),
-        failed: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeSet::new(),
         scene_sources: &mut crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
