@@ -418,7 +418,7 @@ pub enum FormCageBinding {
         #[doc = "Availability of the retained resource."]
         availability: FormResourceAvailability,
     },
-    #[doc = "An observation whose path has no resolved cage or resource."]
+    #[doc = "An observation with an unresolved cage and resource binding."]
     Unresolved {},
 }
 cadmpeg_core::named_optional_field!(deserialize_resource, FormResource, "resource");
@@ -500,13 +500,13 @@ impl FormInputs {
 #[serde(rename_all = "snake_case")]
 #[doc = "Availability state of a serializer resource."]
 pub enum FormResourceAvailability {
-    #[doc = "The active entry is present without a decoded cage."]
+    #[doc = "The active entry is present and its cage is undecoded."]
     ActiveUndecoded,
-    #[doc = "The active folder is known and does not contain the entry."]
+    #[doc = "The entry is absent from the known active folder."]
     Inactive,
     #[doc = "The active folder is unavailable."]
     Unknown,
-    #[doc = "The evidence does not establish one compatible resource state or association."]
+    #[doc = "The evidence supports conflicting resource states or associations."]
     Ambiguous,
 }
 
