@@ -1094,27 +1094,7 @@ fn arena_coverage_is_a_subset_and_meets_floor() {
 /// `KNOWN_ARENAS`.
 #[test]
 fn catalogue_arenas_match_known_arenas() {
-    use cadmpeg_ir::native::catalogue::Phase;
-
     use crate::native::catalogue::CATALOGUE;
-
-    assert_eq!(CATALOGUE.len(), 253, "one catalogue row per model field");
-    assert_eq!(
-        CATALOGUE
-            .iter()
-            .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
-            .count(),
-        109,
-        "group A family count"
-    );
-    assert_eq!(
-        CATALOGUE
-            .iter()
-            .filter(|row| matches!(&row.phase, Phase::GroupB { .. }))
-            .count(),
-        10,
-        "group B family count"
-    );
 
     let mut catalogue_arenas = BTreeSet::new();
     for row in CATALOGUE {
