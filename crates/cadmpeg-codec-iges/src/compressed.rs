@@ -19,6 +19,7 @@ use std::rc::Rc;
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
+// resource-cap: MAX_SEQUENCE = 1
 const MAX_SEQUENCE: u32 = 9_999_999;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -881,6 +881,7 @@ impl WireWalk for NativeOption {
             Self::Length(_) => {}
             Self::Angle(_) => {}
             Self::Text(_) => {}
+            Self::Blank(_) => {}
             Self::Selection(v0) => {
                 v0.walk_wire(owner, out);
             }

@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 const LEADING_REFERENCE_COUNT: u32 = 5;
+// resource-cap: MAX_TRAILING_REFERENCE_COUNT = 1
 const MAX_TRAILING_REFERENCE_COUNT: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

@@ -12,7 +12,7 @@ use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::planes::valid_positive_nurbs_curve;
 use super::vertices::{finite_model_point, model_points_agree};
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 macro_rules! require_some {
     ($value:expr) => {
@@ -576,7 +576,9 @@ fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicF
         _ => return None,
     };
     (dot(normal, x_axis).abs() <= EPS_AGREE).then_some(())?;
-    let y_axis = normalize(cross(normal, x_axis))?;
+    let y_axis = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+    ))?;
     (y_scale > 0.0 && y_scale.is_finite()).then_some(())?;
     Some(NonperiodicConicFrame {
         origin,
@@ -617,7 +619,9 @@ pub(in crate::decode) fn periodic_conic_frame(
         _ => return None,
     };
     (dot(axis, x_axis).abs() <= EPS_AGREE).then_some(())?;
-    let y_axis = normalize(cross(axis, x_axis))?;
+    let y_axis = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+    ))?;
     Some(PeriodicConicFrame {
         center,
         normal: axis,

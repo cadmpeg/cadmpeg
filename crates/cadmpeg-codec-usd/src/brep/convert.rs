@@ -14,6 +14,7 @@ use super::{
 use cadmpeg_ir::math::portable::Portable;
 
 /// The largest angle one rational quadratic arc segment spans.
+// resource-cap: MAX_ARC_SEGMENT = N
 const MAX_ARC_SEGMENT: f64 = std::f64::consts::FRAC_PI_2;
 /// Relative slack of a parameter box over the parameters it holds.
 const BOX_MARGIN: f64 = 1e-6;
@@ -876,6 +877,7 @@ pub(crate) fn segment<const N: usize>(
 }
 
 /// The deepest bisection of a traced curve.
+// resource-cap: MAX_TRACE_DEPTH = N
 const MAX_TRACE_DEPTH: usize = 12;
 /// Spans of a traced curve before bisection.
 const FIRST_SPANS: usize = 4;

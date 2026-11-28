@@ -153,6 +153,52 @@ fn placement_components_admitted(values: FiniteVector<7>) -> Option<FiniteFrame>
     .ok()
 }
 
+/// The tolerance `FreeCAD`'s `Rotation::getYawPitchRoll` uses to detect the
+/// poles of the pitch angle of a rotation.
+const EPS_PITCH_POLE: f64 = 16.0 * f64::EPSILON;
+
+/// The axis and the angle in radians that a placement property stores for
+/// its rotation (`Ox`, `Oy`, `Oz`, and `A`), where it stores them.
+pub(crate) fn placement_axis_angle(property: &PropertyRecord) -> Option<([f64; 3], f64)> {
+    let [value] = property.values() else {
+        return None;
+    };
+    let number = |name: &str| {
+        value
+            .attributes
+            .get(name)?
+            .parse::<f64>()
+            .ok()
+            .filter(|number| number.is_finite())
+    };
+    Some(([number("Ox")?, number("Oy")?, number("Oz")?], number("A")?))
+}
+
+/// The intrinsic Z, Y, X angles of the rotation in `rows`, as `FreeCAD`'s
+/// `Rotation::getYawPitchRoll` gives them: at a pole of the pitch the yaw is zero.
+pub(crate) fn yaw_pitch_roll(rows: [[f64; 4]; 4]) -> (f64, f64, f64) {
+    let sine = -rows[2][0];
+    if (sine - 1.0).abs() <= EPS_PITCH_POLE {
+        (
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            rows[0][1].atan2(rows[1][1]),
+        )
+    } else if (sine + 1.0).abs() <= EPS_PITCH_POLE {
+        (
+            0.0,
+            -std::f64::consts::FRAC_PI_2,
+            (-rows[0][1]).atan2(rows[1][1]),
+        )
+    } else {
+        (
+            rows[1][0].atan2(rows[0][0]),
+            sine.clamp(-1.0, 1.0).asin(),
+            rows[2][1].atan2(rows[2][2]),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

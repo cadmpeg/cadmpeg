@@ -14,8 +14,8 @@ use crate::test_support::configuration_table::{
     bool_cell, object_target, project, property_target, root_record, string_cell, table_document,
     unsourced, with_root_segment, written_on, ROOT_RECORD,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_configurations;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_configurations;
 use crate::F3dCodec;
 
 const TABLE: &str = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -165,7 +165,7 @@ fn every_table_shape_is_written_as_stated_with_no_charge() {
         );
         let mut ir = decoded.ir().clone();
         if shape.moved {
-            crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+            crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
                 native
                     .design_configurations
                     .iter_mut()

@@ -93,7 +93,7 @@ rewrite_enum!(SketchDistanceMeasurement, []; {
     Vertical {first, second},
 });
 rewrite_record!(SketchDistancePair, []; {first, second});
-rewrite_record!(SketchEntity, []; {id, sketch, construction, construction_read, native_ref, geometry_ref, endpoint_refs, geometry});
+rewrite_record!(SketchEntity, []; {id, sketch, construction, construction_read, native_ref, geometry_ref, endpoint_refs, center_ref, geometry});
 rewrite_record!(SketchEntityUse, []; {entity, reversed});
 rewrite_scalar!(SketchFontWeight);
 rewrite_record!(SketchGeometry, []; (field0));

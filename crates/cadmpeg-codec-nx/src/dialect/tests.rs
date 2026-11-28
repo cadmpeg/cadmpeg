@@ -4,9 +4,9 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::registry_ids::FORMAT;
 use super::{
-    classify_layers, NxDialect, DECLARED_SPLMSSTR_VERSION, DECLARED_UGII_VERSION, FORMAT,
-    PARASOLID_FORMAT,
+    classify_layers, NxDialect, DECLARED_SPLMSSTR_VERSION, DECLARED_UGII_VERSION, PARASOLID_FORMAT,
 };
 use crate::container::Container;
 use crate::container::MAGIC;

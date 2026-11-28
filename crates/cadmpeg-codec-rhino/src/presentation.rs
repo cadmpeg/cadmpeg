@@ -109,6 +109,7 @@ const TEXT_STYLE: Uuid = Uuid::from_canonical([
 const TEXTURE: Uuid = Uuid::from_canonical([
     0xd6, 0xff, 0x10, 0x6d, 0x32, 0x9b, 0x4f, 0x29, 0x97, 0xe2, 0xfd, 0x28, 0x2a, 0x61, 0x80, 0x20,
 ]);
+// resource-cap: MAX_DIMSTYLE_EXTRA_FIELDS = 2
 const MAX_DIMSTYLE_EXTRA_FIELDS: usize = 1 << 16;
 
 fn push_presentation_loss(

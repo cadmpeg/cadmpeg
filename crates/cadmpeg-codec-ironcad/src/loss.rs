@@ -6,10 +6,12 @@ use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("ironcad");
 
+cadmpeg_ir::loss_codes! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IronCadLossCode {
     ContainerNoncanonical,
     FrameUnreadable,
+    FrameTrailingBytes,
     RecordHeaderUnrecognized,
     KernelUnrecognized,
     KernelPrologueUnreadable,
@@ -30,6 +32,7 @@ pub(crate) enum IronCadLossCode {
     UnitsScaleConflict,
     SceneStreamsPending,
 }
+}
 
 impl IronCadLossCode {
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
@@ -39,6 +42,7 @@ impl IronCadLossCode {
                 LossTaxonomy::NoncanonicalSourceSyntax,
             ),
             Self::FrameUnreadable => ("frame.unreadable", LossTaxonomy::MissingGeometryStream),
+            Self::FrameTrailingBytes => ("frame.trailing-bytes", LossTaxonomy::DecodeDiagnostic),
             Self::RecordHeaderUnrecognized => {
                 ("record.header-unrecognized", LossTaxonomy::DecodeDiagnostic)
             }

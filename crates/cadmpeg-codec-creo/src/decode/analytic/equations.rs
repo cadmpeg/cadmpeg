@@ -9,7 +9,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient, QuadraticRoots};
-use crate::vecmath::{cross, dot, normalize};
+use crate::vecmath::{dot, normalize};
 
 use super::planes::point_on_carrier;
 
@@ -208,7 +208,10 @@ fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
             if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return None;
             }
-            let y_axis = cross(axis, x_axis);
+            let y_axis = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(axis)
+                    .cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+            );
             let slope = cone.half_angle.tan();
             let x_projection = outer_product(x_axis, x_axis);
             let y_projection = outer_product(y_axis, y_axis);
@@ -283,7 +286,10 @@ pub(in crate::decode) fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 
                 let a = planes[first];
                 let b = planes[second];
                 let c = planes[third];
-                let b_cross_c = cross(b.normal, c.normal);
+                let b_cross_c = <[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(b.normal)
+                        .cross(cadmpeg_ir::math::Vector3::from(c.normal)),
+                );
                 let determinant = dot(a.normal, b_cross_c);
                 if determinant.abs() <= EPS_AGREE {
                     continue;
@@ -293,8 +299,14 @@ pub(in crate::decode) fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 
                     dot(b.normal, b.origin),
                     dot(c.normal, c.origin),
                 ];
-                let c_cross_a = cross(c.normal, a.normal);
-                let a_cross_b = cross(a.normal, b.normal);
+                let c_cross_a = <[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(c.normal)
+                        .cross(cadmpeg_ir::math::Vector3::from(a.normal)),
+                );
+                let a_cross_b = <[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(a.normal)
+                        .cross(cadmpeg_ir::math::Vector3::from(b.normal)),
+                );
                 let point = [0, 1, 2].map(|axis| {
                     (distances[0] * b_cross_c[axis]
                         + distances[1] * c_cross_a[axis]
@@ -319,15 +331,24 @@ pub(in crate::decode) fn plane_intersection_line(
     first: PlaneEquation,
     second: PlaneEquation,
 ) -> Option<([f64; 3], [f64; 3])> {
-    let direction = cross(first.normal, second.normal);
+    let direction = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first.normal)
+            .cross(cadmpeg_ir::math::Vector3::from(second.normal)),
+    );
     let denominator = dot(direction, direction);
     if denominator <= 1e-18 {
         return None;
     }
     let first_distance = dot(first.normal, first.origin);
     let second_distance = dot(second.normal, second.origin);
-    let second_cross_direction = cross(second.normal, direction);
-    let direction_cross_first = cross(direction, first.normal);
+    let second_cross_direction = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(second.normal)
+            .cross(cadmpeg_ir::math::Vector3::from(direction)),
+    );
+    let direction_cross_first = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(direction)
+            .cross(cadmpeg_ir::math::Vector3::from(first.normal)),
+    );
     let origin = std::array::from_fn(|index| {
         (first_distance * second_cross_direction[index]
             + second_distance * direction_cross_first[index])
@@ -1305,10 +1326,14 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
         2
     };
     let reference = reference_axes[index];
-    let Some(u_axis) = normalize(cross(normal, reference)) else {
+    let Some(u_axis) = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(reference)),
+    )) else {
         return Ok(Vec::new());
     };
-    let v_axis = cross(normal, u_axis);
+    let v_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(u_axis)),
+    );
     let Some(first_quadric) = carrier_quadric(first) else {
         return Ok(Vec::new());
     };
@@ -1429,14 +1454,20 @@ pub(in crate::decode) fn intersect_plane_with_circle(
     else {
         return Vec::new();
     };
-    let direction = cross(plane_normal, circle_normal);
+    let direction = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(plane_normal)
+            .cross(cadmpeg_ir::math::Vector3::from(circle_normal)),
+    );
     let sine = direction[0].hypot(direction[1]).hypot(direction[2]);
     if sine <= EPS_PLANE_CIRCLE_PARALLEL {
         return Vec::new();
     }
     let radius = radius.get();
     let direction = direction.map(|value| value / sine);
-    let radial_direction = cross(circle_normal, direction);
+    let radial_direction = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(circle_normal)
+            .cross(cadmpeg_ir::math::Vector3::from(direction)),
+    );
     let relative = std::array::from_fn(|index| plane.origin[index] - center[index]);
     // `radial_direction` and `direction` are an orthonormal frame of the circle
     // plane, and `plane_normal` projects on `radial_direction` with length
@@ -1495,12 +1526,16 @@ pub(in crate::decode) fn plane_cone_conic(
     if slope <= EPS_NEAR_ZERO || cone.radius < 0.0 || dot(axis, x_axis).abs() > EPS_ORTHO {
         return None;
     }
-    let y_axis = cross(axis, x_axis);
+    let y_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+    );
     let alignment = dot(normal, axis);
     let plane_u = normalize(std::array::from_fn(|index| {
         axis[index] - alignment * normal[index]
     }))?;
-    let plane_v = normalize(cross(normal, plane_u))?;
+    let plane_v = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(plane_u)),
+    ))?;
     let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - cone.origin[index]);
     let coordinates = |vector: [f64; 3]| {
         [

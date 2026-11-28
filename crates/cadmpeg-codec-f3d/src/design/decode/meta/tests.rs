@@ -14,9 +14,9 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use crate::test_support::lp_ascii;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::streams_test::design_metastream_with_records;
-use crate::test_support::zip_test::with_scan;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::streams_fixture::design_metastream_with_records;
+use crate::test_support::zip_fixture::with_scan;
 
 #[test]
 fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {

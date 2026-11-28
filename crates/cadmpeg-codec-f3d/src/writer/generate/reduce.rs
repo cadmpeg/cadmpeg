@@ -30,6 +30,8 @@ use cadmpeg_ir::codec::write::{
     NativeDispositions,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
@@ -624,18 +626,67 @@ impl<'a> Reduction<'a> {
     }
 
     /// Neither Design stream form holds a joint record: the source-less
-    /// generator writes the joints of no design.
+    /// generator writes the joints of no design. Where no native Design
+    /// record is written, the design losses charge each design `Joint` and
+    /// `RigidGroup` feature, and with it the joints the feature restates.
     fn drop_assembly_joints(&mut self) {
         if self.ir.model.assembly_joints.is_empty() {
             return;
         }
-        let joints = std::mem::take(&mut self.ir.to_mut().model.assembly_joints);
+        let restating = if self.writes_design() {
+            BTreeSet::new()
+        } else {
+            self.ir
+                .design
+                .features
+                .iter()
+                .filter(|feature| {
+                    matches!(
+                        feature.definition.operation,
+                        FeatureOperation::Joint(_) | FeatureOperation::RigidGroup(_)
+                    )
+                })
+                .map(|feature| feature.id.to_string())
+                .collect()
+        };
+        let mut omitted = Vec::new();
+        let mut cut = Vec::new();
+        for id in self
+            .ir
+            .model
+            .assembly_joints
+            .iter()
+            .map(|row| row.id.to_string())
+        {
+            let fields = self.ir.model.restated().get(&id).and_then(|restating_of| {
+                restating_of.cut_by(
+                    |by| matches!(by, Restater::Record(feature) if restating.contains(feature)),
+                )
+            });
+            match fields {
+                None => omitted.push(id),
+                Some(fields) if !fields.is_empty() => {
+                    let fields = fields.into_iter().collect::<Vec<_>>().join(", ");
+                    cut.push(format!("{id} ({fields})"));
+                }
+                Some(_) => {}
+            }
+        }
+        self.ir.to_mut().model.assembly_joints.clear();
         self.losses.extend(named_loss(
             F3dLossCode::WriterJointOmitted,
             "assembly joint",
             "the source-less F3D Design stream holds no joint record",
-            joints.iter().map(|row| row.id.to_string()),
+            omitted,
         ));
+        if !cut.is_empty() {
+            cut.sort_unstable();
+            self.losses.push(F3dLossCode::WriterJointOmitted.note(format!(
+                "{} assembly joint record(s) are stated in part by the design features that restate them: {}",
+                cut.len(),
+                cut.join(", ")
+            )));
+        }
     }
 
     fn drop_unwritten_arenas(&mut self) {
@@ -1736,20 +1787,10 @@ impl<'a> Reduction<'a> {
         self.design_dropped = true;
     }
 
-    /// Write a timeline from the neutral records (W2). A configured scope
-    /// with no root containers keeps its native tables and parameter bindings.
+    /// Write a timeline from the neutral records (W2). A scope that states
+    /// no timeline keeps its native Design records.
     fn drop_native_design_beside_neutral_timeline(&mut self) {
-        if !self.writes_design() {
-            return;
-        }
-        if super::design::root_scope(&self.ir).is_some_and(|scope| scope.roots.is_empty())
-            && self
-                .ir
-                .native
-                .namespace("f3d")
-                .and_then(|namespace| namespace.arenas().get("design_configurations"))
-                .is_some_and(|tables| !tables.is_empty())
-        {
+        if !self.writes_design() || !super::design::states_timeline(&self.ir) {
             return;
         }
         let timeline = super::design::plan(&self.ir, self.missing_states, &self.fallback)

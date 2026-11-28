@@ -500,7 +500,7 @@ pub(super) fn decode(
                 ))
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
-                        crate::dialect::FORMAT,
+                        crate::dialect::registry_ids::FORMAT,
                         u64_from_index(record.span.start),
                     )
                     .with_tag("oriented_shell"),
@@ -3461,7 +3461,7 @@ fn build_one(
                 losses.push(
                     note.with_provenance(
                         cadmpeg_ir::SourceProvenance::root(
-                            crate::dialect::FORMAT,
+                            crate::dialect::registry_ids::FORMAT,
                             u64_from_index(fr.span.start),
                         )
                         .with_tag("face"),
@@ -4027,7 +4027,7 @@ fn build_one(
             losses.push(
                 note.with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
-                        crate::dialect::FORMAT,
+                        crate::dialect::registry_ids::FORMAT,
                         u64_from_index(sr.span.start),
                     )
                     .with_tag(shell_type.to_ascii_lowercase()),

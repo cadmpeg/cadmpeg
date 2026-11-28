@@ -2182,6 +2182,7 @@ fn sample_points(
 }
 
 /// The most rows a region scan reads.
+// resource-cap: MAX_SCANLINES = 4
 const MAX_SCANLINES: usize = 512;
 
 /// The midpoints of the intervals that horizontal rows cut from `rings`. A row

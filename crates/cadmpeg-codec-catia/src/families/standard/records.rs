@@ -194,6 +194,7 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
 
 /// Maximum per-coordinate mismatch admitted for independently computed
 /// binary32 bounds before the bounds are considered malformed.
+// resource-cap: MAX_F32_CONTAINMENT_ULPS = N
 const MAX_F32_CONTAINMENT_ULPS: f64 = 3.0;
 
 /// Return the spacing between adjacent finite binary32 values at `value`.
@@ -841,6 +842,7 @@ fn standard_curve_support_row_at(
 }
 
 fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start: usize) -> bool {
+    // resource-cap: MAX_ROW_BYTES = 1
     const MAX_ROW_BYTES: usize = 35;
     let mut candidates = match start.checked_sub(MAX_ROW_BYTES) {
         Some(first) => first..start,

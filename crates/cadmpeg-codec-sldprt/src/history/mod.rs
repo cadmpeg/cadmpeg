@@ -146,6 +146,7 @@ fn report_unread(
 /// 128 containers a `serde_json` text parse admits from the document root. A
 /// stored element of 40 levels is the deepest that reads back, so 16 levels
 /// keep the record under half of that; corpus elements nest 2 levels.
+// resource-cap: MAX_APPLICATION_LEVELS = 2
 const MAX_APPLICATION_LEVELS: usize = 16;
 
 /// The elements of one `Application` subtree below [`MAX_APPLICATION_LEVELS`].

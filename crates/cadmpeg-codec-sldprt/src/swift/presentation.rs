@@ -31,6 +31,7 @@ const CLASS_DECLARATION: u16 = 0xffff;
 const OBJECT_TAG: u16 = 0x8000;
 const NAME_TAG: u16 = 0x8003;
 const NO_OBJECT_ID: u32 = u32::MAX;
+// resource-cap: MAX_PATH_FEATURES = 1
 const MAX_PATH_FEATURES: u16 = 8;
 const STRING_MARKER: [u8; 3] = [0xff, 0xfe, 0xff];
 const WIDE_STRING_COUNT: u8 = 0xff;

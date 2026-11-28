@@ -34,8 +34,10 @@ use super::history_views::{with_state_table, Decoded};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
+// resource-cap: MAX_HISTORY_BODIES = 4
 pub(crate) const MAX_HISTORY_BODIES: usize = 8;
 /// Cap of records materialized for all nests of a part.
+// resource-cap: MAX_HISTORY_BODY_WORK = 4
 pub(crate) const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 /// Scope of every identity in a nest.
 const NEST_SCOPE: &str = "history-body";

@@ -17,6 +17,7 @@ const INDEPENDENT_EVALUATION_DEPTH: usize = 256;
 /// Model carriers may share a support below two readers, and the cycle check
 /// covers only the active path, so a carrier chain stated by a few records
 /// can request work exponential in its nesting depth.
+// resource-cap: MAX_MODEL_EVALUATION_WORK = 4
 const MAX_MODEL_EVALUATION_WORK: usize = 1 << 24;
 
 /// Local work cap for the model evaluations of one validation pass.
@@ -24,6 +25,7 @@ const MAX_MODEL_EVALUATION_WORK: usize = 1 << 24;
 /// Each evaluation of the pass runs under a slice of at most
 /// [`MAX_MODEL_EVALUATION_WORK`] drawn from this allowance, so many readers of
 /// one costly carrier do not multiply the per-evaluation cap.
+// resource-cap: MAX_MODEL_PASS_EVALUATION_WORK = 4
 const MAX_MODEL_PASS_EVALUATION_WORK: usize = 1 << 30;
 
 /// Why an evaluation work charge was not admitted.

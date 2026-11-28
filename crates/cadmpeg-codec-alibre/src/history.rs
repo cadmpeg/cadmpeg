@@ -815,6 +815,7 @@ pub(crate) fn read(part: &Part21) -> Result<Option<History>, CodecError> {
 }
 
 /// The most examples a loss that aggregates many records names.
+// resource-cap: MAX_LOSS_EXAMPLES = 4
 const MAX_LOSS_EXAMPLES: usize = 8;
 
 /// One message for `entries`: the count, then at most [`MAX_LOSS_EXAMPLES`] of them.
