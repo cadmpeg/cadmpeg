@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The delta between two whole record sets of one id space.
+
+use super::*;
+use cadmpeg_core::decode::ResourceLimits;
+
+use crate::design::refs::RecordRef;
+
+fn named(key: u32, name: &str) -> Body {
+    Body {
+        name: Some(name.to_owned()),
+        ..body(key)
+    }
+}
+
+fn bodies(records: Vec<Body>) -> crate::document::Topology {
+    crate::document::Topology {
+        bodies: records,
+        ..crate::document::Topology::default()
+    }
+}
+
+#[test]
+fn a_delta_holds_the_new_and_changed_records_and_removes_the_missing_ones() {
+    let base = bodies(vec![body(1), body(2), body(3)]);
+    let state = bodies(vec![body(1), named(2, "changed"), body(4)]);
+    let delta = StateDelta::between_topologies(&state, &base);
+    assert_eq!(delta.records.bodies, vec![named(2, "changed"), body(4)]);
+    assert_eq!(delta.removed, vec![RecordRef::Body(id("body", 3))]);
+    assert!(delta.names.is_empty() && delta.owners.is_empty() && delta.members.is_empty());
+    assert_eq!(
+        StateDelta::between_topologies(&state, &state),
+        StateDelta::default()
+    );
+}
+
+#[test]
+fn a_delta_over_its_base_resolves_to_the_state() {
+    let base = bodies(vec![body(1), body(2), body(3)]);
+    let state = bodies(vec![body(1), named(2, "changed"), body(4)]);
+    let mut ir = CadIr::empty();
+    ir.design.evaluations = vec![
+        evaluation(
+            1,
+            Evaluated::State(after(1)),
+            None,
+            Some(StateContent {
+                base: StateBase::Empty,
+                delta: StateDelta {
+                    records: base.clone(),
+                    ..StateDelta::default()
+                },
+            }),
+        ),
+        evaluation(
+            2,
+            Evaluated::State(after(2)),
+            None,
+            Some(StateContent {
+                base: StateBase::Evaluation(id("evaluation", 1)),
+                delta: StateDelta::between_topologies(&state, &base),
+            }),
+        ),
+    ];
+    let resolved = ir
+        .resolved_evaluation_state(&id("evaluation", 2), &ResourceLimits::default())
+        .expect("the chain resolves");
+    let mut held = resolved.records().bodies.clone();
+    held.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(held, state.bodies);
+}
+
+/// A procedural record is written with the carrier that owns it, so a delta
+/// that holds a changed procedural curve also holds its unchanged carrier.
+#[test]
+fn a_delta_holds_the_carrier_of_each_procedural_record_it_holds() {
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
+    use crate::ids::{CurveId, ProceduralCurveId};
+
+    let carrier = |key: u32| Curve {
+        id: CurveId::mint(format!("test:model:curve#{key}")).expect("curve id"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        parameter_range: None,
+        source_object: None,
+        native_ref: None,
+    };
+    let mut base = crate::document::Topology {
+        curves: vec![carrier(1), carrier(2)],
+        ..crate::document::Topology::default()
+    };
+    let mut state = base.clone();
+    let construction = ProceduralCurve::new(
+        ProceduralCurveId::mint("test:model:construction#1").expect("construction id"),
+        ProceduralCurveDefinition::Exact { cache: None },
+    );
+    state
+        .add_procedural_curves(vec![(carrier(1).id, construction)])
+        .expect("resource")
+        .expect("owner");
+    base.curves.clone_from(&state.curves);
+    let delta = StateDelta::between_topologies(&state, &base);
+    assert_eq!(delta.records.procedural_curves, state.procedural_curves);
+    assert_eq!(delta.records.curves, vec![state.curves[0].clone()]);
+    serde_json::to_string(&delta).expect("the delta has a wire form");
+}

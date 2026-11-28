@@ -129,6 +129,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "body_wrapper_links",
     "composite_member_links",
     "feature_history_states",
+    "history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "pm_app_sheet_metal_unfold_rules",
