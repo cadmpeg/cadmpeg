@@ -16,10 +16,11 @@ use std::collections::HashSet;
 
 use serde::Deserialize;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
@@ -280,38 +281,156 @@ fn parse_component_reference_data(
     Ok(value)
 }
 
+/// The top-level manifest entry, whose reference extension carries the
+/// table of a document saved without `RedirectionsStream.dat`.
+const MANIFEST_ENTRY: &str = "Manifest.dat";
+
+/// Part kind of the reference extension of the top-level manifest.
+pub(crate) const MANIFEST_REFERENCES_PART: &str = "manifest-references";
+
+/// The stored bytes the external-reference decode reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum XrefSource {
+    /// An archive entry.
+    Entry(String),
+    /// The reference extension of the top-level `Manifest.dat`.
+    ManifestReferences,
+}
+
+/// Stored bytes the external-reference decode read and failed to decode:
+/// the table's own source, which drops the table, or an entry beside it.
+#[derive(Debug)]
+pub(crate) struct XrefFailure {
+    pub(crate) source: XrefSource,
+    pub(crate) error: CodecError,
+}
+
+impl XrefFailure {
+    /// The failure of `source` with `error`.
+    fn of(source: XrefSource) -> impl FnOnce(CodecError) -> Self {
+        move |error| Self { source, error }
+    }
+
+    /// The failure of the archive entry `entry` with `error`.
+    fn entry(entry: &str, error: CodecError) -> Self {
+        Self {
+            source: XrefSource::Entry(entry.to_owned()),
+            error,
+        }
+    }
+
+    /// Gives up the stored bytes whose decoding failed: the archive entry,
+    /// or the reference extension's bytes in `Manifest.dat`. `None` when the
+    /// scan holds no such bytes.
+    ///
+    /// # Errors
+    ///
+    /// A refusal of the part helper.
+    pub(crate) fn give_up(
+        &self,
+        ctx: &DecodeContext<'_>,
+        scan: &ContainerScan<'_>,
+    ) -> Result<Option<GivenUpPart>, CodecError> {
+        let error =
+            CodecError::malformed(format_args!("F3D external-reference table: {}", self.error));
+        match &self.source {
+            XrefSource::Entry(entry) => scan.give_up_entry(ctx, entry, error),
+            XrefSource::ManifestReferences => {
+                let (Some(extension), Some(manifest)) = (
+                    scan.manifest_reference_extension,
+                    scan.entry_view(MANIFEST_ENTRY),
+                ) else {
+                    return Ok(None);
+                };
+                let start = extension
+                    .start()
+                    .checked_sub(manifest.start())
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "F3D manifest reference extension precedes its manifest",
+                        )
+                    })?;
+                let end = start.checked_add(extension.window().len()).ok_or_else(|| {
+                    CodecError::malformed("F3D manifest reference extension overflows")
+                })?;
+                scan.give_up_entry_span(
+                    ctx,
+                    MANIFEST_ENTRY,
+                    MANIFEST_REFERENCES_PART,
+                    start..end,
+                    [ArenaClass::Model],
+                    error,
+                )
+                .map(Some)
+            }
+        }
+    }
+}
+
+/// Whether `error` refuses the document instead of giving up the stored
+/// bytes it names.
+fn refuses(error: &CodecError) -> bool {
+    matches!(
+        error,
+        CodecError::ResourceLimit(_) | CodecError::NotImplemented(_)
+    )
+}
+
+/// The external-reference table and the stored bytes it is read from. A
+/// `ComponentReferenceData.json` that does not decode goes into `unread`;
+/// the table does not need it.
 fn reference_data(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-) -> Result<Option<XrefTable>, CodecError> {
-    validate_component_reference_data(ctx, scan)?;
-    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
-        Ok(bytes) => bytes,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return api_export::decode(ctx, scan),
-    };
-    parse(ctx, bytes).map(Some)
+    unread: &mut Vec<XrefFailure>,
+) -> Result<Option<(XrefTable, XrefSource)>, XrefFailure> {
+    if let Err(error) = validate_component_reference_data(ctx, scan) {
+        let failure = XrefFailure::entry(COMPONENT_REFERENCE_ENTRY, error);
+        if refuses(&failure.error) {
+            return Err(failure);
+        }
+        unread.push(failure);
+    }
+    match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+        Ok(bytes) => parse(ctx, bytes)
+            .map(|table| Some((table, XrefSource::Entry(REDIRECTIONS_ENTRY.to_owned()))))
+            .map_err(|error| XrefFailure::entry(REDIRECTIONS_ENTRY, error)),
+        Err(error @ CodecError::ResourceLimit(_)) => {
+            Err(XrefFailure::entry(REDIRECTIONS_ENTRY, error))
+        }
+        Err(_) => {
+            let source = XrefSource::ManifestReferences;
+            api_export::decode(ctx, scan)
+                .map(|table| table.map(|table| (table, source.clone())))
+                .map_err(XrefFailure::of(source))
+        }
+    }
 }
 
-/// Decode the container's external references.
+/// Decode the container's external references. Stored bytes beside the
+/// table that do not decode go into `unread`.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Option<XrefTable>, CodecError> {
-    decode_with_scopes(ctx, scan, &[])
+    unread: &mut Vec<XrefFailure>,
+) -> Result<Option<XrefTable>, XrefFailure> {
+    decode_with_scopes(ctx, scan, &[], unread)
 }
 
 /// Parse the external-reference table and bind its occurrences to exact
 /// `Component Insert` constructions already decoded from the Design streams.
+/// Stored bytes beside the table that do not decode go into `unread`: a
+/// Design stream whose occurrence records do not read binds no occurrence.
 pub(crate) fn decode_with_scopes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
-) -> Result<Option<XrefTable>, CodecError> {
-    let Some(mut table) = reference_data(ctx, scan)? else {
+    unread: &mut Vec<XrefFailure>,
+) -> Result<Option<XrefTable>, XrefFailure> {
+    let Some((mut table, source)) = reference_data(ctx, scan, unread)? else {
         return Ok(None);
     };
-    bind_occurrences(scan, &mut table, scopes)?;
+    unread.extend(bind_occurrences(scan, &mut table, scopes).map_err(XrefFailure::of(source))?);
     Ok(Some(table))
 }
 
@@ -861,43 +980,36 @@ pub(crate) fn bind_component_insert_features(
 
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
+/// Returns the failure of each Design stream whose occurrence records do not
+/// read; that stream binds no occurrence.
 fn bind_occurrences(
     scan: &ContainerScan,
     table: &mut XrefTable,
     scopes: &[DesignParameterScope],
-) -> Result<(), CodecError> {
+) -> Result<Vec<XrefFailure>, CodecError> {
     let mut streams = Vec::new();
+    let mut unread = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let meta_entry = entry
-            .name
-            .strip_suffix("BulkStream.dat")
-            .and_then(|prefix| {
-                scan.entries
-                    .iter()
-                    .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
-            });
-        let (serializer_magic, headers, carriers) = if let Some(meta_entry) = meta_entry {
-            let meta = scan.parsed_metastream(&meta_entry.name)?;
-            let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
-            (
-                Some(crate::metastream::serializer_magic(
-                    meta_bytes,
-                    &meta_entry.name,
-                )?),
-                typed_occurrence_placement_records(bytes, &meta)?,
-                typed_records(bytes, &meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?,
-            )
-        } else {
-            table.placement_metadata_missing = true;
-            (None, Vec::new(), Vec::new())
+        let OccurrenceRecords {
+            bytes,
+            serializer_magic,
+            carriers,
+            placements,
+            failures,
+            metadata_missing,
+        } = match occurrence_records(scan, &entry.name) {
+            Ok(records) => records,
+            Err(failure) if refuses(&failure.error) => return Err(failure.error),
+            Err(failure) => {
+                unread.push(failure);
+                continue;
+            }
         };
-        let (placements, failures) =
-            occurrence_placements_with_failures(bytes, &headers, serializer_magic, None)?;
+        table.placement_metadata_missing |= metadata_missing;
         let poses = carriers
             .iter()
             .filter_map(|record| bytes.get(record.offset..record.end))
@@ -1070,7 +1182,60 @@ fn bind_occurrences(
     table.unbound_legacy_placements = unbound_legacy_placements;
     table.placement_overrides = placement_overrides;
     table.ambiguous_current_poses = ambiguous_current_poses;
-    Ok(())
+    Ok(unread)
+}
+
+/// The occurrence records one Design stream stores.
+struct OccurrenceRecords<'a> {
+    bytes: &'a [u8],
+    serializer_magic: Option<u32>,
+    /// The component-path carrier records.
+    carriers: Vec<IndexedRecord>,
+    placements: Vec<OccurrencePlacement>,
+    failures: Vec<OccurrencePlacementFailure>,
+    /// Whether the stream has no metastream to frame its typed records.
+    metadata_missing: bool,
+}
+
+/// Reads the occurrence records of the Design stream `entry`. The failure
+/// names the entry whose bytes do not read: the stream, or its metastream.
+fn occurrence_records<'a>(
+    scan: &ContainerScan<'a>,
+    entry: &str,
+) -> Result<OccurrenceRecords<'a>, XrefFailure> {
+    let in_stream = |error| XrefFailure::entry(entry, error);
+    let bytes = scan.entry_bytes(entry).map_err(in_stream)?;
+    let meta_entry = entry.strip_suffix("BulkStream.dat").and_then(|prefix| {
+        scan.entries
+            .iter()
+            .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
+    });
+    let (serializer_magic, headers, carriers) = if let Some(meta_entry) = meta_entry {
+        let in_meta = |error| XrefFailure::entry(&meta_entry.name, error);
+        let meta = scan.parsed_metastream(&meta_entry.name).map_err(in_meta)?;
+        let meta_bytes = scan.entry_bytes(&meta_entry.name).map_err(in_meta)?;
+        let serializer_magic =
+            crate::metastream::serializer_magic(meta_bytes, &meta_entry.name).map_err(in_meta)?;
+        (
+            Some(serializer_magic),
+            typed_occurrence_placement_records(bytes, &meta).map_err(in_stream)?,
+            typed_records(bytes, &meta, "CommonData", COMPONENT_PATH_TYPE_GUID)
+                .map_err(in_stream)?,
+        )
+    } else {
+        (None, Vec::new(), Vec::new())
+    };
+    let (placements, failures) =
+        occurrence_placements_with_failures(bytes, &headers, serializer_magic, None)
+            .map_err(in_stream)?;
+    Ok(OccurrenceRecords {
+        bytes,
+        serializer_magic,
+        carriers,
+        placements,
+        failures,
+        metadata_missing: meta_entry.is_none(),
+    })
 }
 
 /// The component-path carriers that name one placement.
@@ -1243,11 +1408,7 @@ fn typed_records(
                 "F3D {module} record index is outside its BulkStream"
             ))
         })?;
-        let class_matches = lp_ascii_strict(header, 0, 3..=3)
-            .and_then(|(tag, _)| tag.parse::<usize>().ok())
-            .and_then(|tag| tag.checked_sub(256))
-            == Some(ordinal);
-        if !class_matches || View::u64_le_at(header, 7) != Some(frame.entity_id) {
+        if !crate::metastream::indexed_header_selects(header, ordinal, frame.entity_id) {
             return Err(CodecError::malformed(format_args!(
                 "F3D {module} record header disagrees with its registered primary index"
             )));
@@ -1414,7 +1575,7 @@ fn occurrence_placement(
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
         return Ok(Some(OccurrencePlacement {
-            frame_bytes: Vec::new(),
+            frame_bytes: body.to_vec(),
             occurrence_guid: None,
             carrier_record_index,
             owner: None,
@@ -1496,6 +1657,19 @@ pub(crate) fn placement_source_matches(reference: &XrefReference) -> Result<bool
                 }),
         );
     }
+    if let Some((role, _, transform)) = legacy_occurrence_placement_details(&source.frame_bytes) {
+        return Ok(source.occurrence_guid.is_none()
+            && source.owner.is_none()
+            && role.eq_str(reference.neutron_role.as_str())
+            && View::u64_le_at(&source.frame_bytes, 7) == Some(source.carrier_record_index)
+            && reference.transform.map_or_else(
+                || cadmpeg_ir::transform::Transform::identity().rows(),
+                crate::records::xref::XrefPlacementTransform::rows,
+            ) == transform.map_or_else(
+                || cadmpeg_ir::transform::Transform::identity().rows(),
+                |(_, matrix)| matrix,
+            ));
+    }
     let Some(guid) = source.occurrence_guid.as_ref() else {
         return Ok(source.frame_bytes.is_empty());
     };
@@ -1566,8 +1740,16 @@ fn legacy_external_placement(
     }
 }
 
+/// The attributed or compact legacy external placement of `body`, in the
+/// precedence of [`occurrence_placement`]: a frame that the legacy typed
+/// grammar also closes is the typed placement (DR-1077).
 fn legacy_external_placement_details(body: &[u8]) -> Option<LegacyExternalPlacementDetails<'_>> {
-    legacy_attributed_placement_details(body).or_else(|| compact_legacy_placement_details(body))
+    legacy_attributed_placement_details(body).or_else(|| {
+        legacy_occurrence_placement_details(body)
+            .is_none()
+            .then(|| compact_legacy_placement_details(body))
+            .flatten()
+    })
 }
 
 fn legacy_external_placement_prefix(body: &[u8]) -> Option<LegacyOccurrenceTarget<'_>> {
@@ -2617,6 +2799,17 @@ pub(crate) fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
     Some((target.entity, target.source_occurrence_identity))
 }
 
+/// The source occurrence identity of the legacy target references of a
+/// legacy attributed, compact, or typed occurrence-placement record.
+pub(crate) fn legacy_source_occurrence_identity(body: &[u8]) -> Option<u64> {
+    if let Some((_, identity)) = legacy_placement_target(body) {
+        return Some(identity);
+    }
+    legacy_occurrence_placement_details(body)?;
+    let (_, target) = legacy_occurrence_prefix(body, false)?;
+    target.map(|(_, identity)| identity)
+}
+
 /// Type-table identity of a Design root-component aggregate, which a
 /// component-path element names in a referenced design.
 const ROOT_COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
@@ -3123,8 +3316,8 @@ pub(crate) fn identity_component_insert_carrier(
     if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
         return None;
     }
-    let (mut at, targets_match) = legacy_occurrence_prefix(body, true)?;
-    if !targets_match || body.get(at) != Some(&1) {
+    let (mut at, target) = legacy_occurrence_prefix(body, true)?;
+    if target.is_none() || body.get(at) != Some(&1) {
         return None;
     }
     at += 1;
@@ -3157,10 +3350,8 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
 type LegacyPlacementDetails<'a> = (Utf16View<'a>, usize, Option<(usize, [[f64; 4]; 4])>);
 
 fn legacy_occurrence_placement_details(body: &[u8]) -> Option<LegacyPlacementDetails<'_>> {
-    let (mut at, targets_match) = legacy_occurrence_prefix(body, false)?;
-    if !targets_match {
-        return None;
-    }
+    let (mut at, target) = legacy_occurrence_prefix(body, false)?;
+    target?;
     let identity_marker = *body.get(at)?;
     at += 1;
     let transform = match identity_marker {
@@ -3238,8 +3429,10 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
     link_name.is_guid_relaxed().then_some(link_name)
 }
 
-/// Parse the shared prefix of the legacy identity and matrix forms.
-fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, bool)> {
+/// Parse the shared prefix of the legacy identity and matrix forms. The
+/// target entity and source occurrence identity are present when the two
+/// target references agree.
+fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, Option<(u64, u64)>)> {
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
     let (name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
@@ -3310,7 +3503,10 @@ fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, bool)> 
         && first_target
             .type_guid
             .eq_ignore_ascii_case(second_target.type_guid);
-    Some((at, targets_match))
+    Some((
+        at,
+        targets_match.then_some((first_target.entity, first_target.source_occurrence_identity)),
+    ))
 }
 
 struct LegacyOccurrenceTarget<'a> {

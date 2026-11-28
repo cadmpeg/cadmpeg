@@ -748,10 +748,12 @@ mod tests {
             section_3d: None,
             dimensions: None,
             relations: Some(crate::feature::definitions::FeatureRelationTable {
+                rows_end: None,
                 declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
                 entity_ref: None,
                 rows: Vec::new(),
                 skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    rows_end: None,
                     header: crate::feature::definitions::FeatureSolverTableHeader {
                         declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
                         entity_ref: 1,
@@ -871,10 +873,12 @@ mod tests {
             section_3d: None,
             dimensions: None,
             relations: Some(crate::feature::definitions::FeatureRelationTable {
+                rows_end: None,
                 declared_count: 1,
                 entity_ref: None,
                 rows: Vec::new(),
                 skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    rows_end: None,
                     header: crate::feature::definitions::FeatureSolverTableHeader {
                         declared_count: 1,
                         entity_ref: 1,
@@ -977,10 +981,12 @@ mod tests {
             section_3d: None,
             dimensions: None,
             relations: Some(crate::feature::definitions::FeatureRelationTable {
+                rows_end: None,
                 declared_count: 1,
                 entity_ref: None,
                 rows: Vec::new(),
                 skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    rows_end: None,
                     header: crate::feature::definitions::FeatureSolverTableHeader {
                         declared_count: 1,
                         entity_ref: 1,

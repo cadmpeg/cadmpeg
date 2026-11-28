@@ -9,9 +9,10 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use super::body_selections::{
     bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies,
-    combine_external_local_tools, combine_recipe_family_tool_slots, pattern_combine_tool_slots,
-    singleton_revised_input_body_across_state_chain, unique_feature_history_states,
-    CombineOperandRefusal, CombineOperandSide, FeatureBodySelectionInputs,
+    combine_external_local_tools, combine_external_tools_refusal, combine_recipe_family_tool_slots,
+    pattern_combine_tool_slots, singleton_revised_input_body_across_state_chain,
+    unique_feature_history_states, CombineOperandRefusal, CombineOperandSide,
+    FeatureBodySelectionInputs,
 };
 use super::face_resolution::{body_member, historical_brep_source};
 use super::history_states::{effective_scope_previous_history_state_id, unique_history_state_pair};
@@ -48,6 +49,7 @@ pub(super) fn bind_combine_operands<'a>(
                 *tools = local;
             }
         }
+        losses.extend(combine_external_tools_refusal(scope));
         return;
     };
     bind_historical_combine_operands(
@@ -83,6 +85,7 @@ fn bind_historical_combine_operands<'a>(
     if let Some(local) = combine_external_local_tools(scope) {
         *tools = local;
     }
+    losses.extend(combine_external_tools_refusal(scope));
     let Some(operation) = scope.combine_operation().filter(|operation| {
         operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
     }) else {

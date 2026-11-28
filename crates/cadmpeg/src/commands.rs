@@ -615,6 +615,9 @@ pub(crate) fn diff(
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
         }
+        if let Some((before, after)) = &result.up_axis_change {
+            println!("  up axis: {before:?} → {after:?}");
+        }
         if let Some((before, after)) = result.scope_change {
             println!(
                 "  scope: {} → {}",

@@ -96,7 +96,8 @@ struct Joins {
     failed_intents: HashSet<u32>,
     failed_items: HashSet<u32>,
     failed_sources: HashSet<u32>,
-    malformed: usize,
+    /// The records outside the grammar that only annotations read, with why.
+    malformed: Vec<(u32, &'static str)>,
 }
 
 /// The ordinal that a qualified reference at `offset` of a payload names, when
@@ -149,7 +150,10 @@ impl Joins {
             SIZE_RELATION | FACE_RELATION | PAIR_RELATION => match relation(segment, payload) {
                 Ok((intent, items)) => self.items.entry(intent).or_default().extend(items),
                 Err(_) => {
-                    self.malformed += 1;
+                    self.malformed.push((
+                        record_ordinal,
+                        "annotation relation is outside the established grammar",
+                    ));
                     if let Some(intent) =
                         reference_at(segment, payload, relation_intent_offset(segment), &[INTENT])
                     {
@@ -160,7 +164,10 @@ impl Joins {
             GEOMETRY_LINK => match geometry_link(segment, payload) {
                 Ok((item, geometry)) => self.geometry.entry(item).or_default().push(geometry),
                 Err(_) => {
-                    self.malformed += 1;
+                    self.malformed.push((
+                        record_ordinal,
+                        "annotation geometry link is outside the established grammar",
+                    ));
                     if let Some(item) = last(4, &[EDGE_ITEM, WORK_AXIS]) {
                         self.failed_items.insert(item);
                     }
@@ -173,7 +180,10 @@ impl Joins {
                     .or_default()
                     .push(selector),
                 Err(_) => {
-                    self.malformed += 1;
+                    self.malformed.push((
+                        record_ordinal,
+                        "annotation face selector is outside the established grammar",
+                    ));
                     if let Some(item) = last(4, &[GEOMETRY]) {
                         self.failed_items.insert(item);
                     }
@@ -192,7 +202,10 @@ impl Joins {
                         .or_default()
                         .push(selector),
                     Err(_) => {
-                        self.malformed += 1;
+                        self.malformed.push((
+                            record_ordinal,
+                            "tolerance-feature face selector is outside the established grammar",
+                        ));
                         if let Some(source) = state_offset
                             .checked_sub(4)
                             .and_then(|offset| View::u32_le_at(payload.window(), offset))
@@ -209,7 +222,10 @@ impl Joins {
                     .or_default()
                     .push(selector),
                 Err(_) => {
-                    self.malformed += 1;
+                    self.malformed.push((
+                        record_ordinal,
+                        "annotation edge selector is outside the established grammar",
+                    ));
                     if let Some(item) = last(EDGE_SELECTOR_TAIL_LEN, &[EDGE_ITEM, WORK_AXIS]) {
                         self.failed_items.insert(item);
                     }
@@ -219,7 +235,10 @@ impl Joins {
                 Ok(table) => {
                     self.tables.insert(record_ordinal, table);
                 }
-                Err(_) => self.malformed += 1,
+                Err(_) => self.malformed.push((
+                    record_ordinal,
+                    "annotation naming table is outside the established grammar",
+                )),
             },
             _ => {}
         }
@@ -261,6 +280,25 @@ struct Scope<'s, 'a, 'm> {
     names: &'s BodyNames<'m>,
 }
 
+/// An annotation record outside the established grammar, and the
+/// annotation that it takes out of the document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Malformed {
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) detail: &'static str,
+    pub(crate) annotation: Option<PmiId>,
+}
+
+/// An annotation whose value needs a parameter record that carries no decoded
+/// parameter. The annotation leaves the document with that record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NeedsParameter {
+    pub(crate) segment_token: String,
+    pub(crate) parameter: u32,
+    pub(crate) annotation: PmiId,
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Outcome {
     dimensions: usize,
@@ -268,15 +306,43 @@ struct Outcome {
     frames_native: usize,
     datum_systems_unresolved: usize,
     unresolved_targets: usize,
-    malformed: usize,
+    malformed: Vec<Malformed>,
+    needs_parameter: Vec<NeedsParameter>,
     tolerance_unresolved: usize,
 }
 
+impl Outcome {
+    /// Records that record `ordinal` of `segment` is outside the grammar,
+    /// and the annotation `annotation` it takes out of the document.
+    fn refuse(
+        &mut self,
+        segment: &Segment<'_>,
+        ordinal: u32,
+        detail: &'static str,
+        annotation: Option<PmiId>,
+    ) {
+        self.malformed.push(Malformed {
+            segment_token: segment.token.clone(),
+            record_ordinal: ordinal,
+            detail,
+            annotation,
+        });
+    }
+}
+
+/// The losses of a projection, the annotation records outside the
+/// established grammar, and the annotations whose value needs a parameter
+/// that is not decoded.
+pub(crate) type Projected = (Vec<LossNote>, Vec<Malformed>, Vec<NeedsParameter>);
+
+/// Projects the part annotations into `ir`. Returns the losses, the
+/// annotation records outside the established grammar, and the dimensions
+/// whose nominal parameter is not decoded.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inputs: &Inputs<'_>,
     ir: &mut cadmpeg_ir::CadIr,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<Projected, CodecError> {
     let names = BodyNames::new(ir);
     let mut outcome = Outcome::default();
     let mut annotations = Vec::new();
@@ -388,7 +454,8 @@ pub(crate) fn project(
     ir.model
         .pmi
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    Ok(losses(&outcome))
+    let losses = losses(&outcome);
+    Ok((losses, outcome.malformed, outcome.needs_parameter))
 }
 
 fn project_segment(
@@ -400,7 +467,9 @@ fn project_segment(
     outcome: &mut Outcome,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let joins = Joins::new(ctx, segment);
-    outcome.malformed += joins.malformed;
+    for (ordinal, detail) in &joins.malformed {
+        outcome.refuse(segment, *ordinal, detail, None);
+    }
     let mut features = HashMap::new();
     for label in labels {
         if segment.record(label.owner, TOLERANCE_FEATURE).is_none() {
@@ -488,26 +557,43 @@ fn dimension(
     outcome: &mut Outcome,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let segment = scope.segment;
+    let mut refuse = |ordinal, detail| -> Result<Option<PmiAnnotation>, CodecError> {
+        let annotation = annotation_id(segment, owner_ordinal)?;
+        outcome.refuse(segment, ordinal, detail, Some(annotation));
+        Ok(None)
+    };
     let Ok(owner) = owner(segment, payload, measure) else {
-        outcome.malformed += 1;
-        return Ok(None);
+        return refuse(
+            owner_ordinal,
+            "dimension owner is outside the established grammar",
+        );
     };
     let Some(value_payload) = segment.record(owner.value, measure.value_type()) else {
-        outcome.malformed += 1;
-        return Ok(None);
+        return refuse(
+            owner_ordinal,
+            "dimension owner names no value record of its measure",
+        );
     };
     let Ok(value) = value(ctx, segment, value_payload, measure) else {
-        outcome.malformed += 1;
-        return Ok(None);
-    };
-    let Some(&model_value) = scope.parameters.get(&value.nominal_parameter) else {
-        outcome.malformed += 1;
-        return Ok(None);
+        return refuse(
+            owner.value,
+            "dimension value is outside the established grammar",
+        );
     };
     if value.measure != measure.code() {
-        outcome.malformed += 1;
-        return Ok(None);
+        return refuse(
+            owner.value,
+            "dimension value stores a measure other than that of its owner",
+        );
     }
+    let Some(&model_value) = scope.parameters.get(&value.nominal_parameter) else {
+        outcome.needs_parameter.push(NeedsParameter {
+            segment_token: segment.token.clone(),
+            parameter: value.nominal_parameter,
+            annotation: annotation_id(segment, owner_ordinal)?,
+        });
+        return Ok(None);
+    };
     let kind = match measure {
         Measure::Linear => DimensionKind::Location,
         Measure::Angular => DimensionKind::Angular,
@@ -666,7 +752,7 @@ fn owner_targets(
     let found = targets(scope, intents, &mut intent_outcome);
     if found.is_empty() {
         match scope.features.get(&owner) {
-            Some(Some(feature)) => return feature_faces(scope, *feature, 0, outcome),
+            Some(Some(feature)) => return feature_faces(scope, *feature, None, outcome),
             Some(None) => outcome.unresolved_targets += 1,
             None => {}
         }
@@ -679,16 +765,28 @@ fn owner_targets(
 fn feature_faces(
     scope: &Scope<'_, '_, '_>,
     feature: u32,
-    depth: usize,
+    parent: Option<u32>,
     outcome: &mut Outcome,
 ) -> Vec<PmiTarget> {
-    let Some(parsed) = scope
-        .tolerance_features
-        .get(&feature)
-        .and_then(Option::as_ref)
+    let Some(parsed) = scope.tolerance_features.get(&feature) else {
+        outcome.refuse(
+            scope.segment,
+            parent.unwrap_or(feature),
+            "tolerance feature lists a member that is no tolerance feature",
+            None,
+        );
+        return Vec::new();
+    };
+    let Some(parsed) = parsed
+        .as_ref()
         .filter(|parsed| (parsed.attachments == 0) == scope.members.contains(&feature))
     else {
-        outcome.malformed += 1;
+        outcome.refuse(
+            scope.segment,
+            feature,
+            "tolerance feature is outside the established grammar or disagrees with its membership",
+            None,
+        );
         return Vec::new();
     };
     let mut faces = Vec::new();
@@ -711,9 +809,9 @@ fn feature_faces(
             None => outcome.unresolved_targets += 1,
         }
     }
-    if depth == 0 {
+    if parent.is_none() {
         for member in &parsed.members {
-            for face in feature_faces(scope, *member, depth + 1, outcome) {
+            for face in feature_faces(scope, *member, Some(feature), outcome) {
                 if !faces.contains(&face) {
                     faces.push(face);
                 }
@@ -837,6 +935,7 @@ fn datums(
     let segment = scope.segment;
     let mut annotations = Vec::new();
     let mut ids = HashMap::new();
+    let mut unlabelled = Vec::new();
     let mut features: Vec<_> = segment
         .records
         .iter()
@@ -846,21 +945,32 @@ fn datums(
     features.sort_by_key(|(ordinal, _)| *ordinal);
     for (feature, payload) in features {
         let Ok((owner, label)) = datum_feature(ctx, segment, payload) else {
-            outcome.malformed += 1;
+            outcome.refuse(
+                segment,
+                feature,
+                "datum feature is outside the established grammar",
+                None,
+            );
             continue;
         };
-        let Some(Ok(intent)) = segment
-            .record(owner, DATUM_OWNER)
-            .map(|owner_payload| tolerance_owner(segment, owner_payload))
-        else {
-            outcome.malformed += 1;
+        let id = annotation_id(segment, owner)?;
+        let Some(owner_payload) = segment.record(owner, DATUM_OWNER) else {
+            outcome.refuse(segment, feature, "datum feature names no datum owner", None);
+            continue;
+        };
+        let Ok(intent) = tolerance_owner(segment, owner_payload) else {
+            outcome.refuse(
+                segment,
+                owner,
+                "datum owner is outside the established grammar",
+                Some(id),
+            );
             continue;
         };
         if label.is_empty() {
-            outcome.malformed += 1;
+            unlabelled.push((feature, id));
             continue;
         }
-        let id = annotation_id(segment, owner)?;
         let targets = owner_targets(scope, owner, intent.as_slice(), outcome);
         ids.insert(feature, id.clone());
         annotations.push(PmiAnnotation {
@@ -876,7 +986,25 @@ fn datums(
             source_settings: NativeOptions::new(),
         });
     }
+    for (feature, id) in unlabelled {
+        let kept = annotations.iter().any(|annotation| annotation.id == id);
+        outcome.refuse(
+            segment,
+            feature,
+            "datum feature has an empty label",
+            (!kept).then_some(id),
+        );
+    }
     Ok((annotations, ids))
+}
+
+/// The identity of the datum system of the frame owner `owner_ordinal`.
+fn datum_system_id(segment: &Segment<'_>, owner_ordinal: u32) -> Result<PmiId, CodecError> {
+    PmiId::try_from(format!(
+        "inventor:annotation:pmi#{}-{owner_ordinal}-datums",
+        segment.token
+    ))
+    .map_err(|_| CodecError::malformed("invalid Inventor datum-system identity"))
 }
 
 fn characteristic(code: u32) -> Option<GeometricToleranceKind> {
@@ -904,36 +1032,66 @@ fn frame(
     outcome: &mut Outcome,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let segment = scope.segment;
-    let Ok(intent) = tolerance_owner(segment, payload) else {
-        outcome.malformed += 1;
-        return Ok(Vec::new());
+    let mut refuse = |ordinal, detail| -> Result<Vec<PmiAnnotation>, CodecError> {
+        let annotation = annotation_id(segment, owner_ordinal)?;
+        outcome.refuse(segment, ordinal, detail, Some(annotation));
+        Ok(Vec::new())
     };
-    let Some(row_payload) =
-        trailing_reference(payload).and_then(|row| segment.record(row, FRAME_ROW))
+    let Ok(intent) = tolerance_owner(segment, payload) else {
+        return refuse(
+            owner_ordinal,
+            "frame owner is outside the established grammar",
+        );
+    };
+    let Some((row_ordinal, row_payload)) =
+        trailing_reference(payload).and_then(|row| Some((row, segment.record(row, FRAME_ROW)?)))
     else {
-        outcome.malformed += 1;
-        return Ok(Vec::new());
+        return refuse(owner_ordinal, "frame owner names no frame row");
     };
     let Ok(row) = frame_row(segment, row_payload) else {
-        outcome.malformed += 1;
-        return Ok(Vec::new());
+        return refuse(row_ordinal, "frame row is outside the established grammar");
     };
-    let secondary_zero = row
-        .secondary
-        .iter()
-        .all(|parameter| scope.parameters.get(parameter) == Some(&0.0));
-    let magnitude = scope
-        .parameters
-        .get(&row.magnitude)
-        .and_then(|value| PmiValue::new(value * MILLIMETRES_PER_CENTIMETRE, PmiQuantity::Length))
-        .and_then(PmiMagnitude::new);
-    let (Some(kind), Some(magnitude), true, true) = (
-        characteristic(row.characteristic),
-        magnitude,
-        row.plain,
-        secondary_zero,
-    ) else {
-        outcome.frames_native += 1;
+    let kind = characteristic(row.characteristic);
+    let magnitude = scope.parameters.get(&row.magnitude).map(|value| {
+        PmiValue::new(value * MILLIMETRES_PER_CENTIMETRE, PmiQuantity::Length)
+            .and_then(PmiMagnitude::new)
+    });
+    let native = kind.is_none()
+        || !row.plain
+        || matches!(magnitude, Some(None))
+        || row.secondary.iter().any(|parameter| {
+            scope
+                .parameters
+                .get(parameter)
+                .is_some_and(|value| *value != 0.0)
+        });
+    let missing = std::iter::once(row.magnitude)
+        .chain(row.secondary.iter().copied())
+        .filter(|parameter| !scope.parameters.contains_key(parameter))
+        .collect::<Vec<_>>();
+    let (false, true, Some(kind), Some(Some(magnitude))) =
+        (native, missing.is_empty(), kind, magnitude)
+    else {
+        if native {
+            outcome.frames_native += 1;
+        } else {
+            let mut dropped = vec![annotation_id(segment, owner_ordinal)?];
+            if row.frame_reference.is_none()
+                && !row.datums.is_empty()
+                && row.datums.iter().all(|datum| datum_ids.contains_key(datum))
+            {
+                dropped.push(datum_system_id(segment, owner_ordinal)?);
+            }
+            for parameter in missing {
+                outcome
+                    .needs_parameter
+                    .extend(dropped.iter().map(|annotation| NeedsParameter {
+                        segment_token: segment.token.clone(),
+                        parameter,
+                        annotation: annotation.clone(),
+                    }));
+            }
+        }
         return Ok(Vec::new());
     };
     let mut annotations = Vec::new();
@@ -961,11 +1119,7 @@ fn frame(
             }
             Some(references) if references.is_empty() => None,
             Some(references) => {
-                let id = PmiId::try_from(format!(
-                    "inventor:annotation:pmi#{}-{owner_ordinal}-datums",
-                    segment.token
-                ))
-                .map_err(|_| CodecError::malformed("invalid Inventor datum-system identity"))?;
+                let id = datum_system_id(segment, owner_ordinal)?;
                 let references = DatumReferences::try_from(references).map_err(|error| {
                     CodecError::malformed(format_args!("Inventor datum system: {error}"))
                 })?;
@@ -1037,10 +1191,10 @@ fn losses(outcome: &Outcome) -> Vec<LossNote> {
             outcome.datum_systems_unresolved
         )));
     }
-    if outcome.malformed > 0 {
+    let malformed = outcome.malformed.len();
+    if malformed > 0 {
         losses.push(InventorLossCode::PmiRecordMalformed.note(format!(
-            "{} annotation records are outside the established grammar; their annotations or joins stay native",
-            outcome.malformed
+            "{malformed} annotation records are outside the established grammar; their annotations or joins stay native"
         )));
     }
     losses

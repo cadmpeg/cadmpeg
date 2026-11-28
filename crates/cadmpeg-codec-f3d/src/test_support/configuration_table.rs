@@ -6,14 +6,53 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::features::parameters::DesignParameter as NeutralParameter;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 use serde_json::{Map, Value};
 
 use crate::design::configurations::ConfigurationTargets;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
+use crate::F3dCodec;
+
+/// `ir` with no source and no unknown native records.
+pub(crate) fn unsourced(ir: &CadIr) -> CadIr {
+    let mut ir = ir.clone();
+    ir.source = None;
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .unwrap();
+    ir
+}
+
+/// `ir` written with `fidelity`: the report, which names one of the write
+/// paths `paths`, and the bytes.
+pub(crate) fn written_on(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    paths: &[&str],
+) -> (ExportReport, Vec<u8>) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write");
+    let path = report.write_path().to_string();
+    assert!(
+        paths.contains(&path.as_str()),
+        "{path} ({:?}): {:#?}",
+        report.synthesis_cause().map(ToString::to_string),
+        report.losses
+    );
+    (report, bytes)
+}
 
 /// The Design stream of the parameter records of [`Natives`].
 pub(crate) const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -204,7 +243,12 @@ pub(crate) const ROOT_RECORD: u32 = 349;
 /// `archive` with a `FusionDesignSegmentType1` segment whose one primary record
 /// is `root`, which must carry class tag `256` and index [`ROOT_RECORD`].
 pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
-    use std::io::{Read, Write};
+    with_root_segment_in(archive, "FusionDesignSegmentType1", root)
+}
+
+/// [`with_root_segment`] with the segment folder `segment`.
+pub(crate) fn with_root_segment_in(archive: Vec<u8>, segment: &str, root: Vec<u8>) -> Vec<u8> {
+    use std::io::Write;
 
     let metadata = crate::test_support::streams_test::design_metastream_with_records(
         &[(
@@ -220,19 +264,12 @@ pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     for index in 0..source.len() {
-        let mut entry = source.by_index(index).unwrap();
-        let name = entry.name().unwrap().into_owned();
-        let mut payload = Vec::new();
-        entry.read_to_end(&mut payload).unwrap();
-        zip.start_file(name, stored).unwrap();
-        zip.write_all(&payload).unwrap();
+        zip.raw_copy_file(source.by_index_raw(index).unwrap())
+            .unwrap();
     }
     for (name, payload) in [("BulkStream.dat", root), ("MetaStream.dat", metadata)] {
-        zip.start_file(
-            format!("FusionAssetName[Active]/FusionDesignSegmentType1/{name}"),
-            stored,
-        )
-        .unwrap();
+        zip.start_file(format!("FusionAssetName[Active]/{segment}/{name}"), stored)
+            .unwrap();
         zip.write_all(&payload).unwrap();
     }
     zip.finish().unwrap().into_inner()
@@ -378,9 +415,9 @@ impl Natives {
         }
     }
 
-    /// Run the decoder's configuration pass over `documents` and these
+    /// Run the decoder's design attachment over `documents` and these
     /// records: the configurations it states, with the neutral features in
-    /// the state that the pass leaves them.
+    /// the state that it leaves them.
     pub(crate) fn attach(
         &mut self,
         documents: &[crate::records::configuration::DesignConfiguration],
@@ -392,14 +429,21 @@ impl Natives {
             design_parameter_scopes: self.scopes.clone(),
             ..Default::default()
         };
-        let mut model = cadmpeg_ir::document::Model::default();
-        model.parameters = self.neutral_parameters.clone();
-        model.features = std::mem::take(&mut self.neutral_features);
-        let producers = crate::design::configurations::body_producers(&model.features);
-        crate::design::configurations::attach(&native, &mut model, &producers, &mut Vec::new())
-            .unwrap();
-        self.neutral_features = model.features;
-        model.configurations
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.parameters = self.neutral_parameters.clone();
+        ir.model.features = std::mem::take(&mut self.neutral_features);
+        let archive = super::zip_test::f3d_with_configurations(
+            &super::smbh_geometry_test::synthetic_geometry_smbh(),
+            &[],
+        );
+        super::zip_test::with_scan(&archive, |scan| {
+            super::with_decode_context(|ctx| {
+                crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut Vec::new())
+            })
+        })
+        .unwrap();
+        self.neutral_features = ir.model.features;
+        ir.model.configurations
     }
 
     pub(crate) fn targets(&self) -> ConfigurationTargets<'_> {
