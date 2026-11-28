@@ -56,6 +56,12 @@ pub trait HistoryText {
     /// spells; `None` where the codec has none.
     fn reference(&self, target: &HistoryParameter, model: &Model) -> Option<String>;
 
+    /// Whether the codec writes parameter definitions and caches directly from
+    /// the saved design, with its own comparison against the retained source.
+    fn writes_design_parameter_fields(&self) -> bool {
+        false
+    }
+
     /// Whether the codec restates the design configurations and the scopes'
     /// active configurations in its history arenas. The restore then takes
     /// them from the read document as edits the codec states.
@@ -147,6 +153,11 @@ pub fn restore_history(
         let ParameterDefinition::Expression(expression) = &parameter.definition else {
             continue;
         };
+        if text.writes_design_parameter_fields() {
+            // Replay derives state. The codec checks the authored fields.
+            drop(replayed.set_parameter_expression(&parameter.id, expression.clone()));
+            continue;
+        }
         let stated = restored
             .model
             .parameters
@@ -219,6 +230,21 @@ pub fn restore_history(
             history.name.clone_from(&feature.name);
         }
     }
+    if text.writes_design_parameter_fields() {
+        for parameter in &mut replayed.design.parameters {
+            if let Some(stated) = read.design.parameters.iter().find(|p| p.id == parameter.id) {
+                parameter.definition.clone_from(&stated.definition);
+                parameter.value.clone_from(&stated.value);
+            }
+        }
+        replayed.design.parameters.extend(
+            read.design
+                .parameters
+                .iter()
+                .filter(|p| !stored.contains_key(&p.id))
+                .cloned(),
+        );
+    }
     if text.restates_configurations() {
         adopt_configurations(&mut replayed.design, &read.design);
     }
@@ -254,7 +280,12 @@ pub fn restore_history(
             history.dependencies = members;
         }
     }
-    for parameter in &replayed.design.parameters {
+    for parameter in replayed
+        .design
+        .parameters
+        .iter()
+        .filter(|_| !text.writes_design_parameter_fields())
+    {
         let Some(before) = stored.get(&parameter.id) else {
             continue;
         };

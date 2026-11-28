@@ -464,13 +464,19 @@ pub(crate) fn push_column(
     insert_column(payload, position, id, title, &object)
 }
 
-/// Set the indexed object that a typed parameter column configures.
-pub(crate) fn bind_parameter_column(
+/// Set the indexed object that a typed column configures.
+pub(crate) fn bind_column_target(
     payload: &mut Map<String, Value>,
     position: usize,
     column: &str,
-    target: u32,
+    target: &ColumnTarget,
 ) -> bool {
+    let (kind, target) = match target {
+        ColumnTarget::Parameter(record) => ("UserParameterValue", record),
+        ColumnTarget::OwnedParameter(record) => ("ParameterDoubleValue", record),
+        ColumnTarget::Feature(record) => ("DcFeature", record),
+        ColumnTarget::Property(_) => return false,
+    };
     let Some(object) = table_mut(payload, position)
         .and_then(|table| table.get_mut("asset"))
         .and_then(|asset| component_mut(asset, "tableDefinition"))
@@ -488,10 +494,7 @@ pub(crate) fn bind_parameter_column(
         "id".to_owned(),
         typed_value("String", Value::from(target.to_string())),
     );
-    object.insert(
-        "type".to_owned(),
-        typed_value("String", Value::from("UserParameterValue")),
-    );
+    object.insert("type".to_owned(), typed_value("String", Value::from(kind)));
     true
 }
 

@@ -6222,10 +6222,7 @@ pub(super) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<Indexe
     })
 }
 
-pub(in crate::design) fn next_indexed_record_offset(
-    bytes: &[u8],
-    position: usize,
-) -> Option<usize> {
+pub(crate) fn next_indexed_record_offset(bytes: &[u8], position: usize) -> Option<usize> {
     indexed_record_offsets(bytes.get(position..)?)
         .next()
         .map(|header| position + header.offset)

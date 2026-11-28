@@ -120,6 +120,10 @@ impl HistoryText for FusionText {
         Some(target.name.clone())
     }
 
+    fn writes_design_parameter_fields(&self) -> bool {
+        true
+    }
+
     fn restates_configurations(&self) -> bool {
         true
     }

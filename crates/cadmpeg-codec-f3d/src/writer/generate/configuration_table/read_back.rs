@@ -176,6 +176,7 @@ impl Witness {
             scopes: &bindings.scopes,
             neutral_parameters: &bindings.projection.parameters,
             neutral_features: &bindings.projection.features,
+            bindings: None,
         };
         let mut features = bindings.projection.features.clone();
         let projected = reconciled(projection(&configs.documents, &targets)?, &mut features)?;

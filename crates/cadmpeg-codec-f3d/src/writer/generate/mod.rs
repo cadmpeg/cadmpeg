@@ -20,7 +20,7 @@ use crate::writer::primitives::{configuration_targets, decoded_configurations, f
 mod attributes;
 pub(in crate::writer) mod configuration_root;
 pub(in crate::writer) mod configuration_table;
-mod design;
+pub(in crate::writer) mod design;
 mod index;
 mod native_bytes;
 pub(crate) mod native_geometry;
@@ -85,6 +85,7 @@ pub(super) fn write_new(
         ir: lowered,
         unlowered,
     } = lower_subset_curves(target, |_| true);
+    let configuration_source = design::configurations::Source::new(ctx, target)?;
     let mut reduction = Reduction::new(ctx, lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
@@ -97,6 +98,7 @@ pub(super) fn write_new(
             fallback: reduction.fallback(),
             dropped: reduction.dropped(),
             rebased: rebased.as_ref(),
+            configuration_source: &configuration_source,
         };
         match attempt(ctx, reduction.ir(), &form, &mut staged) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -120,6 +122,10 @@ pub(super) fn write_new(
         .ok()
         .flatten()
         .is_some_and(|design| design.rolls_back());
+    reduction.finish_configurations(matches!(
+        coverage.configurations,
+        ArenaDisposition::Written | ArenaDisposition::Reported
+    ));
     let (mut losses, native) = reduction.finish();
     losses.extend(staged_loss);
     losses.extend(rebased.iter().flat_map(|rebased| rebased.losses.clone()));
@@ -158,6 +164,7 @@ fn writes_alone(
                 fallback: &design::Fallback::default(),
                 dropped: &DroppedRecords::default(),
                 rebased: None,
+                configuration_source: &design::configurations::Source::default(),
             },
             &mut std::io::Cursor::new(Vec::new()),
         )
@@ -192,6 +199,7 @@ struct AttemptForm<'a> {
     /// The parameters whose own expression and value the document takes
     /// from the active configuration of their scope.
     rebased: Option<&'a Rebased>,
+    configuration_source: &'a design::configurations::Source,
 }
 
 /// Write `target` once in `form`. A failure names the stage that failed.
@@ -209,6 +217,7 @@ fn attempt(
         fallback,
         dropped,
         rebased,
+        configuration_source,
     } = form;
     #[cfg(test)]
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
@@ -351,20 +360,39 @@ fn attempt(
         } else {
             Some(snapshot_stream(ctx, target, &native).map_err(Failure::neutral_design)?)
         };
-        let members = design
+        let (members, configurations) = design
             .archive(
+                ctx,
                 target,
+                configuration_source,
+                rebased,
                 snapshot.as_deref().map(|snapshot| (&*smbh, snapshot)),
             )
             .map_err(Failure::records)?;
-        write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
-            .map_err(Failure::archive)?;
+        write_archive(
+            &mut *staged,
+            &ArchiveEntries::BaseFeature { members: &members },
+        )
+        .map_err(Failure::archive)?;
+        let mut configuration_losses = Vec::new();
+        configurations
+            .witness
+            .read_back(
+                ctx,
+                staged.get_ref(),
+                &configurations.expected,
+                &configurations.expected.model.parameters,
+                &mut configuration_losses,
+            )
+            .map_err(Failure::neutral_design)?;
         let mut coverage = coverage(
             false,
             ArenaDisposition::Reported,
             true,
             ArenaDisposition::Reported,
         );
+        coverage.configurations = ArenaDisposition::Reported;
+        coverage.design.configurations = ArenaDisposition::Reported;
         // The written `Sketch` items carry the design's sketches; the plan
         // charges each sketch, entity and relation it does not write.
         if design.writes_sketches() {
@@ -373,6 +401,7 @@ fn attempt(
             coverage.design.sketch_constraints = ArenaDisposition::Reported;
         }
         let mut losses = appearance_losses(target);
+        losses.extend(configuration_losses);
         losses.extend(design.into_losses());
         losses.extend(history_notes);
         if body_less {
@@ -826,10 +855,9 @@ fn omit_geometry(coverage: &mut ArenaDispositions) {
 
 /// What [`write_new`] does with each model arena.
 /// `subds`, assets, tessellations and assembly joints are `Dropped`: the
-/// reduction removes them and charges a loss naming each. Configurations are
-/// written from the native Design records after the neutral arena is proved
-/// equal to its projection; without those records the reduction drops them
-/// the same way. `parameters` states what the attempt did with the neutral
+/// reduction removes them and charges a loss naming each. Configurations use
+/// the native Design writer or the timeline's table writer, which reports
+/// each value it cannot carry. `parameters` states what the attempt did with the neutral
 /// parameters. Where the root definition's design scope is written
 /// (`neutral`), its scopes, containers, features and parameters are
 /// `Reported`: the design module charges a loss for each record it does not

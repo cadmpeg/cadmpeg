@@ -1154,7 +1154,6 @@ fn the_root_scopes_configuration_arrangements_and_occurrence_states_are_charged(
     );
     let root = root();
     for value in [
-        format!("{root} active configuration {configuration}"),
         format!("{root} active arrangement {arrangement}"),
         format!("{root} design state of occurrence {occurrence}"),
     ] {
@@ -1164,6 +1163,20 @@ fn the_root_scopes_configuration_arrangements_and_occurrence_states_are_charged(
             report.losses
         );
     }
+    assert!(
+        loss(&report, "export/value.unwritable")
+            .iter()
+            .any(|message| message.contains(configuration.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains(configuration.as_str())),
+        "{:#?}",
+        report.losses
+    );
 }
 
 #[test]
@@ -1407,6 +1420,7 @@ fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
     }
 }
 
+mod configurations;
 mod dimensions;
 mod extrude;
 mod planes;

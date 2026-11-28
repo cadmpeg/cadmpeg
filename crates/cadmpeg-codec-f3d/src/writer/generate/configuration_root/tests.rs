@@ -73,6 +73,7 @@ const TARGETS: crate::design::configurations::ConfigurationTargets<'static> =
         scopes: &[],
         neutral_parameters: &[],
         neutral_features: &[],
+        bindings: None,
     };
 
 /// The configurations the decoder states for `documents`, and their table.

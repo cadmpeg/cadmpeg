@@ -30,12 +30,13 @@
 //! `Sketch` items, then no design ([`dropped_records`]).
 
 mod base_feature;
+pub(super) mod configurations;
 mod expression;
 mod extrude;
 pub(super) mod frames;
 pub(super) mod history;
 mod item;
-pub(super) mod parameters;
+pub(in crate::writer) mod parameters;
 mod revolve;
 mod roster;
 mod sketch;
@@ -759,7 +760,12 @@ pub(super) fn plan<'a>(
                 None => feature.to_string(),
             }),
     ));
-    losses.extend(unwritten_records(target, scope, written_marker));
+    losses.extend(unwritten_records(
+        target,
+        scope,
+        written_marker,
+        !target.geometry.bodies.is_empty() || body_less.is_some(),
+    ));
     losses.extend(states(target));
     let mut base_feature =
         base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
@@ -1155,9 +1161,12 @@ impl NeutralDesign<'_> {
     /// timeline holds no body").
     pub(super) fn archive(
         &mut self,
+        decode: &cadmpeg_core::decode::DecodeContext<'_>,
         target: &CadIr,
+        configuration_source: &configurations::Source,
+        rebased: Option<&crate::design_v11::configurations::rebase::Rebased>,
         streams: Option<(&[u8], &[u8])>,
-    ) -> Result<Vec<(String, Vec<u8>)>, RecordFailure> {
+    ) -> Result<(roster::Members, configurations::Configurations), RecordFailure> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
         let seed = match streams {
@@ -1183,7 +1192,7 @@ impl NeutralDesign<'_> {
             items,
             &self.rolled,
         );
-        let ctx = roster::Context {
+        let mut ctx = roster::Context {
             marker: self.marker,
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
@@ -1192,12 +1201,29 @@ impl NeutralDesign<'_> {
             sketches: &self.sketches.items,
             planes: &self.sketches.planes,
             timeline_value,
+            configuration_names: None,
         };
         let mut records = DesignRecords::default();
         BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;
-        let (members, losses) = roster::archive(&ctx, records, streams)?;
+        let mut configurations = configurations::write(
+            decode,
+            target,
+            (configuration_source, rebased),
+            &mut ctx,
+            &self.parameters,
+            &mut records,
+            &mut self.losses,
+        )?;
+        let (mut members, losses) = roster::archive(&ctx, records, streams)?;
+        members.retain(|(name, _)| {
+            !configurations
+                .members
+                .iter()
+                .any(|(configured, _)| name == configured)
+        });
+        members.append(&mut configurations.members);
         self.losses.extend(losses);
-        Ok(members)
+        Ok((members, configurations))
     }
 
     /// Whether the design writes a `Sketch` item.
@@ -1402,7 +1428,8 @@ fn position(at: &Position) -> String {
 }
 
 /// The losses of the design records outside the root scope's written form:
-/// the root scope's configuration, arrangements and occurrence states, the
+/// the root scope's arrangements and occurrence states, its configuration
+/// where the selected form holds no table, the
 /// other scopes with their features and parameters, every container but the
 /// one the written timeline stands for, and that container's folders,
 /// placement and rollback, unless the written timeline `marker` stands
@@ -1411,6 +1438,7 @@ fn unwritten_records(
     target: &CadIr,
     root: &DesignScope,
     marker: Option<Marker<'_>>,
+    writes_configurations: bool,
 ) -> Vec<LossNote> {
     let others = move || {
         target
@@ -1442,6 +1470,7 @@ fn unwritten_records(
     let configuration = root
         .active_configuration
         .iter()
+        .filter(|_| !writes_configurations)
         .map(|id| format!("{definition} active configuration {id}"));
     let arrangements = root
         .active_arrangements
@@ -1454,7 +1483,7 @@ fn unwritten_records(
     losses.extend(named_loss(
         F3dLossCode::WriterDesignRecordOmitted,
         "design scope value",
-        "the F3D design holds its current bodies alone, with no configuration, arrangement or occurrence state",
+        "the selected F3D Design form has no carrier for these scope values",
         configuration.chain(arrangements).chain(occurrences),
     ));
     losses.extend(evaluation_missing(

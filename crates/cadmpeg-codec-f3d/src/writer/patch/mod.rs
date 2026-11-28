@@ -20,6 +20,7 @@ use cadmpeg_ir::codec::write::saved::adopt_configurations;
 use cadmpeg_ir::report::loss::LossNote;
 pub(crate) mod edits;
 mod geometry;
+mod parameters;
 pub(crate) mod records;
 mod user_knots;
 use edits::{
@@ -109,9 +110,38 @@ pub(crate) fn write_semantic(
     }
     let baseline_native = f3d_native(ctx, baseline.ir())?;
     let target_native = f3d_native(ctx, target)?;
+    let mut rebased = parameters::active_edits(target, baseline.ir());
+    let parameter_target = rebased.as_ref().map_or(target, |rebased| &rebased.ir);
+    let active_edits = baseline_native
+        .as_ref()
+        .filter(|_| target.model.configurations != baseline.ir().model.configurations)
+        .map(|native| {
+            crate::writer::generate::configuration_table::active_parameter_edits(target, native)
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let parameter_edits = parameters::Parameters::plan(
+        ctx,
+        source_image,
+        baseline.ir(),
+        parameter_target,
+        baseline_native.as_ref(),
+        active_edits,
+    )?;
+    if let Some(rebased) = &mut rebased {
+        parameters::keep_unwritten_overrides(rebased, target, &parameter_edits.written);
+    }
+    let table_target = rebased.as_ref().map_or(target, |rebased| &rebased.ir);
     let mut tables = target_native
         .as_ref()
-        .map(|native| crate::writer::generate::configuration_table::patched(target, native))
+        .map(|native| {
+            crate::writer::generate::configuration_table::patched(
+                table_target,
+                native,
+                &parameter_edits.own,
+                &parameter_edits.written,
+            )
+        })
         .transpose()?;
     if let Some(tables) = &mut tables {
         table_losses.append(&mut tables.losses);
@@ -393,6 +423,7 @@ pub(crate) fn write_semantic(
         .configurations
         .clone_from(&target.model.configurations);
     adopt_configurations(&mut supported_target.design, &target.design);
+    parameters::adopt(&mut supported_target, target);
     if let (Some(mut supported), Some(target_native)) =
         (baseline_native.clone(), target_native.as_ref())
     {
@@ -496,8 +527,10 @@ pub(crate) fn write_semantic(
         .ir()
         .source
         .as_ref()
-        .and_then(|source| source.attributes.get("active_brep"))
-        .ok_or_else(|| CodecError::Malformed("F3D baseline has no active BREP".into()))?;
+        .and_then(|source| source.attributes.get("active_brep"));
+    if active_brep.is_none() && baseline.ir().geometry != target.geometry {
+        return Err(CodecError::malformed("F3D baseline has no active BREP"));
+    }
     let positions = target
         .geometry
         .points
@@ -723,13 +756,14 @@ pub(crate) fn write_semantic(
             (name, options, bytes)
         };
         let expanded = zstd.then(|| bytes.clone());
+        parameter_edits.rewrite_index(&name, &mut bytes);
         if let Some(cage) = user_knot_edits.remove(&name) {
             bytes = crate::tsm::user_knots::rewrite(ctx, &name, &bytes, &cage)?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
         }
-        if name == *active_brep {
+        if active_brep.is_some_and(|active| &name == active) {
             patch_geometry(
                 &mut bytes,
                 &geometry::GeometryEdits {
@@ -825,6 +859,7 @@ pub(crate) fn write_semantic(
                 patch_act_entities(&mut bytes, edits)?;
             }
         }
+        parameter_edits.rewrite_bulk(&name, &mut bytes)?;
         if let Some(expanded) = expanded {
             crate::zip_write::write_zstd_member(
                 &mut zip,
@@ -855,12 +890,13 @@ pub(crate) fn write_semantic(
         .finish()
         .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
         .into_inner();
+    parameter_edits.verify(ctx, &output, table_target, &mut table_losses)?;
     if let Some(tables) = tables {
         tables.witness.read_back(
             ctx,
             &output,
-            target,
-            &target.model.parameters,
+            table_target,
+            &parameter_edits.own,
             &mut table_losses,
         )?;
     }

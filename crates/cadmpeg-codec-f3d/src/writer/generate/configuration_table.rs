@@ -32,7 +32,7 @@ use crate::design_v11::configurations::{agree, restate, ActiveRows, RestatedRows
 use crate::ids::neutral_configuration_id;
 use crate::native::F3dNative;
 use crate::records::configuration::table::{
-    bind_parameter_column, new_document, new_row, property_component, push_column,
+    bind_column_target, new_document, new_row, property_component, push_column,
     push_property_column, push_row, remove_row, set_cell, set_row_name, set_row_order,
     write_test_rows, AdmittedTables, CellData, ColumnTarget, ConfigurationColumn, ConfigurationRow,
     ConfigurationTable, ConfiguredValue, RowGuids, TableNames, TestRowTarget,
@@ -163,6 +163,48 @@ pub(super) fn regenerate<'a>(
 }
 
 impl Written<'_> {
+    pub(super) fn bind_owners(
+        &mut self,
+        owners: &BTreeMap<u32, u32>,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<(), CodecError> {
+        let mut missing = Vec::new();
+        for document in self.documents.to_mut() {
+            let mut payload = None;
+            for table in document.tables() {
+                for column in &table.columns {
+                    let ColumnTarget::Parameter(parameter) = column.target else {
+                        continue;
+                    };
+                    let Some(&owner) = owners.get(&parameter) else {
+                        continue;
+                    };
+                    if !bind_column_target(
+                        edit(&mut payload, document.payload()),
+                        table.position,
+                        &column.id,
+                        &ColumnTarget::OwnedParameter(owner),
+                    ) {
+                        missing.push(format!(
+                            "{} column {}: owner record {owner}",
+                            document.entry_name(),
+                            column.id
+                        ));
+                    }
+                }
+            }
+            if let Some(payload) = payload {
+                *document = document.with_payload(payload)?;
+            }
+        }
+        losses.extend(value_unwritable(
+            "F3D",
+            "cannot bind these configuration columns to the owners of their Design parameters",
+            missing,
+        ));
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(super) fn compare_in_memory(
         &self,
@@ -400,7 +442,7 @@ pub(super) fn stated_rows(
     }
     let rewritten = match which {
         ActiveRows::Design => rewritten(targets, &target.tolerances),
-        ActiveRows::Stored => BTreeSet::new(),
+        ActiveRows::Stored => rebased.clone(),
     };
     let stored = decoded
         .iter()
@@ -580,6 +622,28 @@ fn pin_losses(pinned: &[Pinned]) -> Option<LossNote> {
     )
 }
 
+/// Edits of the retained active row which need a change to the Design base.
+pub(in crate::writer) fn active_parameter_edits(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<BTreeMap<ParameterId, (String, Option<ParameterValue>)>, CodecError> {
+    let targets = configuration_targets(target, native);
+    let decoded = decoded_configurations(&native.design_configurations, &targets)?;
+    let stated = stated_rows(
+        target,
+        &decoded.configurations,
+        &targets,
+        &BTreeSet::new(),
+        ActiveRows::Stored,
+        &mut Vec::new(),
+    );
+    Ok(stated
+        .pinned
+        .into_iter()
+        .map(|pin| (pin.parameter, pin.stated))
+        .collect())
+}
+
 /// The configuration documents a patch of the retained archive carries, and
 /// the losses of what the configurations state otherwise than the rows of
 /// the documents.
@@ -591,30 +655,30 @@ pub(in crate::writer) struct Patched {
     pub(in crate::writer) witness: read_back::Witness,
 }
 
-/// The configuration documents of `target`, whose native records are
-/// `native`, rewritten to state its configurations ([`stated_rows`]). The
-/// patch writes no Design stream parameter, so the row the stored
-/// `DesignConfigurationRoot` record names stays active, and each scope whose
-/// active configuration differs is charged.
+/// Rewrite the configuration documents against the patched Design parameters.
+/// The retained root names the active row.
 pub(in crate::writer) fn patched(
     target: &CadIr,
     native: &F3dNative,
+    own: &[cadmpeg_ir::features::parameters::DesignParameter],
+    written_parameters: &BTreeSet<ParameterId>,
 ) -> Result<Patched, CodecError> {
-    let targets = configuration_targets(target, native);
+    let mut targets = configuration_targets(target, native);
     let documents = &native.design_configurations;
     let decoded = decoded_configurations(documents, &targets)?;
+    targets.neutral_parameters = own;
     let mut losses = Vec::new();
     let stated = stated_rows(
         target,
         &decoded.configurations,
         &targets,
-        &BTreeSet::new(),
+        written_parameters,
         ActiveRows::Stored,
         &mut losses,
     );
     losses.extend(value_unwritable(
         "F3D",
-        "keeps the archive's active configuration state in place of the requested state: the DesignConfigurationRoot names the row whose state the Design stream stores (f3d.md §1.2), and the patch preserves its parameter values",
+        "keeps the archive's active configuration state in place of the requested state: the DesignConfigurationRoot names the row whose state the Design stream stores (f3d.md §1.2), and the patch keeps that selection",
         stated.kept.iter().cloned(),
     ));
     let unchanged = stated.pinned.is_empty() && projects(&stated.rows, documents, &targets)?;
@@ -661,6 +725,59 @@ pub(super) fn generated<'a>(
 }
 
 impl Written<'_> {
+    pub(super) fn bind_features(
+        &mut self,
+        targets: &ConfigurationTargets<'_>,
+        destinations: &BTreeMap<cadmpeg_ir::features::FeatureId, u32>,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<(), CodecError> {
+        let occupied = destinations.values().copied().collect::<BTreeSet<_>>();
+        let mut missing = Vec::new();
+        for document in self.documents.to_mut() {
+            let mut payload = None;
+            for table in document.tables() {
+                for column in &table.columns {
+                    let ColumnTarget::Feature(record) = column.target else {
+                        continue;
+                    };
+                    let id = targets.feature(record).map(|feature| &feature.id);
+                    let replacement = match (id, id.and_then(|id| destinations.get(id))) {
+                        (_, Some(&destination)) => destination,
+                        (Some(id), None) => {
+                            missing.push(format!(
+                                "{} column {}: {id}",
+                                document.entry_name(),
+                                column.id,
+                            ));
+                            u32::MAX
+                        }
+                        (None, None) if occupied.contains(&record) => u32::MAX,
+                        (None, None) => continue,
+                    };
+                    if record != replacement
+                        && !bind_column_target(
+                            edit(&mut payload, document.payload()),
+                            table.position,
+                            &column.id,
+                            &ColumnTarget::Feature(replacement),
+                        )
+                    {
+                        missing.push(format!(
+                            "{} column {}: destination scope {replacement}",
+                            document.entry_name(),
+                            column.id
+                        ));
+                    }
+                }
+            }
+            if let Some(payload) = payload {
+                *document = document.with_payload(payload)?;
+            }
+        }
+        losses.extend(value_unwritable("F3D", "cannot bind these configuration columns to their Design feature scopes in the destination", missing));
+        Ok(())
+    }
+
     /// Write the `testRowData` entries of the row of the configuration
     /// `active` ([`Self::test_rows`]), and add to `losses` what the
     /// documents read back as otherwise than `stated` ([`Self::read_back`]).
@@ -694,73 +811,91 @@ impl Written<'_> {
         destinations: &DestinationParameters<'_>,
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
-        let Some((index, table)) = host(&self.documents, self.projection.table) else {
+        let timeline = targets.bindings.is_some();
+        let projected = host(&self.documents, self.projection.table)
+            .map(|(index, table)| (index, table.position));
+        if !timeline && projected.is_none() {
             return Ok(());
-        };
-        let document = &self.documents[index];
-        let mut payload = None;
-        let mut missing = Vec::new();
+        }
         let mut occupied = destinations
             .values()
             .map(|(record, _)| *record)
             .collect::<BTreeSet<_>>();
-        for column in &table.columns {
-            let (ColumnTarget::Parameter(record) | ColumnTarget::OwnedParameter(record)) =
-                column.target
-            else {
-                continue;
-            };
-            let id = column_parameter(&column.target, targets);
-            let destination = id.as_ref().and_then(|id| destinations.get(id));
-            let replacement = match destination {
-                Some((written, _)) if column.target == ColumnTarget::Parameter(*written) => {
-                    continue
+        let mut missing = Vec::new();
+        let mut updated = Vec::new();
+        for (index, document) in self.documents.iter().enumerate() {
+            let mut payload = None;
+            for table in document.tables() {
+                if !timeline && projected != Some((index, table.position)) {
+                    continue;
                 }
-                Some((written, _)) => *written,
-                None => {
-                    if let Some(id) = id {
+                for column in &table.columns {
+                    let (ColumnTarget::Parameter(record) | ColumnTarget::OwnedParameter(record)) =
+                        column.target
+                    else {
+                        continue;
+                    };
+                    let id = column_parameter(&column.target, targets);
+                    let destination = id.as_ref().and_then(|id| destinations.get(id));
+                    let replacement = match destination {
+                        Some((written, _))
+                            if column.target == ColumnTarget::Parameter(*written) =>
+                        {
+                            continue
+                        }
+                        Some((written, _)) => *written,
+                        None => {
+                            if let Some(id) = &id {
+                                missing.push(format!(
+                                    "{} column {}: {id}",
+                                    document.entry_name(),
+                                    column.id
+                                ));
+                            }
+                            if timeline && id.is_some() {
+                                u32::MAX
+                            } else {
+                                if !matches!(column.target, ColumnTarget::Parameter(_))
+                                    || !occupied.contains(&record)
+                                {
+                                    continue;
+                                }
+                                let Some(unbound) =
+                                    (0..=u32::MAX).find(|record| !occupied.contains(record))
+                                else {
+                                    continue;
+                                };
+                                occupied.insert(unbound);
+                                unbound
+                            }
+                        }
+                    };
+                    if !bind_column_target(
+                        edit(&mut payload, document.payload()),
+                        table.position,
+                        &column.id,
+                        &ColumnTarget::Parameter(replacement),
+                    ) {
                         missing.push(format!(
-                            "{} column {}: {id}",
+                            "{} column {}: destination record {replacement}",
                             document.entry_name(),
                             column.id
                         ));
                     }
-                    if !matches!(column.target, ColumnTarget::Parameter(_))
-                        || !occupied.contains(&record)
-                    {
-                        continue;
-                    }
-                    // Preserve column-local cells while avoiding a join to a different parameter.
-                    let Some(unbound) = (0..=u32::MAX).find(|record| !occupied.contains(record))
-                    else {
-                        continue;
-                    };
-                    occupied.insert(unbound);
-                    unbound
                 }
-            };
-            if !bind_parameter_column(
-                edit(&mut payload, document.payload()),
-                table.position,
-                &column.id,
-                replacement,
-            ) {
-                missing.push(format!(
-                    "{} column {}: destination record {replacement}",
-                    document.entry_name(),
-                    column.id
-                ));
             }
+            if let Some(payload) = payload {
+                updated.push((index, document.with_payload(payload)?));
+            }
+        }
+        for (index, document) in updated {
+            self.documents.to_mut()[index] = document;
         }
         losses.extend(value_unwritable(
             "F3D",
             "cannot bind these configuration columns to their Design records in the destination",
             missing,
         ));
-        if let Some(payload) = payload {
-            let document = document.with_payload(payload)?;
-            self.documents.to_mut()[index] = document;
-        }
         Ok(())
     }
 

@@ -627,15 +627,6 @@ impl<'a> Roster<'a> {
     fn writes(&self, index: u32) -> bool {
         self.rows.iter().any(|&(at, _)| at == index)
     }
-
-    /// The next-entity-ID counter: one above every record index.
-    pub(super) fn next_entity(&self) -> u64 {
-        self.rows
-            .iter()
-            .map(|&(index, _)| u64::from(index) + 1)
-            .max()
-            .unwrap_or(0)
-    }
 }
 
 /// One result body as the roster writes it.
@@ -663,6 +654,7 @@ pub(super) struct Context<'a> {
     /// the timeline marker; a `WorkPlane` item before it is after the marker
     /// too. `sketches.len()` where the marker stands after the last item.
     pub(super) marker: usize,
+    pub(super) configuration_names: Option<[String; 2]>,
 }
 
 /// The timeline context value.
@@ -770,6 +762,98 @@ fn owned_number(name: &str) -> Option<u64> {
 }
 
 impl Context<'_> {
+    pub(super) fn configuration_parameters<'s>(
+        &'s self,
+        plan: &'s super::parameters::ParameterPlan,
+    ) -> crate::writer::generate::configuration_table::DestinationParameters<'s> {
+        let mut destinations = plan.destinations(&self.roster.parameters);
+        for (parameter, record, _) in self.owned_parameters() {
+            if let Some(source) = &parameter.source {
+                destinations
+                    .entry(source.clone())
+                    .or_insert((record, parameter.name.as_str()));
+            }
+        }
+        destinations
+    }
+
+    fn owned_parameters(&self) -> Vec<(&super::parameters::OwnedParameter, u32, u32)> {
+        let mut parameters = Vec::new();
+        for (sketch, records) in self.sketches.iter().zip(&self.roster.sketches.items) {
+            for (dimension, (record, owner)) in sketch
+                .dimensions
+                .iter()
+                .zip(records.parameters().zip(records.owners()))
+            {
+                parameters.push((&dimension.parameter, record, owner));
+            }
+        }
+        for item in self.roster.geometry() {
+            match &item.kind {
+                ItemKind::Extrude { plan, records } => {
+                    parameters.push((&plan.along, records.along[1], records.along[0]));
+                    parameters.push((&plan.taper, records.taper[1], records.taper[0]));
+                }
+                ItemKind::Revolve { plan, records } => {
+                    parameters.push((&plan.angle, records.angle[1], records.angle[0]));
+                }
+            }
+        }
+        parameters
+    }
+
+    pub(super) fn configuration_owners(&self) -> std::collections::BTreeMap<u32, u32> {
+        self.owned_parameters()
+            .into_iter()
+            .map(|(_, parameter, owner)| (parameter, owner))
+            .collect()
+    }
+
+    pub(super) fn configuration_features(
+        &self,
+    ) -> std::collections::BTreeMap<FeatureId, (u32, FeatureId)> {
+        let stream = crate::ids::native_scope(super::configurations::DESIGN_BULK);
+        let mut destinations = std::collections::BTreeMap::new();
+        for ((sketch, records), ordinal) in self
+            .sketches
+            .iter()
+            .zip(&self.roster.sketches.items)
+            .zip(1u32..)
+        {
+            destinations.insert(
+                sketch.feature.clone(),
+                (
+                    records.scope,
+                    crate::ids::neutral_feature_id_parts(
+                        &stream,
+                        sketches::FAMILY,
+                        ordinal,
+                        records.scope,
+                    ),
+                ),
+            );
+        }
+        for item in self.roster.geometry() {
+            destinations.insert(
+                item.feature().clone(),
+                (
+                    item.scope(),
+                    crate::ids::neutral_feature_id_parts(
+                        &stream,
+                        item.family(),
+                        item.place.ordinal,
+                        item.scope(),
+                    ),
+                ),
+            );
+        }
+        destinations
+    }
+
+    pub(super) fn configuration_basenames(&self) -> [String; 2] {
+        fixed::configuration_basenames(self)
+    }
+
     /// The class tag of the type `guid`.
     pub(super) fn class(&self, guid: &str) -> Result<DesignClassTag, CodecError> {
         self.table.class(guid)
@@ -913,7 +997,7 @@ pub(super) fn archive(
             .into_iter()
             .filter(|&index| ctx.roster.writes(index))
             .collect(),
-        next_entity: ctx.roster.next_entity(),
+        next_entity: ctx.table.next_entity()?,
     };
     let act = act::Act::new(ctx)?;
     let browser = browser::Browser::new()?;

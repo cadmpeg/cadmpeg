@@ -414,6 +414,29 @@ impl<'a> Reduction<'a> {
         &self.dropped
     }
 
+    pub(super) fn finish_configurations(&mut self, written: bool) {
+        if written {
+            return;
+        }
+        let dropped = self.remove_native_arenas(|arena| arena == "design_configurations");
+        self.native.drop_records(
+            "f3d",
+            "because the written Design form holds no configuration table or rule document",
+            dropped,
+        );
+        let configurations = if self.ir.model.configurations.is_empty() {
+            Vec::new()
+        } else {
+            std::mem::take(&mut self.ir.to_mut().model.configurations)
+        };
+        self.losses.extend(named_loss(
+            F3dLossCode::WriterConfigurationOmitted,
+            "configuration",
+            "the written Design form holds no configuration table",
+            configurations.iter().map(|row| row.id.to_string()),
+        ));
+    }
+
     /// The losses, with `export:output.empty` when no geometry is written,
     /// and what the write does with each native record.
     pub(super) fn finish(mut self) -> (Vec<LossNote>, NativeDispositions) {
@@ -588,6 +611,15 @@ impl<'a> Reduction<'a> {
     /// A row that a parameter of the written design scope restates is written
     /// or charged with that parameter.
     fn drop_design_only_arenas(&mut self) {
+        let writes_configurations = self.writes_neutral_design();
+        if !writes_configurations {
+            let dropped = self.remove_native_arenas(|arena| arena == "design_configurations");
+            self.native.drop_records(
+                "f3d",
+                "because the written Design form holds no configuration table or rule document",
+                dropped,
+            );
+        }
         let model = &self.ir.model;
         if model.parameters.is_empty() && model.configurations.is_empty() {
             return;
@@ -601,8 +633,15 @@ impl<'a> Reduction<'a> {
             BTreeSet::new()
         };
         let model = &mut self.ir.to_mut().model;
-        let parameters = std::mem::take(&mut model.parameters);
-        let configurations = std::mem::take(&mut model.configurations);
+        let (kept, parameters): (Vec<_>, Vec<_>) = std::mem::take(&mut model.parameters)
+            .into_iter()
+            .partition(|row| restated.contains(row.id.as_str()));
+        model.parameters = kept;
+        let configurations = if writes_configurations {
+            Vec::new()
+        } else {
+            std::mem::take(&mut model.configurations)
+        };
         let reason = "the source-less F3D generator writes it only from native Design records";
         self.losses.extend(named_loss(
             F3dLossCode::WriterParameterOmitted,
@@ -1567,7 +1606,10 @@ impl<'a> Reduction<'a> {
     /// Write the design from its neutral records: drop every native record
     /// the B-rep stream is not written from. Returns whether it dropped one.
     fn drop_design_stream(&mut self, reason: &str) -> bool {
-        let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
+        let configurations = !self.neutral_dropped && super::design::root_scope(&self.ir).is_some();
+        let dropped = self.remove_native_arenas(|arena| {
+            !(BREP_ARENAS.contains(&arena) || configurations && arena == "design_configurations")
+        });
         let progressed = !dropped.is_empty();
         self.design_dropped |= progressed;
         self.native.drop_records("f3d", reason, dropped);
@@ -1752,6 +1794,16 @@ impl<'a> Reduction<'a> {
     fn drop_native(&mut self, reason: &str) -> bool {
         if self.ir.native.namespace("f3d").is_none() {
             return false;
+        }
+        let configurations = !self.neutral_dropped && super::design::root_scope(&self.ir).is_some();
+        if configurations {
+            let dropped = self.remove_native_arenas(|arena| arena != "design_configurations");
+            if dropped.is_empty() {
+                return false;
+            }
+            self.design_dropped = true;
+            self.native.drop_records("f3d", &format!("because the source-less generator cannot write the document with them ({reason})"), dropped);
+            return true;
         }
         self.design_dropped = true;
         let namespace = self.ir.to_mut().native.0.remove("f3d").unwrap_or_default();

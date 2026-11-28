@@ -411,6 +411,11 @@ fn unique(stated: &str, taken: &BTreeSet<&str>) -> String {
 }
 
 impl Plan {
+    pub(super) fn without_source(mut self) -> Self {
+        self.source = None;
+        self
+    }
+
     /// The configuration whose row the root record names.
     pub(super) fn active(&self) -> Option<&str> {
         self.active.as_deref()

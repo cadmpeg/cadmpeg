@@ -339,6 +339,16 @@ pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignPara
         .into_record(TEST_PARAMETER_STREAM, 0)
 }
 
+/// Decode a bounded parameter frame at its location in the Design stream.
+pub(crate) fn decode_parameter_frame(
+    frame: &[u8],
+    stream: &str,
+    at: usize,
+) -> Result<Option<DesignParameter>, CodecError> {
+    Ok(parse_design_parameter(frame)?
+        .and_then(|parsed| locate_design_parameter(parsed, stream, at)))
+}
+
 /// Design `BulkStream` name used when a test parses one isolated frame.
 #[cfg(test)]
 const TEST_PARAMETER_STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";

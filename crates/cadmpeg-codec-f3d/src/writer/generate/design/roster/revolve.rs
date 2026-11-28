@@ -79,7 +79,7 @@ pub(in crate::writer::generate::design) struct RevolveRecords {
     axis: AxisRecords,
     carrier: CarrierRecords,
     /// The `AlongAngle` owner, its parameter and its companion.
-    angle: [u32; 3],
+    pub(in crate::writer::generate::design) angle: [u32; 3],
     start: StartRecords,
     /// The side face of each loop entry off the axis, and the body.
     results: ResultRecords,

@@ -28,6 +28,9 @@ pub(super) const UNIT_SYSTEMS: [u32; 6] = [47, 67, 87, 107, 124, 141];
 /// The basenames of the configuration-table and configuration-rule members
 /// that records 185 and 186 name.
 pub(super) fn configuration_basenames(ctx: &Context<'_>) -> [String; 2] {
+    if let Some(names) = &ctx.configuration_names {
+        return names.clone();
+    }
     [
         format!(
             "DesignConfigurationTable.{}.dsgcfg",
