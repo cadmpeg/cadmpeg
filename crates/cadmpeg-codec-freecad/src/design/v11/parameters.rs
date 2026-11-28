@@ -2,10 +2,8 @@
 //! The properties and sketch constraints of a Body's features, and the
 //! properties of the Body, as v11 parameters.
 
-use std::cell::OnceCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
@@ -30,15 +28,11 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::spreadsheets::CellAddress;
 
 use crate::design::cell_content::formula::{
-    self, Class, Kind, Origin, Path, Reference, Scope, Unparsed, Value,
+    self, Kind, Origin, Path, Python, Reference, Scope, Unparsed, Value,
 };
-use crate::design::cell_content::{self, CellContent, CellKind, Dimensions};
+use crate::design::cell_content::{self, CellContent, CellKind};
 use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyRecord};
-
-use super::DesignSources;
-
-mod python;
 
 /// The property type of a sketch's constraints, whose values `FreeCAD` stores
 /// in millimetres and radians.
@@ -63,11 +57,11 @@ pub(super) fn project(
     definition: &ProductDefinitionId,
     containers: &BTreeMap<FeatureId, ContainerId>,
     features: &[Feature],
-    sources: &DesignSources<'_, '_>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Vec<DesignParameter> {
-    let carriers = sources
-        .properties
+    let carriers = properties
         .iter()
         .map(|property| (property.id.as_str(), property.type_name.as_str()))
         .collect::<HashMap<_, _>>();
@@ -102,24 +96,22 @@ pub(super) fn project(
             .and_then(|property| carriers.get(property).copied())
             == Some(SHEET)
     };
-    let catalog = Catalog::new(&by_id, sources);
+    let catalog = Catalog::new(&by_id, objects, properties);
     let minted = minted
         .iter()
         .map(|parameter| &parameter.id)
         .collect::<BTreeSet<_>>();
-    let cells = by_id
+    let formulas = by_id
         .values()
         .filter(|parameter| is_cell(parameter))
-        .map(|parameter| (&parameter.id, cell_content::read(&parameter.expression)))
+        .filter_map(
+            |parameter| match cell_content::read(&parameter.expression) {
+                CellContent::Formula(text) => Some((&parameter.id, formula::parse(text))),
+                CellContent::Text(_) | CellContent::Value(_) => None,
+            },
+        )
         .collect::<BTreeMap<_, _>>();
-    let formulas = cells
-        .iter()
-        .filter_map(|(id, content)| match content {
-            CellContent::Formula(text) => Some((*id, formula::parse_with_paths(text))),
-            _ => None,
-        })
-        .collect::<BTreeMap<_, _>>();
-    let values = cell_values(&by_id, &cells, &formulas, &catalog);
+    let (values, assumed) = cell_values(&by_id, &formulas, &catalog, &is_cell);
     let mut projected = Vec::new();
     for parameter in all() {
         let Some(owner) = owners.get(&parameter.id) else {
@@ -136,16 +128,12 @@ pub(super) fn project(
         let context = Context {
             catalog: &catalog,
             values: &values,
+            assumed: &assumed,
             minted: &minted,
         };
         let (kind, value, parameter_definition) = if sheet {
-            let (kind, value, expression) = cell(
-                parameter,
-                &cells[&parameter.id],
-                formulas.get(&parameter.id),
-                &context,
-                losses,
-            );
+            let (kind, value, expression) =
+                cell(parameter, formulas.get(&parameter.id), &context, losses);
             (kind, value, ParameterDefinition::Expression(expression))
         } else {
             let (kind, value) = kind_and_value(parameter.value.as_ref());
@@ -199,7 +187,7 @@ pub(super) fn project(
 }
 
 /// The objects, properties, and parameters that a formula's paths name.
-struct Catalog<'a, 'data> {
+struct Catalog<'a> {
     parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
     /// Each object by its name.
     names: HashMap<&'a str, &'a ObjectRecord>,
@@ -209,13 +197,12 @@ struct Catalog<'a, 'data> {
     objects: HashMap<FeatureId, &'a ObjectRecord>,
     /// The feature of each object, by the object's id.
     features: HashMap<&'a str, FeatureId>,
-    /// The property by its owner's id and its name.
-    properties: HashMap<(&'a str, &'a str), &'a PropertyRecord>,
-    links: HashMap<(&'a str, &'a str), ScalarLink<'a>>,
-    python: HashMap<&'a str, OnceCell<Value>>,
-    entries: &'a BTreeMap<String, View<'data>>,
-    /// Whether each admitted shape payload has a root.
-    shapes: HashMap<&'a str, bool>,
+    /// The type of each property, by its owner's id and its name.
+    types: HashMap<(&'a str, &'a str), &'a str>,
+    /// The link properties whose value is a tuple or `None`, by owner's id
+    /// and name: an `XLink` that stores a sub-name, and a link that stores no
+    /// target.
+    refused: HashSet<(&'a str, &'a str)>,
     /// Each parameter by its owner and a name a path gives it: a
     /// property's name, `Constraints.<name>`, and a cell's alias and
     /// address. A name that two parameters share names neither.
@@ -224,22 +211,11 @@ struct Catalog<'a, 'data> {
     cells: HashMap<FeatureId, Vec<(CellAddress, &'a ParameterId)>>,
 }
 
-enum ScalarLink<'a> {
-    Local(&'a ObjectRecord),
-    Null,
-    Tuple,
-    External,
-}
-
 /// What a path names.
 enum Target<'a> {
-    /// A parameter, with the value of its property where the property has a
-    /// stated type.
-    Parameter {
-        id: &'a ParameterId,
-        typed: Option<Value>,
-        indirect: bool,
-    },
+    /// A parameter, with the Python type of its property where the property
+    /// has a stated type.
+    Parameter(&'a ParameterId, Option<Python>),
     /// A property that is no parameter, with its value.
     Property(Value),
     /// A property of another document or of a sub-object.
@@ -247,10 +223,11 @@ enum Target<'a> {
     Unresolved,
 }
 
-impl<'a, 'data> Catalog<'a, 'data> {
+impl<'a> Catalog<'a> {
     fn new(
         parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
-        sources: &DesignSources<'a, 'data>,
+        objects: &'a [ObjectRecord],
+        properties: &'a [PropertyRecord],
     ) -> Self {
         let mut catalog = Self {
             parameters,
@@ -258,74 +235,53 @@ impl<'a, 'data> Catalog<'a, 'data> {
             labels: HashMap::new(),
             objects: HashMap::new(),
             features: HashMap::new(),
-            properties: HashMap::new(),
-            links: HashMap::new(),
-            python: HashMap::new(),
-            entries: sources.entries,
-            shapes: sources
-                .shapes
-                .iter()
-                .filter_map(|shape| {
-                    let tables = crate::brep::Tables::from_payload(shape)?;
-                    Some((shape.property.as_str(), !tables.roots.is_empty()))
-                })
-                .collect(),
+            types: HashMap::new(),
+            refused: HashSet::new(),
             named: HashMap::new(),
             cells: HashMap::new(),
         };
-        for object in sources.objects {
+        for object in objects {
             catalog.names.insert(object.name().as_str(), object);
             if let Ok(feature) = crate::design::feature_id(object) {
                 catalog.objects.insert(feature.clone(), object);
                 catalog.features.insert(object.id().as_str(), feature);
             }
         }
-        let ids = sources
-            .objects
+        let ids = objects
             .iter()
             .map(|object| (object.id().as_str(), object))
             .collect::<HashMap<_, _>>();
         let mut holders = HashMap::new();
-        for property in sources.properties {
+        for property in properties {
             holders.insert(property.id.as_str(), property.owner.as_str());
-            let held = (property.owner.as_str(), property.name.as_str());
-            catalog.properties.insert(held, property);
-            let carrier = match property.type_name.as_str() {
-                "App::PropertyXLink" | "App::PropertyXLinkHidden" => Some(("XLink", "name")),
+            catalog.types.insert(
+                (property.owner.as_str(), property.name.as_str()),
+                property.type_name.as_str(),
+            );
+            let empty = |tag: &str, key: &str| {
+                property.values().iter().any(|value| {
+                    value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
+                })
+            };
+            let refused = match property.type_name.as_str() {
+                "App::PropertyXLink" => {
+                    empty("XLink", "name")
+                        || property.values().iter().any(|value| {
+                            value.tag == "XLink"
+                                && (value.attributes.contains_key("sub")
+                                    || value.attributes.contains_key("count"))
+                        })
+                }
                 "App::PropertyLink"
                 | "App::PropertyLinkChild"
                 | "App::PropertyLinkGlobal"
-                | "App::PropertyLinkHidden" => Some(("Link", "value")),
-                _ => None,
+                | "App::PropertyLinkHidden" => empty("Link", "value"),
+                _ => false,
             };
-            if let Some((tag, key)) = carrier {
-                let empty = property.values().iter().any(|value| {
-                    value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
-                });
-                let target = match (empty, property.links()) {
-                    (true, _) => Some(ScalarLink::Null),
-                    (_, [Some(link)]) if link.document().is_some() => Some(ScalarLink::External),
-                    (_, [Some(link)]) => {
-                        let object = link.object().and_then(|id| ids.get(id));
-                        Some(match object {
-                            Some(object) if object.id() != &property.owner => {
-                                if link.subelements().is_empty() {
-                                    ScalarLink::Local(object)
-                                } else {
-                                    ScalarLink::Tuple
-                                }
-                            }
-                            _ => ScalarLink::Null,
-                        })
-                    }
-                    _ => None,
-                };
-                if let Some(target) = target {
-                    catalog.links.insert(held, target);
-                }
-            }
-            if property.type_name == "App::PropertyPythonObject" {
-                catalog.python.insert(property.id.as_str(), OnceCell::new());
+            if refused {
+                catalog
+                    .refused
+                    .insert((property.owner.as_str(), property.name.as_str()));
             }
             let label = (property.name == "Label" && property.type_name == "App::PropertyString")
                 .then(|| property.values().iter().find(|value| value.tag == "String"))
@@ -396,7 +352,7 @@ impl<'a, 'data> Catalog<'a, 'data> {
             return Target::Unresolved;
         };
         let components = path.components.as_slice();
-        let (mut object, mut rest) = match components.split_first() {
+        let (object, rest) = match components.split_first() {
             Some((first, rest)) if path.origin != Origin::Own && !rest.is_empty() => {
                 let named = (path.origin != Origin::Label)
                     .then(|| self.names.get(first.as_str()).copied())
@@ -408,96 +364,43 @@ impl<'a, 'data> Catalog<'a, 'data> {
             }
             _ => (*own, components),
         };
-        let mut indirect = false;
-        while let Some((name, sub)) = rest.split_first() {
-            let held = (object.id().as_str(), name.as_str());
-            if !sub.is_empty() {
-                if let Some(ScalarLink::Local(target)) = self.links.get(&held) {
-                    if matches!(sub, [label] if matches!(label.as_str(), "Label" | "Label2")) {
-                        return Target::Property(Value::of(&[Class::Text]));
-                    }
-                    object = target;
-                    rest = sub;
-                    indirect = true;
-                    continue;
-                }
-            }
-            let typed = self.properties.get(&held).map(|property| {
-                match (self.links.get(&held), sub.is_empty()) {
-                    (Some(ScalarLink::Null), true) => Value::none(),
-                    (Some(ScalarLink::Null | ScalarLink::Tuple), false) => {
-                        Value::of(&[Class::Raises])
-                    }
-                    (Some(ScalarLink::Tuple), true) => Value::of(&[Class::Tuple]),
-                    (Some(ScalarLink::Local(_)), true) => Value::of(&[Class::Object]),
-                    (Some(ScalarLink::External), _) => Value::any(),
-                    _ if sub.is_empty() && property.type_name == "App::PropertyPythonObject" => {
-                        self.python[property.id.as_str()]
-                            .get_or_init(|| python::object(property, self.entries))
-                            .clone()
-                    }
-                    _ => {
-                        let has_root =
-                            self.shapes.get(property.id.as_str()).copied().or_else(|| {
-                                property
-                                    .values()
-                                    .iter()
-                                    .any(|value| {
-                                        value.tag == "Part"
-                                            && value
-                                                .attributes
-                                                .get("file")
-                                                .is_some_and(String::is_empty)
-                                    })
-                                    .then_some(false)
-                            });
-                        property_value(property, sub, has_root, indirect)
-                    }
-                }
-            });
-            let key = std::iter::once(name.replace('$', ""))
-                .chain(sub.iter().cloned())
-                .collect::<Vec<_>>()
-                .join(".");
-            if let Some(feature) = self.features.get(object.id().as_str()) {
-                if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
-                    return Target::Parameter {
-                        id,
-                        typed,
-                        indirect,
-                    };
-                }
-            }
-            return match typed {
-                Some(value) => Target::Property(value),
-                None if indirect => Target::Property(Value::any()),
-                None => Target::Unresolved,
-            };
+        let Some((property, _)) = rest.split_first() else {
+            return Target::Unresolved;
+        };
+        if path.indexed {
+            return Target::Unresolved;
         }
-        Target::Unresolved
+        let Some(feature) = self.features.get(object.id().as_str()) else {
+            return Target::Unresolved;
+        };
+        let key = std::iter::once(property.replace('$', ""))
+            .chain(rest[1..].iter().cloned())
+            .collect::<Vec<_>>()
+            .join(".");
+        let typed = self.types.get(&(object.id().as_str(), property.as_str()));
+        if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
+            return Target::Parameter(
+                id,
+                typed.map(|type_name| property_python(type_name, &rest[1..])),
+            );
+        }
+        if self
+            .refused
+            .contains(&(object.id().as_str(), property.as_str()))
+        {
+            return Target::Property(Value::new(Kind::Unknown, Python::Refused));
+        }
+        match typed {
+            Some(type_name) => Target::Property(Value::new(
+                property_kind(type_name, &rest[1..]),
+                property_python(type_name, &rest[1..]),
+            )),
+            None => Target::Unresolved,
+        }
     }
 
-    fn range_address(&self, owner: &FeatureId, name: &str) -> Option<CellAddress> {
-        CellAddress::parse(&name.replace('$', "")).or_else(|| {
-            let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
-            self.cells
-                .get(owner)?
-                .iter()
-                .find(|(_, cell)| *cell == id)
-                .map(|(address, _)| *address)
-        })
-    }
-
-    fn range_endpoint(&self, owner: Option<&FeatureId>, name: &str) -> Option<&'a ParameterId> {
-        let owner = owner?;
-        let address = self.range_address(owner, name)?;
-        self.cells
-            .get(owner)?
-            .iter()
-            .find_map(|(found, id)| (*found == address).then_some(*id))
-    }
-
-    /// The stored cells of the sheet within the rectangle named by this range.
+    /// The cells of the sheet `owner` from `from` to `to`, each an address or
+    /// an alias.
     fn range(
         &self,
         owner: Option<&FeatureId>,
@@ -506,207 +409,81 @@ impl<'a, 'data> Catalog<'a, 'data> {
     ) -> Option<Vec<&'a ParameterId>> {
         let owner = owner?;
         let cells = self.cells.get(owner)?;
-        let (from, to) = (
-            self.range_address(owner, from)?,
-            self.range_address(owner, to)?,
-        );
+        let corner = |name: &str| {
+            CellAddress::parse(&name.replace('$', "")).or_else(|| {
+                let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
+                cells
+                    .iter()
+                    .find(|(_, cell)| *cell == id)
+                    .map(|(address, _)| *address)
+            })
+        };
+        let (from, to) = (corner(from)?, corner(to)?);
         let rows = from.row().min(to.row())..=from.row().max(to.row());
         let columns = from.col().min(to.col())..=from.col().max(to.col());
-        let mut selected = cells
-            .iter()
-            .filter(|(address, _)| {
-                rows.contains(&address.row()) && columns.contains(&address.col())
-            })
-            .collect::<Vec<_>>();
-        selected.sort_unstable_by_key(|(address, _)| (address.col(), address.row()));
-        Some(selected.into_iter().map(|(_, id)| *id).collect())
+        Some(
+            cells
+                .iter()
+                .filter(|(address, _)| {
+                    rows.contains(&address.row()) && columns.contains(&address.col())
+                })
+                .map(|(_, id)| *id)
+                .collect(),
+        )
     }
 }
 
-/// The value of a property of type `type_name`, or of its component `sub`
-/// (`getPyObject`, `getPyPathValue`).
-fn property_value(
-    property: &PropertyRecord,
-    sub: &[String],
-    shape_has_root: Option<bool>,
-    indirect: bool,
-) -> Value {
-    let type_name = property.type_name.as_str();
+/// The kind of the value of a property of type `type_name`, or of its
+/// component `sub` (§5.12, Kind). A link property's `Label` and `Label2`
+/// are those of the object it names.
+fn property_kind(type_name: &str, sub: &[String]) -> Kind {
     let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
-    let raw = |tag: &str| match property.values() {
-        [value] if value.tag == tag => value.attributes.get("value").map(String::as_str),
-        _ => None,
-    };
-    let quantity = |quantity| Value::of(&[Class::quantity(quantity)]);
-    let scalar = |class, tag| Value::numeric(class, raw(tag).and_then(|value| value.parse().ok()));
-    match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
-        (Some("Integer" | "IntegerConstraint" | "Percent"), []) => Value::numeric(
-            Class::Int,
-            raw("Integer")
-                .and_then(|value| value.parse::<i32>().ok())
-                .map(f64::from),
-        ),
-        (Some("Float" | "FloatConstraint" | "Precision"), []) => scalar(Class::Float, "Float"),
+    let quantity = match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
+        (Some("Placement"), ["Base", "x" | "y" | "z"])
+        | (Some("VectorDistance" | "Position"), ["x" | "y" | "z"]) => Quantity::LENGTH,
+        (Some("Placement"), ["Rotation", "Angle"]) => Quantity::ANGLE,
         (
             Some("Placement"),
             ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
-        ) => Value::of(&[Class::Float]),
-        (Some("Bool"), []) => Value::numeric(
-            Class::Boolean,
-            raw("Bool").map(|value| f64::from(u8::from(value == "true"))),
-        ),
-        (Some("Placement"), ["Base", "x" | "y" | "z"])
-        | (Some("VectorDistance" | "Position" | "Direction"), ["x" | "y" | "z"])
-            if !indirect =>
-        {
-            quantity(Quantity::LENGTH)
-        }
-        (Some("Placement"), ["Rotation", "Angle"]) | (Some("Rotation"), ["Angle"]) if !indirect => {
-            quantity(Quantity::ANGLE)
-        }
-        (Some("Placement"), ["Base", "x" | "y" | "z"] | ["Rotation", "Angle"])
-        | (Some("Rotation"), ["Angle"] | ["Axis", "x" | "y" | "z"])
+        ) => Quantity::REAL,
+        (Some("Bool"), []) => return Kind::Boolean,
+        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), [])
         | (
-            Some("Vector" | "VectorDistance" | "Position" | "Direction"),
-            ["x" | "y" | "z" | "Length"],
-        ) => Value::of(&[Class::Float]),
-        (Some("Placement"), ["Base"] | ["Rotation", "Axis"]) | (Some("Rotation"), ["Axis"]) => {
-            Value::of(&[Class::Vector])
-        }
-        (Some("Placement"), ["Rotation"]) => Value::of(&[Class::Object]),
-        (Some("Quantity" | "QuantityConstraint"), []) => Value::of(&[Class::Quantity(None)]),
-        (Some("Enumeration"), []) if indirect => {
-            if enumeration_index(property).is_some() {
-                Value::of(&[Class::Text])
-            } else {
-                Value::of(&[Class::Text, Class::Refused])
-            }
-        }
-        (Some("Enumeration"), []) => Value::numeric(Class::Int, enumeration_index(property)),
-        (Some("Enumeration"), ["String"]) if !indirect => {
-            if enumeration_index(property).is_some() {
-                Value::of(&[Class::Text])
-            } else {
-                Value::of(&[Class::Text, Class::Raises])
-            }
-        }
-        (Some("Enumeration"), ["Enum" | "All"]) if !indirect => {
-            Value::of(&[Class::Tuple, Class::Raises])
-        }
-        (Some("String" | "File" | "FileIncluded" | "Font" | "UUID"), []) => {
-            raw("String").map_or_else(|| Value::of(&[Class::Text]), Value::text)
-        }
-        (Some("Path"), []) => raw("Path").map_or_else(|| Value::of(&[Class::Text]), Value::text),
-        (Some("Vector" | "VectorDistance" | "Position" | "Direction"), []) => {
-            Value::of(&[Class::Vector])
-        }
+            Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
+            ["Label" | "Label2"],
+        ) => return Kind::Text,
+        (Some(name), []) => match property_quantity(name) {
+            Some(quantity) => quantity,
+            None => return Kind::Unknown,
+        },
+        _ => return Kind::Unknown,
+    };
+    Kind::Quantity(quantity)
+}
+
+/// The Python type of the value of a property of type `type_name`, or of its
+/// component `sub` (`getPyObject`, `getPyPathValue`): a link with sub-names
+/// and a color are tuples, an integer set is a `set`, and a Python object
+/// property holds an object of any type.
+fn property_python(type_name: &str, sub: &[String]) -> Python {
+    let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
+    match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
+        (Some("Integer" | "IntegerConstraint" | "Percent" | "Bool"), []) => Python::Int,
+        (Some("Float" | "FloatConstraint" | "Precision"), [])
+        | (
+            Some("Placement"),
+            ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
+        ) => Python::Float,
         (
             Some(
                 "LinkSub" | "LinkSubChild" | "LinkSubGlobal" | "LinkSubHidden" | "XLinkSub"
-                | "XLinkSubHidden",
+                | "XLinkSubHidden" | "Color" | "IntegerSet",
             ),
             [],
-        ) => Value::of(&[Class::Tuple, Class::Refused]),
-        (Some("Color"), []) => Value::of(&[Class::Tuple]),
-        (Some("IntegerSet"), []) => Value::of(&[Class::Refused]),
-        (Some("Placement"), []) => Value::of(&[Class::Placement]),
-        (
-            Some(
-                "LinkList" | "LinkListChild" | "LinkListGlobal" | "LinkListHidden" | "XLinkList"
-                | "LinkSubList" | "LinkSubListChild" | "LinkSubListGlobal" | "LinkSubListHidden"
-                | "XLinkSubList" | "IntegerList" | "FloatList" | "StringList" | "BoolList"
-                | "ColorList" | "MaterialList" | "VectorList" | "PlacementList",
-            ),
-            [],
-        ) => Value::of(&[Class::List]),
-        (Some("Map"), []) => Value::of(&[Class::Dict]),
-        (Some("Rotation" | "Matrix" | "Material"), []) => Value::of(&[Class::Object]),
-        (Some(name), []) => property_quantity(name)
-            .map(Dimensions::from_quantity)
-            .or_else(|| property_native_dimensions(name))
-            .map_or_else(Value::any, |dimensions| {
-                scalar(Class::Quantity(Some(dimensions)), "Float")
-            }),
-        (None, ["Length" | "Area" | "Volume"]) if type_name == "Part::PropertyPartShape" => {
-            Value::of(match shape_has_root {
-                Some(true) => &[Class::Float],
-                Some(false) => &[Class::Raises],
-                None => &[Class::Float, Class::Raises],
-            })
-        }
-        (None, []) if type_name == "Part::PropertyShapeHistory" => Value::none(),
-        (None, [])
-            if matches!(
-                type_name,
-                "Part::PropertyGeometryList"
-                    | "Part::PropertyTopoShapeList"
-                    | "Part::PropertyFilletEdges"
-                    | "Part::PropertyShapeCache"
-                    | "Sketcher::PropertyConstraintList"
-            ) =>
-        {
-            Value::of(&[Class::List])
-        }
-        (None, [])
-            if matches!(
-                type_name,
-                "Part::PropertyPartShape"
-                    | "Spreadsheet::PropertySheet"
-                    | "Spreadsheet::PropertyColumnWidths"
-                    | "Spreadsheet::PropertyRowHeights"
-            ) =>
-        {
-            Value::of(&[Class::Object])
-        }
-        _ => Value::any(),
+        ) => Python::Refused,
+        (Some("PythonObject"), []) => Python::Opaque,
+        _ => Python::Object,
     }
-}
-
-fn enumeration_index(property: &PropertyRecord) -> Option<f64> {
-    let [index, items] = property.values() else {
-        return None;
-    };
-    if index.tag != "Integer"
-        || !index.attributes.contains_key("CustomEnum")
-        || items.tag != "CustomEnumList"
-    {
-        return None;
-    }
-    let index: i32 = index.attributes.get("value")?.parse().ok()?;
-    let count: i32 = items.attributes.get("count")?.parse().ok()?;
-    (0..count).contains(&index).then_some(f64::from(index))
-}
-
-fn property_native_dimensions(name: &str) -> Option<Dimensions> {
-    let dimensions = match name {
-        "AmountOfSubstance" => [0, 0, 0, 0, 0, 0, 1, 0],
-        "CurrentDensity" => [-2, 0, 0, 0, 1, 0, 0, 0],
-        "ElectricalCapacitance" => [-2, -1, 0, 4, 2, 0, 0, 0],
-        "ElectricalInductance" => [2, 1, 0, -2, -2, 0, 0, 0],
-        "ElectricalConductance" => [-2, -1, 0, 3, 2, 0, 0, 0],
-        "ElectricalConductivity" => [-3, -1, 0, 3, 2, 0, 0, 0],
-        "ElectricalResistance" => [2, 1, 0, -3, -2, 0, 0, 0],
-        "ElectricCharge" => [0, 0, 0, 1, 1, 0, 0, 0],
-        "SurfaceChargeDensity" => [-2, 0, 0, 1, 1, 0, 0, 0],
-        "VolumeChargeDensity" => [-3, 0, 0, 1, 1, 0, 0, 0],
-        "ElectricCurrent" => [0, 0, 0, 0, 1, 0, 0, 0],
-        "ElectricPotential" => [2, 1, 0, -3, -1, 0, 0, 0],
-        "LuminousIntensity" => [0, 0, 0, 0, 0, 0, 0, 1],
-        "MagneticFieldStrength" | "Magnetization" => [-1, 0, 0, 0, 1, 0, 0, 0],
-        "MagneticFlux" => [2, 1, 0, -2, -1, 0, 0, 0],
-        "MagneticFluxDensity" => [0, 1, 0, -2, -1, 0, 0, 0],
-        "ElectromagneticPotential" => [1, 1, 0, -2, -1, 0, 0, 0],
-        "SpecificHeat" => [2, 0, 0, -2, 0, -1, 0, 0],
-        "Temperature" => [0, 0, 0, 0, 0, 1, 0, 0],
-        "ThermalConductivity" => [1, 1, 0, -3, 0, -1, 0, 0],
-        "ThermalExpansionCoefficient" | "VolumetricThermalExpansionCoefficient" => {
-            [0, 0, 0, 0, 0, -1, 0, 0]
-        }
-        "ThermalTransferCoefficient" => [0, 1, 0, -3, 0, -1, 0, 0],
-        "VacuumPermittivity" => [-3, -1, 0, 4, 2, 0, 0, 0],
-        _ => return None,
-    };
-    Some(Dimensions(dimensions))
 }
 
 /// The quantity of a quantity property `App::Property<name>`.
@@ -740,62 +517,48 @@ fn property_quantity(name: &str) -> Option<Quantity> {
         "DynamicViscosity" => Quantity::of(-1, 1, 0, -1),
         "SpecificEnergy" => Quantity::of(2, 0, 0, -2),
         "DissipationRate" => Quantity::of(2, 0, 0, -3),
-        "HeatFlux" => Quantity::of(0, 1, 0, -3),
-        "Stiffness" => Quantity::of(0, 1, 0, -2),
-        "StiffnessDensity" => Quantity::of(-2, 1, 0, -2),
+        "Float" | "FloatConstraint" | "Precision" | "Integer" | "IntegerConstraint" | "Percent" => {
+            Quantity::REAL
+        }
         _ => return None,
     })
 }
 
-/// The kind of a cell's result, and the value that a reference to the cell
-/// reads.
-#[derive(Debug, Clone)]
-struct CellValue {
-    kind: Kind,
-    value: Value,
-}
-
-impl CellValue {
-    fn of(value: Value) -> Self {
-        Self {
-            kind: value.kind(),
-            value: value.into_stored(),
-        }
-    }
-}
-
 /// The values of the cells of each sheet, each formula after the cells it
-/// references. A formula in a cycle has no kind the file determines.
+/// references, and the formula cells whose kind takes a plain number of
+/// unstated value as an `int`. A value cell's number is an `int` where it is
+/// whole. A formula in a cycle has no kind the file determines.
 fn cell_values<'a>(
     parameters: &BTreeMap<&'a ParameterId, &'a LegacyParameter>,
-    cells: &BTreeMap<&'a ParameterId, CellContent<'a>>,
-    formulas: &BTreeMap<&'a ParameterId, formula::Parsed<'a>>,
-    catalog: &Catalog<'a, '_>,
-) -> HashMap<&'a ParameterId, CellValue> {
+    formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
+    catalog: &Catalog<'a>,
+    is_cell: &dyn Fn(&LegacyParameter) -> bool,
+) -> (HashMap<&'a ParameterId, Value>, BTreeSet<&'a ParameterId>) {
+    let text = Value::new(Kind::Text, Python::Object);
     let mut values = HashMap::new();
-    for (&id, content) in cells {
-        let value = match content {
-            CellContent::Text(text) => Value::text(*text),
-            CellContent::Value(value) => Value::numeric(
-                if value.dimensions == Dimensions::REAL {
-                    Value::number(value.freecad_number.unwrap_or(value.number))
-                } else {
-                    Class::Quantity(Some(value.dimensions))
-                },
-                value.freecad_number,
-            ),
-            CellContent::Error => Value::of(&[Class::Raises]),
-            CellContent::Unmodeled => Value::any(),
-            CellContent::Formula(_) => match &formulas[&id].tree {
-                Err(Unparsed::Syntax) => Value::text(parameters[id].expression.as_str()),
-                _ => continue,
+    let mut assumed = BTreeSet::new();
+    for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
+        let value = match cell_content::read(&parameter.expression) {
+            CellContent::Text(_) => text,
+            CellContent::Value(value) => match value.kind {
+                CellKind::Quantity(Quantity::REAL) => {
+                    Value::new(Kind::Quantity(Quantity::REAL), Python::of(value.number))
+                }
+                CellKind::Quantity(quantity) => {
+                    Value::new(Kind::Quantity(quantity), Python::Object)
+                }
+                CellKind::Native(_) => Value::new(Kind::Unknown, Python::Object),
+            },
+            CellContent::Formula(_) => match formulas.get(&parameter.id) {
+                Some(Err(Unparsed::Syntax)) => text,
+                Some(Ok(_) | Err(Unparsed::Limit)) | None => continue,
             },
         };
-        values.insert(id, CellValue::of(value));
+        values.insert(&parameter.id, value);
     }
     let pending = formulas
         .iter()
-        .filter_map(|(id, parsed)| Some((*id, parsed.tree.as_ref().ok()?)))
+        .filter_map(|(id, node)| Some((*id, node.as_ref().ok()?)))
         .collect::<BTreeMap<_, _>>();
     let mut waiting = BTreeMap::new();
     let mut dependents = BTreeMap::<&ParameterId, Vec<&ParameterId>>::new();
@@ -807,16 +570,12 @@ fn cell_values<'a>(
         for reference in node.references() {
             match reference {
                 Reference::Path(path) => {
-                    if let Target::Parameter { id, .. } = catalog.resolve(owner, path) {
-                        sources.insert(id);
+                    if let Target::Parameter(target, _) = catalog.resolve(owner, path) {
+                        sources.insert(target);
                     }
                 }
-                Reference::Range(range) => {
-                    sources.extend(
-                        catalog
-                            .range(owner, range.from, range.to)
-                            .unwrap_or_default(),
-                    );
+                Reference::Range(from, to) => {
+                    sources.extend(catalog.range(owner, from, to).unwrap_or_default());
                 }
             }
         }
@@ -839,9 +598,14 @@ fn cell_values<'a>(
             catalog,
             values: &values,
             owner,
+            projected: false,
+            assumed: false,
         };
         let value = pending[id].value(&mut lookup);
-        values.insert(id, CellValue::of(value));
+        if lookup.assumed {
+            assumed.insert(id);
+        }
+        values.insert(id, Value::new(value.kind, pending[id].stored(value)));
         for dependent in dependents.get(id).into_iter().flatten() {
             if let Some(count) = waiting.get_mut(dependent) {
                 *count -= 1;
@@ -852,71 +616,61 @@ fn cell_values<'a>(
         }
     }
     for id in formulas.keys() {
-        values.entry(*id).or_insert(CellValue {
-            kind: Kind::Unknown,
-            value: Value::any(),
-        });
+        values
+            .entry(*id)
+            .or_insert(Value::new(Kind::Unknown, Python::Unsettled));
     }
-    values
+    (values, assumed)
 }
 
 /// The values a formula's paths take: a parameter's from its cell's value
 /// or its stored value, and a property's from its type.
-struct Lookup<'c, 'a, 'data> {
-    catalog: &'c Catalog<'a, 'data>,
-    values: &'c HashMap<&'a ParameterId, CellValue>,
+struct Lookup<'c, 'a> {
+    catalog: &'c Catalog<'a>,
+    values: &'c HashMap<&'a ParameterId, Value>,
     owner: Option<&'c FeatureId>,
+    /// A cell of no kind the file determines is the real it is projected
+    /// as.
+    projected: bool,
+    /// The formula's kind takes a plain number of unstated value as an
+    /// `int`.
+    assumed: bool,
 }
 
-impl Lookup<'_, '_, '_> {
-    /// The value of parameter `id`, whose property has the value `typed`
-    /// where the property has a stated type: a cell's from its result, and
-    /// another parameter's from its property's type and its stored value.
-    fn parameter(&self, id: &ParameterId, typed: Option<Value>) -> Value {
-        if let Some(cell) = self.values.get(id) {
-            return cell.value.clone();
+impl Lookup<'_, '_> {
+    /// The value of parameter `id`, whose property has Python type `typed`
+    /// where the property has a stated type.
+    fn parameter(&self, id: &ParameterId, typed: Option<Python>) -> Value {
+        if let Some(value) = self.values.get(id) {
+            return match value.kind {
+                Kind::Unknown if self.projected => {
+                    Value::new(Kind::Quantity(Quantity::REAL), value.python)
+                }
+                _ => *value,
+            };
         }
         let Some(parameter) = self.catalog.parameters.get(id) else {
-            return typed.unwrap_or_else(Value::any);
+            return Value::new(Kind::Unknown, Python::Object);
         };
-        let stored = match &parameter.value {
-            Some(LegacyValue::Length(length)) => {
-                Value::numeric(Class::quantity(Quantity::LENGTH), Some(length.get()))
-            }
-            Some(LegacyValue::Angle(angle)) => Value::numeric(
-                Class::quantity(Quantity::ANGLE),
-                Some(angle.get().to_degrees()),
-            ),
-            Some(LegacyValue::Real(_)) => Value::of(&[Class::Int, Class::Float]),
-            Some(LegacyValue::Integer(value)) => {
-                Value::numeric(Class::Int, i32::try_from(*value).ok().map(f64::from))
-            }
-            Some(LegacyValue::Boolean(value)) => {
-                Value::numeric(Class::Boolean, Some(f64::from(u8::from(*value))))
-            }
-            Some(LegacyValue::String(text)) => Value::text(text.as_str()),
-            None => Value::any(),
+        let (kind, python) = match &parameter.value {
+            Some(LegacyValue::Length(_)) => (Kind::Quantity(Quantity::LENGTH), Python::Object),
+            Some(LegacyValue::Angle(_)) => (Kind::Quantity(Quantity::ANGLE), Python::Object),
+            Some(LegacyValue::Real(_)) => (Kind::Quantity(Quantity::REAL), Python::Unsettled),
+            Some(LegacyValue::Integer(_)) => (Kind::Quantity(Quantity::REAL), Python::Int),
+            Some(LegacyValue::Boolean(_)) => (Kind::Boolean, Python::Int),
+            Some(LegacyValue::String(_)) => (Kind::Text, Python::Object),
+            None => (Kind::Unknown, Python::Object),
         };
-        match (typed, stored.kind()) {
-            (Some(typed), _) if typed.is_any() => stored,
-            (Some(typed), Kind::Quantity(quantity))
-                if typed.classes() == [Class::Quantity(None)] =>
-            {
-                Value::numeric(Class::quantity(quantity), stored.numeric_fact())
-            }
-            (Some(typed), Kind::Quantity(_)) => typed,
-            (Some(typed), Kind::Boolean | Kind::Text | Kind::Unknown) => typed,
-            (None, _) => stored,
-        }
+        Value::new(kind, typed.unwrap_or(python))
     }
 }
 
-impl Scope for Lookup<'_, '_, '_> {
+impl Scope for Lookup<'_, '_> {
     fn path(&mut self, path: &Path) -> Value {
         match self.catalog.resolve(self.owner, path) {
-            Target::Parameter { id, typed, .. } => self.parameter(id, typed),
+            Target::Parameter(id, typed) => self.parameter(id, typed),
             Target::Property(value) => value,
-            Target::Outside | Target::Unresolved => Value::any(),
+            Target::Outside | Target::Unresolved => Value::new(Kind::Unknown, Python::Object),
         }
     }
 
@@ -924,12 +678,19 @@ impl Scope for Lookup<'_, '_, '_> {
         let ids = self.catalog.range(self.owner, from, to)?;
         Some(ids.into_iter().map(|id| self.parameter(id, None)).collect())
     }
+
+    fn assume_integer(&mut self) {
+        self.assumed = true;
+    }
 }
 
 /// What the projection of a parameter's expression reads.
-struct Context<'c, 'a, 'data> {
-    catalog: &'c Catalog<'a, 'data>,
-    values: &'c HashMap<&'a ParameterId, CellValue>,
+struct Context<'c, 'a> {
+    catalog: &'c Catalog<'a>,
+    values: &'c HashMap<&'a ParameterId, Value>,
+    /// The formula cells whose kind takes a plain number of unstated value
+    /// as an `int`.
+    assumed: &'c BTreeSet<&'a ParameterId>,
     /// The parameters that have no model record, and so no stored
     /// dependencies: their references, and each reference to them, bind.
     minted: &'c BTreeSet<&'a ParameterId>,
@@ -950,25 +711,26 @@ fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
     NonBlankString::new(name.to_owned())
 }
 
-/// Spreadsheet cells keep literal values or the result kind of their formula.
+/// A cell's kind, value, and expression (§5.12), read as `FreeCAD` reads
+/// its content (`cell_content`). A value of a quantity whose units have
+/// symbols is a neutral literal; another value is the source's text. A
+/// formula that `FreeCAD` does not parse is text. A formula has the kind of
+/// its result, and where the file does not determine that kind it is a real,
+/// with a loss.
 fn cell(
     parameter: &LegacyParameter,
-    content: &CellContent<'_>,
-    formula: Option<&formula::Parsed<'_>>,
-    context: &Context<'_, '_, '_>,
+    formula: Option<&Result<formula::Node<'_>, Unparsed>>,
+    context: &Context<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> (ValueKind, Option<ParameterValue>, Expression) {
-    let raw = parameter.expression.as_str();
-    let text = match content {
-        CellContent::Formula(text) => *text,
+    let content = parameter.expression.as_str();
+    let text = match cell_content::read(content) {
+        CellContent::Formula(text) => text,
         CellContent::Text(text) => return text_cell(text),
-        CellContent::Error | CellContent::Unmodeled => {
-            return unknown_cell(parameter, source(raw, Vec::new()), losses);
-        }
         CellContent::Value(value) => {
-            let kind = match &value.kind {
-                CellKind::Quantity(quantity) => ValueKind::Quantity(*quantity),
-                CellKind::Native(unit) => ValueKind::Native(unit.clone()),
+            let kind = match value.kind {
+                CellKind::Quantity(quantity) => ValueKind::Quantity(quantity),
+                CellKind::Native(unit) => ValueKind::Native(unit),
             };
             if !value.number.is_finite() {
                 losses.push(FreecadLossCode::ParameterValueNonFinite.note(format!(
@@ -979,10 +741,9 @@ fn cell(
             }
             let expression = value
                 .neutral
-                .as_deref()
-                .and_then(|text| expr::parse(text, &[], &[]).ok())
+                .and_then(|text| expr::parse(&text, &[], &[]).ok())
                 .map_or_else(
-                    || source(raw, Vec::new()),
+                    || source(content, Vec::new()),
                     |tree| Expression::Neutral(Neutral(tree)),
                 );
             return (
@@ -992,22 +753,25 @@ fn cell(
             );
         }
     };
-    let node = match formula.map(|parsed| &parsed.tree) {
+    let node = match formula {
         Some(Ok(node)) => node,
-        Some(Err(Unparsed::Syntax)) | None => return text_cell(raw),
         Some(Err(Unparsed::Limit)) => {
-            let references = formula
-                .into_iter()
-                .flat_map(|parsed| &parsed.partial_paths)
-                .map(Reference::Path);
-            let spans = bind_references(parameter, text, references, context, true, losses);
-            return unknown_cell(parameter, source(text, source_tokens(text, &spans)), losses);
+            assumed(parameter, losses);
+            return (
+                ValueKind::Quantity(Quantity::REAL),
+                None,
+                source(text, Vec::new()),
+            );
         }
+        Some(Err(Unparsed::Syntax)) | None => return text_cell(content),
     };
     let kind = context
         .values
         .get(&parameter.id)
         .map_or(Kind::Unknown, |value| value.kind);
+    if kind != Kind::Unknown && context.assumed.contains(&parameter.id) {
+        integer_assumed(parameter, losses);
+    }
     let expression = translated(parameter, text, node, context, kind, None, losses);
     match kind {
         Kind::Quantity(quantity) => {
@@ -1022,7 +786,10 @@ fn cell(
             (ValueKind::Boolean, value, expression)
         }
         Kind::Text => (ValueKind::Text, None, expression),
-        Kind::Unknown => unknown_cell(parameter, expression, losses),
+        Kind::Unknown => {
+            assumed(parameter, losses);
+            (ValueKind::Quantity(Quantity::REAL), None, expression)
+        }
     }
 }
 
@@ -1034,24 +801,20 @@ fn text_cell(text: &str) -> (ValueKind, Option<ParameterValue>, Expression) {
     )
 }
 
-fn unknown_cell(
-    parameter: &LegacyParameter,
-    expression: Expression,
-    losses: &mut Vec<LossNote>,
-) -> (ValueKind, Option<ParameterValue>, Expression) {
-    losses.push(
-        FreecadLossCode::ParameterExpressionResultUnresolved.note(format!(
-            "FCStd cell {} keeps the source expression with an unresolved result kind",
-            parameter.id.as_str()
-        )),
-    );
-    (
-        ValueKind::Native(cadmpeg_core::nonblank_literal!(
-            "fcstd:unresolved-expression-result"
-        )),
-        None,
-        expression,
-    )
+fn assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
+    losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
+        "FCStd cell {} has a formula whose kind the file does not determine; its kind is \
+         a dimensionless real",
+        parameter.id.as_str()
+    )));
+}
+
+fn integer_assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
+    losses.push(FreecadLossCode::ParameterIntegerAssumed.note(format!(
+        "FCStd parameter {} repeats a string by a plain number whose value the file does not \
+         store; its kind takes that number as an integer",
+        parameter.id.as_str()
+    )));
 }
 
 /// The unit of a cell's display unit, where it has the cell's quantity and
@@ -1123,7 +886,7 @@ fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterVa
 /// stored value and charged a loss.
 fn expression(
     parameter: &LegacyParameter,
-    context: &Context<'_, '_, '_>,
+    context: &Context<'_, '_>,
     kind: &ValueKind,
     carrier: Option<&str>,
     losses: &mut Vec<LossNote>,
@@ -1137,18 +900,20 @@ fn expression(
             return Expression::Neutral(Neutral(literal));
         }
     }
-    let parsed = formula::parse_with_paths(text);
-    let Ok(node) = parsed.tree else {
-        let references = parsed.partial_paths.iter().map(Reference::Path);
-        let spans = bind_references(parameter, text, references, context, false, losses);
-        return source(text, source_tokens(text, &spans));
+    let Ok(node) = formula::parse(text) else {
+        return source(text, Vec::new());
     };
     let mut lookup = Lookup {
         catalog: context.catalog,
         values: context.values,
         owner: parameter.owner.as_ref(),
+        projected: true,
+        assumed: false,
     };
     let stated = node.kind(&mut lookup);
+    if stated != Kind::Unknown && lookup.assumed {
+        integer_assumed(parameter, losses);
+    }
     translated(parameter, text, &node, context, stated, Some(kind), losses)
 }
 
@@ -1284,20 +1049,58 @@ fn translated(
     parameter: &LegacyParameter,
     text: &str,
     node: &formula::Node<'_>,
-    context: &Context<'_, '_, '_>,
+    context: &Context<'_, '_>,
     stated: Kind,
     kind: Option<&ValueKind>,
     losses: &mut Vec<LossNote>,
 ) -> Expression {
-    let spans = bind_references(
-        parameter,
-        text,
-        node.references().into_iter(),
-        context,
-        kind.is_none(),
-        losses,
-    );
-    let tokens = source_tokens(text, &spans);
+    let mut spans = BTreeMap::new();
+    let mut dropped = Vec::new();
+    for reference in node.references() {
+        let Reference::Path(path) = reference else {
+            continue;
+        };
+        match context.catalog.resolve(parameter.owner.as_ref(), path) {
+            Target::Parameter(id, _)
+                if context.minted.contains(&parameter.id)
+                    || context.minted.contains(id)
+                    || parameter
+                        .dependencies
+                        .iter()
+                        .any(|dependency| dependency == id) =>
+            {
+                let reference = ParameterRef {
+                    target: RefTarget::Parameter(id.clone()),
+                    through: None,
+                };
+                spans.insert(path.span.start, (path.span.end, reference));
+            }
+            Target::Property(_) | Target::Outside => {
+                dropped.push(text.get(path.span.clone()).unwrap_or(text));
+            }
+            Target::Parameter(..) | Target::Unresolved => {}
+        }
+    }
+    if !dropped.is_empty() {
+        losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
+            "FCStd parameter {} references {}, which is no parameter; the reference stays \
+             the source's text",
+            parameter.id.as_str(),
+            dropped.join(", ")
+        )));
+    }
+    let mut tokens = Vec::new();
+    let mut at = 0;
+    for (start, (end, reference)) in &spans {
+        if *start > at {
+            tokens.push(ExpressionToken::Text(text[at..*start].to_owned()));
+        }
+        tokens.push(ExpressionToken::Reference(reference.clone()));
+        at = *end;
+    }
+    if at < text.len() {
+        tokens.push(ExpressionToken::Text(text[at..].to_owned()));
+    }
     let mut refs = Vec::new();
     let tree = neutral_text(node, &spans, &mut refs)
         .and_then(|neutral| Some((expr::parse(&neutral, &refs, &[]).ok()?, neutral)));
@@ -1324,128 +1127,6 @@ fn translated(
     source(text, tokens)
 }
 
-type Bindings = BTreeMap<usize, (usize, ParameterRef)>;
-
-fn bind_references<'n, 'a: 'n>(
-    parameter: &LegacyParameter,
-    text: &str,
-    references: impl Iterator<Item = Reference<'n, 'a>>,
-    context: &Context<'_, '_, '_>,
-    sheet: bool,
-    losses: &mut Vec<LossNote>,
-) -> Bindings {
-    let mut spans = BTreeMap::new();
-    let mut dropped = Vec::new();
-    let mut indirect = Vec::new();
-    let mut missing_range_members = Vec::new();
-    let owner = parameter.owner.as_ref();
-    let bind = |spans: &mut Bindings, span: &std::ops::Range<usize>, id: &ParameterId| {
-        spans.insert(
-            span.start,
-            (
-                span.end,
-                ParameterRef {
-                    target: RefTarget::Parameter(id.clone()),
-                    through: None,
-                },
-            ),
-        );
-    };
-    for reference in references {
-        match reference {
-            Reference::Path(path) => match context.catalog.resolve(owner, path) {
-                Target::Parameter {
-                    id,
-                    indirect: false,
-                    ..
-                } if sheet
-                    || context.minted.contains(&parameter.id)
-                    || context.minted.contains(id)
-                    || parameter.dependencies.contains(id) =>
-                {
-                    bind(&mut spans, &path.span, id);
-                }
-                Target::Property(_) | Target::Outside => dropped.push(&text[path.span.clone()]),
-                Target::Parameter { indirect: true, .. } => indirect.push(&text[path.span.clone()]),
-                Target::Parameter {
-                    indirect: false, ..
-                }
-                | Target::Unresolved
-                    if sheet =>
-                {
-                    dropped.push(&text[path.span.clone()]);
-                }
-                Target::Parameter {
-                    indirect: false, ..
-                }
-                | Target::Unresolved => {}
-            },
-            Reference::Range(range) if sheet => {
-                let ids =
-                    [range.from, range.to].map(|name| context.catalog.range_endpoint(owner, name));
-                for (span, id) in range.spans.iter().zip(ids) {
-                    if let Some(id) = id {
-                        bind(&mut spans, span, id);
-                    } else if owner
-                        .and_then(|owner| context.catalog.range_address(owner, &text[span.clone()]))
-                        .is_none()
-                    {
-                        dropped.push(&text[span.clone()]);
-                    }
-                }
-                if context
-                    .catalog
-                    .range(owner, range.from, range.to)
-                    .is_some_and(|members| {
-                        members
-                            .into_iter()
-                            .any(|member| !ids.contains(&Some(member)))
-                    })
-                {
-                    missing_range_members.push(&text[range.spans[0].start..range.spans[1].end]);
-                }
-            }
-            Reference::Range(_) => {}
-        }
-    }
-    for (paths, reason) in [
-        (dropped, "has no resolved parameter binding"),
-        (indirect, "uses a link with no projected occurrence path"),
-        (
-            missing_range_members,
-            "has interior cell bindings beyond its two source endpoints",
-        ),
-    ] {
-        if !paths.is_empty() {
-            losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
-                "FCStd parameter {} refers to {}. The expression {reason}",
-                parameter.id.as_str(),
-                paths.join(", ")
-            )));
-        }
-    }
-    spans
-}
-
-fn source_tokens(text: &str, spans: &Bindings) -> Vec<ExpressionToken<ParameterRef>> {
-    let mut tokens = Vec::new();
-    let mut at = 0;
-    for (start, (end, reference)) in spans {
-        if *start < at {
-            continue;
-        }
-        if *start > at {
-            tokens.push(ExpressionToken::Text(text[at..*start].to_owned()));
-        }
-        tokens.push(ExpressionToken::Reference(reference.clone()));
-        at = *end;
-    }
-    if at < text.len() {
-        tokens.push(ExpressionToken::Text(text[at..].to_owned()));
-    }
-    tokens
-}
-
 /// The neutral text of a formula of numbers, units, the constants `pi` and
 /// `e`, references at `spans`, signs, groups, and `+ - * / ^`. Each operation
 /// is parenthesized, since the neutral syntax binds `^` tighter than a sign.
@@ -1456,13 +1137,8 @@ fn neutral_text(
 ) -> Option<String> {
     use formula::{Node as Formula, Operator};
     Some(match node {
-        Formula::Number { text, number, unit } => {
-            let number = formula::producer_number(*number)?;
-            let number = if text.len() > 39 && text.bytes().any(|byte| !byte.is_ascii_digit()) {
-                number.to_string()
-            } else {
-                text.replace(',', ".")
-            };
+        Formula::Number { text, unit } => {
+            let number = text.replace(',', ".");
             let number = if number.starts_with('.') {
                 format!("0{number}")
             } else {
@@ -1473,10 +1149,7 @@ fn neutral_text(
                 Some(unit) => format!("{number}[{}]", unit.spelling()?),
             }
         }
-        Formula::Constant { name, unit, .. } if matches!(*name, "pi" | "e") => match unit {
-            None => (*name).to_owned(),
-            Some(unit) => format!("({name} * 1[{}])", unit.spelling()?),
-        },
+        Formula::Constant { name, .. } if matches!(*name, "pi" | "e") => (*name).to_owned(),
         Formula::Path(path) => {
             let (_, reference) = spans.get(&path.span.start)?;
             let index = refs
@@ -1499,13 +1172,7 @@ fn neutral_text(
                 Operator::Multiply => "*",
                 Operator::Divide => "/",
                 Operator::Power => "^",
-                Operator::Remainder
-                | Operator::Equal
-                | Operator::NotEqual
-                | Operator::Less
-                | Operator::LessEqual
-                | Operator::Greater
-                | Operator::GreaterEqual => return None,
+                Operator::Remainder | Operator::Equal | Operator::Order => return None,
             };
             let left = neutral_text(left, spans, refs)?;
             let right = match right.as_ref() {
@@ -1518,15 +1185,15 @@ fn neutral_text(
     })
 }
 
-/// Keep a text token in a source expression, including a lone reference.
+/// The source's tokens of `text`. A source token list holds a text token
+/// (part 10): a lone reference stays the source's text.
 fn source(text: &str, mut tokens: Vec<ExpressionToken<ParameterRef>>) -> Expression {
     if !text.is_empty()
         && !tokens
             .iter()
             .any(|token| matches!(token, ExpressionToken::Text(_)))
     {
-        let text = if tokens.is_empty() { text } else { "" };
-        tokens.push(ExpressionToken::Text(text.to_owned()));
+        tokens = vec![ExpressionToken::Text(text.to_owned())];
     }
     Expression::Source {
         dialect: ExpressionDialect::FreeCad,

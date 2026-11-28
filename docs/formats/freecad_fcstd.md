@@ -604,17 +604,17 @@ Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an
 parameter whose identity includes its sheet and address. Address and alias remain separate;
 content, display unit, alignment, style, colors, and spans are retained independently. Cell content
 that starts with `=` is a formula, and content that starts with `'` is the text after the mark.
-Raw content first takes the C library's complete-number form, including signed decimal and
-hexadecimal numbers, infinity, and NaN. Nonempty ASCII space, tab, and line-ending content
-gives zero. A raw cell with a numeric prefix and no complete C number takes the formula
-grammar. A numeric node, a numeric node with a simple unit, or a division between two such
-operands is a value. The divisor can also be a simple unit. Parentheses keep the enclosed
-operand's shape, and constants are numeric nodes. A simple unit is one word or symbol of
-FreeCAD's unit vocabulary. The expression lexer accepts decimal point, decimal comma and
-exponent spellings. Other raw content is text, including `3 bolts`, `2*3`, `-5 mm`, and
-`2 mm^2`. A text cell's value is its text. A length, angle, or dimensionless value gets a
-legacy value in millimetres, radians, or its stored number. A numeric formula literal with a
-compatible unit can supply the same legacy value.
+Other content is a value where, after its surrounding white space, it is a number, a number with a
+unit, or a division whose numerator is a number or a number with a unit and whose denominator is a
+number, a number with a unit, or a unit. A number is unsigned and takes a `.` or `,` decimal mark
+and an exponent, and content that is one signed number in the C library's form is also a value. A
+unit is a word of `FreeCAD`'s unit vocabulary, a parenthesized product or quotient of units, or a
+unit with an integer power. Every other content is text, including content that starts with a
+digit or a sign (`3 bolts`, `2*3`, `-5 mm`). A text cell's value is its text. A value cell's value
+is a length in millimetres, an angle in radians, or a dimensionless real; a value of another
+quantity has no legacy value. A formula states its own value where it is a number with an optional
+length unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or
+angle unit (`deg`, `°`, `rad`). Other formula content remains an expression without a value.
 Content without a leading `=` references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
@@ -631,69 +631,65 @@ time (`5 mA`) has the `Native` kind named by its unit as written, its number as 
 value, and the source's text as its expression. A formula is a neutral expression where it
 translates. An expression names a cell by its alias or its address, unqualified within its sheet
 and as `Sheet.name` elsewhere. A reference to an object property that is no parameter stays the
-source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A cell
-whose formula is rejected by `FreeCAD`'s expression grammar retains its content as text. A
-value cell whose number is not finite has no value and emits `parameter.value-non-finite`.
-Cells store their input. The decoder can carry a numeric literal already in the formula text
-as a value. Computed values are absent from the file. A formula's kind follows `FreeCAD`'s
-expression rules. A
-reference to a cell uses the runtime type and any value determined by its content. A
-conditional evaluates the branch selected by the condition's Python truth value.
+source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A formula
+that `FreeCAD`'s expression grammar does not read is a text cell whose value is its content. A
+value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
+formula cell stores no value. Its value kind is the kind of its result under `FreeCAD`'s unit
+rules, with the cells it references read first in dependency order:
 
-- A number without a unit becomes a Python `int` when it is whole and fits a C long, and a
-  `float` otherwise. A positive whole number above the C int bound and within the C long
-  bound takes a narrowing conversion whose result depends on the FreeCAD build.
-  Dimensionless numeric aggregates and computed cell values follow the same runtime rule. A typed float property remains a `float` at the point of access. A Boolean
-  behaves as an `int` in Python arithmetic. Direct enumeration references give their
-  integer index. A valid enumeration reached through a scalar link gives its text label.
-- A `<<…>>` literal, a successful `str()` call, string concatenation and successful string
-  `%` formatting give text. Multiplying a
-  string or list by an integer or Boolean repeats it. The multiplier must fit a Python
-  sequence index and the repeated size must fit the sequence's allocation.
-- Equality and ordering use the operands' Python comparison methods. The arithmetic
-  operand guard refuses `None`, tuples and sets. String formatting uses its own
-  right-operand rules. Plain Python division and numeric remainder raise on zero
-  divisors. A cell whose formula raises holds the error text at runtime. A call with
-  an unknown name or invalid argument count stays literal cell text.
-- Addition and subtraction of quantities require the same units. Multiplication and
-  division add and subtract all native unit exponents. Every intermediate unit requires
-  exponents from −8 through 7. A quantity's remainder preserves its unit. A plain number's remainder by a
-  quantity raises. For a quantity `x`, `x ^ n` with a plain numeric exponent and
-  `pow(x; n)` multiply each unit exponent by `n` where each product is an integer.
-  With a dimensionless quantity exponent, `x ^ n` uses the integer part of `n` for the
-  unit exponents. For a unit-bearing base, `pow(x; n)` also requires
-  `n - round(n) < 1e-9`, with halves rounded away from zero.
-- Numeric functions require numbers and check their units. `parsequant` parses a quantity
-  string and returns a quantity object. An aggregate passes over nonnumeric arguments
-  outside ranges. It raises at an argument that raises or a cell in its range with a
-  nonnumeric property. `sum`, `min`, `max`, `average`, and `stddev` require matching
-  quantities. `stddev` requires at least two contributing numbers and a unit that can be
-  squared.
-- List addition concatenates. Vector addition produces a vector. Vector multiplication
-  gives a dot product. `create(<<vector>>; …)` constructs a vector. `translationm` accepts
-  a vector or a sequence of three numbers.
-- String, path and file properties give text. `Label` and `Label2` of the object that a
-  scalar link names give text. A local scalar link restores to `None` when its target is
-  absent or names its own object. A link with a sub-selection gives a tuple. A path
-  through a scalar local link follows the target's Python attributes. Placement and
-  vector coordinates obtained this way are `float` values. The `Length`, `Area`, and
-  `Volume` of a non-null shape are `float` values. A `Part` element with an empty `file`
-  attribute restores a null shape. Access to a null shape's measures raises.
-- An `App::PropertyPythonObject` takes its value from JSON in the `Python` element or
-  its named archive member. `true` and `false` give Boolean. A number with a `.`, `e`,
-  or `E` gives a float, and an integer token gives an int. `NaN`, `Infinity`, and
-  `-Infinity` give floats. A JSON string, array, or object gives a Python string, list,
-  or dictionary. `null`, a stored class instance, and an absent JSON value give classes
-  outside the arithmetic operand guard. Base64 JSON accepts a final group of two or three
-  digits without padding.
+- A `<<…>>` string, `str()`, `address()`, the sum of two strings, a string `%` a value, and the
+  product of a string and a Python `int` or `bool`, which repeats the string, are text.
+- A dimensionless number that `FreeCAD` hands to an operator is a Python `int` where its value is
+  whole and a `float` otherwise: a number with no unit, a unitless value cell, a dimensionless
+  `sum`, `min`, `max`, `average`, `stddev`, `count`, `and`, or `or`, and a formula cell whose result
+  is a dimensionless number. A Boolean, an `App::PropertyInteger`, `IntegerConstraint`, or
+  `Percent` property, a sum, a difference, a product, or a remainder of `int` values, `x ^ n` of
+  `int` values with a constant `n` of zero or more, and `href` of an `int` are `int` values. An
+  `App::PropertyFloat`, `FloatConstraint`, or `Precision` property, a placement's axis component,
+  yaw, pitch, or roll, `pi`, `e`, a quotient, and a sum, a difference, or a product with a `float`
+  are `float` values. Every other function returns a quantity object. Where the product of a
+  string and a dimensionless number has a number of unstated value, such as a formula cell whose
+  result is not a constant or an aggregate of numbers that are not all `int` values or constants,
+  the number is an `int`, the result is text, and the parameter emits
+  `parameter.integer-assumed`. A parameter whose expression references that parameter takes its
+  text and emits no `parameter.integer-assumed` of its own. A `sum`, `min`, `max`, or `average` of
+  constants is its value.
+- `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
+  Boolean cell are Boolean. `==` and `!=` compare any two values that `FreeCAD` evaluates and
+  admits as operands. Refused operands are `None` (a link that stores no target), a tuple (an
+  `App::PropertyLinkSub` value, a link that stores a sub-name, a color, `tuple()`), a set (an
+  `App::PropertyIntegerSet` value), an `App::PropertyPythonObject` value, a conditional with a
+  refused branch, and an operand that raises. An operand raises where it is an operator with a
+  refused operand, or where it is `cos`, `sin`, `tan`, `acos`, `asin`, `atan`, `exp`, `log`,
+  `log10`, `sinh`, `tanh`, `cosh`, `round`, `trunc`, `ceil`, `floor`, `abs`, `sqrt`, `cbrt`,
+  `atan2`, `mod`, `pow`, `hypot`, `cath`, or `not` with an argument that is text or refused or whose
+  unit the function does not take. `<`, `<=`, `>`, and `>=` compare
+  two strings, two values of one quantity, a Boolean and a number, and a quantity and a
+  dimensionless `int` or `float`. In arithmetic and in a function argument, a Boolean is a
+  dimensionless number.
+- A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
+  typed property of an object, or a placement or vector component, takes the property's quantity;
+  a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
+  property names are text, where the link stores no sub-name.
+- Addition and subtraction of equal quantities keep the quantity; a
+  product and a quotient add and subtract the exponents of the units; the remainder of a quantity
+  keeps its quantity, and the remainder of a plain number by a quantity raises;
+  `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
+  integer.
+- `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
+  `average`, and `stddev` keep the quantity of their values, and an aggregate passes over an
+  argument that is no number (text, `None`, a tuple, a set) and stops at a text, Boolean, or `None`
+  cell of a range and at an argument that raises; `sqrt` and `cbrt` divide its
+  exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
+  `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
+  `vlinedist` and `vplanedist` give a length.
 
-The operand types and values establish the kind of a supported formula result. An
-unresolved kind, an expression that raises, and a formula result outside the four CADIR
-quantity dimensions keep the source expression without a cache under the native kind
-`fcstd:unresolved-expression-result`. The decoder emits
-`parameter.expression-result-unresolved`. A stored value cell with an extra dimension
-uses a `Native` kind. Source expressions bind resolved paths and range endpoints. The
-decoder charges dependencies it cannot express as source reference tokens. A display unit whose quantity is the cell's and whose words each have a symbol is
+Where the file does not determine the result's kind, as for a reference to another document, to a
+property with no stated quantity, or to a cell of a reference cycle, the product of a string and
+a `float` or a quantity, `Label` of a link that stores a sub-name, an ordering of a string and a
+number, of two different quantities, or of a quantity and a function result, and a comparison with
+a refused operand, the cell's kind is a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
+real number. A display unit whose quantity is the cell's and whose words each have a symbol is
 the parameter's `unit`. Another display unit of a quantity cell is the native option
 `fcstd:displayUnit` (Text, Rule N case (a)). Alignment, style, foreground and background colors, and the display unit of a
 text cell are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`,

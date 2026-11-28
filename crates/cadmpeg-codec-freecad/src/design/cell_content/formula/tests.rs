@@ -3,24 +3,25 @@ use std::collections::HashMap;
 
 use cadmpeg_ir::design::units::Quantity;
 
-use super::Class::{self, Boolean, Float, Int, Object, Refused, Text, Vector};
-use super::{parse, Kind, Node, Operator, Origin, Path, Reference, Scope, Unparsed, Value};
+use super::{parse, Kind, Node, Operator, Origin, Path, Python, Reference, Scope, Unparsed, Value};
 
 const REAL: Kind = Kind::Quantity(Quantity::REAL);
 const LENGTH: Kind = Kind::Quantity(Quantity::LENGTH);
 const ANGLE: Kind = Kind::Quantity(Quantity::ANGLE);
 const AREA: Kind = Kind::Quantity(Quantity::AREA);
 
-/// Properties by their components joined with `.`, and one range.
+/// Properties by their components joined with `.`, one range, and whether a
+/// formula took a number of unstated value as an `int`.
 #[derive(Default)]
 struct Names {
     paths: HashMap<String, Value>,
     range: Option<Vec<Value>>,
+    assumed: bool,
 }
 
 impl Names {
-    fn insert(&mut self, name: &str, classes: &[Class]) {
-        self.paths.insert(name.to_owned(), Value::of(classes));
+    fn insert(&mut self, name: &str, kind: Kind, python: Python) {
+        self.paths.insert(name.to_owned(), Value::new(kind, python));
     }
 }
 
@@ -28,21 +29,24 @@ impl Scope for Names {
     fn path(&mut self, path: &Path) -> Value {
         self.paths
             .get(&path.components.join("."))
-            .cloned()
-            .unwrap_or_else(Value::any)
+            .copied()
+            .unwrap_or(Value::new(Kind::Unknown, Python::Object))
     }
 
     fn range(&mut self, _from: &str, _to: &str) -> Option<Vec<Value>> {
         self.range.clone()
     }
+
+    fn assume_integer(&mut self) {
+        self.assumed = true;
+    }
 }
 
-fn quantity(quantity: Quantity) -> Class {
-    Class::quantity(quantity)
-}
-
-fn cells(classes: &[Class]) -> Vec<Value> {
-    classes.iter().map(|class| Value::of(&[*class])).collect()
+fn quantities(kinds: &[Kind]) -> Vec<Value> {
+    kinds
+        .iter()
+        .map(|kind| Value::new(*kind, Python::Object))
+        .collect()
 }
 
 fn kind_in(text: &str, scope: &mut Names) -> Kind {
@@ -57,7 +61,7 @@ fn kind(text: &str) -> Kind {
 
 fn path(text: &str) -> Path {
     match parse(text) {
-        Ok(Node::Path(path) | Node::Indexed(path, _)) => path,
+        Ok(Node::Path(path)) => path,
         other => panic!("{text:?} is no path: {other:?}"),
     }
 }
@@ -67,7 +71,7 @@ fn numbers_and_units_take_their_quantity() {
     assert_eq!(kind("2*3"), REAL);
     assert_eq!(kind("5 mm"), LENGTH);
     assert_eq!(kind("1,5 mm"), LENGTH);
-    assert_eq!(parse("mm").err(), Some(Unparsed::Syntax));
+    assert_eq!(kind("mm"), LENGTH);
     assert_eq!(kind("5 mm^2"), AREA);
     assert_eq!(kind("5 mm * 2 mm"), AREA);
     assert_eq!(kind("6 / mm"), Kind::Quantity(Quantity::of(-1, 0, 0, 0)));
@@ -92,16 +96,16 @@ fn operators_follow_the_unit_rules() {
     assert_eq!(kind("7 % 2 mm"), Kind::Unknown);
     assert_eq!(kind("1 mm < 2 mm"), Kind::Boolean);
     assert_eq!(kind("1 > 2 ? 3 mm : 4 mm"), LENGTH);
-    assert_eq!(kind("1 > 2 ? 3 mm : 4"), REAL);
+    assert_eq!(kind("1 > 2 ? 3 mm : 4"), Kind::Unknown);
 }
 
 #[test]
 fn a_comparison_and_a_truth_value_are_bools() {
     let mut scope = Names::default();
-    scope.insert("Flag", &[Boolean]);
-    scope.insert("A1", &[quantity(Quantity::LENGTH)]);
-    scope.insert("Ratio", &[Float]);
-    scope.insert("Part", &[Refused]);
+    scope.insert("Flag", Kind::Boolean, Python::Int);
+    scope.insert("A1", LENGTH, Python::Object);
+    scope.insert("Ratio", REAL, Python::Float);
+    scope.insert("Part", Kind::Unknown, Python::Refused);
     for text in [
         "True",
         "False",
@@ -114,6 +118,7 @@ fn a_comparison_and_a_truth_value_are_bools() {
         "A1 > Ratio",
         "A1 <= sum(2; 3)",
         "Flag ? True : 1 > 2",
+        "B9 == 1",
         "A1 == <<a>>",
         "cos(0) != Ratio",
     ] {
@@ -133,8 +138,6 @@ fn a_comparison_and_a_truth_value_are_bools() {
         "Part != 1",
         "(1 mm + 2 °) == 1",
         "-<<a>> == 1",
-        // A property the model does not resolve may hold `None`.
-        "B9 == 1",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
@@ -143,19 +146,15 @@ fn a_comparison_and_a_truth_value_are_bools() {
 #[test]
 fn text_times_a_number_repeats_only_for_an_int() {
     let mut scope = Names::default();
-    scope.insert("Flag", &[Boolean]);
-    scope.insert("Ratio", &[Float]);
-    scope
-        .paths
-        .insert("Count".into(), Value::numeric(Int, Some(3.0)));
-    scope
-        .paths
-        .insert("Whole".into(), Value::numeric(Int, Some(4.0)));
-    scope.insert("Unstated", &[Int]);
+    scope.insert("Flag", Kind::Boolean, Python::Int);
+    scope.insert("Ratio", REAL, Python::Float);
+    scope.insert("Count", REAL, Python::Int);
+    scope.insert("Whole", REAL, Python::Int);
     for text in [
         "<<a>> * 2",
         "3 * <<a>>",
         "<<a>> * 2.0",
+        "<<a>> * (1 + 2) % 2",
         "<<a>> * -2",
         "<<a>> * True",
         "<<a>> * Flag",
@@ -166,40 +165,38 @@ fn text_times_a_number_repeats_only_for_an_int() {
         "Whole * <<a>>",
         "<<a>> * sum(2; 3; <<b>>)",
         "<<a>> * 2^3",
-        "<<a>> * true",
-        "<<a>> * sum(<<b>>)",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
+        assert!(!scope.assumed, "{text:?}");
     }
     for text in [
         "<<a>> * 1.5",
         "<<a>> * pi",
         "<<a>> * (4 / 2)",
         "<<a>> * Ratio",
-        "<<a>> * Unstated",
         "<<a>> * (Count + Ratio)",
         "<<a>> * abs(2)",
         "<<a>> * 2 mm",
         "<<a>> * 2^-1",
-        "<<a>> * (1 + 2) % 2",
-        // An average of no number is NaN.
-        "<<a>> * average(<<b>>)",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
+    assert!(!scope.assumed);
 }
 
 #[test]
-fn repetition_requires_a_proved_integer_count() {
+fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
     for text in [
         "<<a>> * Cell",
         "<<a>> * average(Cell; 3)",
         "<<a>> * max(Cell; 2)",
+        "<<a>> * 2^Cell",
         "<<a>> * (Cell > 1 ? 2 : Cell)",
     ] {
         let mut scope = Names::default();
-        scope.insert("Cell", &[Int, Float]);
-        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+        scope.insert("Cell", REAL, Python::Unsettled);
+        assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
+        assert!(scope.assumed, "{text:?}");
     }
 }
 
@@ -216,6 +213,7 @@ fn an_aggregate_of_constants_is_its_value() {
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
     }
+    assert!(!scope.assumed);
 }
 
 #[test]
@@ -229,10 +227,8 @@ fn a_tuple_is_refused_by_a_comparison() {
 #[test]
 fn a_function_that_raises_is_refused_by_a_comparison() {
     let mut scope = Names::default();
-    scope.insert("A1", &[quantity(Quantity::LENGTH)]);
-    scope.insert("Cell", &[Int, Float]);
-    scope.insert("Whole", &[Int]);
-    scope.insert("Flag", &[Boolean]);
+    scope.insert("A1", LENGTH, Python::Object);
+    scope.insert("Cell", REAL, Python::Unsettled);
     for text in [
         "cos(5 mm) == 1",
         "sqrt(2 mm) != 1",
@@ -243,18 +239,17 @@ fn a_function_that_raises_is_refused_by_a_comparison() {
         "pow(2; 1 mm) == 1",
         "not(None) == 1",
         "hypot(3 mm; 4 °) == 1",
-        "pow(16 mm^4; 0.25) == 1",
-        "pow(16 mm; -9) == 1",
-        // A property the model does not resolve may hold no number, and a
-        // power of a unit by an unstored number may raise.
-        "round(Shape) == 1",
-        "pow(A1; Cell) == 1",
-        "pow(A1; Whole) == 1",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
-    // A Boolean exponent takes zero or one and fits in the unit exponent range.
-    for text in ["cos(30 °) == 1", "pow(A1; Flag) == 1", "not(5 mm) == 1"] {
+    // A function of a value of unknown kind, and a power of a quantity by a
+    // number the file does not store, evaluate.
+    for text in [
+        "cos(30 °) == 1",
+        "round(Shape) == 1",
+        "pow(A1; Cell) == 1",
+        "not(5 mm) == 1",
+    ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Boolean, "{text:?}");
     }
 }
@@ -262,9 +257,9 @@ fn a_function_that_raises_is_refused_by_a_comparison() {
 #[test]
 fn a_property_freecad_refuses_is_refused_by_a_comparison() {
     let mut scope = Names::default();
-    scope.insert("Empty", &[Refused]);
-    scope.insert("Ids", &[Refused]);
-    scope.insert("Proxy", &[Refused]);
+    scope.insert("Empty", Kind::Unknown, Python::Refused);
+    scope.insert("Ids", Kind::Unknown, Python::Refused);
+    scope.insert("Proxy", Kind::Unknown, Python::Opaque);
     for text in ["Empty == 1", "Ids != 1", "Proxy == 1", "-Proxy == 1"] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
@@ -273,14 +268,11 @@ fn a_property_freecad_refuses_is_refused_by_a_comparison() {
 #[test]
 fn a_conditional_with_a_refused_branch_is_refused_by_a_comparison() {
     let mut scope = Names::default();
-    scope.insert("Flag", &[Boolean]);
+    scope.insert("Flag", Kind::Boolean, Python::Int);
     for text in [
         "(Flag ? None : 1) == 1",
         "(Flag ? 1 : tuple(1; 2)) != 1",
         "(Flag ? cos(5 mm) : 1) == 1",
-        // A condition that raises raises.
-        "(cos(5 mm) > 0 ? 1 : 2) == 1",
-        "<<a>> < 1 ? 2 mm : 3 mm",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
@@ -290,90 +282,33 @@ fn a_conditional_with_a_refused_branch_is_refused_by_a_comparison() {
 #[test]
 fn an_aggregate_passes_over_a_value_that_is_no_number() {
     let mut scope = Names::default();
-    scope.insert("Part", &[Refused]);
-    scope.insert("Proxy", &[Refused]);
-    scope.insert("Placement", &[Class::Placement]);
-    scope.insert("Base", &[Vector]);
+    scope.insert("Part", Kind::Unknown, Python::Refused);
+    scope.insert("Proxy", Kind::Unknown, Python::Opaque);
     for (text, expected) in [
         ("sum(Part; 2 mm)", LENGTH),
         ("sum(None; tuple(1; 2); 3 mm)", LENGTH),
         ("max(<<a>>; 2)", REAL),
-        ("sum(Proxy; 2 mm)", LENGTH),
-        ("sum(Placement; 2 mm)", LENGTH),
-        ("sum(Base; list(1; 2); 2 mm)", LENGTH),
-        ("sum(-Base; 2 mm)", LENGTH),
-        ("count(Placement; 2 mm; 3 °)", REAL),
         // An argument of unknown kind, and one that raises.
         ("sum(Shape; 2 mm)", Kind::Unknown),
+        ("sum(Proxy; 2 mm)", Kind::Unknown),
         ("sum(1 mm + 2 °; 3 mm)", Kind::Unknown),
         ("sum(-None; 3 mm)", Kind::Unknown),
-        ("count(1 mm + 2 °)", Kind::Unknown),
     ] {
         assert_eq!(kind_in(text, &mut scope), expected, "{text:?}");
     }
     // A Boolean, a `None`, or a raising cell of a range raises.
-    scope.range = Some(cells(&[quantity(Quantity::LENGTH), Refused]));
-    for text in ["sum(A1:A2)", "sum(A1:A2) == 1", "count(A1:A2)"] {
-        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
-    }
-}
-
-#[test]
-fn stddev_of_fewer_than_two_values_raises() {
-    let mut scope = Names::default();
-    for (text, expected) in [
-        ("stddev(2 mm)", Kind::Unknown),
-        ("stddev(2 mm; <<a>>)", Kind::Unknown),
-        ("stddev(2 mm; 3 mm)", LENGTH),
-        ("stddev(2 mm^4; 3 mm^4) == 1", Kind::Unknown),
-    ] {
-        assert_eq!(kind_in(text, &mut scope), expected, "{text:?}");
-    }
-    scope.range = Some(cells(&[quantity(Quantity::LENGTH)]));
-    assert_eq!(kind_in("stddev(A1:A1)", &mut scope), Kind::Unknown);
-    scope.range = Some(cells(&[quantity(Quantity::LENGTH); 2]));
-    assert_eq!(kind_in("stddev(A1:A2)", &mut scope), LENGTH);
-}
-
-#[test]
-fn a_numeric_function_raises_on_an_object_that_is_no_number() {
-    let mut scope = Names::default();
-    scope.insert("Placement", &[Class::Placement]);
-    scope.insert("Base", &[Vector]);
-    for text in [
-        "cos(Placement) == 1",
-        "abs(Base) == 1",
-        "pow(2; Placement) == 1",
-        "cos(vector(1; 2; 3)) == 1",
-        "round(list(1; 2)) == 1",
-        "vangle(Placement; Base) == 1",
-        "Placement < 1",
-    ] {
-        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
-    }
-    for text in [
-        "Placement == 1",
-        "Base != Placement",
-        "vangle(Base; Base) < 1 °",
-    ] {
-        assert_eq!(kind_in(text, &mut scope), Kind::Boolean, "{text:?}");
-    }
-    assert_eq!(kind_in("vangle(Base; vector(1; 0; 0))", &mut scope), ANGLE);
-    assert_eq!(kind_in("vlinedist(Base; Base; Base)", &mut scope), LENGTH);
-}
-
-#[test]
-fn a_cell_that_raises_holds_text() {
-    let node = parse("cos(5 mm)").unwrap();
-    let value = node.value(&mut Names::default());
-    assert_eq!(value, Value::of(&[Class::Raises]));
-    assert_eq!(value.into_stored(), Value::of(&[Text]));
+    scope.range = Some(vec![
+        Value::new(LENGTH, Python::Object),
+        Value::new(Kind::Unknown, Python::Refused),
+    ]);
+    assert_eq!(kind_in("sum(A1:A2)", &mut scope), Kind::Unknown);
+    assert_eq!(kind_in("sum(A1:A2) == 1", &mut scope), Kind::Unknown);
 }
 
 #[test]
 fn a_quantitys_remainder_keeps_its_unit() {
     let mut scope = Names::default();
-    scope.insert("Flag", &[Boolean]);
+    scope.insert("Flag", Kind::Boolean, Python::Int);
     for (text, expected) in [
         ("cos(0) % 2 mm", REAL),
         ("7 mm % 2", LENGTH),
@@ -383,12 +318,6 @@ fn a_quantitys_remainder_keeps_its_unit() {
         ("7 % 2 mm", Kind::Unknown),
         ("2 % cos(0)", Kind::Unknown),
         ("Flag % 2 mm", Kind::Unknown),
-        // A string formats its right operand; an operand that raises raises.
-        ("<<%s>> % (1 mm + 2 °)", Kind::Unknown),
-        ("<<%s>> % None", Kind::Text),
-        // A plain number's power by a quantity object raises.
-        ("2 ^ cos(0)", Kind::Unknown),
-        ("cos(0) ^ 2", REAL),
     ] {
         assert_eq!(kind_in(text, &mut scope), expected, "{text:?}");
     }
@@ -426,11 +355,6 @@ fn functions_follow_the_unit_rules() {
     assert_eq!(kind("atan2(1 mm; 2 mm)"), ANGLE);
     assert_eq!(kind("sqrt(4 mm^2)"), LENGTH);
     assert_eq!(kind("sqrt(4 mm)"), Kind::Unknown);
-    assert_eq!(kind("pow(4 mm^2; 0.5)"), LENGTH);
-    assert_eq!(kind("pow(16 mm^4; 0.25)"), Kind::Unknown);
-    // A unit exponent of 8 or more overflows.
-    assert_eq!(kind("(2 mm^4)^2"), Kind::Unknown);
-    assert_eq!(kind("pow(2 mm^4; 2)"), Kind::Unknown);
     assert_eq!(kind("mod(7 mm, 2)"), LENGTH);
     assert_eq!(
         kind("pow(2 mm; 3)"),
@@ -439,77 +363,14 @@ fn functions_follow_the_unit_rules() {
     assert_eq!(kind("hypot(3 mm; 4 mm)"), LENGTH);
     assert_eq!(kind("max(3 mm; 4 mm)"), LENGTH);
     assert_eq!(kind("max(3 mm; 4 °)"), Kind::Unknown);
-    assert!(matches!(parse("unknownfn(3)"), Err(Unparsed::Syntax)));
-}
-
-#[test]
-fn formula_results_require_a_proven_operation() {
-    let mut scope = Names::default();
-    scope.insert("Operand", &[Object]);
-    scope
-        .paths
-        .insert("A1".into(), Value::numeric(Int, Some(2.0)));
-    for text in [
-        "(1 / 0) == 1",
-        "(1 % 0) == 1",
-        "<<%d>> % <<bad>>",
-        "<<%s %s>> % 1",
-        "<<%k>> % 1",
-        "list(cos(5 mm); 1)",
-        "tuple(cos(5 mm))",
-        "translationm(tuple(1; <<x>>; 3))",
-    ] {
-        assert_eq!(
-            parse(text).unwrap().value(&mut scope).classes(),
-            &[Class::Raises],
-            "{text}"
-        );
-    }
-    for text in [
-        "cos(0; 0) == 1",
-        "sum(no_such_function(1); 2 mm)",
-        "tuple()",
-        "address(1; 1; 1)",
-        "Vars.K",
-    ] {
-        assert!(matches!(parse(text), Err(Unparsed::Syntax)), "{text}");
-    }
-    for (text, expected) in [
-        ("2 > 1 ? 4 mm : 5", LENGTH),
-        ("1 == 2 ? cos(5 mm) : 4 mm", LENGTH),
-        ("pow(4 mm; A1)", AREA),
-        ("<<x>> * average(A1; 4)", Kind::Text),
-        ("pow(4 mm; count(A1; 4))", AREA),
-        ("4 A / 2 A", REAL),
-        ("4 V / 2 V", REAL),
-        ("2 A * 3 Ohm / 2 V", REAL),
-        ("sum(list(1; 2) + list(3); 2 mm)", LENGTH),
-        ("sum(create(<<vector>>); 2 mm)", LENGTH),
-        ("sum(create(<<vector>>; <<bad>>; 2; 3); 2 mm)", LENGTH),
-        (
-            "vangle(create(<<vector>>; 1; 2; 3); vector(1; 0; 0))",
-            ANGLE,
-        ),
-        (
-            "vangle(vector(1; 2; 3) + vector(1; 2; 3); vector(1; 0; 0))",
-            ANGLE,
-        ),
-        ("(vector(1; 2; 3) * vector(4; 5; 6)) + 2", REAL),
-        ("sum(translationm(vector(1; 2; 3)); 2 mm)", LENGTH),
-        ("sum(translationm(tuple(1; 2; 3)); 2 mm)", LENGTH),
-        ("parsequant(<<2 mm>>)", LENGTH),
-        ("(Operand + 2) == 1", Kind::Unknown),
-        ("Operand == 1", Kind::Unknown),
-    ] {
-        assert_eq!(kind_in(text, &mut scope), expected, "{text}");
-    }
+    assert_eq!(kind("unknownfn(3)"), Kind::Unknown);
 }
 
 #[test]
 fn a_reference_takes_the_kind_of_what_it_names() {
     let mut scope = Names::default();
-    scope.insert("A1", &[quantity(Quantity::LENGTH)]);
-    scope.insert("Box.Length", &[quantity(Quantity::LENGTH)]);
+    scope.insert("A1", LENGTH, Python::Object);
+    scope.insert("Box.Length", LENGTH, Python::Object);
     assert_eq!(kind_in("abs(A1)", &mut scope), LENGTH);
     assert_eq!(kind_in("A1^2", &mut scope), AREA);
     assert_eq!(kind_in("str(A1)", &mut scope), Kind::Text);
@@ -521,27 +382,18 @@ fn a_reference_takes_the_kind_of_what_it_names() {
 #[test]
 fn a_range_takes_the_quantity_its_cells_share() {
     let mut scope = Names {
-        range: Some(cells(&[quantity(Quantity::LENGTH); 2])),
+        range: Some(quantities(&[LENGTH, LENGTH])),
         ..Names::default()
     };
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), LENGTH);
     // An aggregate stops at a text cell of a range.
-    scope.range = Some(cells(&[
-        quantity(Quantity::LENGTH),
-        Text,
-        quantity(Quantity::LENGTH),
-    ]));
+    scope.range = Some(quantities(&[LENGTH, Kind::Text, LENGTH]));
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
-    scope.range = Some(cells(&[
-        quantity(Quantity::LENGTH),
-        quantity(Quantity::AREA),
-    ]));
+    scope.range = Some(quantities(&[LENGTH, AREA]));
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
     let node = parse("sum(A1:A3) + B1").unwrap();
     let references = node.references();
-    assert!(
-        matches!(references[0], Reference::Range(range) if (range.from, range.to) == ("A1", "A3"))
-    );
+    assert!(matches!(references[0], Reference::Range("A1", "A3")));
     assert!(matches!(references[1], Reference::Path(path) if path.components == ["B1"]));
 }
 
@@ -563,7 +415,7 @@ fn a_path_records_its_object_and_property() {
     assert_eq!(path("Doc#<<My sheet>>.w").origin, Origin::Outside);
     assert_eq!(path("Sheet.<<Sub.>>.w").origin, Origin::Outside);
     assert_eq!(path(".<<Sub.>>.w").origin, Origin::Outside);
-    assert!(matches!(parse("Sheet.w[0]"), Ok(Node::Indexed(..))));
+    assert!(path("Sheet.w[0]").indexed);
     assert_eq!(
         path("Box.Placement.Base.x").components,
         ["Box", "Placement", "Base", "x"]
@@ -588,29 +440,4 @@ fn text_the_parser_refuses_is_unparsed() {
     }
     let deep = format!("{}1{}", "(".repeat(100), ")".repeat(100));
     assert_eq!(parse(&deep).err(), Some(Unparsed::Limit));
-}
-
-#[test]
-fn a_combining_mark_stays_with_its_identifier() {
-    assert_eq!(path("e\u{301}").components, ["e\u{301}"]);
-}
-
-#[test]
-fn token_and_unit_nesting_limits_keep_identified_paths() {
-    let tokens = format!("A1 + {}", "1 + ".repeat(1_024));
-    let deep = format!("A1 + 2 {}mm{}", "(".repeat(100), ")".repeat(100));
-    for text in [tokens, deep] {
-        let parsed = super::parse_with_paths(&text);
-        assert_eq!(parsed.tree.unwrap_err(), Unparsed::Limit);
-        assert_eq!(parsed.partial_paths.len(), 1);
-        assert_eq!(parsed.partial_paths[0].components, ["A1"]);
-    }
-}
-
-#[test]
-fn nonfinite_quantity_decimal_formatting_keeps_both_platform_outcomes() {
-    let node = parse("<<%d>> % (1 mm / 0)").unwrap();
-    let result = node.value(&mut Names::default());
-    assert!(result.classes().contains(&Class::Text));
-    assert!(result.classes().contains(&Class::Raises));
 }

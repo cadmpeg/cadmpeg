@@ -103,12 +103,17 @@ pub(crate) enum FreecadLossCode {
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
-    /// A spreadsheet expression has no resolved result kind or value.
-    ParameterExpressionResultUnresolved,
+    /// A spreadsheet formula's quantity is not found; its parameter is a
+    /// dimensionless real.
+    ParameterQuantityAssumed,
+    /// A formula's kind repeats a string by a plain number whose value the
+    /// file does not store; the kind takes the number as an integer.
+    ParameterIntegerAssumed,
     /// A spreadsheet cell holds a number that is not finite; its parameter
     /// has no value.
     ParameterValueNonFinite,
-    /// A source expression holds a dependency the wire cannot bind.
+    /// An expression references a property that is no parameter; the
+    /// reference stays the source's text.
     ParameterDependencyDropped,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
@@ -202,7 +207,8 @@ impl FreecadLossCode {
         Self::FeatureJointValueUnbound,
         Self::FeatureJointFlagUnread,
         Self::ParameterExpressionEmpty,
-        Self::ParameterExpressionResultUnresolved,
+        Self::ParameterQuantityAssumed,
+        Self::ParameterIntegerAssumed,
         Self::ParameterValueNonFinite,
         Self::ParameterDependencyDropped,
         Self::SketchNativeGeometry,
@@ -269,11 +275,12 @@ impl FreecadLossCode {
             Self::FeatureJointDistanceUnresolved => "feature.joint-distance-unresolved",
             Self::FeatureJointDistanceUnsatisfiable => "feature.joint-distance-unsatisfiable",
             Self::FeatureJointValueUnbound => "feature.joint-value-unbound",
-            Self::FeatureJointFlagUnread => "feature.joint-flag-unread",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
+            Self::FeatureJointFlagUnread => "feature.joint-flag-unread",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
-            Self::ParameterExpressionResultUnresolved => "parameter.expression-result-unresolved",
+            Self::ParameterQuantityAssumed => "parameter.quantity-assumed",
+            Self::ParameterIntegerAssumed => "parameter.integer-assumed",
             Self::ParameterValueNonFinite => "parameter.value-non-finite",
             Self::ParameterDependencyDropped => "parameter.dependency-dropped",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
@@ -350,7 +357,8 @@ impl FreecadLossCode {
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
-            | Self::ParameterExpressionResultUnresolved
+            | Self::ParameterQuantityAssumed
+            | Self::ParameterIntegerAssumed
             | Self::ParameterValueNonFinite
             | Self::ParameterDependencyDropped
             | Self::FeatureLinkPlacementUnresolved
@@ -424,7 +432,8 @@ impl FreecadLossCode {
             | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
-            | Self::ParameterExpressionResultUnresolved
+            | Self::ParameterQuantityAssumed
+            | Self::ParameterIntegerAssumed
             | Self::ParameterValueNonFinite
             | Self::ParameterDependencyDropped
             | Self::SourceGuiPropertyKeyBlank
@@ -511,7 +520,8 @@ mod tests {
                 "feature.joint-value-unbound",
                 "feature.joint-flag-unread",
                 "parameter.expression-empty",
-                "parameter.expression-result-unresolved",
+                "parameter.quantity-assumed",
+                "parameter.integer-assumed",
                 "parameter.value-non-finite",
                 "parameter.dependency-dropped",
                 "sketch.native-geometry",

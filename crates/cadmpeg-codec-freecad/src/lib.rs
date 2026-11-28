@@ -1178,12 +1178,8 @@ impl CodecBackend for FcstdCodec {
                     ctx,
                     &mut ir,
                     product::document_definition_id()?,
-                    &design::v11::DesignSources {
-                        objects: &graph.objects,
-                        properties: &graph.properties,
-                        entries: &scan.data,
-                        shapes: &shape_payloads,
-                    },
+                    &graph.objects,
+                    &graph.properties,
                     &design::v11::Assembly {
                         links: &product_nodes,
                         joints: &joint_records,
