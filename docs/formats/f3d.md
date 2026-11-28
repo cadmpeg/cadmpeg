@@ -2459,14 +2459,18 @@ reference selects a version-3, version-4, or version-5 record of type GUID
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
 references. The four alignment-owner targets occur in this table. The current history word, the length-prefixed UTF-16 stored feature-family name, and
-feature ordinal follow the table. The tail contains fifteen zero bytes, a
+feature ordinal follow the table. The tail contains eight zero bytes, a u32
+associated-reference count `A`, `A` nonnull references, three zero bytes, a
 nonnull reference, an optional zero separator of length `S` (`0` or `1`), the
 previous history word, a u32 word, a finite f64, an independent u32 word, a
-nonnull reference, two boolean bytes, a nonnull reference, and two zero
-bytes. The paired indexed header closes the scope with the same record
-identity. The span from primary to paired header is
-`190 + (R + 12) * W + 128 * M + 4 * E + S`, where `M` is the number of
-explicit connector matrices. Owner references select alignment lanes
+nonnull reference, two boolean bytes, a nonnull reference, and either two zero
+bytes or a closing reference to the scope itself and one zero byte (`C = 1`).
+Most scopes store `A = 0` and `C = 0`. Others store `A = 2`, naming the
+scope itself and the second connector's construction record, together with
+`C = 1`; what selects this form is open (DR-1081). The paired indexed header closes the scope with the
+same record identity. The span from primary to paired header is
+`190 + (R + 12 + A) * W + 128 * M + 4 * E + S + (W - 1) * C`, where `M` is the
+number of explicit connector matrices. Owner references select alignment lanes
 independently of owner ordinals and owner count. Locator type GUID
 `2E3AC990-483D-4A55-8662-C064B976A957` and its registered version select the
 locator envelope. Its counted wrapper joins consecutive version-4 occurrence
@@ -2478,7 +2482,7 @@ connector belongs to the innermost occurrence in that path.
 The extended version-three tail adds a nonnull reference immediately after
 the first tail reference and uses `S = 0`. Its target has type GUID
 `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. Its span is
-`190 + (R + K + 13) * W + 128 * M + 4 * E`. The native alignment retains
+`190 + (R + K + 13 + A) * W + 128 * M + 4 * E + (W - 1) * C`. The native alignment retains
 this additional reference and its marker offset as `additional_tail_reference`.
 The plain-reference tail, from the feature ordinal through its final zero
 bytes, has the fixed fields in
@@ -2496,7 +2500,7 @@ Two zero bytes follow the angle-owner reference. An additional nonnull
 reference follows the first tail reference. This tail uses separator length
 `S = 0`. One zero byte separates its two boolean bytes from its last
 reference. Version 5 uses eleven-byte plain local references. Its span is
-`377 + (R + K + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+`377 + (R + K + 12 + A) * 11 + 128 * M + 4 * E + 10 * C`. The four explicit owner references
 select angle, Z, X, and Y lanes.
 An additional-owner run follows the four explicit alignment references.
 It stores two zero bytes, a u32 count `K`, and `K` nonnull plain local
@@ -2519,7 +2523,7 @@ reference, six zero bytes, an identity byte, and its explicit matrix when
 the identity byte is zero. The second connector follows the first connector
 frame directly. Four zero bytes follow the second connector frame. No zero
 bytes follow the angle-owner reference. The tail stores u8 `1` before its
-two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12) * 11 + 128 * M + 4 * E`.
+two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12 + A) * 11 + 128 * M + 4 * E + 10 * C`.
 
 The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`
