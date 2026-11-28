@@ -1258,9 +1258,9 @@ dialect = "parasolid:format-13006"
 read = "detected"
 write = "none"
 reason = """
-the sldprt and nx readers emit this layer when a framed Parasolid stream's
-schema token ends in `_13006`; the same suffix selects the mesh stream
-grammar"""
+the sldprt, nx, and ironcad readers emit this layer when a framed Parasolid
+stream's schema token ends in `_13006`; the same suffix selects the mesh
+stream grammar. The sldprt and ironcad readers verify it"""
 
 [[support]]
 dialect = "parasolid:unknown"

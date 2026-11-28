@@ -1,0 +1,270 @@
+{
+  "container_kind": "cfb",
+  "entries": [
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "8",
+        "start_sector": "26"
+      },
+      "kind": "stored",
+      "name": "Image Data",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 1188
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "regular",
+        "directory_id": "4",
+        "start_sector": "4"
+      },
+      "kind": "stored",
+      "name": "Preview",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 66614
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "2",
+        "start_sector": "19"
+      },
+      "kind": "stored",
+      "name": "View",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 98
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "1",
+        "start_sector": "0"
+      },
+      "kind": "stored",
+      "name": "HSF",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 1166
+      }
+    },
+    {
+      "attributes": {
+        "directory_id": "3",
+        "start_sector": "4294967294"
+      },
+      "kind": "stored",
+      "name": "HSF_LIB",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 0
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "6",
+        "start_sector": "22"
+      },
+      "kind": "stored",
+      "name": "Animation",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 214
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "5",
+        "start_sector": "21"
+      },
+      "kind": "stored",
+      "name": "MetaInfo",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 20
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "regular",
+        "directory_id": "7",
+        "start_sector": "21"
+      },
+      "kind": "stored",
+      "name": "Brep Data",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 5154
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "12",
+        "start_sector": "78"
+      },
+      "kind": "stored",
+      "name": "Public Access",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 1891
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "regular",
+        "directory_id": "10",
+        "start_sector": "23"
+      },
+      "kind": "stored",
+      "name": "Shape Data",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 6676
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "9",
+        "start_sector": "45"
+      },
+      "kind": "stored",
+      "name": "PMIDraftDb",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 8
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "11",
+        "start_sector": "46"
+      },
+      "kind": "stored",
+      "name": "Document Data",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 1995
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "14",
+        "start_sector": "160"
+      },
+      "kind": "stored",
+      "name": "Shared Objects",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 2507
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "13",
+        "start_sector": "108"
+      },
+      "kind": "stored",
+      "name": "Shape Contents",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 3317
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "16",
+        "start_sector": "231"
+      },
+      "kind": "stored",
+      "name": "\u0005SummaryInformation",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 124
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "15",
+        "start_sector": "200"
+      },
+      "kind": "stored",
+      "name": "Public Access Data",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 1964
+      }
+    },
+    {
+      "attributes": {
+        "directory_id": "17",
+        "start_sector": "4294967294"
+      },
+      "kind": "stored",
+      "name": "Public Access Cache",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 0
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "18",
+        "start_sector": "233"
+      },
+      "kind": "stored",
+      "name": "\u0005DocumentSummaryInformation",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 896
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {},
+        "dialect": "ironcad:cfb"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": []
+}

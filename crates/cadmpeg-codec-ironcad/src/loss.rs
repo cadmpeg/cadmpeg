@@ -14,7 +14,8 @@ pub(crate) enum IronCadLossCode {
     RecordHeaderUnrecognized,
     KernelUnrecognized,
     KernelPrologueUnreadable,
-    KernelUnverified,
+    KernelDialectUnverified,
+    DialectLayerCollision,
     ParasolidBodyPartial,
     BodyRecordsRetained,
     BodyExtensionsRetained,
@@ -23,7 +24,11 @@ pub(crate) enum IronCadLossCode {
     FaceBoundaryUnstated,
     SurfaceUntyped,
     PlacementBoundByOrder,
+    PlacementBoundByIdentity,
     PlacementUnbound,
+    PlacementMatrixSearched,
+    PlacementRecordVersionUnrecognized,
+    PlacementCopyPathUnmatched,
     AssemblyFlattened,
     AssemblyBoundByOrder,
     PropertyUnread,
@@ -52,7 +57,14 @@ impl IronCadLossCode {
                 "record.prologue-unreadable",
                 LossTaxonomy::SourceDialectUnverified,
             ),
-            Self::KernelUnverified => ("kernel.unverified", LossTaxonomy::SourceDialectUnverified),
+            Self::KernelDialectUnverified => (
+                "source.kernel-dialect-unverified",
+                LossTaxonomy::SourceDialectUnverified,
+            ),
+            Self::DialectLayerCollision => (
+                "source.dialect-layer-collision",
+                LossTaxonomy::DecodeDiagnostic,
+            ),
             Self::ParasolidBodyPartial => (
                 "body.parasolid-partial",
                 LossTaxonomy::GeometryNotTransferred,
@@ -78,9 +90,24 @@ impl IronCadLossCode {
             Self::PlacementBoundByOrder => {
                 ("placement.bound-by-order", LossTaxonomy::DecodeDiagnostic)
             }
+            Self::PlacementBoundByIdentity => (
+                "placement.bound-by-identity",
+                LossTaxonomy::DecodeDiagnostic,
+            ),
             Self::PlacementUnbound => (
                 "placement.unbound",
                 LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
+            Self::PlacementMatrixSearched => {
+                ("placement.matrix-searched", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::PlacementRecordVersionUnrecognized => (
+                "placement.record-version-unrecognized",
+                LossTaxonomy::DecodeDiagnostic,
+            ),
+            Self::PlacementCopyPathUnmatched => (
+                "placement.copy-path-unmatched",
+                LossTaxonomy::DecodeDiagnostic,
             ),
             Self::AssemblyFlattened => (
                 "assembly.flattened",

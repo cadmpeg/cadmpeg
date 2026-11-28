@@ -23,6 +23,9 @@ pub(crate) const BREP_DATA: &str = "Brep Data";
 /// The stream that holds the part and assembly records.
 pub(crate) const PUBLIC_ACCESS: &str = "Public Access";
 
+/// The stream that holds the scene objects.
+pub(crate) const SHAPE_CONTENTS: &str = "Shape Contents";
+
 /// Root streams that identify a scene, with [`BREP_DATA`].
 const SHAPE_DATA: &str = "Shape Data";
 pub(crate) const DOCUMENT_DATA: &str = "Document Data";

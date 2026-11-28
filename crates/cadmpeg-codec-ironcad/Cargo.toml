@@ -20,6 +20,8 @@ cadmpeg-parasolid.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true
+cadmpeg-codec-step.workspace = true
+cadmpeg-measure.workspace = true
 cadmpeg-test-support.workspace = true
 
 [lints]

@@ -1,0 +1,3889 @@
+{
+  "ir": {
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "ironcad:brep:entity#0",
+          "kind": "solid",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "ironcad:brep:entity#102",
+          "id": "ironcad:brep:entity#101",
+          "owner_loop": "ironcad:brep:entity#75",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#78",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#24",
+          "id": "ironcad:brep:entity#14",
+          "owner_loop": "ironcad:brep:entity#7",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#23",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#34",
+          "id": "ironcad:brep:entity#20",
+          "owner_loop": "ironcad:brep:entity#12",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#33",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#36",
+          "id": "ironcad:brep:entity#21",
+          "owner_loop": "ironcad:brep:entity#7",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#32",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#38",
+          "id": "ironcad:brep:entity#22",
+          "owner_loop": "ironcad:brep:entity#7",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#37",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#24",
+          "id": "ironcad:brep:entity#23",
+          "owner_loop": "ironcad:brep:entity#40",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#14",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#53",
+          "id": "ironcad:brep:entity#30",
+          "owner_loop": "ironcad:brep:entity#18",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#52",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#55",
+          "id": "ironcad:brep:entity#31",
+          "owner_loop": "ironcad:brep:entity#12",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#51",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#36",
+          "id": "ironcad:brep:entity#32",
+          "owner_loop": "ironcad:brep:entity#12",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#21",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#34",
+          "id": "ironcad:brep:entity#33",
+          "owner_loop": "ironcad:brep:entity#40",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#20",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#60",
+          "id": "ironcad:brep:entity#35",
+          "owner_loop": "ironcad:brep:entity#7",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#59",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#38",
+          "id": "ironcad:brep:entity#37",
+          "owner_loop": "ironcad:brep:entity#28",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#22",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#68",
+          "id": "ironcad:brep:entity#39",
+          "owner_loop": "ironcad:brep:entity#40",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#49",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#68",
+          "id": "ironcad:brep:entity#49",
+          "owner_loop": "ironcad:brep:entity#28",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#39",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#79",
+          "id": "ironcad:brep:entity#50",
+          "owner_loop": "ironcad:brep:entity#18",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#77",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#55",
+          "id": "ironcad:brep:entity#51",
+          "owner_loop": "ironcad:brep:entity#18",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#31",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#53",
+          "id": "ironcad:brep:entity#52",
+          "owner_loop": "ironcad:brep:entity#40",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#30",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#84",
+          "id": "ironcad:brep:entity#54",
+          "owner_loop": "ironcad:brep:entity#12",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#83",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#60",
+          "id": "ironcad:brep:entity#59",
+          "owner_loop": "ironcad:brep:entity#75",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#35",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#95",
+          "id": "ironcad:brep:entity#64",
+          "owner_loop": "ironcad:brep:entity#28",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#90",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#79",
+          "id": "ironcad:brep:entity#77",
+          "owner_loop": "ironcad:brep:entity#28",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#50",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#102",
+          "id": "ironcad:brep:entity#78",
+          "owner_loop": "ironcad:brep:entity#18",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#101",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:entity#84",
+          "id": "ironcad:brep:entity#83",
+          "owner_loop": "ironcad:brep:entity#75",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#54",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:entity#95",
+          "id": "ironcad:brep:entity#90",
+          "owner_loop": "ironcad:brep:entity#75",
+          "pcurves": [],
+          "radial_next": "ironcad:brep:entity#64",
+          "sense": "reversed"
+        }
+      ],
+      "curves": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": -25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#105"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": 25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#109"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.0,
+                "y": -25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#113"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": -25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#115"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.0,
+                "y": 25.0,
+                "z": 20.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#44"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": 25.0,
+                "z": 20.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#58"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.0,
+                "y": 25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#63"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.0,
+                "y": -25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#67"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": -25.0,
+                "z": 20.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#82"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": 25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#87"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.0,
+                "y": 25.0,
+                "z": 1.2424559257230936e-26
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#92"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.0,
+                "y": -25.0,
+                "z": 20.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#99"
+        }
+      ],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#115",
+            "param_range": [
+              0.0,
+              50.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#86",
+            "start": "ironcad:brep:entity#104"
+          },
+          "id": "ironcad:brep:entity#102"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#44",
+            "param_range": [
+              -50.0,
+              0.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#43",
+            "start": "ironcad:brep:entity#42"
+          },
+          "id": "ironcad:brep:entity#24"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#58",
+            "param_range": [
+              -100.0,
+              0.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#57",
+            "start": "ironcad:brep:entity#43"
+          },
+          "id": "ironcad:brep:entity#34"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#63",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#43",
+            "start": "ironcad:brep:entity#62"
+          },
+          "id": "ironcad:brep:entity#36"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#67",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#42",
+            "start": "ironcad:brep:entity#66"
+          },
+          "id": "ironcad:brep:entity#38"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#82",
+            "param_range": [
+              -50.0,
+              0.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#81",
+            "start": "ironcad:brep:entity#57"
+          },
+          "id": "ironcad:brep:entity#53"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#87",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#57",
+            "start": "ironcad:brep:entity#86"
+          },
+          "id": "ironcad:brep:entity#55"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#92",
+            "param_range": [
+              0.0,
+              50.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#66",
+            "start": "ironcad:brep:entity#62"
+          },
+          "id": "ironcad:brep:entity#60"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#99",
+            "param_range": [
+              -100.0,
+              0.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#42",
+            "start": "ironcad:brep:entity#81"
+          },
+          "id": "ironcad:brep:entity#68"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#105",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#81",
+            "start": "ironcad:brep:entity#104"
+          },
+          "id": "ironcad:brep:entity#79"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#109",
+            "param_range": [
+              0.0,
+              100.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#62",
+            "start": "ironcad:brep:entity#86"
+          },
+          "id": "ironcad:brep:entity#84"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:entity#113",
+            "param_range": [
+              0.0,
+              100.0
+            ]
+          },
+          "ends": {
+            "end": "ironcad:brep:entity#104",
+            "start": "ironcad:brep:entity#66"
+          },
+          "id": "ironcad:brep:entity#95"
+        }
+      ],
+      "faces": [
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.8117647058823529,
+            "g": 0.7529411764705882,
+            "r": 0.7529411764705882
+          },
+          "id": "ironcad:brep:entity#11",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:entity#18"
+            ]
+          },
+          "sense": "forward",
+          "shell": "ironcad:brep:entity#3",
+          "surface": "ironcad:brep:entity#19"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.8117647058823529,
+            "g": 0.7529411764705882,
+            "r": 0.7529411764705882
+          },
+          "id": "ironcad:brep:entity#17",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:entity#28"
+            ]
+          },
+          "sense": "forward",
+          "shell": "ironcad:brep:entity#3",
+          "surface": "ironcad:brep:entity#29"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.8117647058823529,
+            "g": 0.7529411764705882,
+            "r": 0.7529411764705882
+          },
+          "id": "ironcad:brep:entity#27",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:entity#40"
+            ]
+          },
+          "sense": "forward",
+          "shell": "ironcad:brep:entity#3",
+          "surface": "ironcad:brep:entity#48"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.8117647058823529,
+            "g": 0.7529411764705882,
+            "r": 0.7529411764705882
+          },
+          "id": "ironcad:brep:entity#4",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:entity#7"
+            ]
+          },
+          "sense": "forward",
+          "shell": "ironcad:brep:entity#3",
+          "surface": "ironcad:brep:entity#8"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.8117647058823529,
+            "g": 0.7529411764705882,
+            "r": 0.7529411764705882
+          },
+          "id": "ironcad:brep:entity#47",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:entity#75"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "ironcad:brep:entity#3",
+          "surface": "ironcad:brep:entity#76"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.8117647058823529,
+            "g": 0.7529411764705882,
+            "r": 0.7529411764705882
+          },
+          "id": "ironcad:brep:entity#6",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:entity#12"
+            ]
+          },
+          "sense": "forward",
+          "shell": "ironcad:brep:entity#3",
+          "surface": "ironcad:brep:entity#13"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:entity#20",
+              "ironcad:brep:entity#31",
+              "ironcad:brep:entity#54",
+              "ironcad:brep:entity#32"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:entity#6",
+          "id": "ironcad:brep:entity#12"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:entity#30",
+              "ironcad:brep:entity#50",
+              "ironcad:brep:entity#78",
+              "ironcad:brep:entity#51"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:entity#11",
+          "id": "ironcad:brep:entity#18"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:entity#49",
+              "ironcad:brep:entity#37",
+              "ironcad:brep:entity#64",
+              "ironcad:brep:entity#77"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:entity#17",
+          "id": "ironcad:brep:entity#28"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:entity#23",
+              "ironcad:brep:entity#39",
+              "ironcad:brep:entity#52",
+              "ironcad:brep:entity#33"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:entity#27",
+          "id": "ironcad:brep:entity#40"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:entity#14",
+              "ironcad:brep:entity#21",
+              "ironcad:brep:entity#35",
+              "ironcad:brep:entity#22"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:entity#4",
+          "id": "ironcad:brep:entity#7"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:entity#90",
+              "ironcad:brep:entity#59",
+              "ironcad:brep:entity#83",
+              "ironcad:brep:entity#101"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:entity#47",
+          "id": "ironcad:brep:entity#75"
+        }
+      ],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "ironcad:brep:entity#107",
+          "position": {
+            "x": 50.0,
+            "y": -25.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#111",
+          "position": {
+            "x": 50.0,
+            "y": 25.0,
+            "z": 1.2424559257230936e-26
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#117",
+          "position": {
+            "x": 50.0,
+            "y": -25.0,
+            "z": 1.2424559257230936e-26
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#70",
+          "position": {
+            "x": -50.0,
+            "y": -25.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#72",
+          "position": {
+            "x": -50.0,
+            "y": 25.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#89",
+          "position": {
+            "x": 50.0,
+            "y": 25.0,
+            "z": 20.0
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#94",
+          "position": {
+            "x": -50.0,
+            "y": 25.0,
+            "z": 1.2424559257230936e-26
+          }
+        },
+        {
+          "id": "ironcad:brep:entity#97",
+          "position": {
+            "x": -50.0,
+            "y": -25.0,
+            "z": 1.2424559257230936e-26
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "ironcad:brep:entity#0",
+          "id": "ironcad:brep:entity#1",
+          "shells": [
+            "ironcad:brep:entity#3"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "ironcad:brep:entity#3",
+          "members": [],
+          "region": "ironcad:brep:entity#1"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 25.0,
+                "z": 1.2424559257230936e-26
+              },
+              "u_axis": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#13"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 50.0,
+                "y": 0.0,
+                "z": 1.2424559257230936e-26
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#19"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -25.0,
+                "z": 1.2424559257230936e-26
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#29"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -4.440892098500626e-15,
+                "z": 20.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#48"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -4.440892098500626e-15,
+                "z": 1.2424559257230936e-26
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#76"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -50.0,
+                "y": 0.0,
+                "z": 1.2424559257230936e-26
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:entity#8"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "ironcad:brep:entity#104",
+          "point": "ironcad:brep:entity#117"
+        },
+        {
+          "id": "ironcad:brep:entity#42",
+          "point": "ironcad:brep:entity#70"
+        },
+        {
+          "id": "ironcad:brep:entity#43",
+          "point": "ironcad:brep:entity#72"
+        },
+        {
+          "id": "ironcad:brep:entity#57",
+          "point": "ironcad:brep:entity#89"
+        },
+        {
+          "id": "ironcad:brep:entity#62",
+          "point": "ironcad:brep:entity#94"
+        },
+        {
+          "id": "ironcad:brep:entity#66",
+          "point": "ironcad:brep:entity#97"
+        },
+        {
+          "id": "ironcad:brep:entity#81",
+          "point": "ironcad:brep:entity#107"
+        },
+        {
+          "id": "ironcad:brep:entity#86",
+          "point": "ironcad:brep:entity#111"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assets": [],
+      "attributes": [
+        {
+          "id": "ironcad:brep:attribute#10",
+          "name": "rgb_color-st-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#15"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 14675654
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.8117647058823529
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#100",
+          "name": "bodyfaceidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#47"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#74"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#47"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#103",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#79"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#79"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#106",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#81"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#81"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#108",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#84"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#84"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 9
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#110",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#86"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#86"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#112",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#95"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#95"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 11
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#114",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#102"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#102"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 10
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#116",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#104"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#104"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 7
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#15",
+          "name": "bodyfaceidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#10"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#16",
+          "name": "rgb_color-st-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#25"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 14675654
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.8117647058823529
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#25",
+          "name": "bodyfaceidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#16"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#26",
+          "name": "rgb_color-st-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#17"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#45"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#17"
+            },
+            {
+              "kind": "integer",
+              "value": 14675654
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.8117647058823529
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#41",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#24"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#24"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#45",
+          "name": "bodyfaceidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#17"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#26"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#17"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#46",
+          "name": "rgb_color-st-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#27"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#73"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#27"
+            },
+            {
+              "kind": "integer",
+              "value": 14675654
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.8117647058823529
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#5",
+          "name": "rgb_color-st-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 14675654
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.8117647058823529
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#56",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#34"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#34"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#61",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#36"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#36"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#65",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#38"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#38"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#69",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#42"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#42"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#71",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#43"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#43"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#73",
+          "name": "bodyfaceidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#27"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#46"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#27"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#74",
+          "name": "rgb_color-st-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#47"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#100"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#47"
+            },
+            {
+              "kind": "integer",
+              "value": 14675654
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.7529411764705882
+            },
+            {
+              "kind": "float",
+              "value": 0.8117647058823529
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#80",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#53"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#53"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#85",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#55"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#55"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#88",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#57"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#57"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#9",
+          "name": "bodyfaceidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "ironcad:brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#5"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#91",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#60"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#60"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 12
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#93",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#62"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#62"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#96",
+          "name": "bodyvertexidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "ironcad:brep:entity#66"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#66"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "id": "ironcad:brep:attribute#98",
+          "name": "bodyedgeidentifier-eye-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "ironcad:brep:entity#68"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "ironcad:brep:entity#68"
+            },
+            {
+              "kind": "integer",
+              "value": 14413477
+            },
+            {
+              "kind": "integer",
+              "value": 7
+            }
+          ]
+        }
+      ],
+      "colliders": [],
+      "declared_measures": [],
+      "drawings": [],
+      "mass_properties": [
+        {
+          "density": 7.8e-6,
+          "id": "ironcad:model:mass-properties#0",
+          "target": {
+            "entity": {
+              "definition": "ironcad:model:product-definition#0",
+              "kind": "definition"
+            }
+          }
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "ironcad:model:occurrence#0",
+          "name": "Block_ACIS_100x50x20",
+          "overrides": [],
+          "prototype": "ironcad:model:product-definition#0",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "ironcad:brep:entity#0"
+          ],
+          "bom_properties": {
+            "EndTaper": "0",
+            "SizeboxHeight": "0.02",
+            "SizeboxLength": "0.1",
+            "SizeboxWidth": "0.05",
+            "StartTaper": "0"
+          },
+          "id": "ironcad:model:product-definition#0",
+          "instance_bodies": [],
+          "kind": "part",
+          "label": "Block_ACIS_100x50x20",
+          "native_ref": "{60DB022E-22E5-4345-9DB1-B1DC117E7618}",
+          "occurrences": [],
+          "representations": [],
+          "source_name": "Block_ACIS_100x50x20",
+          "storage": {
+            "kind": "embedded"
+          }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "ironcad:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [
+            "ironcad:model:occurrence#0"
+          ],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "units": {
+            "angle": "deg",
+            "length": "mm",
+            "mass": "kg"
+          }
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "solver_settings": [],
+      "tessellations": [],
+      "view_presentations": []
+    },
+    "native": {
+      "ironcad": {
+        "body_native_keys": [
+          {
+            "body": "ironcad:brep:entity#0",
+            "body_ordinal": 0,
+            "id": "ironcad:asm:body-native-key#0",
+            "record_index": 0,
+            "source_brep": "record-1"
+          }
+        ],
+        "edge_continuities": [
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#102",
+            "id": "ironcad:asm:edge-continuity#102",
+            "record_index": 102,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#24",
+            "id": "ironcad:asm:edge-continuity#24",
+            "record_index": 24,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#34",
+            "id": "ironcad:asm:edge-continuity#34",
+            "record_index": 34,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#36",
+            "id": "ironcad:asm:edge-continuity#36",
+            "record_index": 36,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#38",
+            "id": "ironcad:asm:edge-continuity#38",
+            "record_index": 38,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#53",
+            "id": "ironcad:asm:edge-continuity#53",
+            "record_index": 53,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#55",
+            "id": "ironcad:asm:edge-continuity#55",
+            "record_index": 55,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#60",
+            "id": "ironcad:asm:edge-continuity#60",
+            "record_index": 60,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#68",
+            "id": "ironcad:asm:edge-continuity#68",
+            "record_index": 68,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#79",
+            "id": "ironcad:asm:edge-continuity#79",
+            "record_index": 79,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#84",
+            "id": "ironcad:asm:edge-continuity#84",
+            "record_index": 84,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "ironcad:brep:entity#95",
+            "id": "ironcad:asm:edge-continuity#95",
+            "record_index": 95,
+            "sense": "forward"
+          }
+        ],
+        "edge_ownerships": [
+          {
+            "edge": "ironcad:brep:entity#102",
+            "id": "ironcad:asm:edge-ownership#102",
+            "owner_coedge": "ironcad:brep:entity#101",
+            "record_index": 102
+          },
+          {
+            "edge": "ironcad:brep:entity#24",
+            "id": "ironcad:asm:edge-ownership#24",
+            "owner_coedge": "ironcad:brep:entity#14",
+            "record_index": 24
+          },
+          {
+            "edge": "ironcad:brep:entity#34",
+            "id": "ironcad:asm:edge-ownership#34",
+            "owner_coedge": "ironcad:brep:entity#20",
+            "record_index": 34
+          },
+          {
+            "edge": "ironcad:brep:entity#36",
+            "id": "ironcad:asm:edge-ownership#36",
+            "owner_coedge": "ironcad:brep:entity#32",
+            "record_index": 36
+          },
+          {
+            "edge": "ironcad:brep:entity#38",
+            "id": "ironcad:asm:edge-ownership#38",
+            "owner_coedge": "ironcad:brep:entity#22",
+            "record_index": 38
+          },
+          {
+            "edge": "ironcad:brep:entity#53",
+            "id": "ironcad:asm:edge-ownership#53",
+            "owner_coedge": "ironcad:brep:entity#30",
+            "record_index": 53
+          },
+          {
+            "edge": "ironcad:brep:entity#55",
+            "id": "ironcad:asm:edge-ownership#55",
+            "owner_coedge": "ironcad:brep:entity#51",
+            "record_index": 55
+          },
+          {
+            "edge": "ironcad:brep:entity#60",
+            "id": "ironcad:asm:edge-ownership#60",
+            "owner_coedge": "ironcad:brep:entity#59",
+            "record_index": 60
+          },
+          {
+            "edge": "ironcad:brep:entity#68",
+            "id": "ironcad:asm:edge-ownership#68",
+            "owner_coedge": "ironcad:brep:entity#49",
+            "record_index": 68
+          },
+          {
+            "edge": "ironcad:brep:entity#79",
+            "id": "ironcad:asm:edge-ownership#79",
+            "owner_coedge": "ironcad:brep:entity#77",
+            "record_index": 79
+          },
+          {
+            "edge": "ironcad:brep:entity#84",
+            "id": "ironcad:asm:edge-ownership#84",
+            "owner_coedge": "ironcad:brep:entity#83",
+            "record_index": 84
+          },
+          {
+            "edge": "ironcad:brep:entity#95",
+            "id": "ironcad:asm:edge-ownership#95",
+            "owner_coedge": "ironcad:brep:entity#90",
+            "record_index": 95
+          }
+        ],
+        "face_native_keys": [
+          {
+            "face": "ironcad:brep:entity#11",
+            "id": "ironcad:asm:face-native-key#11",
+            "record_index": 11
+          },
+          {
+            "face": "ironcad:brep:entity#17",
+            "id": "ironcad:asm:face-native-key#17",
+            "record_index": 17
+          },
+          {
+            "face": "ironcad:brep:entity#27",
+            "id": "ironcad:asm:face-native-key#27",
+            "record_index": 27
+          },
+          {
+            "face": "ironcad:brep:entity#4",
+            "id": "ironcad:asm:face-native-key#4",
+            "record_index": 4
+          },
+          {
+            "face": "ironcad:brep:entity#47",
+            "id": "ironcad:asm:face-native-key#47",
+            "record_index": 47
+          },
+          {
+            "face": "ironcad:brep:entity#6",
+            "id": "ironcad:asm:face-native-key#6",
+            "record_index": 6
+          }
+        ],
+        "face_sidedness": [
+          {
+            "face": "ironcad:brep:entity#11",
+            "id": "ironcad:asm:face-sidedness#11",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 11
+          },
+          {
+            "face": "ironcad:brep:entity#17",
+            "id": "ironcad:asm:face-sidedness#17",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 17
+          },
+          {
+            "face": "ironcad:brep:entity#27",
+            "id": "ironcad:asm:face-sidedness#27",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 27
+          },
+          {
+            "face": "ironcad:brep:entity#4",
+            "id": "ironcad:asm:face-sidedness#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          },
+          {
+            "face": "ironcad:brep:entity#47",
+            "id": "ironcad:asm:face-sidedness#47",
+            "native_sense": "reversed",
+            "normalized_sense": "reversed",
+            "record_index": 47
+          },
+          {
+            "face": "ironcad:brep:entity#6",
+            "id": "ironcad:asm:face-sidedness#6",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 6
+          }
+        ],
+        "mesh_surface_sentinels": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [
+          {
+            "body": "ironcad:brep:entity#0",
+            "id": "ironcad:asm:transform-hints#2",
+            "record_index": 2,
+            "reflection": false,
+            "rotation": false,
+            "shear": false
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "ironcad:source:kernel-record#0",
+            "links": []
+          },
+          {
+            "id": "ironcad:source:kernel-record#1",
+            "links": []
+          }
+        ],
+        "vertex_ownerships": [],
+        "wire_topologies": []
+      }
+    },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
+    "source": {
+      "attributes": {},
+      "identity": {
+        "dialects": {
+          "extra": [
+            {
+              "admission": {
+                "kind": "unverified",
+                "using": "save-format-217"
+              },
+              "declared": {
+                "carrier": "Brep Data/record 0",
+                "reference_width": "4",
+                "save_format_major": "32",
+                "save_format_minor": "0"
+              },
+              "dialect": "acis:save-format-binary-other",
+              "instance": "Brep Data/record 0"
+            },
+            {
+              "admission": {
+                "kind": "unverified",
+                "using": "save-format-217"
+              },
+              "declared": {
+                "carrier": "Brep Data/record 1",
+                "reference_width": "4",
+                "save_format_major": "32",
+                "save_format_minor": "0"
+              },
+              "dialect": "acis:save-format-binary-other",
+              "instance": "Brep Data/record 1"
+            }
+          ],
+          "primary": {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
+            "dialect": "ironcad:cfb"
+          }
+        },
+        "kind": "classified"
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
+    }
+  },
+  "report": {
+    "coverage": {},
+    "identity": {
+      "dialects": {
+        "extra": [
+          {
+            "admission": {
+              "kind": "unverified",
+              "using": "save-format-217"
+            },
+            "declared": {
+              "carrier": "Brep Data/record 0",
+              "reference_width": "4",
+              "save_format_major": "32",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:save-format-binary-other",
+            "instance": "Brep Data/record 0"
+          },
+          {
+            "admission": {
+              "kind": "unverified",
+              "using": "save-format-217"
+            },
+            "declared": {
+              "carrier": "Brep Data/record 1",
+              "reference_width": "4",
+              "save_format_major": "32",
+              "save_format_minor": "0"
+            },
+            "dialect": "acis:save-format-binary-other",
+            "instance": "Brep Data/record 1"
+          }
+        ],
+        "primary": {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
+          "dialect": "ironcad:cfb"
+        }
+      },
+      "kind": "classified"
+    },
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "body.feature-shape-retained",
+            "kind": "feature_history_retained",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "Brep Data/record 0: the record lies in the node before a part result record and is read as a feature shape of that part; the kernel record is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "body.extensions-retained",
+            "kind": "geometry_not_transferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "Brep Data/record 1: 85 ACIS record(s) store an extended entity prefix whose extension integers have no neutral projection; the kernel record is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "ACIS record declares save format 32.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "ACIS record declares save format 32.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Image Data` of 1188 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Preview` of 66614 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `View` of 98 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `HSF` of 1166 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Animation` of 214 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `MetaInfo` of 20 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Shape Data` of 6676 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `PMIDraftDb` of 8 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Shared Objects` of 2507 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `\u0005SummaryInformation` of 124 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Public Access Data` of 1964 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `\u0005DocumentSummaryInformation` of 896 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "placement.bound-by-identity",
+            "kind": "decode_diagnostic",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "each `Public Access` record is bound to the `Shape Contents` object of its name and identifier, taken in stored order where several match, and the object to the part result record or assembly node that ends at its `Brep Data` end; the record matrix places the frame in its parent as a row-vector rotation and a translation in metres",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "ironcad:brep:entity#105": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#109": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#113": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#115": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#13": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#19": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#29": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#44": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#48": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#58": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#63": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#67": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#76": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#8": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#82": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#87": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#92": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "ironcad:brep:entity#99": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        }
+      },
+      "provenance": {
+        "ironcad:brep:attribute#10": {
+          "offset": 1265,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "rgb_color-st-attrib"
+        },
+        "ironcad:brep:attribute#100": {
+          "offset": 8222,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyfaceidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#103": {
+          "offset": 8465,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#106": {
+          "offset": 8647,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#108": {
+          "offset": 8757,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#110": {
+          "offset": 8901,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#112": {
+          "offset": 9011,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#114": {
+          "offset": 9155,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#116": {
+          "offset": 9299,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#15": {
+          "offset": 1730,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyfaceidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#16": {
+          "offset": 1787,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "rgb_color-st-attrib"
+        },
+        "ironcad:brep:attribute#25": {
+          "offset": 2554,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyfaceidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#26": {
+          "offset": 2611,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "rgb_color-st-attrib"
+        },
+        "ironcad:brep:attribute#41": {
+          "offset": 3946,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#45": {
+          "offset": 4203,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyfaceidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#46": {
+          "offset": 4260,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "rgb_color-st-attrib"
+        },
+        "ironcad:brep:attribute#5": {
+          "offset": 754,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "rgb_color-st-attrib"
+        },
+        "ironcad:brep:attribute#56": {
+          "offset": 5110,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#61": {
+          "offset": 5478,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#65": {
+          "offset": 5719,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#69": {
+          "offset": 6028,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#71": {
+          "offset": 6163,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#73": {
+          "offset": 6273,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyfaceidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#74": {
+          "offset": 6330,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "rgb_color-st-attrib"
+        },
+        "ironcad:brep:attribute#80": {
+          "offset": 6868,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#85": {
+          "offset": 7236,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#88": {
+          "offset": 7418,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#9": {
+          "offset": 1187,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyfaceidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#91": {
+          "offset": 7587,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#93": {
+          "offset": 7731,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#96": {
+          "offset": 7968,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyvertexidentifier-eye-attrib"
+        },
+        "ironcad:brep:attribute#98": {
+          "offset": 8078,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "bodyedgeidentifier-eye-attrib"
+        },
+        "ironcad:brep:entity#0": {
+          "offset": 194,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "body"
+        },
+        "ironcad:brep:entity#1": {
+          "offset": 297,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "lump"
+        },
+        "ironcad:brep:entity#101": {
+          "offset": 8279,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#102": {
+          "offset": 8338,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#104": {
+          "offset": 8522,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#105": {
+          "offset": 8560,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#107": {
+          "offset": 8704,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#109": {
+          "offset": 8814,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#11": {
+          "offset": 1344,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "face"
+        },
+        "ironcad:brep:entity#111": {
+          "offset": 8958,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#113": {
+          "offset": 9068,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#115": {
+          "offset": 9212,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#117": {
+          "offset": 9356,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#12": {
+          "offset": 1451,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "loop"
+        },
+        "ironcad:brep:entity#13": {
+          "offset": 1550,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "plane-surface"
+        },
+        "ironcad:brep:entity#14": {
+          "offset": 1665,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#17": {
+          "offset": 1866,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "face"
+        },
+        "ironcad:brep:entity#18": {
+          "offset": 1973,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "loop"
+        },
+        "ironcad:brep:entity#19": {
+          "offset": 2072,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "plane-surface"
+        },
+        "ironcad:brep:entity#20": {
+          "offset": 2187,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#21": {
+          "offset": 2246,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#22": {
+          "offset": 2305,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#23": {
+          "offset": 2364,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#24": {
+          "offset": 2423,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#27": {
+          "offset": 2690,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "face"
+        },
+        "ironcad:brep:entity#28": {
+          "offset": 2833,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "loop"
+        },
+        "ironcad:brep:entity#29": {
+          "offset": 2932,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "plane-surface"
+        },
+        "ironcad:brep:entity#3": {
+          "offset": 534,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "shell"
+        },
+        "ironcad:brep:entity#30": {
+          "offset": 3047,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#31": {
+          "offset": 3106,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#32": {
+          "offset": 3165,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#33": {
+          "offset": 3224,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#34": {
+          "offset": 3283,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#35": {
+          "offset": 3410,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#36": {
+          "offset": 3469,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#37": {
+          "offset": 3596,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#38": {
+          "offset": 3655,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#39": {
+          "offset": 3782,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#4": {
+          "offset": 643,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "face"
+        },
+        "ironcad:brep:entity#40": {
+          "offset": 3841,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "loop"
+        },
+        "ironcad:brep:entity#42": {
+          "offset": 4021,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#43": {
+          "offset": 4065,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#44": {
+          "offset": 4103,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#47": {
+          "offset": 4339,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "face"
+        },
+        "ironcad:brep:entity#48": {
+          "offset": 4446,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "plane-surface"
+        },
+        "ironcad:brep:entity#49": {
+          "offset": 4561,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#50": {
+          "offset": 4620,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#51": {
+          "offset": 4679,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#52": {
+          "offset": 4738,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#53": {
+          "offset": 4797,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#54": {
+          "offset": 4924,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#55": {
+          "offset": 4983,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#57": {
+          "offset": 5167,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#58": {
+          "offset": 5205,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#59": {
+          "offset": 5292,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#6": {
+          "offset": 850,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "face"
+        },
+        "ironcad:brep:entity#60": {
+          "offset": 5351,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#62": {
+          "offset": 5535,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#63": {
+          "offset": 5573,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#64": {
+          "offset": 5660,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#66": {
+          "offset": 5776,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#67": {
+          "offset": 5814,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#68": {
+          "offset": 5901,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#7": {
+          "offset": 957,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "loop"
+        },
+        "ironcad:brep:entity#70": {
+          "offset": 6105,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#72": {
+          "offset": 6220,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#75": {
+          "offset": 6409,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "loop"
+        },
+        "ironcad:brep:entity#76": {
+          "offset": 6508,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "plane-surface"
+        },
+        "ironcad:brep:entity#77": {
+          "offset": 6623,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#78": {
+          "offset": 6682,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#79": {
+          "offset": 6741,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#8": {
+          "offset": 1060,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "plane-surface"
+        },
+        "ironcad:brep:entity#81": {
+          "offset": 6925,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#82": {
+          "offset": 6963,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#83": {
+          "offset": 7050,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#84": {
+          "offset": 7109,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#86": {
+          "offset": 7293,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "vertex"
+        },
+        "ironcad:brep:entity#87": {
+          "offset": 7331,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#89": {
+          "offset": 7475,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#90": {
+          "offset": 7528,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "coedge"
+        },
+        "ironcad:brep:entity#92": {
+          "offset": 7644,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        },
+        "ironcad:brep:entity#94": {
+          "offset": 7788,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#95": {
+          "offset": 7841,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "edge"
+        },
+        "ironcad:brep:entity#97": {
+          "offset": 8025,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "point"
+        },
+        "ironcad:brep:entity#99": {
+          "offset": 8135,
+          "stream": "ironcad:Brep Data/record-1",
+          "tag": "straight-curve"
+        }
+      }
+    },
+    "codec_digests": {},
+    "content_digest": "018f1a14a9e664941bc4891d24a00f0940ef22befb9a166e33a34ee8fcbd2549",
+    "decode_digest": "7ecf075d0e83a221c2c79a6ec97ae4434c9cc5cd46d9ea457f24a3da65eaed2f",
+    "file_digests": {},
+    "retained_records": {
+      "ironcad:source:kernel-record#0": {
+        "bytes": {
+          "data": "QUNJUyBCaW5hcnlGaWxlgAwAAAAAAAABAAAAAAAAAAcOSXJvbkNBRCAtIDMyLjAHDEFDSVMgMzIuMCBOVAcYV2VkIE5vdiAyNSAxOTo0NToyNyAyMDI2BgAAAAAAACRABo3ttaD3xrA+Bru919nffNs9CgdNTUg5QkFRRjRBNTZfVkZaWjdXV1pBQ0U0VzRGNE1QTjM5QUtNS0FOMlE4UlVXRTc1QkRWVkZHUURCRDNWSkM2VlhDUEJOSlBYQUEzQ1ANCWJvZHklAQAAAAz/////BP////8E/////wz/////BAAAAAAMAQAAAAz/////DP////8KEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAEARDQlsdW1wJQIAAAAM/////wT/////BP////8M/////wz/////DAIAAAAMAAAAAAoTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEwAAAAAAACRAAAAAAAAAFEAAAAAAAAAAQBENCnNoZWxsJQMAAAAM/////wT/////BP////8M/////wz/////DP////8MAwAAAAz/////DAEAAAAKEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAEARDQlmYWNlJQQAAAAMBAAAAAT/////BP////8M/////wwFAAAADAYAAAAMAgAAAAz/////DAcAAAALCwoTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEwAAAAAAAAAAAAAAAAAAFEAAAAAAAAAAQAsRDhdib2R5ZmFjZWlkZW50aWZpZXIlBQAAAA4IZXllJQYAAAANC2F0dHJpYiUHAAAADP////8E/////wz/////DP////8MAwAAAASl7tsABAEAAAARDQUlBAAAAAwIAAAABP////8E/////wz/////DAkAAAAMCgAAAAwCAAAADP////8MCwAAAAsLChMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAAATAAAAAAAAJEAAAAAAAAAUQAAAAAAAAABACxENCWxvb3AlCAAAAAz/////BP////8E/////wz/////DP////8MDAAAAAwDAAAAChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAAAAAAAAAAAAAAAAAAAUQAAAAAAAAABAFQAAAAARDgpwbGFuZSUJAAAADQxzdXJmYWNlJQoAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAUAAAAAAAA8L8AAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAAAsLCwsLEQ4FJQUAAAAOBSUGAAAADQUlBwAAAAz/////BP////8M/////wz/////DAUAAAAEpe7bAAQEAAAAEQ0FJQQAAAAMDQAAAAT/////BP////8M/////wwOAAAADA8AAAAMAgAAAAz/////DBAAAAALCwoTAAAAAAAAJEAAAAAAAAAAAAAAAAAAAAAAEwAAAAAAACRAAAAAAAAAFEAAAAAAAAAAQAsRDQUlCAAAAAz/////BP////8E/////wz/////DP////8MEQAAAAwFAAAAChMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAAATAAAAAAAAJEAAAAAAAAAUQAAAAAAAAABAFQAAAAARDgUlCQAAAA0FJQoAAAAM/////wT/////BP////8M/////xMAAAAAAAAUQAAAAAAAABRAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAACAFAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAAAsLCwsLEQ0LY29lZGdlJQsAAAAM/////wT/////BP////8M/////wwSAAAADBMAAAAMFAAAAAwVAAAACwwGAAAADP////8RDgUlBQAAAA4FJQYAAAANBSUHAAAADP////8E/////wz/////DP////8MCQAAAASl7tsABAMAAAARDQUlBAAAAAwWAAAABP////8E/////wz/////DBcAAAAMGAAAAAwCAAAADP////8MGQAAAAsLChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAAAAAAAAJEAAAAAAAAAAAAAAAAAAAABACxENBSUIAAAADP////8E/////wT/////DP////8M/////wwaAAAADAkAAAAKEwAAAAAAACRAAAAAAAAAAAAAAAAAAAAAABMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAEAVAAAAABEOBSUJAAAADQUlCgAAAAz/////BP////8E/////wz/////EwAAAAAAACRAAAAAAAAABEAAAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAACwsLCwsRDQUlCwAAAAz/////BP////8E/////wz/////DBsAAAAMHAAAAAwdAAAADB4AAAALDAoAAAAM/////xENBSULAAAADP////8E/////wT/////DP////8MHwAAAAwMAAAADBwAAAAMIAAAAAoMBgAAAAz/////EQ0FJQsAAAAM/////wT/////BP////8M/////wwMAAAADB8AAAAMIQAAAAwiAAAACwwGAAAADP////8RDQUlCwAAAAz/////BP////8E/////wz/////DCMAAAAMHQAAAAwMAAAADBUAAAAKDCQAAAAM/////xENCWVkZ2UlDAAAAAwlAAAABP////8E/////wz/////DCYAAAAGAAAAAAAAFMAMJwAAAAYAAAAAAAAAAAwMAAAADCgAAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEATAAAAAAAAAAAAAAAAAAAUQAAAAAAAAABAEQ4FJQUAAAAOBSUGAAAADQUlBwAAAAz/////BP////8M/////wz/////DA4AAAAEpe7bAAQCAAAAEQ0FJQQAAAAMKQAAAAT/////BP////8M/////wwqAAAADCQAAAAMAgAAAAz/////DCsAAAALCwoTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEwAAAAAAACRAAAAAAAAAFEAAAAAAAAAAQAsRDQUlCAAAAAz/////BP////8E/////wz/////DP////8MLAAAAAwOAAAAChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAAAAAAAAJEAAAAAAAAAAAAAAAAAAAABAFQAAAAARDgUlCQAAAA0FJQoAAAAM/////wT/////BP////8M/////xMAAAAAAAAUQAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAAFAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsLCwsLEQ0FJQsAAAAM/////wT/////BP////8M/////wwtAAAADC4AAAAMLwAAAAwwAAAACwwPAAAADP////8RDQUlCwAAAAz/////BP////8E/////wz/////DDEAAAAMEQAAAAwuAAAADDIAAAAKDAoAAAAM/////xENBSULAAAADP////8E/////wT/////DP////8MEQAAAAwxAAAADBIAAAAMIAAAAAsMCgAAAAz/////EQ0FJQsAAAAM/////wT/////BP////8M/////wwUAAAADC8AAAAMEQAAAAweAAAACgwkAAAADP////8RDQUlDAAAAAz/////BP////8E/////wz/////DCcAAAAGAAAAAAAAJMAMMwAAAAYAAAAAAAAAAAwRAAAADDQAAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAEATAAAAAAAAJEAAAAAAAAAUQAAAAAAAAABAEQ0FJQsAAAAM/////wT/////BP////8M/////wwTAAAADBIAAAAMNQAAAAw2AAAACwwGAAAADP////8RDQUlDAAAAAz/////BP////8E/////wz/////DDcAAAAGAAAAAAAAAAAMJwAAAAYAAAAAAAAAQAwcAAAADDgAAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAAATAAAAAAAAAAAAAAAAAAAUQAAAAAAAAABAEQ0FJQsAAAAM/////wT/////BP////8M/////ww5AAAADCwAAAAMEwAAAAwiAAAACgwYAAAADP////8RDQUlDAAAAAz/////BP////8E/////wz/////DDoAAAAGAAAAAAAAAAAMJgAAAAYAAAAAAAAAQAwTAAAADDsAAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEQ0FJQsAAAAM/////wT/////BP////8M/////wwvAAAADBQAAAAMLAAAAAw8AAAACgwkAAAADP////8RDQUlCAAAAAz/////BP////8E/////wz/////DP////8MFAAAAAwXAAAAChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEATAAAAAAAAJEAAAAAAAAAUQAAAAAAAAABAFQAAAAARDhdib2R5ZWRnZWlkZW50aWZpZXIlDQAAAA4FJQYAAAANBSUHAAAADP////8E/////wz/////DP////8MFQAAAASl7tsABAEAAAARDQt2ZXJ0ZXglDgAAAAz/////BP////8E/////wz/////DCIAAAAMPQAAABENBSUOAAAADP////8E/////wT/////DP////8MIAAAAAw+AAAAEQ4Nc3RyYWlnaHQlDwAAAA0KY3VydmUlEAAAAAz/////BP////8E/////wz/////EwAAAAAAAAAAAAAAAAAAFEAAAAAAAAAAQBQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAALCxEOBSUFAAAADgUlBgAAAA0FJQcAAAAM/////wT/////DP////8M/////wwXAAAABKXu2wAEBQAAABENBSUEAAAADD8AAAAE/////wT/////DP////8M/////wxAAAAADAIAAAAM/////wxBAAAACgsKEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAAALEQ4FJQkAAAANBSUKAAAADP////8E/////wT/////DP////8TAAAAAAAAFED///////8DQAAAAAAAAABAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALCwsLCxENBSULAAAADP////8E/////wT/////DP////8MIQAAAAxCAAAADCMAAAAMPAAAAAsMGAAAAAz/////EQ0FJQsAAAAM/////wT/////BP////8M/////wxDAAAADBoAAAAMQgAAAAxEAAAACgwPAAAADP////8RDQUlCwAAAAz/////BP////8E/////wz/////DBoAAAAMQwAAAAwbAAAADDIAAAALDA8AAAAM/////xENBSULAAAADP////8E/////wT/////DP////8MHQAAAAwjAAAADBoAAAAMMAAAAAoMJAAAAAz/////EQ0FJQwAAAAM/////wT/////BP////8M/////wwzAAAABgAAAAAAABTADEUAAAAGAAAAAAAAAIAMGgAAAAxGAAAACwcHdW5rbm93bgoTAAAAAAAAJEAAAAAAAAAAAAAAAAAAAABAEwAAAAAAACRAAAAAAAAAFEAAAAAAAAAAQBENBSULAAAADP////8E/////wT/////DP////8MHAAAAAwbAAAADEcAAAAMSAAAAAsMCgAAAAz/////EQ0FJQwAAAAM/////wT/////BP////8M/////wxJAAAABgAAAAAAAAAADDMAAAAGAAAAAAAAAEAMLgAAAAxKAAAACwcHdW5rbm93bgoTAAAAAAAAJEAAAAAAAAAUQAAAAAAAAAAAEwAAAAAAACRAAAAAAAAAFEAAAAAAAAAAQBENBSUOAAAADP////8E/////wT/////DP////8MMgAAAAxLAAAAEQ4FJQ8AAAANBSUQAAAADP////8E/////wT/////DP////8TAAAAAAAAJEAAAAAAAAAUQAAAAAAAAABAFAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsLEQ0FJQsAAAAM/////wT/////BP////8M/////wxHAAAADEwAAAAMHwAAAAw2AAAACgxAAAAADP////8RDQUlDAAAAAz/////BP////8E/////wz/////DDcAAAAGAAAAAAAAAAAMOgAAAAYAAAAAAAAUQAw1AAAADE0AAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAAAAAAAAAAAAAAAAAAAUQAAAAAAAAAAAEQ0FJQ4AAAAM/////wT/////BP////8M/////wxIAAAADE4AAAARDgUlDwAAAA0FJRAAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/CwsRDQUlCwAAAAz/////BP////8E/////wz/////DEIAAAAMIQAAAAxMAAAADE8AAAALDBgAAAAM/////xENBSUOAAAADP////8E/////wT/////DP////8MTwAAAAxQAAAAEQ4FJQ8AAAANBSUQAAAADP////8E/////wT/////DP////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwsLEQ0FJQwAAAAM/////wT/////BP////8M/////wxFAAAABgAAAAAAACTADCYAAAAGAAAAAAAAAIAMLAAAAAxRAAAACwcHdW5rbm93bgoTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEwAAAAAAACRAAAAAAAAAAAAAAAAAAAAAQBENCnBvaW50JREAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEARDQUlEQAAAAz/////BP////8E/////wz/////EwAAAAAAAAAAAAAAAAAAFEAAAAAAAAAAQBEOBSUFAAAADgUlBgAAAA0FJQcAAAAM/////wT/////DP////8M/////wwqAAAABKXu2wAEBgAAABENBSUIAAAADP////8E/////wT/////DP////8M/////wxMAAAADCoAAAAKEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAAAVAAAAABEOBSUJAAAADQUlCgAAAAz/////BP////8E/////wz/////EwAAAAAAABRA////////A0AAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACwsLCwsRDQUlCwAAAAz/////BP////8E/////wz/////DCwAAAAMOQAAAAwtAAAADEQAAAALDBgAAAAM/////xENBSULAAAADP////8E/////wT/////DP////8MLgAAAAwtAAAADFIAAAAMUwAAAAsMDwAAAAz/////EQ0FJQwAAAAM/////wT/////BP////8M/////wxUAAAABgAAAAAAAAAADEUAAAAGAAAAAAAAAEAMQgAAAAxVAAAACwcHdW5rbm93bgoTAAAAAAAAJEAAAAAAAAAAAAAAAAAAAAAAEwAAAAAAACRAAAAAAAAAAAAAAAAAAAAAQBENBSUOAAAADP////8E/////wT/////DP////8MRAAAAAxWAAAAEQ4FJQ8AAAANBSUQAAAADP////8E/////wT/////DP////8TAAAAAAAAJEAAAAAAAAAAAAAAAAAAAABAFAAAAAAAAACAAAAAAAAA8L8AAAAAAAAAgAsLEQ0FJQsAAAAM/////wT/////BP////8M/////wxSAAAADDUAAAAMMQAAAAxIAAAACgxAAAAADP////8RDQUlDAAAAAz/////BP////8E/////wz/////DEkAAAAGAAAAAAAAAAAMNwAAAAYAAAAAAAAkQAxHAAAADFcAAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAAATAAAAAAAAJEAAAAAAAAAUQAAAAAAAAAAAEQ0FJQ4AAAAM/////wT/////BP////8M/////wxTAAAADFgAAAARDgUlDwAAAA0FJRAAAAAM/////wT/////BP////8M/////xMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/CwsRDQUlEQAAAAz/////BP////8E/////wz/////EwAAAAAAACRAAAAAAAAAFEAAAAAAAAAAQBENBSULAAAADP////8E/////wT/////DP////8MNQAAAAxSAAAADDkAAAAMTwAAAAoMQAAAAAz/////EQ4FJQ8AAAANBSUQAAAADP////8E/////wT/////DP////8TAAAAAAAAAAAAAAAAAAAUQAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAAAsLEQ0FJREAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAABRAAAAAAAAAAAARDQUlDAAAAAz/////BP////8E/////wz/////DDoAAAAGAAAAAAAAAAAMVAAAAAYAAAAAAAAkQAxMAAAADFkAAAALBwd1bmtub3duChMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAAAAAAAAJEAAAAAAAAAAAAAAAAAAAAAAEQ0FJREAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARDgUlDwAAAA0FJRAAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAUAAAAAAAA8L8AAAAAAAAAgAAAAAAAAACACwsRDQUlCwAAAAz/////BP////8E/////wz/////DEwAAAAMRwAAAAxDAAAADFMAAAAKDEAAAAAM/////xENBSUMAAAADP////8E/////wT/////DP////8MVAAAAAYAAAAAAAAAAAxJAAAABgAAAAAAABRADFIAAAAMWgAAAAsHB3Vua25vd24KEwAAAAAAACRAAAAAAAAAAAAAAAAAAAAAABMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAAARDQUlDgAAAAz/////BP////8E/////wz/////DE8AAAAMWwAAABEOBSUPAAAADQUlEAAAAAz/////BP////8E/////wz/////EwAAAAAAACRAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8LCxENBSURAAAADP////8E/////wT/////DP////8TAAAAAAAAJEAAAAAAAAAAAAAAAAAAAABAEQ4FJQ8AAAANBSUQAAAADP////8E/////wT/////DP////8TAAAAAAAAJEAAAAAAAAAUQAAAAAAAAAAAFAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAAAsLEQ0FJREAAAAM/////wT/////BP////8M/////xMAAAAAAAAkQAAAAAAAABRAAAAAAAAAAAARDgUlDwAAAA0FJRAAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACwsRDgUlDwAAAA0FJRAAAAAM/////wT/////BP////8M/////xMAAAAAAAAkQAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAACwsRDQUlEQAAAAz/////BP////8E/////wz/////EwAAAAAAACRAAAAAAAAAAAAAAAAAAAAAABENEEVuZC1vZi1BQ0lTLWRhdGE=",
+          "kind": "inline"
+        },
+        "offset": 60,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      },
+      "ironcad:source:kernel-record#1": {
+        "bytes": {
+          "data": "QUNJUyBCaW5hcnlGaWxlgAwAAAAAAAABAAAAAAAAAAcOSXJvbkNBRCAtIDMyLjAHDEFDSVMgMzIuMCBOVAcYV2VkIE5vdiAyNSAxOTo0NToyNyAyMDI2BgAAAAAAACRABo3ttaD3xrA+Bru919nffNs9CgdNTUg5QkFRRjRBNTZfVkZaWjdXV1pBQ0U0VzRGNE1QTjM5QUtNS0FOMlE4UlVXRTc1QkRWVkZHUURCRDNWSkM2VlhDUEJOSlBYQUEzQ1ANCWJvZHklAQAAAAz/////BP////8E/////wz/////BAAAAAAMAQAAAAz/////DAIAAAAKEwAAAAAAABTAAAAAAAAABMAAAAAAAJxYOhMAAAAAAAAUQAAAAAAAAARAAAAAAAAAAEARDQlsdW1wJQIAAAAM/////wT/////BP////8M/////wz/////DAMAAAAMAAAAAAoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABRAAAAAAAAABEAAAAAAAAAAQBENDnRyYW5zZm9ybSUDAAAADP////8E/////xQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAA8D8LCwsRDQpzaGVsbCUEAAAADP////8E/////wT/////DP////8M/////wz/////DAQAAAAM/////wwBAAAAChMAAAAAAAAUwAAAAAAAAATAAAAAAACcWDoTAAAAAAAAFEAAAAAAAAAEQAAAAAAAAABAEQ0JZmFjZSUFAAAADAUAAAAE/////wT/////DP////8MBgAAAAwHAAAADAMAAAAM/////wwIAAAACwsKEwAAAAAAABTAAAAAAAAABMAAAAAAAJxYOhMAAAAAAAAUwAAAAAAAAARAAAAAAAAAAEALEQ4OcmdiX2NvbG9yJQYAAAAOB3N0JQcAAAANC2F0dHJpYiUIAAAADP////8E/////wwJAAAADP////8MBAAAAATG7t8ABhgYGBgYGOg/BhgYGBgYGOg/Bvr5+fn5+ek/EQ0FJQUAAAAMCgAAAAT/////BP////8M/////wwLAAAADAwAAAAMAwAAAAz/////DA0AAAALCwoTAAAAAAAAFMAAAAAAAAAEQAAAAAAAnFg6EwAAAAAAABRAAAAAAAAABEAAAAAAAAAAQAsRDQlsb29wJQkAAAAM/////wT/////BP////8M/////wz/////DA4AAAAMBAAAAAoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABTAAAAAAAAABEAAAAAAAAAAQBUAAAAAEQ4KcGxhbmUlCgAAAA0Mc3VyZmFjZSULAAAADP////8E/////wT/////DP////8TAAAAAAAAFMAAAAAAAAAAAAAAAAAAnFg6FAAAAAAAAPC/AAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAALCwsLCxEOF2JvZHlmYWNlaWRlbnRpZmllciUMAAAADghleWUlDQAAAA0FJQgAAAAM/////wT/////DP////8MBQAAAAwEAAAABKXu2wAEAQAAABEOBSUGAAAADgUlBwAAAA0FJQgAAAAM/////wT/////DA8AAAAM/////wwGAAAABMbu3wAGGBgYGBgY6D8GGBgYGBgY6D8G+vn5+fn56T8RDQUlBQAAAAwQAAAABP////8E/////wz/////DBEAAAAMEgAAAAwDAAAADP////8MEwAAAAsLChMAAAAAAAAUQAAAAAAAAATAAAAAAACcWDoTAAAAAAAAFEAAAAAAAAAEQAAAAAAAAABACxENBSUJAAAADP////8E/////wT/////DP////8M/////wwUAAAADAYAAAAKEwAAAAAAABTAAAAAAAAABEAAAAAAAJxYOhMAAAAAAAAUQAAAAAAAAARAAAAAAAAAAEAVAAAAABEOBSUKAAAADQUlCwAAAAz/////BP////8E/////wz/////EwAAAAAAAAAAAAAAAAAABEAAAAAAAJxYOhQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAUAAAAAAAA8L8AAAAAAAAAAAAAAAAAAAAACwsLCwsRDQtjb2VkZ2UlDgAAAAz/////BP////8E/////wz/////DBUAAAAMFgAAAAwXAAAADBgAAAALDAcAAAAM/////xEOBSUMAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8MCgAAAAwGAAAABKXu2wAEBAAAABEOBSUGAAAADgUlBwAAAA0FJQgAAAAM/////wT/////DBkAAAAM/////wwLAAAABMbu3wAGGBgYGBgY6D8GGBgYGBgY6D8G+vn5+fn56T8RDQUlBQAAAAwaAAAABP////8E/////wz/////DBsAAAAMHAAAAAwDAAAADP////8MHQAAAAsLChMAAAAAAAAUwAAAAAAAAATAAAAAAACcWDoTAAAAAAAAFEAAAAAAAAAEwAAAAAAAAABACxENBSUJAAAADP////8E/////wT/////DP////8M/////wweAAAADAsAAAAKEwAAAAAAABRAAAAAAAAABMAAAAAAAJxYOhMAAAAAAAAUQAAAAAAAAARAAAAAAAAAAEAVAAAAABEOBSUKAAAADQUlCwAAAAz/////BP////8E/////wz/////EwAAAAAAABRAAAAAAAAAAAAAAAAAAJxYOhQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAACwsLCwsRDQUlDgAAAAz/////BP////8E/////wz/////DB8AAAAMIAAAAAwhAAAADCIAAAALDAwAAAAM/////xENBSUOAAAADP////8E/////wT/////DP////8MIwAAAAwOAAAADCAAAAAMJAAAAAoMBwAAAAz/////EQ0FJQ4AAAAM/////wT/////BP////8M/////wwOAAAADCMAAAAMJQAAAAwmAAAACwwHAAAADP////8RDQUlDgAAAAz/////BP////8E/////wz/////DCcAAAAMIQAAAAwOAAAADBgAAAAKDCgAAAAM/////xENCWVkZ2UlDwAAAAwpAAAABP////8E/////wz/////DCoAAAAGAAAAAAAAFMAMKwAAAAYAAAAAAAAAAAwOAAAADCwAAAALBwd1bmtub3duChMAAAAAAAAUwAAAAAAAAATAAAAAAAAAAEATAAAAAAAAFMAAAAAAAAAEQAAAAAAAAABAEQ4FJQwAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wwQAAAADAsAAAAEpe7bAAQDAAAAEQ4FJQYAAAAOBSUHAAAADQUlCAAAAAz/////BP////8MLQAAAAz/////DBEAAAAExu7fAAYYGBgYGBjoPwYYGBgYGBjoPwb6+fn5+fnpPxENBSUFAAAADC4AAAAE/////wT/////DP////8MLwAAAAwoAAAADAMAAAAM/////wwwAAAACwsKEwAAAAAAABTAAAAAAAAABMAAAAAAAAAAQBMAAAAAAAAUQAAAAAAAAARAAAAAAAAAAEAKBgAAAAAAABTABgAAAAAAABRABv///////wPABgEAAAAAAARAEQ0FJQkAAAAM/////wT/////BP////8M/////wz/////DDEAAAAMEQAAAAoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABRAAAAAAAAABMAAAAAAAAAAQBUAAAAAEQ4FJQoAAAANBSULAAAADP////8E/////wT/////DP////8TAAAAAAAAAAAAAAAAAAAEwAAAAAAAnFg6FAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAABQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALCwsLCxENBSUOAAAADP////8E/////wT/////DP////8MMgAAAAwzAAAADDQAAAAMNQAAAAsMEgAAAAz/////EQ0FJQ4AAAAM/////wT/////BP////8M/////ww2AAAADBQAAAAMMwAAAAw3AAAACgwMAAAADP////8RDQUlDgAAAAz/////BP////8E/////wz/////DBQAAAAMNgAAAAwVAAAADCQAAAALDAwAAAAM/////xENBSUOAAAADP////8E/////wT/////DP////8MFwAAAAw0AAAADBQAAAAMIgAAAAoMKAAAAAz/////EQ0FJQ8AAAAMOAAAAAT/////BP////8M/////wwrAAAABgAAAAAAACTADDkAAAAGAAAAAAAAAAAMFAAAAAw6AAAACwcHdW5rbm93bgoTAAAAAAAAFMAAAAAAAAAEQAAAAAAAAABAEwAAAAAAABRAAAAAAAAABEAAAAAAAAAAQBENBSUOAAAADP////8E/////wT/////DP////8MFgAAAAwVAAAADDsAAAAMPAAAAAsMBwAAAAz/////EQ0FJQ8AAAAMPQAAAAT/////BP////8M/////ww+AAAABgAAAAAAAAAADCsAAAAGAAAAAAAAAEAMIAAAAAw/AAAACwcHdW5rbm93bgoTAAAAAAAAFMAAAAAAAAAEQAAAAAAAnFg6EwAAAAAAABTAAAAAAAAABEAAAAAAAAAAQBENBSUOAAAADP////8E/////wT/////DP////8MQAAAAAwxAAAADBYAAAAMJgAAAAoMHAAAAAz/////EQ0FJQ8AAAAMQQAAAAT/////BP////8M/////wxCAAAABgAAAAAAAAAADCoAAAAGAAAAAAAAAEAMFgAAAAxDAAAACwcHdW5rbm93bgoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABTAAAAAAAAABMAAAAAAAAAAQBENBSUOAAAADP////8E/////wT/////DP////8MNAAAAAwXAAAADDEAAAAMRAAAAAoMKAAAAAz/////EQ0FJQkAAAAM/////wT/////BP////8M/////wz/////DBcAAAAMGwAAAAoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAAABAEwAAAAAAABRAAAAAAAAABEAAAAAAAAAAQBUBAAAADDAAAAALEQ4XYm9keWVkZ2VpZGVudGlmaWVyJRAAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wz/////DBgAAAAEpe7bAAQIAAAAEQ0LdmVydGV4JREAAAAMRQAAAAT/////BP////8M/////wwmAAAADEYAAAARDQUlEQAAAAxHAAAABP////8E/////wz/////DCQAAAAMSAAAABEODXN0cmFpZ2h0JRIAAAANCmN1cnZlJRMAAAAM/////wT/////BP////8M/////xMAAAAAAAAUwAAAAAAAAARAAAAAAAAAAEAUAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAACwsRDgUlDAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DBoAAAAMEQAAAASl7tsABAIAAAARDgUlBgAAAA4FJQcAAAANBSUIAAAADP////8E/////wxJAAAADP////8MGwAAAATG7t8ABhgYGBgYGOg/BhgYGBgYGOg/Bvr5+fn5+ek/EQ0FJQUAAAAMSgAAAAT/////BP////8M/////wz/////DEsAAAAMAwAAAAz/////DEwAAAAKCwoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABRAAAAAAAAABEAAAAAAAJxYOgsRDgUlCgAAAA0FJQsAAAAM/////wT/////BP////8M/////xMAAAAAAAAAAAAAAAAAAMC8AAAAAAAAAEAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsLCwsLEQ0FJQ4AAAAM/////wT/////BP////8M/////wwlAAAADE0AAAAMJwAAAAxEAAAACwwcAAAADP////8RDQUlDgAAAAz/////BP////8E/////wz/////DE4AAAAMHgAAAAxNAAAADE8AAAAKDBIAAAAM/////xENBSUOAAAADP////8E/////wT/////DP////8MHgAAAAxOAAAADB8AAAAMNwAAAAsMEgAAAAz/////EQ0FJQ4AAAAM/////wT/////BP////8M/////wwhAAAADCcAAAAMHgAAAAw1AAAACgwoAAAADP////8RDQUlDwAAAAxQAAAABP////8E/////wz/////DDkAAAAGAAAAAAAAFMAMUQAAAAYAAAAAAAAAgAweAAAADFIAAAALBwd1bmtub3duChMAAAAAAAAUQAAAAAAAAATAAAAAAAAAAEATAAAAAAAAFEAAAAAAAAAEQAAAAAAAAABAEQ0FJQ4AAAAM/////wT/////BP////8M/////wwgAAAADB8AAAAMUwAAAAxUAAAACwwMAAAADP////8RDQUlDwAAAAxVAAAABP////8E/////wz/////DFYAAAAGAAAAAAAAAAAMOQAAAAYAAAAAAAAAQAwzAAAADFcAAAALBwd1bmtub3duChMAAAAAAAAUQAAAAAAAAARAAAAAAACcWDoTAAAAAAAAFEAAAAAAAAAEQAAAAAAAAABAEQ4FJRAAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wz/////DCIAAAAEpe7bAAQFAAAAEQ0FJREAAAAMWAAAAAT/////BP////8M/////ww3AAAADFkAAAARDgUlEgAAAA0FJRMAAAAM/////wT/////BP////8M/////xMAAAAAAAAUQAAAAAAAAARAAAAAAAAAAEAUAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACwsRDQUlDgAAAAz/////BP////8E/////wz/////DFMAAAAMWgAAAAwjAAAADDwAAAAKDEsAAAAM/////xENBSUPAAAADFsAAAAE/////wT/////DP////8MPgAAAAYAAAAAAAAAAAxCAAAABgAAAAAAABRADDsAAAAMXAAAAAsHB3Vua25vd24KEwAAAAAAABTAAAAAAAAABMAAAAAAAJxYOhMAAAAAAAAUwAAAAAAAAARAAAAAAACcWDoRDgUlEAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MJAAAAASl7tsABAQAAAARDQUlEQAAAAxdAAAABP////8E/////wz/////DFQAAAAMXgAAABEOBSUSAAAADQUlEwAAAAz/////BP////8E/////wz/////EwAAAAAAABTAAAAAAAAABEAAAAAAAJxYOhQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8LCxENBSUOAAAADP////8E/////wT/////DP////8MTQAAAAwlAAAADFoAAAAMXwAAAAsMHAAAAAz/////EQ4FJRAAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wz/////DCYAAAAEpe7bAAQBAAAAEQ0FJREAAAAMYAAAAAT/////BP////8M/////wxfAAAADGEAAAARDgUlEgAAAA0FJRMAAAAM/////wT/////BP////8M/////xMAAAAAAAAUwAAAAAAAAATAAAAAAACcWDoUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/CwsRDQUlDwAAAAxiAAAABP////8E/////wz/////DFEAAAAGAAAAAAAAJMAMKgAAAAYAAAAAAAAAgAwxAAAADGMAAAALBwd1bmtub3duChMAAAAAAAAUwAAAAAAAAATAAAAAAAAAAEATAAAAAAAAFEAAAAAAAAAEwAAAAAAAAABAEQ4ZYm9keXZlcnRleGlkZW50aWZpZXIlFAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MKgAAAASl7tsABAQAAAARDQpwb2ludCUVAAAADP////8E/////wT/////DP////8TAAAAAAAAFMAAAAAAAAAEwAAAAAAAAABAEQ4FJRQAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wz/////DCsAAAAEpe7bAAQBAAAAEQ0FJRUAAAAM/////wT/////BP////8M/////xMAAAAAAAAUwAAAAAAAAARAAAAAAAAAAEARDgUlDAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DC4AAAAMGwAAAASl7tsABAUAAAARDgUlBgAAAA4FJQcAAAANBSUIAAAADP////8E/////wxkAAAADP////8MLwAAAATG7t8ABhgYGBgYGOg/BhgYGBgYGOg/Bvr5+fn5+ek/EQ0FJQkAAAAM/////wT/////BP////8M/////wz/////DFoAAAAMLwAAAAoTAAAAAAAAFMAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABRAAAAAAAAABEAAAAAAAJxYOhUAAAAAEQ4FJQoAAAANBSULAAAADP////8E/////wT/////DP////8TAAAAAAAAAAAAAAAAAADAvAAAAAAAnFg6FAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALCwsLCxENBSUOAAAADP////8E/////wT/////DP////8MMQAAAAxAAAAADDIAAAAMTwAAAAsMHAAAAAz/////EQ0FJQ4AAAAM/////wT/////BP////8M/////wwzAAAADDIAAAAMZQAAAAxmAAAACwwSAAAADP////8RDQUlDwAAAAxnAAAABP////8E/////wz/////DGgAAAAGAAAAAAAAAAAMUQAAAAYAAAAAAAAAQAxNAAAADGkAAAALBwd1bmtub3duChMAAAAAAAAUQAAAAAAAAATAAAAAAACcWDoTAAAAAAAAFEAAAAAAAAAEwAAAAAAAAABAEQ4FJRAAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wz/////DDUAAAAEpe7bAAQGAAAAEQ0FJREAAAAMagAAAAT/////BP////8M/////wxPAAAADGsAAAARDgUlEgAAAA0FJRMAAAAM/////wT/////BP////8M/////xMAAAAAAAAUQAAAAAAAAATAAAAAAAAAAEAUAAAAAAAAAIAAAAAAAADwvwAAAAAAAACACwsRDQUlDgAAAAz/////BP////8E/////wz/////DGUAAAAMOwAAAAw2AAAADFQAAAAKDEsAAAAM/////xENBSUPAAAADGwAAAAE/////wT/////DP////8MVgAAAAYAAAAAAAAAAAw+AAAABgAAAAAAACRADFMAAAAMbQAAAAsHB3Vua25vd24KEwAAAAAAABTAAAAAAAAABEAAAAAAAJxYOhMAAAAAAAAUQAAAAAAAAARAAAAAAACcWDoRDgUlEAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MNwAAAASl7tsABAMAAAARDQUlEQAAAAxuAAAABP////8E/////wz/////DGYAAAAMbwAAABEOBSUSAAAADQUlEwAAAAz/////BP////8E/////wz/////EwAAAAAAABRAAAAAAAAABEAAAAAAAJxYOhQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8LCxEOBSUUAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8M/////ww5AAAABKXu2wAEAgAAABENBSUVAAAADP////8E/////wT/////DP////8TAAAAAAAAFEAAAAAAAAAEQAAAAAAAAABAEQ0FJQ4AAAAM/////wT/////BP////8M/////ww7AAAADGUAAAAMQAAAAAxfAAAACgxLAAAADP////8RDgUlEAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MPAAAAASl7tsABAwAAAARDgUlEgAAAA0FJRMAAAAM/////wT/////BP////8M/////xMAAAAAAAAUwAAAAAAAAARAAAAAAACcWDoUAAAAAAAAAAAAAAAAAADwvwAAAAAAAAAACwsRDgUlFAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MPgAAAASl7tsABAUAAAARDQUlFQAAAAz/////BP////8E/////wz/////EwAAAAAAABTAAAAAAAAABEAAAAAAAJxYOhENBSUPAAAADHAAAAAE/////wT/////DP////8MQgAAAAYAAAAAAAAAAAxoAAAABgAAAAAAACRADFoAAAAMcQAAAAsHB3Vua25vd24KEwAAAAAAABTAAAAAAAAABMAAAAAAAJxYOhMAAAAAAAAUQAAAAAAAAATAAAAAAACcWDoRDgUlFAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MQgAAAASl7tsABAgAAAARDQUlFQAAAAz/////BP////8E/////wz/////EwAAAAAAABTAAAAAAAAABMAAAAAAAJxYOhEOBSUQAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8M/////wxEAAAABKXu2wAEBwAAABEOBSUSAAAADQUlEwAAAAz/////BP////8E/////wz/////EwAAAAAAABTAAAAAAAAABMAAAAAAAAAAQBQAAAAAAADwvwAAAAAAAACAAAAAAAAAAIALCxEOBSUMAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8MSgAAAAwvAAAABKXu2wAEBgAAABENBSUOAAAADP////8E/////wT/////DP////8MWgAAAAxTAAAADE4AAAAMZgAAAAoMSwAAAAz/////EQ0FJQ8AAAAMcgAAAAT/////BP////8M/////wxoAAAABgAAAAAAAAAADFYAAAAGAAAAAAAAFEAMZQAAAAxzAAAACwcHdW5rbm93bgoTAAAAAAAAFEAAAAAAAAAEwAAAAAAAnFg6EwAAAAAAABRAAAAAAAAABEAAAAAAAJxYOhEOBSUQAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8M/////wxPAAAABKXu2wAEAgAAABENBSURAAAADHQAAAAE/////wT/////DP////8MXwAAAAx1AAAAEQ4FJRIAAAANBSUTAAAADP////8E/////wT/////DP////8TAAAAAAAAFEAAAAAAAAAEwAAAAAAAnFg6FAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwsLEQ4FJRQAAAAOBSUNAAAADQUlCAAAAAz/////BP////8M/////wz/////DFEAAAAEpe7bAAQDAAAAEQ0FJRUAAAAM/////wT/////BP////8M/////xMAAAAAAAAUQAAAAAAAAATAAAAAAAAAAEARDgUlEAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MVAAAAASl7tsABAkAAAARDgUlEgAAAA0FJRMAAAAM/////wT/////BP////8M/////xMAAAAAAAAUQAAAAAAAAARAAAAAAACcWDoUAAAAAAAA8L8AAAAAAAAAAAAAAAAAAAAACwsRDgUlFAAAAA4FJQ0AAAANBSUIAAAADP////8E/////wz/////DP////8MVgAAAASl7tsABAYAAAARDQUlFQAAAAz/////BP////8E/////wz/////EwAAAAAAABRAAAAAAAAABEAAAAAAAJxYOhEOBSUQAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8M/////wxfAAAABKXu2wAECwAAABEOBSUSAAAADQUlEwAAAAz/////BP////8E/////wz/////EwAAAAAAABTAAAAAAAAABMAAAAAAAJxYOhQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALCxEOBSUQAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8M/////wxmAAAABKXu2wAECgAAABEOBSUSAAAADQUlEwAAAAz/////BP////8E/////wz/////EwAAAAAAABRAAAAAAAAABMAAAAAAAJxYOhQAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAALCxEOBSUUAAAADgUlDQAAAA0FJQgAAAAM/////wT/////DP////8M/////wxoAAAABKXu2wAEBwAAABENBSUVAAAADP////8E/////wT/////DP////8TAAAAAAAAFEAAAAAAAAAEwAAAAAAAnFg6EQ0QRW5kLW9mLUFDSVMtZGF0YQ==",
+          "kind": "inline"
+        },
+        "offset": 7746,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}
