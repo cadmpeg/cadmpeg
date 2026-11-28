@@ -466,6 +466,57 @@ fn malformed_text_brep_returns_an_entry_named_error() {
 }
 
 #[test]
+fn a_zero_pair_body_map_classifies_the_blob_it_names_and_selects_no_body() {
+    use crate::test_support::body_map_test::{
+        f3d_with_model_breps_and_zero_pair_carrier, ModelBlob,
+    };
+    let model = synthetic_smbh();
+    let blobs = [ModelBlob {
+        basename: "BREP.model.smbh",
+        smbh: &model,
+        selector: 0,
+    }];
+    let selected = |blobs: &[ModelBlob<'_>], basename: &str, extra: &[(&str, &[u8])]| {
+        let archive = f3d_with_model_breps_and_zero_pair_carrier(blobs, basename, extra);
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            crate::design::decode::body::design_model_selection(scan)
+                .map(|selection| (selection.blob_names, selection.explicitly_empty))
+                .map_err(|error| error.to_string())
+        })
+    };
+    let model_only = Ok((vec!["BREP.model.smbh".to_string()], false));
+    let unclassified = "do not classify every binary BREP entry exactly once";
+    let other: &[u8] = &[0; 16];
+
+    // The archive holds the named blob: the carrier classifies it.
+    assert_eq!(
+        selected(&blobs, "BREP.other.smbh", &[("BREP.other.smbh", other)]),
+        model_only
+    );
+    // The archive holds no blob of that basename.
+    assert_eq!(selected(&blobs, "BREP.other.smbh", &[]), model_only);
+    // The carrier names the blob a populated map names.
+    assert_eq!(selected(&blobs, "BREP.model.smbh", &[]), model_only);
+    // A blob no carrier names stays unclassified.
+    assert!(
+        selected(&blobs, "BREP.other.smbh", &[("BREP.third.smbh", other)])
+            .unwrap_err()
+            .contains(unclassified)
+    );
+    // A zero-pair carrier names a `.smbh` basename: a `.smb` name is no carrier.
+    assert!(
+        selected(&blobs, "BREP.other.smb", &[("BREP.other.smb", other)])
+            .unwrap_err()
+            .contains(unclassified)
+    );
+    // Zero-pair carriers alone state no map: every archive blob is a model blob.
+    assert_eq!(
+        selected(&[], "BREP.other.smbh", &[("BREP.other.smbh", other)]),
+        Ok((vec!["BREP.other.smbh".to_string()], false))
+    );
+}
+
+#[test]
 fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
     let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
     let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(&snapshot, &[]);

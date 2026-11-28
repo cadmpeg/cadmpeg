@@ -32,10 +32,28 @@ const FIRST_ENTITY_SUFFIX: u64 = 985;
 
 /// A Design stream of body-map carriers, one per blob, and its `MetaStream`.
 /// The carrier type is the `MetaStream`'s first type, so its class tag is 256.
-fn body_map_design(blobs: &[ModelBlob<'_>]) -> (Vec<u8>, Vec<u8>) {
+/// `zero_pair_basename` adds a first carrier with zero pairs that names that
+/// basename.
+fn body_map_design(
+    blobs: &[ModelBlob<'_>],
+    zero_pair_basename: Option<&str>,
+) -> (Vec<u8>, Vec<u8>) {
     let mut bulk = Vec::new();
     let mut records = Vec::new();
     let mut carriers = Vec::new();
+    if let Some(basename) = zero_pair_basename {
+        let carrier = FIRST_CARRIER - 1;
+        records.push((u64::from(carrier), 0));
+        carriers.push(u64::from(carrier));
+        bulk.extend_from_slice(&3_u32.to_le_bytes());
+        bulk.extend_from_slice(b"256");
+        bulk.extend_from_slice(&carrier.to_le_bytes());
+        bulk.extend_from_slice(&[0; GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+        bulk.extend_from_slice(&0_u32.to_le_bytes());
+        bulk.extend_from_slice(&1793_u64.to_le_bytes());
+        bulk.extend_from_slice(&0_u32.to_le_bytes());
+        lp_utf16(&mut bulk, basename);
+    }
     for ((carrier, suffix), blob) in (FIRST_CARRIER..).zip(FIRST_ENTITY_SUFFIX..).zip(blobs) {
         records.push((u64::from(carrier), u64::try_from(bulk.len()).unwrap()));
         carriers.push(u64::from(carrier));
@@ -64,11 +82,28 @@ fn body_map_design(blobs: &[ModelBlob<'_>]) -> (Vec<u8>, Vec<u8>) {
 /// An archive of `blobs`, each a model BREP that one Design body-map carrier
 /// classifies.
 pub(crate) fn f3d_with_model_breps(blobs: &[ModelBlob<'_>]) -> Vec<u8> {
-    let (bulk, meta) = body_map_design(blobs);
+    let (bulk, meta) = body_map_design(blobs, None);
     let breps: Vec<_> = blobs
         .iter()
         .map(|blob| (blob.basename, blob.smbh))
         .collect();
+    f3d_with_breps_and_design(&breps, &bulk, &meta)
+}
+
+/// [`f3d_with_model_breps`] with one more body-map carrier that stores zero
+/// pairs and names `basename`. `extra_breps` are archive entries beside the
+/// model blobs.
+pub(crate) fn f3d_with_model_breps_and_zero_pair_carrier(
+    blobs: &[ModelBlob<'_>],
+    basename: &str,
+    extra_breps: &[(&str, &[u8])],
+) -> Vec<u8> {
+    let (bulk, meta) = body_map_design(blobs, Some(basename));
+    let mut breps: Vec<_> = blobs
+        .iter()
+        .map(|blob| (blob.basename, blob.smbh))
+        .collect();
+    breps.extend_from_slice(extra_breps);
     f3d_with_breps_and_design(&breps, &bulk, &meta)
 }
 

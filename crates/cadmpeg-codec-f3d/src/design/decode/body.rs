@@ -770,16 +770,34 @@ fn parse_snapshot_body_map_frame(
     Ok(None)
 }
 
-/// Parse every exactly indexed BREP body-map record in a Design `BulkStream`.
-///
-/// The type GUID names a family with more than one record frame. The
-/// `MetaStream` entity list and primary record index select exact candidate
-/// extents. A candidate is a body map only when one supported reserved-zero
-/// width makes its count, pair run, tail, and basename consume that extent.
+/// The body maps of a Design `BulkStream`: [`BodyMapCarriers::maps`].
 fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
+    Ok(body_map_carriers(bytes, meta)?.maps)
+}
+
+/// The body-map carriers of one Design `BulkStream`.
+struct BodyMapCarriers {
+    /// Carriers that bind bodies, and carriers with zero pairs and an empty
+    /// basename.
+    maps: Vec<BodyMapRecord>,
+    /// Carriers with zero pairs and a `.smbh` basename. Such a carrier
+    /// selects no body.
+    zero_pair_named: Vec<BodyMapRecord>,
+}
+
+/// Parse every exactly indexed BREP body-map carrier in a Design `BulkStream`.
+///
+/// The type GUID names a family with more than one record frame. The
+/// `MetaStream` entity list and primary record index select exact candidate
+/// extents. A candidate is a carrier only when one supported reserved-zero
+/// width makes its count, pair run, tail, and basename consume that extent.
+fn body_map_carriers(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<BodyMapCarriers, CodecError> {
     let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
@@ -790,7 +808,10 @@ fn body_map_records(
             .or_insert(Some(ordinal));
     }
 
-    let mut out = Vec::new();
+    let mut out = BodyMapCarriers {
+        maps: Vec::new(),
+        zero_pair_named: Vec::new(),
+    };
     let mut typed_entities = HashSet::new();
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
@@ -885,7 +906,11 @@ fn body_map_records(
                 }
             }
             if let Some(record) = matched {
-                out.push(record);
+                if record.bindings.is_empty() && !record.blob_name.is_empty() {
+                    out.zero_pair_named.push(record);
+                } else {
+                    out.maps.push(record);
+                }
             }
         }
     }
@@ -986,6 +1011,7 @@ pub(crate) fn design_model_selection(
     }
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
+    let mut zero_pair_names = HashSet::<String>::new();
     let mut saw_modern_map = false;
     let mut saw_snapshot_map = false;
     let mut selected_maps_empty = true;
@@ -1001,7 +1027,13 @@ pub(crate) fn design_model_selection(
         else {
             continue;
         };
-        let modern = body_map_records(bytes, &metadata)?;
+        let BodyMapCarriers {
+            maps: modern,
+            zero_pair_named,
+        } = body_map_carriers(bytes, &metadata)?;
+        for record in zero_pair_named {
+            zero_pair_names.insert(record.blob_name);
+        }
         saw_modern_map |= !modern.is_empty();
         let mut snapshots = snapshot_body_map_records(bytes, &metadata)?;
         saw_snapshot_map |= !snapshots.is_empty();
@@ -1059,6 +1091,13 @@ pub(crate) fn design_model_selection(
             explicitly_empty: false,
             losses,
         });
+    }
+    // A zero-pair carrier with a basename classifies the archive entry of that
+    // basename when no other carrier names it.
+    for name in zero_pair_names {
+        if archive_counts.contains_key(&name) {
+            carrier_counts.entry(name).or_insert(1);
+        }
     }
     if carrier_counts != archive_counts || archive_counts.values().any(|count| *count != 1) {
         return Err(CodecError::malformed(
@@ -1124,8 +1163,7 @@ fn parse_body_map_frame(
         };
         Ok((name_end == end
             && ((pair_count == 0 && blob_name.is_empty())
-                || (pair_count > 0
-                    && is_brep_blob_basename(&blob_name)
+                || (is_brep_blob_basename(&blob_name)
                     && std::path::Path::new(&blob_name).extension()
                         == Some(std::ffi::OsStr::new("smbh")))))
         .then_some((name_at, blob_name)))
