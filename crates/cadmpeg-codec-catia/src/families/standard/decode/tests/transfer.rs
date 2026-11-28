@@ -1114,6 +1114,14 @@ fn standard_catpart_decodes_as_a_standard_population() {
     })
     .expect("scan the container");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let sources = crate::container::consolidated_record_sources(&scan);
+        let consolidated_records =
+            crate::wire::records::consolidated_records_in_sources(&scan.data, &sources)?;
+        let shared = super::super::StandardSharedConsolidated::new(
+            &scan.data,
+            &sources,
+            &consolidated_records,
+        );
         super::super::try_decode_standard_population(
             ctx,
             &scan,
@@ -1121,6 +1129,7 @@ fn standard_catpart_decodes_as_a_standard_population() {
             &mut crate::nurbs::LaneRefusals::new(),
             &[],
             &std::collections::HashMap::new(),
+            &shared,
         )
     };
     assert!(crate::test_support::with_service_context(decode)

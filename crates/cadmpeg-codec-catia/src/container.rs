@@ -319,21 +319,20 @@ fn external_references_in_segments(
 ) -> Vec<ExternalReference> {
     const STORAGE: &[u8] = b"\x34\x12CATStorageProperty";
     let mut references = Vec::new();
+    let finder = memchr::memmem::Finder::new(STORAGE);
     for segment in segments
         .iter()
         .filter(|segment| segment.kind() == FinjplKind::ProjectFlags)
     {
         let bytes = &data[segment.range.clone()];
-        for (relative, value) in bytes.windows(STORAGE.len()).enumerate() {
-            if value == STORAGE {
-                if let Some((target_offset, target)) = parse_external_reference(bytes, relative) {
-                    let target = target.to_owned();
-                    let reference = ExternalReference {
-                        offset: target_offset + segment.range.start,
-                        target,
-                    };
-                    references.push(reference);
-                }
+        for relative in finder.find_iter(bytes) {
+            if let Some((target_offset, target)) = parse_external_reference(bytes, relative) {
+                let target = target.to_owned();
+                let reference = ExternalReference {
+                    offset: target_offset + segment.range.start,
+                    target,
+                };
+                references.push(reference);
             }
         }
     }

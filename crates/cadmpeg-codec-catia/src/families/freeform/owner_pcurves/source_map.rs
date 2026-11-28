@@ -24,26 +24,35 @@ struct FittedMap {
     tolerance: f64,
 }
 
-fn resolve<'a>(
+fn resolve_matching<'a>(
     journal: &AllocationJournal<'a>,
     origin: usize,
     reference: AllocationReference,
+    predicate: impl Fn(&ConsolidatedRecord) -> bool,
 ) -> Option<&'a ConsolidatedRecord> {
-    match reference.encoding {
+    let record = match reference.encoding {
         AllocationReferenceEncoding::WidthCoded => {
             journal.resolve_weighted_distance(origin, reference.value)
         }
-        AllocationReferenceEncoding::BackwardDistance => {
-            journal.resolve_record_distance(origin, reference.value)
-        }
+        AllocationReferenceEncoding::BackwardDistance => journal
+            .resolve_record_distance(origin, reference.value)
+            .filter(|candidate| predicate(candidate))
+            .or_else(|| journal.resolve_weighted_distance(origin, reference.value)),
         AllocationReferenceEncoding::OwnedChild => {
             journal.resolve_owned_child(origin, reference.value)
         }
-        AllocationReferenceEncoding::Selector2
-        | AllocationReferenceEncoding::TaggedU8
+        AllocationReferenceEncoding::TaggedU8
         | AllocationReferenceEncoding::TaggedU16
-        | AllocationReferenceEncoding::TaggedU24 => None,
-    }
+        | AllocationReferenceEncoding::TaggedU24 => journal.resolve_address(
+            origin,
+            journal
+                .address(origin)?
+                .checked_add(u64::from(reference.value))?
+                .checked_add(1)?,
+        ),
+        AllocationReferenceEncoding::Selector2 => None,
+    }?;
+    predicate(record).then_some(record)
 }
 
 fn interval(view: &mut View<'_>) -> Option<[f64; 2]> {
@@ -152,28 +161,30 @@ pub(super) fn fit_tolerance(
     node: &B2EdgeNode,
     selection: Selection,
 ) -> Option<f64> {
-    let record = resolve(
+    let record = resolve_matching(
         journal,
         node_index,
         AllocationReference {
             value: node.curve_ref,
             encoding: node.reference_encodings[0],
         },
+        |r| {
+            matches!(
+                (r.family(), r.class()),
+                (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x23 | 0x25)
+            )
+        },
     )?;
-    if record.family() != ConsolidatedFamily::A || record.class() != 0x25 {
-        return None;
-    }
     let origin = journal.index(record.source_index(), record.source_range().start)?;
     let map = fitted_map(data.get(record.payload()?)?)?;
     let mut resolved = [0; 2];
     for (slot, operand) in resolved.iter_mut().zip(map.operands) {
-        let representation = resolve(journal, origin, operand)?;
-        if !matches!(
-            (representation.family(), representation.class()),
-            (ConsolidatedFamily::A, 0x20) | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20)
-        ) {
-            return None;
-        }
+        let representation = resolve_matching(journal, origin, operand, |r| {
+            matches!(
+                (r.family(), r.class()),
+                (ConsolidatedFamily::A, 0x20) | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20)
+            )
+        })?;
         *slot = journal.index(
             representation.source_index(),
             representation.source_range().start,

@@ -1687,22 +1687,91 @@ fn standard_population_selections(
     Ok(Some((first, rest)))
 }
 
+struct StandardSharedConsolidated<'a> {
+    sources: &'a [Vec<crate::wire::records::SourceExtent>],
+    consolidated_records: &'a [ConsolidatedRecord],
+    journal: crate::families::consolidated::allocation::AllocationJournal<'a>,
+    a5_carriers: RefCell<Option<Vec<crate::families::a5a8::records::FreeformSurface>>>,
+    owners: RefCell<Option<crate::families::consolidated::owner_closure::OwnerClosureIndex>>,
+}
+
+impl<'a> StandardSharedConsolidated<'a> {
+    fn new(
+        data: &'a [u8],
+        sources: &'a [Vec<crate::wire::records::SourceExtent>],
+        consolidated_records: &'a [ConsolidatedRecord],
+    ) -> Self {
+        let journal = crate::families::consolidated::allocation::AllocationJournal::with_sources(
+            data,
+            sources,
+            consolidated_records,
+        );
+        Self {
+            sources,
+            consolidated_records,
+            journal,
+            a5_carriers: RefCell::new(None),
+            owners: RefCell::new(None),
+        }
+    }
+
+    fn ensure_a5_carriers(
+        &self,
+        data: &[u8],
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if self.a5_carriers.borrow().is_none() {
+            let carriers = crate::families::a5a8::records::a5_surfaces_from_records(
+                data,
+                self.consolidated_records,
+                refusal,
+            )?;
+            *self.a5_carriers.borrow_mut() = Some(carriers);
+        }
+        Ok(())
+    }
+
+    fn ensure_owners(&self, data: &[u8]) {
+        if self.owners.borrow().is_none() {
+            let owners = crate::families::consolidated::owner_closure::OwnerClosureIndex::new(
+                data,
+                self.consolidated_records,
+                &self.journal,
+            );
+            *self.owners.borrow_mut() = Some(owners);
+        }
+    }
+}
+
 pub(in crate::families) fn try_decode_standard(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    if scan.brep.is_none() {
+        return Ok(None);
+    }
     let surface_alias_tags = if matches!(scan.variant, Variant::StandardNested) {
         crate::object_graph::surface_alias_tag_map(&scan.data, &scan.finjpl_segments)
     } else {
         HashMap::new()
     };
     let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(&scan.data);
+    let sources = container::consolidated_record_sources(scan);
+    let consolidated_records =
+        crate::wire::records::consolidated_records_in_sources(&scan.data, &sources)?;
+    let shared = StandardSharedConsolidated::new(&scan.data, &sources, &consolidated_records);
     let selections = standard_population_selections(ctx, scan)?;
     let output = match &selections {
-        None => {
-            try_decode_standard_population(ctx, scan, None, refusal, &e5_jets, &surface_alias_tags)?
-        }
+        None => try_decode_standard_population(
+            ctx,
+            scan,
+            None,
+            refusal,
+            &e5_jets,
+            &surface_alias_tags,
+            &shared,
+        )?,
         Some((first, rest)) if rest.is_empty() => try_decode_standard_population(
             ctx,
             scan,
@@ -1710,15 +1779,16 @@ pub(in crate::families) fn try_decode_standard(
             refusal,
             &e5_jets,
             &surface_alias_tags,
+            &shared,
         )?,
         Some((first, rest)) => try_decode_standard_populations(
             ctx,
             scan,
-            first,
-            rest,
+            (first, rest),
             refusal,
             &e5_jets,
             &surface_alias_tags,
+            &shared,
         )?,
     };
     let Some(mut output) = output else {
@@ -1869,11 +1939,11 @@ fn merge_standard_population_annotations(
 fn try_decode_standard_populations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    first: &StandardPopulationSelection,
-    rest: &[StandardPopulationSelection],
+    (first, rest): (&StandardPopulationSelection, &[StandardPopulationSelection]),
     refusal: &mut crate::nurbs::LaneRefusals,
     e5_jets: &[crate::families::e5::records::E5RollingBallJet],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
+    shared: &StandardSharedConsolidated<'_>,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     let Some(mut merged) = try_decode_standard_population(
         ctx,
@@ -1882,6 +1952,7 @@ fn try_decode_standard_populations(
         refusal,
         e5_jets,
         surface_alias_tags,
+        shared,
     )?
     else {
         return Ok(None);
@@ -1896,6 +1967,7 @@ fn try_decode_standard_populations(
             refusal,
             e5_jets,
             surface_alias_tags,
+            shared,
         )?
         else {
             return Ok(None);
@@ -2068,6 +2140,7 @@ fn try_decode_standard_population(
     refusal: &mut crate::nurbs::LaneRefusals,
     e5_jets: &[crate::families::e5::records::E5RollingBallJet],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
+    shared: &StandardSharedConsolidated<'_>,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
     macro_rules! admitted {
@@ -2093,16 +2166,9 @@ fn try_decode_standard_population(
     if !work_budget.charge() {
         return None;
     }
-    let sources = container::consolidated_record_sources(scan);
-    let consolidated_records = match crate::wire::records::consolidated_records_in_sources(&scan.data, &sources) {
-        Ok(records) => records,
-        Err(error) => return Some(Err(error)),
-    };
-    let shared_journal = crate::families::consolidated::allocation::AllocationJournal::with_sources(
-        &scan.data,
-        &sources,
-        &consolidated_records,
-    );
+    let sources = shared.sources;
+    let consolidated_records = shared.consolidated_records;
+    let shared_journal = &shared.journal;
     let vertex_points = match edge_table_form {
         EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
         EdgeTableForm::Standard => match fbb::standard_vertex_points(ctx, standard_spine) {
@@ -2190,7 +2256,7 @@ fn try_decode_standard_population(
         &freeform_tags,
         &edge_tags,
         selected_face_tags,
-        &consolidated_records,
+        consolidated_records,
         refusal,
     ) {
         Ok(evidence) => evidence,
@@ -2199,7 +2265,7 @@ fn try_decode_standard_population(
     let standard_limit_curve_count = object_evidence.limit_curves.len();
     let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
         &scan.data,
-        &consolidated_records,
+        consolidated_records,
     )
     .count();
     let face_frame_vectors = match fbb::standard_face_frame_vectors(ctx, standard_spine, records.len()) {
@@ -2219,13 +2285,13 @@ fn try_decode_standard_population(
         };
         curved_surfaces.push(surface);
     }
-    let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
+    let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, consolidated_records, &mut curved_surfaces);
     let mut plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
     let journal_planes = crate::families::freeform::standard_carriers::recover_missing_plane_normals(
         &scan.data,
-        &sources,
-        &consolidated_records,
-        &shared_journal,
+        sources,
+        consolidated_records,
+        shared_journal,
         brep,
         &records,
         &mut plane_normals,
@@ -2697,7 +2763,10 @@ fn try_decode_standard_population(
     }
     ir.geometry.surfaces = surfaces;
     let resolved_consolidated_revolutions =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(&scan.data, &consolidated_records);
+        crate::families::b2::records::b2_resolved_revolutions_from_records(
+            &scan.data,
+            consolidated_records,
+        );
     let resolved_revolution_count = resolved_consolidated_revolutions.len();
     // The bindings this call returns are read below, through
     // `bind_consolidated_revolution_faces_and_seams`.
@@ -2776,9 +2845,9 @@ fn try_decode_standard_population(
     let consolidated_edge_vertices =
         crate::families::consolidated::allocation::consolidated_edge_vertex_references_with_journal(
             &scan.data,
-            &sources,
-            &consolidated_records,
-            &shared_journal,
+            sources,
+            consolidated_records,
+            shared_journal,
         );
     let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), consolidated_edge_vertices: &consolidated_edge_vertices, native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
@@ -2854,8 +2923,8 @@ fn try_decode_standard_population(
     let mut consolidated_curve_bindings = match append_freeform_surface_pools(
         &mut ir,
         &mut annotations,
-        (&scan.data, &sources),
-        &consolidated_records,
+        (&scan.data, sources),
+        consolidated_records,
         surface_alias_tags,
         refusal,
         &mut admission,
@@ -2866,26 +2935,25 @@ fn try_decode_standard_population(
     };
     let owner_binding_budget =
         cadmpeg_core::decode::WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-    let a5_carriers = match crate::families::a5a8::records::a5_surfaces_from_records(
-        &scan.data,
-        &consolidated_records,
-        refusal,
-    ) {
-        Ok(carriers) => carriers,
-        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
-        Err(_) => return None,
-    };
+    if let Err(error) = shared.ensure_a5_carriers(&scan.data, refusal) {
+        return match error {
+            error @ cadmpeg_core::CodecError::ResourceLimit(_) => Some(Err(error)),
+            _ => None,
+        };
+    }
+    let a5_carriers_ref = shared.a5_carriers.borrow();
+    let a5_carriers = a5_carriers_ref.as_deref().unwrap_or(&[]);
     consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
         ctx,
         &mut ir,
         &mut annotations,
         StandardConsolidatedSource {
             data: &scan.data,
-            records: &consolidated_records,
+            records: consolidated_records,
         },
         &face_bounds,
         &owner_binding_budget,
-        &a5_carriers,
+        a5_carriers,
     ) {
         Ok(bound) => bound,
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
@@ -2897,11 +2965,11 @@ fn try_decode_standard_population(
             &mut annotations,
             &crate::families::freeform::standard_carriers::JournalSurfaceSource {
                 data: &scan.data,
-                sources: &sources,
-                records: &consolidated_records,
-                journal: &shared_journal,
+                sources,
+                records: consolidated_records,
+                journal: shared_journal,
             },
-            &a5_carriers,
+            a5_carriers,
             refusal,
         ) {
             Ok(bound) => bound,
@@ -2915,32 +2983,30 @@ fn try_decode_standard_population(
             &mut annotations,
             StandardConsolidatedSource {
                 data: &scan.data,
-                records: &consolidated_records,
+                records: consolidated_records,
             },
             &face_bounds,
             &owner_binding_budget,
-            &a5_carriers,
+            a5_carriers,
         ) {
             Ok(bound) => bound,
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
             Err(_) => return None,
         };
-    let shared_owners = crate::families::consolidated::owner_closure::OwnerClosureIndex::new(
-        &scan.data,
-        &consolidated_records,
-        &shared_journal,
-    );
+    shared.ensure_owners(&scan.data);
+    let shared_owners_ref = shared.owners.borrow();
+    let shared_owners = shared_owners_ref.as_ref()?;
     let weighted = match crate::families::freeform::weighted_edges::attach_with_journal(
         &mut ir,
         &mut annotations,
         &crate::families::freeform::weighted_edges::WeightedEdgesSource {
             data: &scan.data,
-            sources: &sources,
-            records: &consolidated_records,
-            journal: &shared_journal,
-            owners: &shared_owners,
+            sources,
+            records: consolidated_records,
+            journal: shared_journal,
+            owners: shared_owners,
         },
-        &a5_carriers,
+        a5_carriers,
         refusal,
         &mut admission,
     ) {
@@ -2966,9 +3032,9 @@ fn try_decode_standard_population(
             &mut annotations,
             &crate::families::freeform::owner_pcurves::OwnerPcurvesSource {
                 data: &scan.data,
-                records: &consolidated_records,
-                journal: &shared_journal,
-                owners: &shared_owners,
+                records: consolidated_records,
+                journal: shared_journal,
+                owners: shared_owners,
             },
             refusal,
             &mut admission,
@@ -2978,6 +3044,52 @@ fn try_decode_standard_population(
             Err(_) => return None,
         };
     consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
+    if topology_attached && source_jet_pcurves.pcurves > 0 {
+        let mut sphere_surfaces = HashSet::<&SurfaceId>::new();
+        for surface in &ir.geometry.surfaces {
+            if matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+            ) {
+                sphere_surfaces.insert(&surface.id);
+            }
+        }
+        if !sphere_surfaces.is_empty() {
+            let mut sphere_faces = HashSet::<&FaceId>::new();
+            for face in &ir.geometry.faces {
+                if sphere_surfaces.contains(&face.surface) {
+                    sphere_faces.insert(&face.id);
+                }
+            }
+            let mut sphere_loops = HashSet::<&LoopId>::new();
+            for loop_ in &ir.geometry.loops {
+                if sphere_faces.contains(&loop_.face) {
+                    sphere_loops.insert(&loop_.id);
+                }
+            }
+            let mut edge_sphere_coedge_pcurves = HashMap::<&EdgeId, (usize, bool)>::new();
+            for coedge in &ir.geometry.coedges {
+                if sphere_loops.contains(&coedge.owner_loop) {
+                    let entry = edge_sphere_coedge_pcurves
+                        .entry(&coedge.edge)
+                        .or_insert((0, true));
+                    entry.0 += 1;
+                    entry.1 &= !coedge.pcurves.is_empty();
+                }
+            }
+            for (edge_id, &(count, all_have)) in &edge_sphere_coedge_pcurves {
+                if count > 0 && all_have {
+                    if let Some(provenance) =
+                        annotations.annotations().provenance.get(edge_id.as_str())
+                    {
+                        if let Ok(offset) = usize::try_from(provenance.offset) {
+                            refusal.remove_pcurve_circle_plane_mismatch(offset);
+                        }
+                    }
+                }
+            }
+        }
+    }
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -9530,22 +9642,9 @@ fn bind_standard_a5_owner_surfaces(
     carriers: &[crate::families::a5a8::records::FreeformSurface],
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let StandardConsolidatedSource { data, records } = source;
-    let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records)
-        .collect::<Vec<_>>();
-    if carriers.is_empty() || owners.is_empty() || ir.geometry.faces.is_empty() {
+    if carriers.is_empty() || ir.geometry.faces.is_empty() {
         return Ok(0);
     }
-    let mut owner_carriers = Vec::new();
-    for owner in &owners {
-        let mut matched = Vec::new();
-        for (carrier, value) in carriers.iter().enumerate() {
-            if owner_matches_a5_carrier(ctx, &owner.numeric_tail, &value.geometry)? {
-                matched.push(carrier);
-            }
-        }
-        owner_carriers.push(matched);
-    }
-    let witnesses = standard_face_boundary_witnesses(ctx, ir)?;
     let mut surface_indices = HashMap::new();
     for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
         surface_indices.insert(surface.id.as_str(), index);
@@ -9570,6 +9669,25 @@ fn bind_standard_a5_owner_surfaces(
             .then_some((face, ordinal, surface))
         })
         .collect::<Vec<_>>();
+    if unknown_faces.is_empty() {
+        return Ok(0);
+    }
+    let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records)
+        .collect::<Vec<_>>();
+    if owners.is_empty() {
+        return Ok(0);
+    }
+    let mut owner_carriers = Vec::new();
+    for owner in &owners {
+        let mut matched = Vec::new();
+        for (carrier, value) in carriers.iter().enumerate() {
+            if owner_matches_a5_carrier(ctx, &owner.numeric_tail, &value.geometry)? {
+                matched.push(carrier);
+            }
+        }
+        owner_carriers.push(matched);
+    }
+    let witnesses = standard_face_boundary_witnesses(ctx, ir)?;
     let mut face_edges = Vec::new();
 
     for &(face, ordinal, _) in &unknown_faces {

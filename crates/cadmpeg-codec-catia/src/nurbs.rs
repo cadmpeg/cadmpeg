@@ -185,6 +185,18 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn remove_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        let needle = format!("at source offset {source_offset}:");
+        let kind = crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.kind();
+        if let Some(pos) = self
+            .notes
+            .iter()
+            .position(|note| note.code == kind && note.message.contains(&needle))
+        {
+            self.notes.remove(pos);
+        }
+    }
+
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
         let note = if resolved {
             crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(
@@ -2103,5 +2115,16 @@ mod tests {
         let point = circular_helix_point(&helix, std::f64::consts::PI).expect("finite helix point");
         assert!((point.x + 1.0).abs() < DOMAIN_ROUNDING);
         assert!((point.z - 0.5).abs() < DOMAIN_ROUNDING);
+    }
+
+    #[test]
+    fn remove_pcurve_circle_plane_mismatch_clears_matching_offset_only() {
+        let mut refusal = LaneRefusals::new();
+        refusal.push_pcurve_circle_plane_mismatch(100);
+        refusal.push_pcurve_circle_plane_mismatch(200);
+        refusal.remove_pcurve_circle_plane_mismatch(100);
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("at source offset 200:"));
     }
 }
