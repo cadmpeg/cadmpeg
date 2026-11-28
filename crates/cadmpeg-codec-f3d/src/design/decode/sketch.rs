@@ -2882,11 +2882,13 @@ const TEXT_PLACEMENT_TOLERANCE: f64 = 1.0e-9;
 const TXT_TAG_POST_ROTATION_RUN: usize = 5;
 
 /// Bytes between the text-anchor coordinates and the u32 text count in the
-/// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward.
+/// `txt_tag` form, from [`TXT_TAG_ANCHOR_MEMBER_VERSION`] onward. The run is
+/// one byte shorter at class version 3, and at [`TXT_TAG_OUTLINE_VERSION`] it
+/// holds the glyph outline.
 const TXT_TAG_ANCHOR_RUN: usize = 11;
 
 /// The `txt_tag` class version that adds the eleventh byte of the run between
-/// the text anchor and the text count. Below it the run is ten bytes.
+/// the text anchor and the text count.
 const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
 
 /// The `txt_tag` class version from which a record writes its persistent
@@ -2894,6 +2896,26 @@ const TXT_TAG_ANCHOR_MEMBER_VERSION: u32 = 4;
 /// key belongs to a `txt_tag` record below this version, which stores no
 /// persistent identity at all.
 const TXT_TAG_IDENTITY_KEY_VERSION: u32 = 4;
+
+/// The `txt_tag` class version that stores the glyph outline of the text
+/// between the eight-byte lane after the anchor and the two zero bytes ahead
+/// of the text count.
+const TXT_TAG_OUTLINE_VERSION: u32 = 2;
+
+/// The eight-byte lane that follows the `txt_tag` anchor coordinates.
+const TXT_TAG_ANCHOR_LANE: usize = 8;
+
+/// Bytes of one `txt_tag` outline curve ahead of its three counted arrays.
+const TXT_TAG_OUTLINE_CURVE_HEAD: usize = 14;
+
+/// The eight-byte token that follows the degree of a `txt_tag` outline curve.
+const TXT_TAG_OUTLINE_CURVE_TOKEN: [u8; 8] = [0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e];
+
+/// Bytes of one `txt_tag` outline curve after its three counted arrays.
+const TXT_TAG_OUTLINE_CURVE_TAIL: usize = 26;
+
+/// Bytes of one `txt_tag` outline line.
+const TXT_TAG_OUTLINE_LINE: usize = 48;
 
 /// Three unknown bytes, one i32 font weight, and eight further bytes between
 /// the `txt_tag` form's counted reference run and the thirty-byte class tail.
@@ -3256,11 +3278,89 @@ fn decode_sketch_text_tail(
     .transpose()
 }
 
+/// Walk the glyph outline of a class-version-2 `txt_tag` record and the two
+/// zero bytes that follow it, leaving `cursor` on the text count
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
+fn skip_txt_tag_outline(payload: &[u8], cursor: &mut usize) -> Option<()> {
+    let remaining = |cursor: usize| payload.len().checked_sub(cursor);
+    let curves = View::u32_le_at(payload, *cursor)?;
+    *cursor = cursor.checked_add(4)?;
+    let curves = cadmpeg_core::decode::bounded_len(
+        u64::from(curves),
+        TXT_TAG_OUTLINE_CURVE_HEAD + 3 * 12 + TXT_TAG_OUTLINE_CURVE_TAIL,
+        remaining(*cursor)?,
+    )?;
+    for _ in 0..curves {
+        if payload.get(*cursor..cursor.checked_add(2)?)? != [0; 2] {
+            return None;
+        }
+        let degree = usize::try_from(View::u32_le_at(payload, cursor.checked_add(2)?)?).ok()?;
+        let token_at = cursor.checked_add(6)?;
+        *cursor = cursor.checked_add(TXT_TAG_OUTLINE_CURVE_HEAD)?;
+        if payload.get(token_at..*cursor)? != TXT_TAG_OUTLINE_CURVE_TOKEN {
+            return None;
+        }
+        let mut counts = [0usize; 3];
+        let mut knot_span = [0.0f64; 2];
+        for (array, (count, width)) in counts.iter_mut().zip([8usize, 8, 24]).enumerate() {
+            let stored = View::u32_le_at(payload, *cursor)?;
+            if View::u32_le_at(payload, cursor.checked_add(4)?)? < stored
+                || View::u32_le_at(payload, cursor.checked_add(8)?)? != 8
+            {
+                return None;
+            }
+            *cursor = cursor.checked_add(12)?;
+            *count =
+                cadmpeg_core::decode::bounded_len(u64::from(stored), width, remaining(*cursor)?)?;
+            let end = cursor.checked_add(count.checked_mul(width)?)?;
+            if array == 0 && *count != 0 {
+                knot_span = [
+                    View::f64_le_at(payload, *cursor)?,
+                    View::f64_le_at(payload, end.checked_sub(8)?)?,
+                ];
+            }
+            *cursor = end;
+        }
+        let [knots, weights, points] = counts;
+        if degree == 0
+            || knots != points.checked_add(degree)?.checked_add(1)?
+            || (weights != 0 && weights != points)
+        {
+            return None;
+        }
+        let flags_at = cursor.checked_add(8)?;
+        let span_at = cursor.checked_add(10)?;
+        if payload.get(flags_at..span_at)?.iter().any(|flag| *flag > 1)
+            || View::f64_le_at(payload, span_at)? != knot_span[0]
+            || View::f64_le_at(payload, span_at.checked_add(8)?)? != knot_span[1]
+        {
+            return None;
+        }
+        *cursor = cursor.checked_add(TXT_TAG_OUTLINE_CURVE_TAIL)?;
+    }
+    let lines = View::u32_le_at(payload, *cursor)?;
+    *cursor = cursor.checked_add(4)?;
+    let lines = cadmpeg_core::decode::bounded_len(
+        u64::from(lines),
+        TXT_TAG_OUTLINE_LINE,
+        remaining(*cursor)?,
+    )?;
+    *cursor = cursor.checked_add(lines.checked_mul(TXT_TAG_OUTLINE_LINE)?)?;
+    let end = cursor.checked_add(2)?;
+    if payload.get(*cursor..end)? != [0; 2] {
+        return None;
+    }
+    *cursor = end;
+    Some(())
+}
+
 /// Read the `txt_tag` form's members from the height to the end of the record.
 /// Two bytes separate the height from the anchor coordinates, which this form
 /// stores directly rather than in a placement transform. The form writes no
-/// parameter-reference slot: an eleven-byte unclassified member run, ten bytes
-/// below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], follows the anchor. The text string
+/// parameter-reference slot: a member run follows the anchor, eleven bytes from
+/// [`TXT_TAG_ANCHOR_MEMBER_VERSION`] and ten bytes at class version 3. At
+/// [`TXT_TAG_OUTLINE_VERSION`] the run is its eight-byte lane, the glyph
+/// outline, and two zero bytes. The text string
 /// is followed by a counted reference run, fifteen bytes, and the trailing run
 /// and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(
@@ -3282,7 +3382,13 @@ fn decode_txt_tag_sketch_text_tail(
         } else {
             TXT_TAG_ANCHOR_RUN
         };
-        cursor = cursor.checked_add(16 + anchor_run)?;
+        cursor = cursor.checked_add(16)?;
+        if class_version == TXT_TAG_OUTLINE_VERSION {
+            cursor = cursor.checked_add(TXT_TAG_ANCHOR_LANE)?;
+            skip_txt_tag_outline(payload, &mut cursor)?;
+        } else {
+            cursor = cursor.checked_add(anchor_run)?;
+        }
         let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if text_count == 0 || text_count > 1_048_576 {
             return None;
