@@ -29,7 +29,6 @@ use crate::design::refs::EntityRef;
 use crate::design::selection::{DatumPart, PickTarget, Picked, Picks, PrincipalEntity};
 use crate::document::Topology;
 use crate::geometry::{CurveGeometry, InlineCurve, SolvedCurveGeometry};
-use crate::process::state::ProcessState;
 use crate::topology::EdgeCarrier;
 
 /// The kind of element a construction builds.
@@ -60,24 +59,13 @@ struct CarrierIndex<'a> {
 }
 
 impl<'a> CarrierIndex<'a> {
-    fn build(
-        geometry: &'a Topology,
-        evaluations: &'a [Evaluation],
-        process_states: &'a [ProcessState],
-    ) -> Self {
-        let topologies = std::iter::once(geometry)
-            .chain(
-                evaluations
-                    .iter()
-                    .filter_map(|evaluation| evaluation.content.as_ref())
-                    .map(|content| &content.delta.records),
-            )
-            .chain(
-                process_states
-                    .iter()
-                    .filter_map(|state| state.content.as_ref())
-                    .map(|content| &content.delta.records),
-            );
+    fn build(geometry: &'a Topology, evaluations: &'a [Evaluation]) -> Self {
+        let topologies = std::iter::once(geometry).chain(
+            evaluations
+                .iter()
+                .filter_map(|evaluation| evaluation.content.as_ref())
+                .map(|content| &content.delta.records),
+        );
         let mut curves: HashMap<&'a str, bool> = HashMap::new();
         let mut edges: HashMap<&'a str, Vec<Option<&'a str>>> = HashMap::new();
         for topology in topologies {
@@ -110,7 +98,6 @@ pub(super) struct Facts<'a> {
     straight_or_circular: HashSet<String>,
     geometry: &'a Topology,
     evaluations: &'a [Evaluation],
-    process_states: &'a [ProcessState],
     carriers: OnceCell<CarrierIndex<'a>>,
 }
 
@@ -121,7 +108,6 @@ impl<'a> Facts<'a> {
         sketch_entities: &[SketchEntity<Planar>],
         spatial_sketch_entities: &[SketchEntity<Spatial>],
         evaluations: &'a [Evaluation],
-        process_states: &'a [ProcessState],
     ) -> Self {
         let planar_datums = features
             .iter()
@@ -150,15 +136,13 @@ impl<'a> Facts<'a> {
             straight_or_circular: planar.chain(spatial).collect(),
             geometry,
             evaluations,
-            process_states,
             carriers: OnceCell::new(),
         }
     }
 
     fn carriers(&self) -> &CarrierIndex<'a> {
-        self.carriers.get_or_init(|| {
-            CarrierIndex::build(self.geometry, self.evaluations, self.process_states)
-        })
+        self.carriers
+            .get_or_init(|| CarrierIndex::build(self.geometry, self.evaluations))
     }
 }
 

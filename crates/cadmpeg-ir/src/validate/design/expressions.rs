@@ -18,16 +18,14 @@ use super::records::MemberKey;
 use super::selections::check_path;
 use super::walk::{Collect, ExpressionPlace, Walk};
 use crate::design::configuration::ParameterOverride;
-use crate::design::dimension::{ParamRef, ParameterRef, RefTarget};
+use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::edit::{check_types, kind_type, ExpressionSite, Type};
 use crate::design::expr::{Expression, ExpressionToken, Measure, MeasureKind, MeasureTarget, Node};
 use crate::design::feature::Feature;
-use crate::design::parameter::{ParameterDefinition, ParameterOwner, ParameterValue};
-use crate::design::program::{ProgramBody, Statement};
+use crate::design::parameter::{ParameterDefinition, ParameterOwner};
 use crate::design::selection::{Anchor, Picks, StepRef};
 use crate::design::units::ValueKind;
 use crate::features::ParameterId;
-use crate::process::groups::ProcessDefinition;
 use crate::products::Storage;
 use crate::report::check::Finding;
 use crate::validate::cycles::cycles;
@@ -98,27 +96,6 @@ pub(super) fn check_expressions(
             );
         }
     }
-    for program in &design.programs {
-        let site = Site {
-            entity: program.id.as_str(),
-            kind: None,
-            feature_owned: false,
-            variables: ExpressionSite::Parameter,
-            scope: Some(program.scope.as_str()),
-            parameter_value: false,
-        };
-        match &program.body {
-            ProgramBody::Neutral(statements) => check_statements(index, site, statements, findings),
-            ProgramBody::Source { tokens, .. } => {
-                check_tokens(site.entity, tokens, findings);
-                for token in tokens {
-                    if let ExpressionToken::Reference(reference) = token {
-                        check_reference(index, site, reference, findings);
-                    }
-                }
-            }
-        }
-    }
     for rule in &design.sheet_metal_rules {
         let site = Site {
             entity: rule.id.as_str(),
@@ -142,7 +119,6 @@ pub(super) fn check_expressions(
     for feature in &design.features {
         check_feature_expressions(ctx, index, feature, findings)?;
     }
-    check_process_parameters(index, findings);
     check_external_kinds(index, findings);
     check_cycles(index, findings);
     Ok(())
@@ -418,58 +394,6 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
     }
 }
 
-/// A program's statements: each `Assign` value has its target's kind, and
-/// each condition is Boolean.
-fn check_statements(
-    index: &DesignRecords<'_>,
-    site: Site<'_>,
-    statements: &[Statement],
-    findings: &mut Vec<Finding>,
-) {
-    let mut pending: Vec<&Statement> = statements.iter().rev().collect();
-    while let Some(statement) = pending.pop() {
-        match statement {
-            Statement::Assign { target, value } => {
-                check_reference(index, site, target, findings);
-                let kind = match &target.target {
-                    RefTarget::Parameter(parameter) => index
-                        .parameters
-                        .get(parameter.as_str())
-                        .map(|record| &record.kind),
-                    RefTarget::External { .. } => None,
-                };
-                let site = Site { kind, ..site };
-                check_neutral(index, site, &value.0, findings);
-            }
-            Statement::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                let site = Site {
-                    kind: Some(&ValueKind::Boolean),
-                    ..site
-                };
-                check_neutral(index, site, &condition.0, findings);
-                pending.extend(otherwise.iter().rev());
-                pending.extend(then.iter().rev());
-            }
-        }
-    }
-}
-
-fn check_neutral(
-    index: &DesignRecords<'_>,
-    site: Site<'_>,
-    root: &Node<ParameterRef>,
-    findings: &mut Vec<Finding>,
-) {
-    for reference in node_references(root) {
-        check_reference(index, site, reference, findings);
-    }
-    check_tree(index, site, root, findings);
-}
-
 /// A reference resolves: a `Parameter` exists, an `External` definition
 /// exists, and a `through` path names occurrences of the model and ends at a
 /// prototype that is the target's scope.
@@ -592,154 +516,6 @@ fn place_kind(place: ExpressionPlace<'_>) -> Option<ValueKind> {
             quantity.map(ValueKind::Quantity)
         }
         ExpressionPlace::Seed(_) => None,
-    }
-}
-
-/// A process parameter with no kind holds a `Number` and has a `Source`
-/// expression, no neutral tree references it, a stated value follows a stated
-/// kind, each reference of its expression resolves, and a neutral expression
-/// type-checks with a root of the stated kind.
-pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
-    let process = &index.ir.process;
-    let kinds: BTreeMap<&str, Option<&ValueKind>> = process
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.as_str(), parameter.kind.as_ref()))
-        .collect();
-    let type_of = |reference: &ParamRef| match reference {
-        ParamRef::Process(target) => match kinds.get(target.as_str()) {
-            Some(Some(kind)) => Type::of_kind(kind).ok_or_else(|| {
-                format!(
-                    "{} has the kind {kind:?}, with no neutral value",
-                    target.as_str()
-                )
-            }),
-            Some(None) | None => Ok(Type::Unknown),
-        },
-        ParamRef::Design(design) => design_type(index, design),
-    };
-    for parameter in &process.parameters {
-        let entity = parameter.id.as_str();
-        if let Some(value) = &parameter.value {
-            let follows = match (&parameter.kind, value) {
-                (None | Some(ValueKind::Quantity(_)), ParameterValue::Number(_))
-                | (Some(ValueKind::Integer), ParameterValue::Integer(_))
-                | (Some(ValueKind::Boolean), ParameterValue::Boolean(_))
-                | (Some(ValueKind::Text), ParameterValue::Text(_))
-                | (Some(ValueKind::Native(_)), _) => true,
-                (
-                    None
-                    | Some(
-                        ValueKind::Quantity(_)
-                        | ValueKind::Integer
-                        | ValueKind::Boolean
-                        | ValueKind::Text,
-                    ),
-                    _,
-                ) => false,
-            };
-            if !follows {
-                super::error(
-                    findings,
-                    entity,
-                    crate::rule!(
-                        "design.process-parameter-value-does-not-follow",
-                        "process parameter's value {value:?} does not follow its kind {:?}",
-                        parameter.kind
-                    ),
-                );
-            }
-        }
-        let ProcessDefinition::Expression(expression) = &parameter.definition else {
-            continue;
-        };
-        let refs: Vec<&ParamRef> = match expression {
-            Expression::Neutral(neutral) => {
-                if parameter.kind.is_none() {
-                    super::error(
-                        findings,
-                        entity,
-                        crate::rule!(
-                            "design.process-parameter-no-kind-expression-source",
-                            "process parameter has no kind, so its expression is `source`"
-                        ),
-                    );
-                }
-                for reference in node_references(&neutral.0) {
-                    if let ParamRef::Design(ParameterRef {
-                        target: RefTarget::External { .. },
-                        ..
-                    }) = reference
-                    {
-                        super::error(
-                            findings,
-                            entity,
-                            crate::rule!(
-                                "design.process-expression-holds-external-reference",
-                                "a process expression holds an External reference"
-                            ),
-                        );
-                    }
-                    if let ParamRef::Process(target) = reference {
-                        if let Some(None) = kinds.get(target.as_str()) {
-                            super::error(
-                                findings,
-                                entity,
-                                crate::rule!("design.neutral-expression-references-process-parameter-no", 
-                                    "neutral expression references {}, a process parameter with no kind",
-                                    target.as_str()
-                                ),
-                            );
-                        }
-                    }
-                }
-                let site = Site {
-                    entity,
-                    kind: parameter.kind.as_ref(),
-                    feature_owned: false,
-                    variables: ExpressionSite::Parameter,
-                    scope: None,
-                    parameter_value: false,
-                };
-                check_typed_tree(site, &neutral.0, &type_of, findings);
-                node_references(&neutral.0)
-            }
-            Expression::Source { tokens, .. } => {
-                check_tokens(entity, tokens, findings);
-                tokens
-                    .iter()
-                    .filter_map(|token| match token {
-                        ExpressionToken::Reference(reference) => Some(reference),
-                        ExpressionToken::Text(_) => None,
-                    })
-                    .collect()
-            }
-        };
-        for reference in refs {
-            match reference {
-                ParamRef::Process(target) if !kinds.contains_key(target.as_str()) => super::error(
-                    findings,
-                    entity,
-                    crate::rule!(
-                        "design.expression-references-no-process-parameter",
-                        "expression references {}, which is no process parameter",
-                        target.as_str()
-                    ),
-                ),
-                ParamRef::Process(_) => {}
-                ParamRef::Design(design) => {
-                    let site = Site {
-                        entity,
-                        kind: None,
-                        feature_owned: false,
-                        variables: ExpressionSite::Parameter,
-                        scope: None,
-                        parameter_value: false,
-                    };
-                    check_reference(index, site, design, findings);
-                }
-            }
-        }
     }
 }
 

@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::fixtures::{
     self, container, entity_refs, feature, id, name_entries, name_tables, native_name,
-    occurrence_path, parameter_ref, picked, positive_length, real, record_refs, selections, text,
+    occurrence_path, positive_length, real, record_refs, selections, text,
 };
 use crate::design::configuration::{
     Arrangement, ArrangementAppearance, ArrangementKind, ArrangementMove, ArrangementRef,
     DefinitionOverride, DesignConfiguration, FeatureStateOverride, MaterialOverride, MaterialRef,
-    NestedArrangement, OccurrenceOverride, Overrides, ParameterOverride, PartNumber, Publication,
+    NestedArrangement, OccurrenceOverride, Overrides, ParameterOverride, PartNumber,
 };
 use crate::design::construction::kinds;
 use crate::design::container::{Container, Folder, OrderedKind, Rollback, UnorderedKind};
@@ -18,7 +18,6 @@ use crate::design::dimension::Dimension;
 use crate::design::evaluation::{
     CurrentState, Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
-use crate::design::expr::{ExpressionDialect, ExpressionToken, Neutral, Node};
 use crate::design::feature::{
     Driver, Feature, FeatureDefinition, FeatureOperation, FuzzyTolerance, Link, LinkState,
     OperationFamily, StoredOrigin,
@@ -31,7 +30,6 @@ use crate::design::parameter::{
     DesignParameter, Deviations, DimensionDisplay, FitDeviations, LimitSide, ParameterDefinition,
     ParameterOwner, ParameterValue, Tolerance,
 };
-use crate::design::program::{ParameterProgram, ProgramBody, ProgramStage, Statement};
 use crate::design::refs::{ConfigurationRef, Member, Position};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::spreadsheet::Spreadsheet;
@@ -594,15 +592,6 @@ pub(super) fn design_configurations() -> Vec<DesignConfiguration> {
     ]
 }
 
-pub(super) fn publications() -> Vec<Publication> {
-    vec![Publication {
-        id: id("publication", 1),
-        scope: id("product-definition", 1),
-        name: text("TopFace"),
-        target: picked(1),
-    }]
-}
-
 pub(super) fn arrangement_kinds() -> Vec<ArrangementKind> {
     vec![
         ArrangementKind::Positional,
@@ -711,7 +700,6 @@ pub(super) fn parameter_definitions() -> Vec<ParameterDefinition> {
     vec![
         ParameterDefinition::Expression(fixtures::expressions().remove(0)),
         ParameterDefinition::Driven,
-        ParameterDefinition::Assigned(id("parameter-program", 1)),
         ParameterDefinition::Unset,
     ]
 }
@@ -820,68 +808,6 @@ pub(super) fn design_parameters() -> Vec<DesignParameter> {
     ]
 }
 
-pub(super) fn program_stages() -> Vec<ProgramStage> {
-    vec![
-        ProgramStage::Initial,
-        ProgramStage::PostRegeneration,
-        ProgramStage::Native(text("creo:after_feature")),
-    ]
-}
-
-pub(super) fn statements() -> Vec<Statement> {
-    let value = || Neutral(Node::Reference(parameter_ref(2)));
-    vec![
-        Statement::Assign {
-            target: parameter_ref(1),
-            value: value(),
-        },
-        Statement::If {
-            condition: Neutral(Node::Boolean(true)),
-            then: vec![Statement::Assign {
-                target: parameter_ref(1),
-                value: value(),
-            }],
-            otherwise: Vec::new(),
-        },
-    ]
-}
-
-pub(super) fn program_bodies() -> Vec<ProgramBody> {
-    vec![
-        ProgramBody::Neutral(statements()),
-        ProgramBody::Source {
-            dialect: ExpressionDialect::Creo,
-            tokens: vec![
-                ExpressionToken::Reference(parameter_ref(1)),
-                ExpressionToken::Text(" = SOLVE".to_owned()),
-            ],
-        },
-    ]
-}
-
-pub(super) fn programs() -> Vec<ParameterProgram> {
-    vec![
-        ParameterProgram {
-            id: id("parameter-program", 1),
-            scope: id("product-definition", 1),
-            owner: None,
-            stage: Some(ProgramStage::PostRegeneration),
-            name: Some(text("Relations")),
-            body: program_bodies().remove(0),
-            native_ref: Some("creo:relations#1".to_owned()),
-        },
-        ParameterProgram {
-            id: id("parameter-program", 2),
-            scope: id("product-definition", 1),
-            owner: Some(feature(1)),
-            stage: None,
-            name: None,
-            body: program_bodies().remove(1),
-            native_ref: None,
-        },
-    ]
-}
-
 pub(super) fn spreadsheets() -> Vec<Spreadsheet> {
     let address = |row, col| CellAddress::new(row, col).unwrap();
     vec![
@@ -966,10 +892,8 @@ pub(super) fn designs() -> Vec<Design> {
             parameters: design_parameters(),
             spreadsheets: spreadsheets(),
             sheet_metal_rules: sheet_metal_rules(),
-            programs: programs(),
             configurations: design_configurations(),
             arrangements: arrangements(),
-            publications: publications(),
             evaluations: evaluations(),
             names: name_tables().remove(1),
             ..crate::design::ops::tests::sketch::sketch_arenas()

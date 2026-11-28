@@ -85,24 +85,6 @@ pub(super) fn check<'a>(
             }
         }
     }
-    for publication in &index.records.ir.design.publications {
-        let site = Site {
-            holder: Holder::Record {
-                record: publication.id.as_str(),
-                scope: Some(&publication.scope),
-            },
-            anchor: &Anchor::Current,
-            owner: Some(&publication.scope),
-        };
-        check_pick(index, matchers, site, &publication.target, moved, findings);
-        check_witness_body(
-            ctx,
-            document,
-            publication.id.as_str(),
-            &publication.target,
-            findings,
-        )?;
-    }
     for evaluation in &index.records.ir.design.evaluations {
         for path in evaluation
             .content
@@ -459,37 +441,6 @@ fn check_pick<'a>(
     }
 }
 
-/// A pick of a process record with no context, which resolves in its
-/// setup's scope (§5.8, part 7).
-pub(in crate::validate) struct ProcessPick<'a> {
-    pub(in crate::validate) record: &'a str,
-    pub(in crate::validate) scope: &'a ProductDefinitionId,
-    pub(in crate::validate) anchor: &'a Anchor,
-    pub(in crate::validate) pick: &'a Picked,
-}
-
-/// Each process pick resolves in its anchored state by the matching rule
-/// of §5.7, as a design pick does: a `Current` pick in the current geometry
-/// of its setup's scope (§5.8).
-pub(in crate::validate) fn check_process_picks<'a>(
-    index: &DesignIndex<'a>,
-    matchers: &Matchers<'a>,
-    picks: &[ProcessPick<'_>],
-    findings: &mut Vec<Finding>,
-) {
-    for pick in picks {
-        let site = Site {
-            holder: Holder::Record {
-                record: pick.record,
-                scope: Some(pick.scope),
-            },
-            anchor: pick.anchor,
-            owner: Some(pick.scope),
-        };
-        check_anchored(index, matchers, site, pick.pick, findings);
-    }
-}
-
 /// A pick with no context resolves in each stored state its anchor names.
 fn check_anchored<'a>(
     index: &DesignIndex<'a>,
@@ -684,7 +635,6 @@ fn target_kind(target: &PickTarget) -> &'static str {
         PickTarget::FeatureResult(_) => "result's feature",
         PickTarget::TemplateInput { .. } => "template instance",
         PickTarget::Component => "component",
-        PickTarget::Publication(_) => "publication",
     }
 }
 
@@ -707,7 +657,6 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
         | PickTarget::TemplateInput {
             instance: feature, ..
         } => index.records.features.contains_key(feature.as_str()),
-        PickTarget::Publication(publication) => index.publications.contains(publication.as_str()),
         PickTarget::Native { within } => match within {
             None => true,
             Some(NativeOwner::Sketch(sketch)) => {

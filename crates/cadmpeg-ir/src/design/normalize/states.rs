@@ -24,12 +24,11 @@ use crate::design::evaluation::StateBase;
 use crate::design::ids::ContainerId;
 use crate::design::refs::{Evaluated, Member, Position, StateRef};
 use crate::design::selection::OccurrencePath;
-use crate::document::{CadIr, Design, Model, Process};
+use crate::document::{CadIr, Design, Model};
 use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::physics::solver::SolverValue;
 use crate::pmi::{PmiDefinition, PmiTarget};
-use crate::process::state::ProcessBase;
 use crate::references::{InstanceTarget, ReferenceTarget};
 
 /// What the position and target rules read of the design, gathered before
@@ -391,18 +390,6 @@ impl States {
         for scope in &mut design.scopes {
             for current in &mut scope.current {
                 self.position(&mut current.at);
-            }
-        }
-    }
-
-    /// Spells the design state base of every process state through its
-    /// member.
-    pub(super) fn normalize_process(&self, process: &mut Process) {
-        for state in &mut process.states {
-            if let Some(content) = &mut state.content {
-                if let ProcessBase::Design(StateBase::Current(position)) = &mut content.base {
-                    self.position(position);
-                }
             }
         }
     }

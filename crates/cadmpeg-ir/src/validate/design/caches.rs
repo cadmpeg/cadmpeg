@@ -23,7 +23,6 @@ use crate::design::expr::{Expression, Node};
 use crate::design::feature::FeatureOperation;
 use crate::design::ops::shared::{Coupling, JointKind};
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
-use crate::design::program::{ProgramBody, Statement};
 use crate::design::units::{Quantity, ValueKind};
 use crate::report::check::Finding;
 
@@ -176,49 +175,11 @@ fn depends_on_measure(index: &DesignRecords<'_>, root: &Node<ParameterRef>) -> b
                         return true;
                     }
                 }
-                ParameterDefinition::Assigned(program) => {
-                    let body = index
-                        .ir
-                        .design
-                        .programs
-                        .iter()
-                        .find(|candidate| candidate.id == *program)
-                        .map(|program| &program.body);
-                    let Some(ProgramBody::Neutral(statements)) = body else {
-                        return true;
-                    };
-                    pending.extend(program_reads(statements, target.as_str()));
-                }
                 ParameterDefinition::Driven | ParameterDefinition::Unset => return true,
             }
         }
     }
     false
-}
-
-/// The trees a program reads to assign `parameter`: every condition, and
-/// each value it assigns to `parameter`, walked without recursion.
-fn program_reads<'a>(statements: &'a [Statement], parameter: &str) -> Vec<&'a Node<ParameterRef>> {
-    let mut reads = Vec::new();
-    let mut pending: Vec<&Statement> = statements.iter().collect();
-    while let Some(statement) = pending.pop() {
-        match statement {
-            Statement::Assign { target, value } => {
-                if matches!(&target.target, RefTarget::Parameter(id) if id.as_str() == parameter) {
-                    reads.push(&value.0);
-                }
-            }
-            Statement::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                reads.push(&condition.0);
-                pending.extend(then.iter().chain(otherwise));
-            }
-        }
-    }
-    reads
 }
 
 /// Whether two values agree: a length within the linear tolerance, an angle

@@ -252,7 +252,6 @@ fn pick_fits(index: &DesignIndex<'_>, relation: &Relation, pick: &Picked) -> boo
         | PickTarget::Sketch(_)
         | PickTarget::Feature(_)
         | PickTarget::FeatureResult(_)
-        | PickTarget::Publication(_)
         | PickTarget::TemplateInput { .. }
         | PickTarget::Component => true,
     }
@@ -322,7 +321,6 @@ fn may_be_point(index: &DesignIndex<'_>, pick: &Picked) -> bool {
         | PickTarget::Sketch(_)
         | PickTarget::Feature(_)
         | PickTarget::FeatureResult(_)
-        | PickTarget::Publication(_)
         | PickTarget::TemplateInput { .. } => true,
         PickTarget::SketchRegion { .. } | PickTarget::Component => false,
     };
@@ -372,7 +370,6 @@ pub(super) fn may_be_straight_edge(index: &DesignIndex<'_>, pick: &Picked) -> bo
         | PickTarget::Sketch(_)
         | PickTarget::Feature(_)
         | PickTarget::FeatureResult(_)
-        | PickTarget::Publication(_)
         | PickTarget::TemplateInput { .. } => true,
         PickTarget::SketchRegion { .. } | PickTarget::Component => false,
     };

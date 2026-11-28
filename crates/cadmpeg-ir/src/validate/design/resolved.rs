@@ -21,8 +21,7 @@ use crate::features::ConfigurationId;
 use crate::ids::BodyId;
 use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
-use crate::process::state::ProcessState;
-use crate::report::check::{Check, Finding};
+use crate::report::check::Finding;
 use crate::schema::EntitySchema;
 use crate::topology::ChildLists;
 use state::{Closure, State};
@@ -595,79 +594,6 @@ fn check_stored_bodies(
             );
         }
     }
-}
-
-/// Each process state with content resolves like an evaluation (§7.9): its
-/// chain of process states, down to a design base, with each delta applied.
-/// `scope` gives the design scope of a state's setup, which a `Current` base
-/// reads. Every resolved state's entries name what it holds, and it is
-/// closed. Findings are reported under [`Check::Process`].
-pub(in crate::validate) fn check_process_states<'a>(
-    ctx: &DecodeContext<'_>,
-    index: &DesignRecords<'a>,
-    ids: &ModelIndex<'_>,
-    scope: impl Fn(&ProcessState) -> Option<&'a str>,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    let ir = index.ir;
-    let states = &ir.process.states;
-    if states.iter().all(|state| state.content.is_none()) {
-        return Ok(());
-    }
-    let resolver = Resolver {
-        ctx,
-        index,
-        geometry: locate(&ir.geometry),
-        children: ir.geometry.child_lists(),
-    };
-    let topology = topology_ids(
-        &resolver.geometry,
-        ir.design
-            .evaluations
-            .iter()
-            .filter_map(|evaluation| evaluation.content.as_ref().map(|content| &content.delta))
-            .chain(
-                states
-                    .iter()
-                    .filter_map(|state| state.content.as_ref().map(|content| &content.delta)),
-            ),
-    );
-    let closure = Closure {
-        ctx,
-        topology: &topology,
-        ids,
-    };
-    let moved = index.moved_occurrences();
-    let rules = StateRules::new(ctx, ids.native_view());
-    let forest = Forest::of_process_states(&ir.design.evaluations, states, &scope);
-    let mut found: Vec<Vec<Finding>> = vec![Vec::new(); states.len()];
-    let offset = ir.design.evaluations.len();
-    forest.walk(
-        ctx,
-        |bottom| resolver.bottom(&closure, bottom),
-        |at, record, state| {
-            let Some(delta) = record.delta() else {
-                return Ok(());
-            };
-            let Stored::Process(process) = record else {
-                state.apply(&closure, delta, None)?;
-                return Ok(());
-            };
-            let id = process.id.as_str();
-            let findings = &mut found[at - offset];
-            let applied = state.apply(&closure, delta, Some((id, &mut *findings)))?;
-            check_entries(index, state, scope(process), moved, id, findings);
-            check_closure(state, id, findings);
-            let caches = process.status == EvaluationStatus::Current;
-            rules.check(state, &applied, id, caches, findings)?;
-            Ok(())
-        },
-    )?;
-    findings.extend(found.into_iter().flatten().map(|finding| Finding {
-        check: Check::Process,
-        ..finding
-    }));
-    Ok(())
 }
 
 mod state;

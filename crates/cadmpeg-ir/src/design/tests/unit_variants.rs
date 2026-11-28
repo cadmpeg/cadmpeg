@@ -28,7 +28,6 @@ use crate::design::options::{
     BooleanOp, CornerRound, ProjectionDirection, SectionCondition, ThinEnds, WallSide,
 };
 use crate::design::parameter::{ParameterDefinition, Tolerance};
-use crate::design::program::ProgramStage;
 use crate::design::selection::{
     Anchor, Continuity, Ordered, PickTarget, Picks, Propagation, SelectionRule,
 };
@@ -47,7 +46,7 @@ pub(in crate::design) fn reads<T: Serialize + DeserializeOwned>(
 /// The reader of each adjacently tagged design enum with a unit variant, by
 /// the enum's name.
 fn readers() -> BTreeMap<&'static str, Reader> {
-    let readers: [(&'static str, Reader); 27] = [
+    let readers: [(&'static str, Reader); 26] = [
         ("Anchor", reads::<Anchor>),
         ("ArrangementKind", reads::<ArrangementKind>),
         ("BooleanOp", reads::<BooleanOp>),
@@ -63,7 +62,6 @@ fn readers() -> BTreeMap<&'static str, Reader> {
         ("PartNumber", reads::<PartNumber>),
         ("PickTarget", reads::<PickTarget>),
         ("Picks", reads::<Picks<Ordered>>),
-        ("ProgramStage", reads::<ProgramStage>),
         ("ProjectionDirection", reads::<ProjectionDirection>),
         ("Propagation", reads::<Propagation>),
         ("Relation", reads::<Relation>),

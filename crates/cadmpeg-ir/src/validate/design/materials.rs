@@ -143,7 +143,6 @@ fn picks_bodies(pick: &Picked) -> bool {
         }
         PickTarget::Native { .. }
         | PickTarget::FeatureResult(_)
-        | PickTarget::Publication(_)
         | PickTarget::TemplateInput { .. } => true,
         PickTarget::Sketch(_)
         | PickTarget::SketchEntity(_)

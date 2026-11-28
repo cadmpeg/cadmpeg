@@ -47,8 +47,7 @@ impl Admission {
     /// content (§3.3) though it reports a listed rule inside a stored state.
     #[must_use]
     pub fn admits(&self, finding: &Finding) -> bool {
-        !matches!(finding.check, Check::Design | Check::Process)
-            && self.rules.contains(&finding.rule)
+        !matches!(finding.check, Check::Design) && self.rules.contains(&finding.rule)
     }
 
     /// The rules of this route.
@@ -629,17 +628,15 @@ mod tests {
             .first()
             .cloned()
             .expect("the core route lists a rule");
-        for check in [Check::Design, Check::Process] {
-            let finding = Finding {
-                check,
-                rule: listed.clone(),
-                severity: Severity::Error,
-                message: "resolved state: a listed rule inside a stored state".into(),
-                entity: None,
-                related: Vec::new(),
-            };
-            assert!(!DRAFT_CORE.admits(&finding));
-        }
+        let finding = Finding {
+            check: Check::Design,
+            rule: listed,
+            severity: Severity::Error,
+            message: "resolved state: a listed rule inside a stored state".into(),
+            entity: None,
+            related: Vec::new(),
+        };
+        assert!(!DRAFT_CORE.admits(&finding));
     }
 
     /// The routes list model-class rules of the validator only: no design or

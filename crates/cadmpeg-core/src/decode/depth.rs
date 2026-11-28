@@ -25,11 +25,11 @@ pub enum DecodeDepth {
     Container,
     /// The model: everything an exchange output consumes (B-rep,
     /// tessellation, product structure, placements, appearance, PMI, and
-    /// attributes). Every design and process arena is empty.
+    /// attributes). Every design arena is empty.
     Geometry,
-    /// The model and the design that built it. Every process arena is empty.
+    /// The model and the design that built it.
     Design,
-    /// The model, its design, and its manufacturing process.
+    /// All available content.
     #[default]
     Full,
 }

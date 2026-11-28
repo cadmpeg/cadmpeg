@@ -758,7 +758,7 @@ fn scope_is_a_required_wire_field() {
     let mut value = json::to_value(&ir).unwrap();
     assert_eq!(
         value["scope"],
-        cadmpeg_core::json!({"model": true, "design": true, "process": true})
+        cadmpeg_core::json!({"model": true, "design": true})
     );
 
     value.as_object_mut().unwrap().remove("scope");
@@ -771,7 +771,7 @@ fn scope_is_a_required_wire_field() {
 fn a_geometry_document_without_design_records_round_trips() {
     let json = with_scope(
         &unit_cube().expect("valid unit cube fixture"),
-        cadmpeg_core::json!({"model": true, "design": false, "process": false}),
+        cadmpeg_core::json!({"model": true, "design": false}),
     );
     let parsed = CadIr::from_json(&json).unwrap();
     assert_eq!(parsed.scope(), ContentScope::geometry());
@@ -782,32 +782,24 @@ fn a_geometry_document_without_design_records_round_trips() {
 #[test]
 fn a_scope_missing_a_required_class_reads_and_writes_as_stated() {
     let ir = CadIr::empty();
-    for (held, required) in [
-        (ArenaClass::Design, ArenaClass::Model),
-        (ArenaClass::Process, ArenaClass::Design),
-    ] {
-        let scope = ContentScope::full()
-            .with(required, false)
-            .with(ArenaClass::Process, held == ArenaClass::Process);
-        let mut set = ir.clone();
-        set.set_scope(scope);
-        assert_eq!(set.scope(), scope);
-        let violation = ScopeViolation::Unmet { held, required };
-        assert_eq!(set.scope_violations(), [violation]);
-        assert_eq!(
-            violation.to_string(),
-            format!(
-                "the document's scope holds {held} but excludes {required}, which {held} requires"
-            )
-        );
-        let read = CadIr::from_json(&with_scope(&ir, json::to_value(scope).unwrap())).unwrap();
-        assert_eq!(read.scope(), scope);
-        assert_eq!(read.scope_violations(), [violation]);
-        assert_eq!(
-            json::to_value(&read).unwrap()["scope"],
-            json::to_value(scope).unwrap()
-        );
-    }
+    let (held, required) = (ArenaClass::Design, ArenaClass::Model);
+    let scope = ContentScope::full().with(required, false);
+    let mut set = ir.clone();
+    set.set_scope(scope);
+    assert_eq!(set.scope(), scope);
+    let violation = ScopeViolation::Unmet { held, required };
+    assert_eq!(set.scope_violations(), [violation]);
+    assert_eq!(
+        violation.to_string(),
+        format!("the document's scope holds {held} but excludes {required}, which {held} requires")
+    );
+    let read = CadIr::from_json(&with_scope(&ir, json::to_value(scope).unwrap())).unwrap();
+    assert_eq!(read.scope(), scope);
+    assert_eq!(read.scope_violations(), [violation]);
+    assert_eq!(
+        json::to_value(&read).unwrap()["scope"],
+        json::to_value(scope).unwrap()
+    );
 }
 
 #[test]
@@ -932,10 +924,8 @@ fn every_design_arena_is_classified_design() {
             "design.parameters",
             "design.spreadsheets",
             "design.sheet_metal_rules",
-            "design.programs",
             "design.configurations",
             "design.arrangements",
-            "design.publications",
             "design.evaluations",
         ]
     );

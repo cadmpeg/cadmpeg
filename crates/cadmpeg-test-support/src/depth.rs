@@ -29,7 +29,6 @@
 //! A codec without a cut delivers `Full` for the geometry request and passes on
 //! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
 
-use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -137,12 +136,11 @@ pub fn assert_geometry_agrees_with_decoded(
 }
 
 /// Decodes `bytes` at each depth and asserts that the document records the
-/// scope that depth requests and holds no process record.
+/// scope that depth requests.
 ///
 /// # Panics
 ///
-/// Panics when a decode refuses, records another scope, or holds a process
-/// record.
+/// Panics when a decode refuses or records another scope.
 pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
     let mut failures = Vec::new();
     for depth in [
@@ -157,12 +155,6 @@ pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
                     failures.push(format!(
                         "a {depth} decode recorded {:?}",
                         result.ir().scope()
-                    ));
-                }
-                if result.ir().process.entity_count() != 0 {
-                    failures.push(format!(
-                        "a {depth} decode holds process records: {}",
-                        json::to_string(&result.ir().process).expect("serialize decoded process")
                     ));
                 }
             }
@@ -276,7 +268,7 @@ fn unmarked_cut_classes(bytes: &[u8], full: &DecodeResult, geometry: &DecodeResu
         .collect()
 }
 
-/// The document's members outside its scope, design and process arenas, and
+/// The document's members outside its scope, design arenas, and
 /// native namespaces, as JSON.
 fn outside_design(ir: &CadIr) -> Value {
     fn member<T: serde::Serialize>(value: &T) -> Value {

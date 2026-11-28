@@ -29,7 +29,7 @@ use crate::sketches::SketchId;
 
 use crate::design::configuration::{
     Arrangement, ArrangementMove, DesignConfiguration, FeatureStateOverride, MaterialOverride,
-    Overrides, ParameterOverride, Publication,
+    Overrides, ParameterOverride,
 };
 use crate::design::construction::{AnyConstruction, ConstructionInput, InputReference, SourceMode};
 use crate::design::container::Container;
@@ -39,7 +39,6 @@ use crate::design::options::{
     Support, Targets,
 };
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
-use crate::design::program::{ParameterProgram, ProgramBody, Statement};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::selection::SelectionRule;
 
@@ -80,10 +79,8 @@ pub(super) fn walk_design(design: &Design) -> WireFound<'_> {
         parameters,
         spreadsheets: _,
         sheet_metal_rules,
-        programs,
         configurations,
         arrangements,
-        publications,
         evaluations: _,
         names: _,
     } = design;
@@ -95,8 +92,6 @@ pub(super) fn walk_design(design: &Design) -> WireFound<'_> {
     sketch_constraints.walk_wire("design", &mut out);
     sheet_metal_rules.walk_wire("design", &mut out);
     scopes.walk_wire("design", &mut out);
-    publications.walk_wire("design", &mut out);
-    programs.walk_wire("design", &mut out);
     parameters.walk_wire("design", &mut out);
     features.walk_wire("design", &mut out);
     containers.walk_wire("design", &mut out);
@@ -214,8 +209,7 @@ impl WireWalk for PickTarget {
             | Self::Feature(_)
             | Self::FeatureResult(_)
             | Self::TemplateInput { .. }
-            | Self::Component
-            | Self::Publication(_) => {}
+            | Self::Component => {}
         }
     }
 }
@@ -937,7 +931,6 @@ impl WireWalk for ParameterDefinition {
                 v0.walk_wire(owner, out);
             }
             Self::Driven => {}
-            Self::Assigned(_) => {}
             Self::Unset => {}
         }
     }
@@ -950,22 +943,6 @@ impl WireWalk for ParameterOverride {
             expression,
         } = self;
         expression.walk_wire(owner, out);
-    }
-}
-
-impl WireWalk for ParameterProgram {
-    fn walk_wire<'a>(&'a self, _owner: &'a str, out: &mut WireFound<'a>) {
-        let Self {
-            stage: _,
-            scope: _,
-            owner: _,
-            native_ref: _,
-            name: _,
-            id,
-            body,
-        } = self;
-        let owner = id.as_str();
-        body.walk_wire(owner, out);
     }
 }
 
@@ -983,20 +960,6 @@ impl WireWalk for PickDomain {
     }
 }
 
-impl WireWalk for ProgramBody {
-    fn walk_wire<'a>(&'a self, owner: &'a str, out: &mut WireFound<'a>) {
-        match self {
-            Self::Neutral(v0) => {
-                v0.walk_wire(owner, out);
-            }
-            Self::Source {
-                tokens: _,
-                dialect: _,
-            } => {}
-        }
-    }
-}
-
 impl WireWalk for ProjectionDirection {
     fn walk_wire<'a>(&'a self, owner: &'a str, out: &mut WireFound<'a>) {
         match self {
@@ -1007,19 +970,6 @@ impl WireWalk for ProjectionDirection {
             }
             Self::Native(_) => {}
         }
-    }
-}
-
-impl WireWalk for Publication {
-    fn walk_wire<'a>(&'a self, _owner: &'a str, out: &mut WireFound<'a>) {
-        let Self {
-            target,
-            scope: _,
-            name: _,
-            id,
-        } = self;
-        let owner = id.as_str();
-        target.walk_wire(owner, out);
     }
 }
 
@@ -1334,25 +1284,6 @@ impl WireWalk for SpatialSketch {
         out.record_native_options(owner, native_options, source_settings);
         source_settings.walk_wire(owner, out);
         native_options.walk_wire(owner, out);
-    }
-}
-
-impl WireWalk for Statement {
-    fn walk_wire<'a>(&'a self, owner: &'a str, out: &mut WireFound<'a>) {
-        match self {
-            Self::Assign { value, target: _ } => {
-                value.walk_wire(owner, out);
-            }
-            Self::If {
-                then,
-                otherwise,
-                condition,
-            } => {
-                then.walk_wire(owner, out);
-                otherwise.walk_wire(owner, out);
-                condition.walk_wire(owner, out);
-            }
-        }
     }
 }
 

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use super::construction::FrameValue;
 use super::dimension::Dimension;
-use super::ids::{ContainerId, PublicationId};
+use super::ids::ContainerId;
 use super::names::{CodecName, NameKind, NativeName, TopoName};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
@@ -467,8 +467,6 @@ pub enum PickTarget {
     /// The occurrence that the pick's context names.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Component,
-    /// A published entity.
-    Publication(PublicationId),
 }
 
 /// The sketch or feature a native pick lies in.

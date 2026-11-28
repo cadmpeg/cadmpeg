@@ -180,45 +180,9 @@ fn an_own_value_holds_where_nothing_it_rests_on_differs() {
 
     use crate::design::configuration::OccurrenceOverride;
     use crate::design::dimension::RefTarget;
-    use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral};
-    use crate::design::program::{ParameterProgram, ProgramBody, Statement};
+    use crate::design::expr::{Expression, ExpressionDialect, ExpressionToken};
 
     let mut document = timeline();
-    let program = |key: u32, body: ProgramBody| ParameterProgram {
-        id: id("program", key),
-        scope: definition(),
-        owner: None,
-        stage: None,
-        name: None,
-        body,
-        native_ref: None,
-    };
-    let assigned = |key: u32, program: u32| crate::design::parameter::DesignParameter {
-        definition: ParameterDefinition::Assigned(id("program", program)),
-        ..length(key, neutral("0[mm]", &[], &[]), Some(10.0))
-    };
-    let neutral_of = |text: &str, refs: &[ParameterRef]| Neutral(parse(text, refs, &[]).unwrap());
-    let assign = |key: u32, text: &str| Statement::Assign {
-        target: reference(key),
-        value: neutral_of(text, &[reference(1)]),
-    };
-    document.design.programs = vec![
-        program(
-            1,
-            ProgramBody::Neutral(vec![Statement::If {
-                condition: neutral_of("true", &[]),
-                then: vec![assign(4, "$0")],
-                otherwise: Vec::new(),
-            }]),
-        ),
-        program(
-            2,
-            ProgramBody::Source {
-                dialect: ExpressionDialect::Creo,
-                tokens: vec![ExpressionToken::Text("p5 = 10".into())],
-            },
-        ),
-    ];
     let external = ParameterRef {
         target: RefTarget::External {
             definition: id("product-definition", 2),
@@ -232,8 +196,6 @@ fn an_own_value_holds_where_nothing_it_rests_on_differs() {
     };
     document.design.parameters.extend([
         length(3, source, Some(5.0)),
-        assigned(4, 1),
-        assigned(5, 2),
         length(6, neutral("$0 * 2", &[external], &[]), Some(4.0)),
     ]);
     let suppressing = BTreeMap::from([(
@@ -263,11 +225,6 @@ fn an_own_value_holds_where_nothing_it_rests_on_differs() {
             .is_some()
     };
     assert!(!holds(3, 2), "a Source expression");
-    assert!(
-        holds(4, 2),
-        "a Neutral program that reads nothing overridden"
-    );
-    assert!(!holds(5, 2), "a Source program");
     assert!(
         holds(6, 2),
         "an External reference with no occurrence override"

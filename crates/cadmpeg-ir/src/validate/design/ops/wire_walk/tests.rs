@@ -11,22 +11,19 @@ use serde_json::Value;
 use super::walk_design;
 use crate::design::configuration::{
     Arrangement, ArrangementKind, DesignConfiguration, FeatureStateOverride, MaterialOverride,
-    MaterialRef, Overrides, ParameterOverride, Publication,
+    MaterialRef, Overrides, ParameterOverride,
 };
 use crate::design::construction::{
     Construction, ConstructionInput, InputReference, InputRole, Relation, SourceMode, Subject,
 };
 use crate::design::container::{Container, OrderedKind, UnorderedKind};
-use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
+use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::expr::{
     BinaryOp, Expression, Measure, MeasureKind, MeasureTarget, Neutral, Node,
 };
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
-use crate::design::ids::{
-    ArrangementId, ContainerId, ParameterProgramId, PublicationId, SheetMetalRuleId,
-    SpatialSketchConstraintId,
-};
+use crate::design::ids::{ArrangementId, ContainerId, SheetMetalRuleId, SpatialSketchConstraintId};
 use crate::design::names::{CodecId, CodecName, NativeNameValue};
 use crate::design::ops::shared::Span;
 use crate::design::ops::sheet_metal::{BendSpec, SheetMetalRule};
@@ -37,7 +34,6 @@ use crate::design::ops::sketch::{
 use crate::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use crate::design::options::{NativeOption, NativeOptions, SolidOutput};
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
-use crate::design::program::{ParameterProgram, ProgramBody, Statement};
 use crate::design::selection::{
     Anchor, BoundaryUse, Fragment, Members, PickDomain, PickTarget, Picked, Picks, RuleTerm,
     Selection, SelectionRule, SketchRegion,
@@ -379,29 +375,6 @@ fn wire_walk_matches_legacy_json_walk_identically() {
         native_options: opt_map(&["p_dup"], None),
         source_settings: opt_map(&["p_dup"], None),
         native_ref: None,
-    });
-
-    ir.design.programs.push(ParameterProgram {
-        id: id::<ParameterProgramId>("prog1"),
-        scope: def_id.clone(),
-        owner: None,
-        stage: None,
-        name: None,
-        body: ProgramBody::Neutral(vec![Statement::Assign {
-            target: ParameterRef {
-                target: RefTarget::Parameter(pid.clone()),
-                through: None,
-            },
-            value: Neutral(Node::Measure(Box::new(measure_region("sk_prog", "bad_p")))),
-        }]),
-        native_ref: None,
-    });
-
-    ir.design.publications.push(Publication {
-        id: id::<PublicationId>("pub1"),
-        scope: def_id.clone(),
-        name: NonBlankString::new("P").unwrap(),
-        target: region_pick("sk_pub", "bad_pub"),
     });
 
     ir.design.configurations.push(DesignConfiguration {

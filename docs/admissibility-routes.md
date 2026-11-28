@@ -52,11 +52,11 @@ Every validation finding names its rule (`Finding.rule`, `[<codec>/]<area>.<deta
 may test a candidate reading against (§3.3 of the CADIR specification): the
 rules of the `Identity`, `ReferentialIntegrity`, `NativeLinks`,
 `CoedgePairing`, `ShellTopology`, `WireTopology`, `CarrierReachability`,
-`ParameterDomain`, and `GeometricConsistency` checks outside the design and
-process layers, as the validator stated them when the routes became rule
+`ParameterDomain`, and `GeometricConsistency` checks outside the design
+layer, as the validator stated them when the routes became rule
 lists. A finding whose rule a route does not list refuses no candidate, so a
 rule added to the validator later changes no admission until a route lists it
-in `validate/admit.rs`. A finding of the design or process layer refuses no
+in `validate/admit.rs`. A finding of the design layer refuses no
 candidate either, also where it reports a listed rule inside a stored state. `python3 scripts/name-validation-rules.py --admission`
 prints the rules of those checks as the validator states them now.
 

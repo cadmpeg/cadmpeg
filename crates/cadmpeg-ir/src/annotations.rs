@@ -18,17 +18,17 @@ use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 mod key;
 mod named;
 mod sparse;
-pub use key::{AnnotationKey, AnnotationTarget, Qualifier};
-pub(crate) use named::{delta_records, deltas, design_and_process_records, Removed};
+pub use key::{AnnotationKey, AnnotationTarget};
+pub(crate) use named::{delta_records, deltas, design_records, Removed};
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
 /// Document-wide provenance and exactness tables keyed by annotation key.
 ///
 /// The key of a top-level entity is its globally unique entity id. The key
-/// of a record inside the delta of an evaluation or a process state is the
-/// id of that evaluation or process state, one space, and the record's id.
-/// Validation reports a key whose qualifier names no evaluation or process
-/// state with a delta, or whose record that delta does not hold, as it
+/// of a record inside the delta of an evaluation is the evaluation's id, one
+/// space, and the record's id.
+/// Validation reports a key whose qualifier names no evaluation with a
+/// delta, or whose record that delta does not hold, as it
 /// reports a key that names no entity.
 ///
 /// An entity absent from `exactness` is byte-exact.
@@ -680,11 +680,15 @@ impl Annotations {
     /// The annotations of each entity that `keep` selects, keyed as the
     /// record of that id in the delta of `qualifier` (§3.2).
     #[must_use]
-    pub fn in_delta(&self, qualifier: &impl Qualifier, mut keep: impl FnMut(&str) -> bool) -> Self {
+    pub fn in_delta(
+        &self,
+        qualifier: &crate::design::ids::EvaluationId,
+        mut keep: impl FnMut(&str) -> bool,
+    ) -> Self {
         let mut out = Self::default();
         let mut moved = |key: &AnnotationKey| match key.target() {
             AnnotationTarget::Entity(id) if keep(id) => {
-                Some(AnnotationKey::qualified(qualifier.as_qualifier(), id))
+                Some(AnnotationKey::qualified(qualifier.as_str(), id))
             }
             _ => None,
         };

@@ -92,7 +92,6 @@ fn check_scope_contents(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
     let design = &ir.design;
     let mut named: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     named.extend(design.parameters.iter().map(|record| record.scope.as_str()));
-    named.extend(design.programs.iter().map(|record| record.scope.as_str()));
     named.extend(
         design
             .sheet_metal_rules
@@ -111,13 +110,6 @@ fn check_scope_contents(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
             .iter()
             .map(|record| record.scope.as_str()),
     );
-    named.extend(
-        design
-            .publications
-            .iter()
-            .map(|record| record.scope.as_str()),
-    );
-    named.extend(ir.process.setups.iter().map(|setup| setup.scope.as_str()));
     for scope in &design.scopes {
         let definition = scope.definition.as_str();
         let filled_root = scope.roots.iter().any(|root| {

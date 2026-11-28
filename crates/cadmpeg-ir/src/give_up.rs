@@ -875,7 +875,7 @@ pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed
             let Arena::Home { home, field } = &seed.arena else {
                 return false;
             };
-            let Some(restate) = Restate::new(schema, &gone, &seed.id, *home == "process") else {
+            let Some(restate) = Restate::new(schema, &gone, &seed.id) else {
                 return false;
             };
             let restate = restate.past_the_bound();
@@ -1233,13 +1233,6 @@ fn owned(ir: &CadIr, arena: &Arena, id: &str) -> Vec<(Arena, String)> {
                 ))
                 .chain(scoped(
                     "design",
-                    "programs",
-                    &design.programs,
-                    id,
-                    |record| record.scope.as_str(),
-                ))
-                .chain(scoped(
-                    "design",
                     "sheet_metal_rules",
                     &design.sheet_metal_rules,
                     id,
@@ -1261,22 +1254,8 @@ fn owned(ir: &CadIr, arena: &Arena, id: &str) -> Vec<(Arena, String)> {
                 ))
                 .chain(scoped(
                     "design",
-                    "publications",
-                    &design.publications,
-                    id,
-                    |record| record.scope.as_str(),
-                ))
-                .chain(scoped(
-                    "design",
                     "evaluations",
                     &design.evaluations,
-                    id,
-                    |record| record.scope.as_str(),
-                ))
-                .chain(scoped(
-                    "process",
-                    "setups",
-                    &ir.process.setups,
                     id,
                     |record| record.scope.as_str(),
                 ))
@@ -1498,14 +1477,6 @@ fn deltas<'a>(ir: &'a CadIr, arena: &Arena, id: &str) -> Vec<&'a StateDelta> {
             .filter_map(|evaluation| evaluation.content.as_ref())
             .map(|content| &content.delta)
             .collect(),
-        Arena::Home {
-            home: "process",
-            field: "states",
-        } => records(&ir.process.states, id)
-            .iter()
-            .filter_map(|state| state.content.as_ref())
-            .map(|content| &content.delta)
-            .collect(),
         _ => Vec::new(),
     }
 }
@@ -1519,14 +1490,6 @@ fn deltas_mut<'a>(ir: &'a mut CadIr, arena: &Arena, id: &str) -> Vec<&'a mut Sta
         } => records_mut(&mut ir.design.evaluations, id)
             .iter_mut()
             .filter_map(|evaluation| evaluation.content.as_mut())
-            .map(|content| &mut content.delta)
-            .collect(),
-        Arena::Home {
-            home: "process",
-            field: "states",
-        } => records_mut(&mut ir.process.states, id)
-            .iter_mut()
-            .filter_map(|state| state.content.as_mut())
             .map(|content| &mut content.delta)
             .collect(),
         _ => Vec::new(),
@@ -1758,15 +1721,10 @@ fn states_naming(ir: &CadIr) -> HashMap<String, BTreeSet<String>> {
 /// The id and delta of each stored state of `ir`: each evaluation and process
 /// state with content.
 fn stored(ir: &CadIr) -> impl Iterator<Item = (&str, &StateDelta)> {
-    let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
+    ir.design.evaluations.iter().filter_map(|evaluation| {
         let content = evaluation.content.as_ref()?;
         Some((evaluation.id.as_str(), &content.delta))
-    });
-    let states = ir.process.states.iter().filter_map(|state| {
-        let content = state.content.as_ref()?;
-        Some((state.id.as_str(), &content.delta))
-    });
-    evaluations.chain(states)
+    })
 }
 
 /// Adds to `ids` each text `value` holds, as a value or as a key.
@@ -2033,7 +1991,7 @@ fn restate(ir: &mut CadIr, holder: &Holder, gone: &BTreeSet<String>) -> bool {
     let Some(schema) = Schema::cadir() else {
         return false;
     };
-    let Some(restate) = Restate::new(schema, gone, &holder.id, *home == "process") else {
+    let Some(restate) = Restate::new(schema, gone, &holder.id) else {
         return false;
     };
     ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {

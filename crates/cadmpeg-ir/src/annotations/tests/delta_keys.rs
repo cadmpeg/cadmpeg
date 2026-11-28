@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::annotations::{AnnotationBuilder, AnnotationKey, AnnotationTarget, StreamHandle};
-use crate::design::ids::{EvaluationId, ProcessStateId};
+use crate::design::ids::EvaluationId;
 use crate::ids::FaceId;
 use crate::provenance::Exactness;
 
 const EVALUATION: &str = "test:design:evaluation#1";
-const STATE: &str = "test:process:state#1";
 const FACE: &str = "test:brep:face#2";
 
 fn evaluation() -> EvaluationId {
@@ -28,14 +27,6 @@ fn a_key_with_a_space_names_a_record_of_a_delta() {
         }
     );
     assert_eq!(key.owner(), EVALUATION);
-    let state = AnnotationKey::in_delta(&ProcessStateId::mint(STATE).unwrap(), &face());
-    assert_eq!(
-        state.target(),
-        AnnotationTarget::Delta {
-            qualifier: STATE,
-            record: FACE
-        }
-    );
     assert_eq!(read(FACE).target(), AnnotationTarget::Entity(FACE));
 }
 

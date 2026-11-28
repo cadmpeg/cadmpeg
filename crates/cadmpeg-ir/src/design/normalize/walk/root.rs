@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The walk over the design root records, configurations, parameters, programs, and the shared option types.
+//! The walk over design records, configurations, parameters, and shared option types.
 
 use cadmpeg_core::CodecError;
 
 use crate::design::configuration::{
     Arrangement, ArrangementMove, DesignConfiguration, FeatureStateOverride, MaterialOverride,
-    Overrides, ParameterOverride, Publication,
+    Overrides, ParameterOverride,
 };
 use crate::design::construction::SourceMode;
 use crate::design::container::Container;
@@ -15,7 +15,6 @@ use crate::design::options::{
     Support, Targets,
 };
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
-use crate::design::program::{ParameterProgram, ProgramBody, Statement};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 
 use super::{Visit, Walk};
@@ -114,19 +113,6 @@ impl Walk for ParameterOverride {
             value: _,
         } = self;
         expression.walk(into)?;
-        Ok(())
-    }
-}
-
-impl Walk for Publication {
-    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
-        let Self {
-            id: _,
-            scope: _,
-            name: _,
-            target,
-        } = self;
-        target.walk(into)?;
         Ok(())
     }
 }
@@ -425,54 +411,7 @@ impl Walk for ParameterDefinition {
     fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
         match self {
             Self::Expression(f0) => f0.walk(into),
-            Self::Driven | Self::Assigned(_) | Self::Unset => Ok(()),
-        }
-    }
-}
-
-impl Walk for ParameterProgram {
-    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
-        let Self {
-            id: _,
-            scope: _,
-            owner: _,
-            stage: _,
-            name: _,
-            body,
-            native_ref: _,
-        } = self;
-        body.walk(into)?;
-        Ok(())
-    }
-}
-
-impl Walk for ProgramBody {
-    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
-        match self {
-            Self::Neutral(f0) => f0.walk(into),
-            Self::Source {
-                dialect: _,
-                tokens: _,
-            } => Ok(()),
-        }
-    }
-}
-
-impl Walk for Statement {
-    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
-        let _depth = into.enter("Statement")?;
-        match self {
-            Self::Assign { target: _, value } => value.walk(into),
-            Self::If {
-                condition,
-                then,
-                otherwise,
-            } => {
-                condition.walk(into)?;
-                then.walk(into)?;
-                otherwise.walk(into)?;
-                Ok(())
-            }
+            Self::Driven | Self::Unset => Ok(()),
         }
     }
 }

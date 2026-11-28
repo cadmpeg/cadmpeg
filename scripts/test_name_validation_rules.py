@@ -108,7 +108,7 @@ class NamerTests(unittest.TestCase):
         self.assertIn('rule: cadmpeg_ir::rule_name!("nx/validate.native-record-unowned")', out)
 
     def test_a_struct_update_keeps_its_rule(self) -> None:
-        src = "fn f(x: Finding) -> Finding { Finding { check: Check::Process, ..x } }\n"
+        src = "fn f(x: Finding) -> Finding { Finding { check: Check::Design, ..x } }\n"
         self.assertEqual(rewrite(VALIDATOR_FILE, src), src)
 
     def test_one_slug_for_two_templates_takes_more_words(self) -> None:

@@ -372,7 +372,6 @@ impl References<'_, '_, '_> {
                 container: Some(id),
                 ..
             } => self.undeclared(id.as_str(), "container"),
-            PickTarget::Publication(id) => self.undeclared(id.as_str(), "publication"),
             PickTarget::Principal {
                 container: None, ..
             }

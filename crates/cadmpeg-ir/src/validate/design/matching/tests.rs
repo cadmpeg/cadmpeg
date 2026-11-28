@@ -7,18 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::json;
 
-use super::super::fixture::{design_findings, document};
+use super::super::fixture::document;
 use super::super::selections::Stored;
 use super::super::states::States;
 use super::Matchers;
-use crate::design::configuration::Publication;
 use crate::design::evaluation::StateBase;
 use crate::design::names::{NameEntry, NameTable, TopoName};
 use crate::design::refs::{EntityRef, RecordRef};
-use crate::design::selection::{PickTarget, Picked};
 use crate::document::CadIr;
 use crate::ids::FaceId;
-use crate::report::Severity;
 
 fn face_name(face: usize, index: Option<u32>) -> TopoName {
     let mut value = json!({"kind": "face", "feature": "test:design:feature#extrude", "role": {"kind": "other", "value": format!("test:face{face}")}});
@@ -111,28 +108,6 @@ fn adjacent_and_opposite(ir: &CadIr) -> (usize, usize, usize) {
     (first, second, opposite)
 }
 
-fn publish(ir: &mut CadIr, name: TopoName) {
-    ir.design.publications.push(Publication {
-        id: super::super::fixture::id("publication", "edge"),
-        scope: super::super::fixture::id("definition", "part"),
-        name: cadmpeg_core::text::NonBlankString::new("edge").unwrap(),
-        target: Picked {
-            target: PickTarget::Entity(name),
-            context: None,
-            native: None,
-            domain: None,
-            witness: None,
-            resolved: None,
-        },
-    });
-}
-
-fn lost(ir: &CadIr) -> bool {
-    design_findings(ir).iter().any(|finding| {
-        finding.severity == Severity::Warning && finding.message.contains("a lost operand")
-    })
-}
-
 #[track_caller]
 fn assert_matches(ir: &CadIr, name: &TopoName, expected: bool) {
     let states = States::new(ir);
@@ -169,16 +144,6 @@ fn a_bounded_name_matches_the_edge_between_its_faces() {
         &bounded(&[face_name(first, None), face_name(opposite, None)], &[]),
         false,
     );
-
-    let mut published = ir.clone();
-    publish(&mut published, edge);
-    assert!(!lost(&published), "{:#?}", design_findings(&published));
-    let mut published = ir;
-    publish(
-        &mut published,
-        bounded(&[face_name(first, None), face_name(opposite, None)], &[]),
-    );
-    assert!(lost(&published), "{:#?}", design_findings(&published));
 }
 
 #[test]

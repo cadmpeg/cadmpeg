@@ -31,7 +31,7 @@ from the name of the constant.
    `max_retained_bytes`, `max_entities`, and `max_recursion_depth`. Excess
    refuses the session and sets the fuse. Reading a document enforces
    `max_state_chain_depth` on each chain of state bases its evaluations
-   and process states form, and refuses a cycle as malformed. Excess refuses
+   form, and refuses a cycle as malformed. Excess refuses
    that read with `CodecError::ResourceLimit` (`RecursionDepth`,
    `BudgetExceeded`); it sets no fuse. The depth of a document and of an
    expression are bounds of the CADIR wire (§2.5), `MAX_DOCUMENT_DEPTH` and

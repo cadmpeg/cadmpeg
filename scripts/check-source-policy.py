@@ -1712,7 +1712,7 @@ SECOND_SERIALIZER = re.compile(
 # `serde_json::Value` (or any deserializer but the one its reader is given)
 # compiles that tree again.
 HUB_WIRE_READ = re.compile(
-    r"\b(?:CadIr|Annotations|AsmBrep|Topology|Model|Design|Process)\s*::\s*deserialize\s*\(\s*"
+    r"\b(?:CadIr|Annotations|AsmBrep|Topology|Model|Design)\s*::\s*deserialize\s*\(\s*"
     r"(?!deserializer\b)"
 )
 

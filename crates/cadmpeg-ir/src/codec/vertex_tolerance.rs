@@ -16,7 +16,7 @@
 //! The pass measures each geometry again, at the tolerances it has widened,
 //! until a measure widens no tolerance: a widened vertex raises the allowance
 //! of the comparisons it ends. It measures the current geometry, then the
-//! resolved state of each evaluation and process state with content: its base
+//! resolved state of each evaluation with content: its base
 //! with its delta applied, as validation resolves it. A vertex that only a
 //! resolved state compares with a moved position states its widened tolerance
 //! in that state's delta: the delta's own record, or a copy of the base's
@@ -54,11 +54,10 @@ use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
 use crate::scalar::PositiveLength;
 use crate::topology::{IncreasingParameterInterval, Vertex};
-use crate::validate::design::resolved::visit::StateView;
+use crate::validate::design::resolved::visit::{visit_resolved_states, StateView};
 use crate::validate::geometry_consistency::{
     pcurve_image_comparisons, ComparedCarrier, CurveEndComparisons, VertexComparison,
 };
-use crate::validate::process::evaluations::visit_resolved_states;
 use crate::CadIr;
 
 /// A compared position farther from the vertex than this many times the
@@ -75,14 +74,14 @@ const CARRIER_REFINEMENTS: usize = 48;
 const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 
 /// Widens the tolerance of each vertex of the current geometry of `ir`, and
-/// of each resolved state of its evaluations and process states, that a
+/// of each resolved state of its evaluations, that a
 /// compared position misses; marks each widened tolerance derived in
 /// `annotations`; and returns the `geometry.vertex-tolerance-widened` loss
 /// where it widens one. The pass measures in a session of its own under
 /// `policy`. Where it meets a resource ceiling of that session, it widens no
 /// tolerance of the geometry it has not measured and returns the
 /// `geometry.vertex-tolerance-unmeasured` loss. That loss names each
-/// evaluation and process state with content whose resolved state the pass
+/// evaluation with content whose resolved state the pass
 /// does not measure, and each geometry that [`settle`] leaves unsettled.
 pub(super) fn widen(
     ir: &mut CadIr,
@@ -92,8 +91,7 @@ pub(super) fn widen(
     widen_measuring(ir, annotations, policy, Measured::Region)
 }
 
-/// What the pass measures of the resolved state of an evaluation or a
-/// process state.
+/// What the pass measures of the resolved state of an evaluation.
 #[derive(Clone, Copy)]
 enum Measured {
     /// The records connected with a record its delta changes, over a base
@@ -208,13 +206,13 @@ fn widen_measuring(
         };
         losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
             "the decode wrapper's vertex tolerance pass stopped ({stopped}), so it widened no \
-             vertex tolerance of the resolved states of evaluations and process states it had not \
+             vertex tolerance of the resolved states of evaluations it had not \
              measured{named}"
         )));
     } else if !unresolved.is_empty() {
         losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
             "the decode wrapper's vertex tolerance pass resolved no state of {} evaluation(s) \
-             and process state(s) with content, so it widened no vertex tolerance of them: {}",
+             with content, so it widened no vertex tolerance of them: {}",
             unresolved.len(),
             unresolved.join(", ")
         )));
@@ -230,7 +228,7 @@ fn widen_measuring(
     losses
 }
 
-/// The ids of the evaluations and process states with content that are not
+/// The ids of the evaluations with content that are not
 /// `measured`, sorted.
 fn unresolved(ir: &CadIr, measured: impl Fn(&str) -> bool) -> Vec<String> {
     let mut unresolved: Vec<String> = ir
@@ -239,13 +237,6 @@ fn unresolved(ir: &CadIr, measured: impl Fn(&str) -> bool) -> Vec<String> {
         .iter()
         .filter(|evaluation| evaluation.content.is_some())
         .map(|evaluation| evaluation.id.as_str())
-        .chain(
-            ir.process
-                .states
-                .iter()
-                .filter(|state| state.content.is_some())
-                .map(|state| state.id.as_str()),
-        )
         .filter(|id| !measured(id))
         .map(str::to_owned)
         .collect();
@@ -254,10 +245,9 @@ fn unresolved(ir: &CadIr, measured: impl Fn(&str) -> bool) -> Vec<String> {
     unresolved
 }
 
-/// A vertex tolerance widened in the resolved state of an evaluation or a
-/// process state, which that state's delta states.
+/// A vertex tolerance widened in the resolved state of an evaluation.
 struct DeltaWidening {
-    /// The id of the evaluation or process state.
+    /// The id of the evaluation.
     holder: String,
     /// The vertex as the resolved state holds it, with its widened tolerance.
     vertex: Vertex,
@@ -273,13 +263,13 @@ struct StateWidening<'w> {
     /// The tolerances widened in the current geometry.
     current: &'w BTreeMap<String, f64>,
     measured: Measured,
-    /// For each vertex, each evaluation or process state that widens it,
+    /// For each vertex, each evaluation that widens it,
     /// with the tolerance it states there.
     by_state: HashMap<String, Vec<(String, PositiveLength)>>,
-    /// The evaluations and process states whose resolved state the pass
+    /// The evaluations whose resolved state the pass
     /// measured until a measure widened nothing.
     measured_states: HashSet<String>,
-    /// The evaluations and process states whose resolved state still widened
+    /// The evaluations whose resolved state still widened
     /// at the bound of [`settle`].
     unsettled: BTreeSet<String>,
     widened: Vec<DeltaWidening>,
@@ -477,29 +467,20 @@ fn raise(
     }
 }
 
-/// States `vertex` in the delta of the evaluation or process state `holder`:
+/// States `vertex` in the delta of the evaluation `holder`:
 /// replaces the delta's record of its id, or adds it in id order. Returns the
 /// vertex's annotation key in that delta and whether the delta gained the
-/// record; `None` where no evaluation or process state of that id has
+/// record; `None` where no evaluation of that id has
 /// content.
 fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(AnnotationKey, bool)> {
-    let (key, delta) = if let Ok(at) = ir
+    let at = ir
         .design
         .evaluations
         .binary_search_by(|evaluation| evaluation.id.as_str().cmp(holder))
-    {
-        let evaluation = &mut ir.design.evaluations[at];
-        let key = AnnotationKey::in_delta(&evaluation.id, &vertex.id);
-        (key, &mut evaluation.content.as_mut()?.delta)
-    } else {
-        let states = &mut ir.process.states;
-        let at = states
-            .binary_search_by(|state| state.id.as_str().cmp(holder))
-            .ok()?;
-        let state = &mut states[at];
-        let key = AnnotationKey::in_delta(&state.id, &vertex.id);
-        (key, &mut state.content.as_mut()?.delta)
-    };
+        .ok()?;
+    let evaluation = &mut ir.design.evaluations[at];
+    let key = AnnotationKey::in_delta(&evaluation.id, &vertex.id);
+    let delta = &mut evaluation.content.as_mut()?.delta;
     let vertices = &mut delta.records.vertices;
     let inserted =
         match vertices.binary_search_by(|stated| stated.id.as_str().cmp(vertex.id.as_str())) {

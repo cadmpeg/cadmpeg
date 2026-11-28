@@ -8,7 +8,6 @@ mod design;
 mod features;
 mod json_schema;
 mod ops;
-mod process;
 mod root;
 
 pub(crate) fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {

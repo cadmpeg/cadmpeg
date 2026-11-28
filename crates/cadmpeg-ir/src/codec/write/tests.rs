@@ -551,11 +551,7 @@ fn depth_notes(plan: &super::ExportPlan) -> Vec<&String> {
 
 #[test]
 fn plan_never_refuses_on_scope_and_notes_a_shortfall() {
-    for recorded in [
-        DecodeDepth::Container,
-        DecodeDepth::Geometry,
-        DecodeDepth::Design,
-    ] {
+    for recorded in [DecodeDepth::Container, DecodeDepth::Geometry] {
         let ir = recorded_at(recorded);
         let plan = F3dCoverageEncoder(ArenaCoverage::Complete)
             .plan(EncodeInput::new(&ir, None))
@@ -685,7 +681,6 @@ macro_rules! uniform_dispositions {
             ArenaDispositions {
                 $($field: disposition,)*
                 design: super::DesignArenaDispositions::uniform(disposition),
-                process: super::ProcessArenaDispositions::uniform(disposition),
             }
         }
     };
@@ -880,36 +875,6 @@ fn an_omitted_design_sketch_arena_is_charged() {
 }
 
 #[test]
-fn an_omitted_process_arena_is_charged_as_a_process_record() {
-    let mut ir = CadIr::empty();
-    ir.process
-        .groups
-        .push(crate::process::groups::ProcessGroup {
-            id: crate::design::ids::ProcessGroupId::try_from("test:process:group#1".to_owned())
-                .unwrap(),
-            kind: crate::process::groups::GroupKind::Method,
-            name: None,
-            parent: None,
-            native_ref: None,
-        });
-    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
-    dispositions.process.groups = ArenaDisposition::Omitted;
-    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
-    assert_eq!(losses.len(), 1, "{losses:?}");
-    assert_eq!(losses[0].code.local_code(), "arena.omitted");
-    assert_eq!(
-        losses[0].code.taxonomy(),
-        crate::report::loss::LossTaxonomy::ProcessRecordOmitted
-    );
-    assert!(losses[0].message.contains("`process.groups`"), "{losses:?}");
-    assert!(coverage_losses(
-        &ir,
-        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written))
-    )
-    .is_empty());
-}
-
-#[test]
 fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     let ir = unit_cube().expect("valid unit cube fixture");
     assert_eq!(ir.geometry.faces.len(), 6);
@@ -943,29 +908,21 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 /// (§3.2).
 #[test]
 fn an_arena_omitted_loss_lists_the_sorted_ids_after_the_count() {
+    let cube = unit_cube().expect("valid unit cube fixture");
     let mut ir = CadIr::empty();
     for ordinal in [2, 10, 1] {
-        ir.process
-            .groups
-            .push(crate::process::groups::ProcessGroup {
-                id: crate::design::ids::ProcessGroupId::try_from(format!(
-                    "test:process:group#{ordinal}"
-                ))
-                .unwrap(),
-                kind: crate::process::groups::GroupKind::Method,
-                name: None,
-                parent: None,
-                native_ref: None,
-            });
+        let mut point = cube.geometry.points[0].clone();
+        point.id = crate::ids::PointId::try_from(format!("test:geometry:point#{ordinal}")).unwrap();
+        ir.geometry.points.push(point);
     }
     let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
-    dispositions.process.groups = ArenaDisposition::Omitted;
+    dispositions.points = ArenaDisposition::Omitted;
     let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_eq!(
         losses[0].message,
-        "the cadir write does not represent model arena `process.groups`: 3 record(s) omitted: \
-         test:process:group#1, test:process:group#10, test:process:group#2"
+        "the cadir write does not represent model arena `points`: 3 record(s) omitted: \
+         test:geometry:point#1, test:geometry:point#10, test:geometry:point#2"
     );
 }
 

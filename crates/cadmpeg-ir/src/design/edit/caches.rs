@@ -282,9 +282,6 @@ impl CadIr {
         let drivers = match &record.definition {
             ParameterDefinition::Unset => None,
             ParameterDefinition::Driven => Some(ParameterDrivers::Geometry),
-            ParameterDefinition::Assigned(program) => {
-                Some(ParameterDrivers::Program(program.clone()))
-            }
             ParameterDefinition::Expression(expression) => {
                 let found = references(expression)?;
                 (!found.is_empty()).then_some(ParameterDrivers::References(found))
@@ -380,7 +377,7 @@ impl CadIr {
         self.mark_sketches_stale(&dependents.features);
         self.refresh_caches(&history, &currents, &dependents)?;
         self.clear_bound_fits(&dependents);
-        self.refresh_process(&history, &currents, &dependents)
+        Ok(())
     }
 
     /// Clears cached fit deviations bound to an edited parameter.
@@ -536,13 +533,6 @@ impl CadIr {
                 }
             }
         }
-        for program in &mut self.design.programs {
-            let context = Context {
-                feature: program.owner.clone().map(Member::Feature),
-                scope: Some(program.scope.clone()),
-            };
-            rewrite(&mut program.body, |json| Ok(check.clear(json, &context)))?;
-        }
         for feature in &mut self.design.features {
             let context = feature_context(&feature.id);
             rewrite(&mut feature.definition, |json| {
@@ -610,9 +600,7 @@ impl CadIr {
                             self.cache_in(target, None)
                         })
                     }
-                    ParameterDefinition::Driven
-                    | ParameterDefinition::Assigned(_)
-                    | ParameterDefinition::Unset => Attempt::Done(None),
+                    ParameterDefinition::Driven | ParameterDefinition::Unset => Attempt::Done(None),
                 };
                 if let Attempt::Done(value) = outcome {
                     done.push((parameter.clone(), value));

@@ -50,7 +50,7 @@ mod tests;
 use crate::design::container::Container;
 use crate::design::dimension::ParameterRef;
 use crate::design::feature::FeatureDefinition;
-use crate::design::ids::{ContainerId, ParameterProgramId};
+use crate::design::ids::ContainerId;
 use crate::design::refs::{Member, Position};
 use crate::document::Design;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
@@ -152,8 +152,6 @@ pub enum EditError {
 pub enum ParameterDrivers {
     /// Geometry determines the value: a reference dimension.
     Geometry,
-    /// A parameter program sets the value.
-    Program(ParameterProgramId),
     /// The expression's references, in order of first use.
     References(Vec<ParameterRef>),
 }
@@ -183,7 +181,7 @@ pub struct ConfigurationSwitch {
     /// 10). The switch reads each as built through `c`'s end, so the incoming
     /// state is the incoming configuration's evaluation after `c`'s last
     /// feature; the outgoing configuration's state there is not written as an
-    /// evaluation, and the evaluations and process states based on it are
+    /// evaluation, and the evaluations based on it are
     /// rebased so that their resolved states are unchanged. Where an incoming
     /// state replaces it, the outgoing state leaves the document.
     pub unspelled: Vec<Position>,
@@ -350,7 +348,7 @@ impl Editor<'_> {
     /// `records` holds one feature, or one container with its members and
     /// theirs, and the records they own: their sketches and spatial sketches
     /// with their entities and constraints, the sheets their `Spreadsheet`
-    /// operations name, and the parameters and programs they own. Every
+    /// operations name, and the parameters they own. Every
     /// evaluation and current state at or after the member's position is
     /// marked `Stale`, and so is every one that depends on a feature at or
     /// after it. A folder that holds the index grows to hold the member, and
@@ -377,13 +375,13 @@ impl Editor<'_> {
     /// a container, every member under it; the sketches and spatial sketches
     /// a deleted feature owns, with their entities and constraints; the sheet
     /// a deleted feature's `Spreadsheet` operation names; the parameters a
-    /// deleted feature or container owns, and the programs a deleted feature
-    /// owns; and every override keyed by a deleted record. It marks `Stale`
+    /// deleted feature or container owns; and every override keyed by a
+    /// deleted record. It marks `Stale`
     /// every evaluation and current state at or after the member's position
     /// in an ordered container, and every one that depends on a feature at
     /// or after it; in an unordered container, every one that depends on a
     /// deleted member. It deletes the evaluations keyed by a deleted member
-    /// and rebases the evaluations and process states based on them, and
+    /// and rebases the evaluations based on them, and
     /// strips from each kept state's name table the names that mention a
     /// deleted record. In an ordered container every other position that
     /// names a deleted member retargets to the position before the member,
@@ -462,4 +460,3 @@ fn malformed(error: impl std::fmt::Display) -> EditError {
 }
 
 pub(crate) mod effective;
-mod process;

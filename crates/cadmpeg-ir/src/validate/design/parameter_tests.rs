@@ -9,7 +9,7 @@ use cadmpeg_core::text::NonBlankString;
 
 use crate::design::configuration::{DefinitionOverride, PartNumber};
 use crate::design::construction::{Construction, FrameAxis, PostStep};
-use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{
     parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
     Neutral,
@@ -27,14 +27,12 @@ use crate::design::options::SolidOutput;
 use crate::design::parameter::{
     Deviations, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
-use crate::design::program::{ParameterProgram, ProgramBody, ProgramStage, Statement};
 use crate::design::selection::{Anchor, OccurrencePath, Picks, Selection};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::pmi::{FitZone, LimitsAndFits};
-use crate::process::groups::{ProcessDefinition, ProcessOwner, ProcessParameter};
 use crate::products::{
     AngularGeneral, ExternalDocument, GeneralTolerance, LinearGeneral, LinearGeneralClass,
     ProductDefinition, Storage,
@@ -250,57 +248,6 @@ fn each_sheet_is_named_by_one_feature_that_owns_its_cells() {
     cells.definition.operation = FeatureOperation::Spreadsheet(id("spreadsheet", "missing"));
     ir.design.features.push(cells);
     assert_finding(&ir, "is no spreadsheet of the design");
-}
-
-fn program(key: &str, body: Vec<Statement>) -> ParameterProgram {
-    ParameterProgram {
-        id: id("program", key),
-        scope: id("definition", "part"),
-        owner: None,
-        stage: None,
-        name: None,
-        body: ProgramBody::Neutral(body),
-        native_ref: None,
-    }
-}
-
-#[test]
-fn programs_assign_exactly_their_parameters() {
-    let mut ir = with_width();
-    ir.design.parameters[0].definition = ParameterDefinition::Assigned(id("program", "missing"));
-    assert_finding(&ir, "which is no program of the design");
-    let mut ir = with_width();
-    ir.design.parameters[0].definition = ParameterDefinition::Assigned(id("program", "rules"));
-    ir.design.programs.push(program("rules", Vec::new()));
-    assert_finding(
-        &ir,
-        "program assigns test:design:parameter#width on no path",
-    );
-    ir.design.programs[0] = program(
-        "rules",
-        vec![Statement::If {
-            condition: neutral("true", &[]),
-            then: vec![Statement::Assign {
-                target: reference("width"),
-                value: neutral("3[mm]", &[]),
-            }],
-            otherwise: Vec::new(),
-        }],
-    );
-    assert_no_design_finding(&ir);
-    ir.design.programs[0].owner = Some(feature("extrude"));
-    ir.design.programs[0].stage = Some(ProgramStage::Initial);
-    assert_finding(&ir, "program has an owner and states the stage");
-    let mut ir = with_width();
-    ir.design.programs.push(program(
-        "rules",
-        vec![Statement::Assign {
-            target: reference("width"),
-            value: neutral("true", &[]),
-        }],
-    ));
-    assert_finding(&ir, "whose definition is not `assigned` by this program");
-    assert_finding(&ir, "expression's root does not have the parameter's kind");
 }
 
 #[test]
@@ -586,100 +533,6 @@ fn assert_no_finding_containing(ir: &CadIr, fragment: &str) {
     );
 }
 
-/// `with_width`, where `width` is assigned by the program `rules`, which
-/// assigns it `2[mm]`.
-fn with_assigned_width() -> CadIr {
-    let mut ir = with_width();
-    ir.design.parameters[0].definition = ParameterDefinition::Assigned(id("program", "rules"));
-    ir.design.programs.push(program(
-        "rules",
-        vec![Statement::Assign {
-            target: reference("width"),
-            value: neutral("2[mm]", &[]),
-        }],
-    ));
-    ir
-}
-
-#[test]
-fn programs_assign_through_paths_and_external_names() {
-    let mut ir = with_assigned_width();
-    let ProgramBody::Neutral(statements) = &mut ir.design.programs[0].body else {
-        unreachable!()
-    };
-    statements[0] = Statement::Assign {
-        target: ParameterRef {
-            target: RefTarget::Parameter(id("parameter", "width")),
-            through: Some(OccurrencePath(Vec::new())),
-        },
-        value: neutral("2[mm]", &[]),
-    };
-    assert_no_finding_containing(&ir, "program assigns");
-    ir.design.parameters[0].definition = expression("2[mm]", &[]);
-    assert_finding(
-        &ir,
-        "program assigns test:design:parameter#width through an occurrence path, whose definition is not `assigned`",
-    );
-
-    let mut ir = with_width();
-    ir.model.product_definitions.push(ProductDefinition::new(
-        id("definition", "unread"),
-        Storage::External(ExternalDocument::path("unread.prt")),
-    ));
-    ir.design.programs.push(program(
-        "rules",
-        vec![Statement::Assign {
-            target: ParameterRef {
-                target: RefTarget::External {
-                    definition: id("definition", "unread"),
-                    name: NonBlankString::new("d0").unwrap(),
-                },
-                through: None,
-            },
-            value: neutral("4[mm]", &[]),
-        }],
-    ));
-    assert_finding(
-        &ir,
-        "program assigns d0 of the external definition test:design:definition#unread, which the document does not hold; its body is `source`",
-    );
-
-    let unread = ParameterRef {
-        target: RefTarget::External {
-            definition: id("definition", "unread"),
-            name: NonBlankString::new("d1").unwrap(),
-        },
-        through: None,
-    };
-    ir.design.programs[0].body = ProgramBody::Neutral(vec![Statement::If {
-        condition: neutral("$0 > 1[mm]", std::slice::from_ref(&unread)),
-        then: vec![Statement::Assign {
-            target: reference("width"),
-            value: neutral("$0 * 2", &[unread]),
-        }],
-        otherwise: Vec::new(),
-    }]);
-    assert_finding(
-        &ir,
-        "program reads d1 of the external definition test:design:definition#unread in a condition",
-    );
-    assert_finding(&ir, "program reads d1 of the external definition test:design:definition#unread in an assigned value");
-    ir.design.programs[0].body = ProgramBody::Source {
-        dialect: ExpressionDialect::Creo,
-        tokens: vec![
-            ExpressionToken::Reference(ParameterRef {
-                target: RefTarget::External {
-                    definition: id("definition", "unread"),
-                    name: NonBlankString::new("d0").unwrap(),
-                },
-                through: None,
-            }),
-            ExpressionToken::Text(" = 4".to_owned()),
-        ],
-    };
-    assert_no_finding_containing(&ir, "program");
-}
-
 /// `with_width` with the angle parameter `turn`, of expression 270° and of
 /// cache `cached` radians, bound as the angle of a rotation step of an
 /// equation curve's frame where `bound` is true.
@@ -712,129 +565,6 @@ fn a_rotation_cache_agrees_with_its_expression_to_within_a_whole_turn() {
     assert_no_finding_containing(&with_turn(-FRAC_PI_2, true), FRAGMENT);
     assert_warning(&with_turn(-FRAC_PI_2, false), FRAGMENT);
     assert_warning(&with_turn(-FRAC_PI_2 + 0.1, true), FRAGMENT);
-}
-
-#[test]
-fn assigned_caches_are_compared() {
-    let mut ir = with_assigned_width();
-    let mut double = parameter("double", LENGTH);
-    double.definition = expression("$0 * 2", &[reference("width")]);
-    double.value = Some(number(5.0));
-    ir.design.parameters.push(double);
-    assert_warning(&ir, "disagrees with its expression's value");
-    ir.design.parameters[1].value = Some(number(4.0));
-    assert_no_design_finding(&ir);
-
-    let ProgramBody::Neutral(statements) = &mut ir.design.programs[0].body else {
-        unreachable!()
-    };
-    let measure = Measure {
-        kind: MeasureKind::Length,
-        of: MeasureTarget::Model,
-        cached: None,
-    };
-    statements[0] = Statement::Assign {
-        target: reference("width"),
-        value: Neutral(parse("@0", &[], &[measure]).unwrap()),
-    };
-    ir.design.parameters[1].value = Some(number(5.0));
-    assert_no_finding_containing(&ir, "disagrees");
-}
-
-fn process_parameter(
-    key: &str,
-    kind: Option<ValueKind>,
-    text: &str,
-    refs: &[ParamRef],
-) -> ProcessParameter {
-    ProcessParameter {
-        id: id("process-parameter", key),
-        owner: ProcessOwner::Setup(id("setup", "job")),
-        name: NonBlankString::new(key).unwrap(),
-        kind,
-        definition: ProcessDefinition::Expression(Expression::Neutral(Neutral(
-            parse(text, refs, &[]).unwrap(),
-        ))),
-        value: None,
-        native_ref: None,
-    }
-}
-
-#[test]
-fn process_expressions_type_check() {
-    let mut ir = with_width();
-    ir.process.parameters.push(process_parameter(
-        "depth",
-        Some(LENGTH),
-        "1[mm] + $0",
-        &[ParamRef::Design(reference("width"))],
-    ));
-    assert_no_finding_containing(&ir, "process-parameter");
-    ir.process.parameters.push(process_parameter(
-        "bad",
-        Some(LENGTH),
-        "1[mm] + 1[deg]",
-        &[],
-    ));
-    assert_finding(&ir, "expression does not type-check");
-    ir.process.parameters[1] = process_parameter("bad", Some(LENGTH), "true", &[]);
-    assert_finding(&ir, "expression's root does not have the parameter's kind");
-    ir.process.parameters[1] = process_parameter(
-        "bad",
-        None,
-        "$0 + 1[deg]",
-        &[ParamRef::Process(id("process-parameter", "depth"))],
-    );
-    assert_finding(&ir, "expression does not type-check");
-    ir.process.parameters[1] = process_parameter("bad", None, "3 * 2", &[]);
-    assert_finding(
-        &ir,
-        "process parameter has no kind, so its expression is `source`",
-    );
-    ir.process.parameters[1].definition = ProcessDefinition::Expression(Expression::Source {
-        dialect: ExpressionDialect::FreeCad,
-        tokens: vec![ExpressionToken::Text("3 * 2".to_owned())],
-    });
-    assert_no_finding_containing(&ir, "process-parameter");
-    ir.process.parameters.push(process_parameter(
-        "reads",
-        Some(LENGTH),
-        "$0 * 1[mm]",
-        &[ParamRef::Process(id("process-parameter", "bad"))],
-    ));
-    assert_finding(
-        &ir,
-        "neutral expression references test:design:process-parameter#bad, a process parameter with no kind",
-    );
-}
-
-#[test]
-fn a_process_record_shares_no_id_with_a_design_or_process_record() {
-    let mut ir = with_width();
-    let mut shared = process_parameter("depth", Some(LENGTH), "1[mm]", &[]);
-    shared.id = ir.design.parameters[0]
-        .id
-        .as_str()
-        .to_owned()
-        .try_into()
-        .unwrap();
-    ir.process.parameters.push(shared);
-    assert_finding(
-        &ir,
-        "process.parameters record id is also the id of a design.parameters record",
-    );
-
-    let mut ir = with_width();
-    ir.process
-        .parameters
-        .push(process_parameter("depth", Some(LENGTH), "1[mm]", &[]));
-    let mut twin = process_parameter("depth", Some(LENGTH), "2[mm]", &[]);
-    twin.name = NonBlankString::new("twin").unwrap();
-    ir.process.parameters.push(twin);
-    assert_finding(
-        &ir,
-        "process.parameters record id is also the id of a process.parameters record",
-    );
 }
 
 fn equation_curve(x: &str) -> FeatureOperation {

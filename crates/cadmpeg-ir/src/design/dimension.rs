@@ -7,7 +7,6 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::ids::ProcessParameterId;
 use super::selection::OccurrencePath;
 use crate::features::ParameterId;
 use crate::ids::ProductDefinitionId;
@@ -74,23 +73,6 @@ pub enum RefTarget {
         /// The source name of the parameter.
         name: NonBlankString,
     },
-}
-
-/// A reference from a process expression or a process dimension: a process
-/// parameter or a design parameter.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum ParamRef {
-    /// A process parameter.
-    Process(ProcessParameterId),
-    /// A design parameter.
-    Design(ParameterRef),
 }
 
 cadmpeg_core::named_optional_field!(deserialize_through, OccurrencePath, "through");

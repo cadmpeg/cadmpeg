@@ -36,7 +36,6 @@ mod physics;
 mod pmi;
 mod point_clouds;
 mod presentation;
-pub(crate) mod process;
 mod products;
 mod referential_integrity;
 mod semantic_annotations;
@@ -180,7 +179,8 @@ fn validate_model_with_index<'ir>(
     semantic_annotations::check_semantic_annotations_with(ir, ids, &doc_records, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, nests, &mut findings)?;
-    process::check_design_and_process_with(ctx, design_records, ids, &mut findings)?;
+    let matchers = design::matching::Matchers::owned(design::states::States::new(ir));
+    design::check_design(ctx, design_records, ids, &matchers, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),

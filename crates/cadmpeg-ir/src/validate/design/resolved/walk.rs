@@ -13,13 +13,11 @@ use cadmpeg_core::CodecError;
 use super::super::records::PositionKey;
 use super::state::State;
 use crate::design::evaluation::{Evaluation, StateBase, StateDelta};
-use crate::process::state::{ProcessBase, ProcessState};
 
 /// A record whose content is a delta on a base.
 #[derive(Clone, Copy)]
 pub(super) enum Stored<'a> {
     Evaluation(&'a Evaluation),
-    Process(&'a ProcessState),
 }
 
 impl<'a> Stored<'a> {
@@ -28,14 +26,12 @@ impl<'a> Stored<'a> {
             Self::Evaluation(evaluation) => {
                 evaluation.content.as_ref().map(|content| &content.delta)
             }
-            Self::Process(state) => state.content.as_ref().map(|content| &content.delta),
         }
     }
 
     pub(super) fn id(self) -> &'a str {
         match self {
             Self::Evaluation(evaluation) => evaluation.id.as_str(),
-            Self::Process(state) => state.id.as_str(),
         }
     }
 }
@@ -116,8 +112,7 @@ impl<'a> Firsts<'a> {
     }
 }
 
-/// The records of a walk and what each rests on. Records `0..evaluations`
-/// are the evaluations, the rest the process states.
+/// The evaluations of a walk and what each rests on.
 pub(super) struct Forest<'a> {
     records: Vec<Stored<'a>>,
     checked: Vec<bool>,
@@ -134,62 +129,6 @@ impl<'a> Forest<'a> {
                 .iter()
                 .map(|evaluation| evaluation.content.is_some())
                 .collect(),
-            parents,
-        }
-    }
-
-    /// The process states, each checked, on the evaluations. `scope` gives
-    /// the design scope of a state's setup, which a `Current` base reads.
-    pub(super) fn of_process_states(
-        evaluations: &'a [Evaluation],
-        states: &'a [ProcessState],
-        scope: impl Fn(&ProcessState) -> Option<&'a str>,
-    ) -> Self {
-        let mut parents = evaluation_parents(evaluations);
-        let offset = evaluations.len();
-        let firsts = Firsts::new(states.iter().map(|state| {
-            let base = match &state.content.as_ref().map(|content| &content.base) {
-                Some(ProcessBase::State(base)) => Some(base.as_str()),
-                _ => None,
-            };
-            (state.id.as_str(), base)
-        }));
-        let evaluation_firsts = Firsts::new(
-            evaluations
-                .iter()
-                .map(|evaluation| (evaluation.id.as_str(), None)),
-        );
-        for (at, state) in states.iter().enumerate() {
-            let parent = state
-                .content
-                .as_ref()
-                .and_then(|content| match &content.base {
-                    ProcessBase::State(base) => firsts
-                        .parent(at, state.id.as_str(), base.as_str(), |base| {
-                            states[base].content.is_some()
-                        })
-                        .map(|base| Parent::Record(offset + base)),
-                    ProcessBase::Design(StateBase::Empty) => Some(Parent::Bottom(Bottom::Empty)),
-                    ProcessBase::Design(StateBase::Current(position)) => {
-                        scope(state).map(|scope| {
-                            Parent::Bottom(Bottom::Current(scope, PositionKey::of(position)))
-                        })
-                    }
-                    ProcessBase::Design(StateBase::Evaluation(base)) => evaluation_firsts
-                        .first(base.as_str(), |base| evaluations[base].content.is_some())
-                        .map(Parent::Record),
-                });
-            parents.push(parent);
-        }
-        let mut checked = vec![false; evaluations.len()];
-        checked.extend(states.iter().map(|state| state.content.is_some()));
-        Self {
-            records: evaluations
-                .iter()
-                .map(Stored::Evaluation)
-                .chain(states.iter().map(Stored::Process))
-                .collect(),
-            checked,
             parents,
         }
     }

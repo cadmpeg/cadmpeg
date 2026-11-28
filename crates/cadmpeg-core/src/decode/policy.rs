@@ -30,9 +30,8 @@ pub struct ResourceLimits {
     #[serde(default = "default_max_recursion_depth")]
     pub max_recursion_depth: u64,
     /// Maximum depth of a chain of state bases that reading CADIR admits:
-    /// the process states and evaluations with content that a chain of
-    /// `ProcessBase::State` and `StateBase::Evaluation` bases passes through,
-    /// counting the state it starts from.
+    /// the evaluations with content that a chain of `StateBase::Evaluation`
+    /// bases passes through, counting the state it starts from.
     #[serde(default = "default_max_state_chain_depth")]
     pub max_state_chain_depth: u64,
 }

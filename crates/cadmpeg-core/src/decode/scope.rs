@@ -20,13 +20,11 @@ pub enum ArenaClass {
     /// The design that built the model: features, sketches, parameters,
     /// configurations, spreadsheets, and their topology bindings.
     Design,
-    /// The manufacturing process that makes the model.
-    Process,
 }
 
 impl ArenaClass {
     /// Every class, in registry-class order.
-    pub const ALL: [Self; 3] = [Self::Model, Self::Design, Self::Process];
+    pub const ALL: [Self; 2] = [Self::Model, Self::Design];
 
     /// The class a document must hold to hold this class.
     #[must_use]
@@ -34,7 +32,6 @@ impl ArenaClass {
         match self {
             Self::Model => None,
             Self::Design => Some(Self::Model),
-            Self::Process => Some(Self::Design),
         }
     }
 }
@@ -42,8 +39,7 @@ impl ArenaClass {
 /// The classes a document holds, one required boolean per class.
 ///
 /// A held class has meaningful arenas, including empty ones. A class that is
-/// not held has empty arenas. `design` requires `model`, and `process`
-/// requires `design`.
+/// not held has empty arenas. `design` requires `model`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -52,8 +48,6 @@ pub struct ContentScope {
     pub model: bool,
     /// Design arenas are meaningful, including when empty.
     pub design: bool,
-    /// Process arenas are meaningful, including when empty.
-    pub process: bool,
 }
 
 /// A held class whose required class the scope excludes.
@@ -73,7 +67,6 @@ impl ContentScope {
         Self {
             model: true,
             design: true,
-            process: true,
         }
     }
 
@@ -83,7 +76,6 @@ impl ContentScope {
         Self {
             model: false,
             design: false,
-            process: false,
         }
     }
 
@@ -93,7 +85,6 @@ impl ContentScope {
         Self {
             model: true,
             design: false,
-            process: false,
         }
     }
 
@@ -103,7 +94,6 @@ impl ContentScope {
         Self {
             model: true,
             design: true,
-            process: false,
         }
     }
 
@@ -113,7 +103,6 @@ impl ContentScope {
         match class {
             ArenaClass::Model => self.model,
             ArenaClass::Design => self.design,
-            ArenaClass::Process => self.process,
         }
     }
 
@@ -123,7 +112,6 @@ impl ContentScope {
         match class {
             ArenaClass::Model => self.model = held,
             ArenaClass::Design => self.design = held,
-            ArenaClass::Process => self.process = held,
         }
         self
     }
@@ -138,7 +126,7 @@ impl ContentScope {
     /// Whether no class is held.
     #[must_use]
     pub const fn is_empty(self) -> bool {
-        !self.model && !self.design && !self.process
+        !self.model && !self.design
     }
 
     /// Required classes absent from this scope.
@@ -166,8 +154,6 @@ impl ContentScope {
             DecodeDepth::Container
         } else if !self.design {
             DecodeDepth::Geometry
-        } else if !self.process {
-            DecodeDepth::Design
         } else {
             DecodeDepth::Full
         }
@@ -264,7 +250,6 @@ impl fmt::Display for ArenaClass {
         f.write_str(match self {
             Self::Model => "model",
             Self::Design => "design",
-            Self::Process => "process",
         })
     }
 }
@@ -286,22 +271,19 @@ mod tests {
     use crate::decode::DecodeDepth;
 
     #[test]
-    fn scope_is_three_required_wire_booleans() {
+    fn scope_is_two_required_wire_booleans() {
         let full =
             crate::serde_erase::json::to_value(ContentScope::full()).expect("scope serializes");
-        assert_eq!(
-            full,
-            crate::json!({"model": true, "design": true, "process": true})
-        );
-        assert!(serde_json::from_str::<ContentScope>(r#"{"model":true,"design":true}"#).is_err());
+        assert_eq!(full, crate::json!({"model": true, "design": true}));
+        assert!(serde_json::from_str::<ContentScope>(r#"{"model":true}"#).is_err());
         assert!(serde_json::from_str::<ContentScope>(
-            r#"{"model":true,"design":true,"process":false,"extra":false}"#
+            r#"{"model":true,"design":true,"process":false}"#
         )
         .is_err());
     }
 
     #[test]
-    fn design_requires_model_and_process_requires_design() {
+    fn design_requires_model() {
         assert_eq!(
             ContentScope::container()
                 .with(ArenaClass::Design, true)
@@ -311,40 +293,39 @@ mod tests {
                 required: ArenaClass::Model,
             })
         );
-        assert_eq!(
-            ContentScope::geometry()
-                .with(ArenaClass::Process, true)
-                .unmet_requirement(),
-            Some(ScopeDependency {
-                held: ArenaClass::Process,
-                required: ArenaClass::Design,
-            })
-        );
     }
 
     #[test]
     fn a_scope_that_breaks_a_requirement_reads_as_written() {
-        for scope in [
-            ContentScope::container().with(ArenaClass::Design, true),
-            ContentScope::geometry().with(ArenaClass::Process, true),
-        ] {
-            let wire = serde_json::to_string(&scope).expect("scope serializes");
-            let read = serde_json::from_str::<ContentScope>(&wire).expect("scope parses");
-            assert_eq!(read, scope);
-            assert!(read.unmet_requirement().is_some());
-        }
+        let scope = ContentScope::container().with(ArenaClass::Design, true);
+        let wire = serde_json::to_string(&scope).expect("scope serializes");
+        let read = serde_json::from_str::<ContentScope>(&wire).expect("scope parses");
+        assert_eq!(read, scope);
+        assert!(read.unmet_requirement().is_some());
     }
 
     #[test]
     fn each_depth_requests_the_scope_it_satisfies() {
-        for (depth, scope) in [
-            (DecodeDepth::Container, ContentScope::container()),
-            (DecodeDepth::Geometry, ContentScope::geometry()),
-            (DecodeDepth::Design, ContentScope::design()),
-            (DecodeDepth::Full, ContentScope::full()),
+        for (depth, scope, deepest) in [
+            (
+                DecodeDepth::Container,
+                ContentScope::container(),
+                DecodeDepth::Container,
+            ),
+            (
+                DecodeDepth::Geometry,
+                ContentScope::geometry(),
+                DecodeDepth::Geometry,
+            ),
+            (
+                DecodeDepth::Design,
+                ContentScope::design(),
+                DecodeDepth::Full,
+            ),
+            (DecodeDepth::Full, ContentScope::full(), DecodeDepth::Full),
         ] {
             assert_eq!(depth.scope(), scope);
-            assert_eq!(scope.depth(), depth);
+            assert_eq!(scope.depth(), deepest);
             assert_eq!(scope.unmet_requirement(), None);
             let wire = serde_json::to_string(&scope).expect("scope serializes");
             assert_eq!(
@@ -358,15 +339,15 @@ mod tests {
     fn missing_classes_are_those_the_requirement_holds() {
         assert_eq!(
             ContentScope::geometry().missing_from(ContentScope::full()),
-            ArenaClasses::from([ArenaClass::Design, ArenaClass::Process])
+            ArenaClasses::from([ArenaClass::Design])
         );
     }
 
     #[test]
     fn class_sets_have_a_sorted_array_wire_shape() {
-        let classes = ArenaClasses::from([ArenaClass::Process, ArenaClass::Model]);
+        let classes = ArenaClasses::from([ArenaClass::Design, ArenaClass::Model]);
         let wire = crate::serde_erase::json::to_value(&classes).expect("class set serializes");
-        assert_eq!(wire, crate::json!(["model", "process"]));
+        assert_eq!(wire, crate::json!(["model", "design"]));
         assert_eq!(
             crate::serde_erase::json::from_value::<ArenaClasses>(wire).expect("class set parses"),
             classes
@@ -376,7 +357,7 @@ mod tests {
     #[test]
     fn a_class_set_refuses_a_repeat_and_names_out_of_order() {
         for (wire, refusal) in [
-            (r#"["process","model"]"#, "out of order"),
+            (r#"["design","model"]"#, "out of order"),
             (r#"["model","model"]"#, "twice"),
         ] {
             let error = serde_json::from_str::<ArenaClasses>(wire)
@@ -385,10 +366,10 @@ mod tests {
             assert!(error.contains(refusal), "{wire}: {error}");
         }
         let sorted: ArenaClasses =
-            serde_json::from_str(r#"["model","process"]"#).expect("sorted classes read");
+            serde_json::from_str(r#"["model","design"]"#).expect("sorted classes read");
         assert_eq!(
             sorted,
-            ArenaClasses::from([ArenaClass::Model, ArenaClass::Process])
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
         );
     }
 }

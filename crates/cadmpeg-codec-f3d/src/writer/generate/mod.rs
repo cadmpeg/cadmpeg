@@ -1015,6 +1015,5 @@ fn coverage(
         } else {
             cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted)
         },
-        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }

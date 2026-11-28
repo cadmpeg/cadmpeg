@@ -14,7 +14,7 @@ use super::wire::{record_reads, Reads, StateRead};
 use super::{container_members, EditError};
 use crate::design::container::Container;
 use crate::design::feature::FeatureOperation;
-use crate::design::parameter::{ParameterDefinition, ParameterOwner};
+use crate::design::parameter::ParameterOwner;
 use crate::design::refs::{Member, Position};
 use crate::document::Design;
 use crate::features::{FeatureId, ParameterId};
@@ -502,11 +502,6 @@ impl Graph {
                 continue;
             };
             reads.push((at, record_reads(&parameter.definition, &is_container)?));
-            if let ParameterDefinition::Assigned(program) = &parameter.definition {
-                if let Some(record) = design.programs.iter().find(|record| &record.id == program) {
-                    reads.push((at, record_reads(&record.body, &is_container)?));
-                }
-            }
         }
         for (at, found) in reads {
             let entry = &mut entries[at];

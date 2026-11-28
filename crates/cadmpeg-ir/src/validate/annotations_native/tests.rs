@@ -468,40 +468,6 @@ fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
 }
 
 #[test]
-fn a_key_qualified_by_a_process_state_resolves_to_its_delta_record() {
-    use crate::design::evaluation::{EvaluationStatus, StateBase, StateDelta};
-    use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
-    let (mut ir, _) = cube_with_vertex_state();
-    let edge = ir.geometry.edges[0].clone();
-    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
-    let mut records = crate::document::Topology::default();
-    records.edges.push(edge.clone());
-    ir.process.states.push(ProcessState {
-        id: state.clone(),
-        of: ProcessStateOf::Stock(
-            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
-        ),
-        configuration: None,
-        status: EvaluationStatus::Current,
-        content: Some(ProcessContent {
-            base: ProcessBase::Design(StateBase::Empty),
-            delta: StateDelta {
-                records,
-                ..StateDelta::default()
-            },
-        }),
-        feature: None,
-    });
-    let key = crate::annotations::AnnotationKey::in_delta(&state, &edge.id);
-    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
-    let mut annotations = crate::AnnotationBuilder::new();
-    annotations.note(&key, &stream, 0, None);
-    annotations.exactness(&key, crate::provenance::Exactness::Inferred);
-    let findings = annotation_findings(&ir, annotations.build());
-    assert!(findings.is_empty(), "{findings:?}");
-}
-
-#[test]
 fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
     let (ir, evaluation) = cube_with_vertex_state();
     let vertex = &ir.geometry.vertices[0].id;
@@ -554,32 +520,12 @@ fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
     );
 }
 
-/// The design fixture with a process state that has no content.
-fn design_with_process_state() -> (crate::CadIr, crate::design::ids::ProcessStateId) {
-    use crate::design::evaluation::EvaluationStatus;
-    use crate::process::state::{ProcessState, ProcessStateOf};
-    let mut ir = crate::validate::design::fixture::document();
-    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
-    ir.process.states.push(ProcessState {
-        id: state.clone(),
-        of: ProcessStateOf::Stock(
-            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
-        ),
-        configuration: None,
-        status: EvaluationStatus::Current,
-        content: None,
-        feature: None,
-    });
-    (ir, state)
-}
-
 #[test]
-fn keys_of_design_and_process_records_resolve() {
-    let (ir, state) = design_with_process_state();
+fn keys_of_design_records_resolve() {
+    let ir = crate::validate::design::fixture::document();
     let named = [
         "test:design:feature#extrude",
         "test:design:evaluation#after-extrude",
-        state.as_str(),
     ];
     let absent = "test:design:feature#absent";
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
@@ -607,7 +553,7 @@ fn keys_of_design_and_process_records_resolve() {
 
 #[test]
 fn a_field_path_of_a_design_record_is_checked_against_that_record() {
-    let (ir, _) = design_with_process_state();
+    let ir = crate::validate::design::fixture::document();
     let mut annotations = crate::AnnotationBuilder::new();
     annotations
         .derived("test:design:feature#extrude", "definition")
@@ -632,7 +578,7 @@ fn a_field_path_of_a_design_record_is_checked_against_that_record() {
 #[test]
 fn a_design_record_takes_no_field_path_from_the_model_record_it_restates() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-    let (mut ir, _) = design_with_process_state();
+    let mut ir = crate::validate::design::fixture::document();
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("test:design:feature#fillet").unwrap(),
@@ -669,7 +615,7 @@ fn a_design_record_takes_no_field_path_from_the_model_record_it_restates() {
 /// carries both: a field path at that id names a field of either record.
 #[test]
 fn a_field_path_at_a_definition_id_names_a_field_of_the_definition_or_its_scope() {
-    let (ir, _) = design_with_process_state();
+    let ir = crate::validate::design::fixture::document();
     let definition = "test:design:definition#part";
     let mut annotations = crate::AnnotationBuilder::new();
     for field in ["active_arrangements", "kind", "not_a_serialized_field"] {

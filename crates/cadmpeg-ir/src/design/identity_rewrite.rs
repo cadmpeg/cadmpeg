@@ -178,7 +178,7 @@ rewrite_enum!(PickTarget, []; {
     Entity(value), Native {within}, Sketch(value), SketchEntity(value), SpatialSketchEntity(value),
     SketchRegion {sketch, region}, SketchFrame {sketch, entity}, Datum {feature, part},
     Principal {entity, container}, Feature(value), FeatureResult(value), TemplateInput {instance, input},
-    Component, Publication(value),
+    Component,
 });
 rewrite_enum!(NativeOwner, []; {Sketch(value), SpatialSketch(value), Feature(value)});
 rewrite_enum!(PickContext, []; {Occurrence(value), Definition(value), InContext {assembly, own, target}});

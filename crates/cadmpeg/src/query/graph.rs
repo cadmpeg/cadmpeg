@@ -27,7 +27,7 @@ pub(crate) struct GraphArgs {
     /// JSON file, or `-` for standard input.
     file: std::path::PathBuf,
     /// Arena address: `<home>.<arena>` with home `geometry`, `model`,
-    /// `design`, or `process`, `native.<codec>.<arena>`, or bare `<arena>` as
+    /// `design`, `native.<codec>.<arena>`, or bare `<arena>` as
     /// shorthand for the arena in its home. Same dotted names as
     /// `query counts --json`.
     arena: String,

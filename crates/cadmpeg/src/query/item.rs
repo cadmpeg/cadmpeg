@@ -28,7 +28,7 @@ pub(crate) struct ItemArgs {
     /// JSON file, or `-` for standard input.
     file: std::path::PathBuf,
     /// Arena address: `<home>.<arena>` with home `geometry`, `model`,
-    /// `design`, or `process`, `native.<codec>.<arena>`, or bare `<arena>` as
+    /// `design`, `native.<codec>.<arena>`, or bare `<arena>` as
     /// shorthand for the arena in its home. Same dotted names as
     /// `query counts --json`.
     arena: String,
@@ -85,7 +85,7 @@ impl ArenaTarget {
 fn unaddressable(spec: &str) -> String {
     format!(
         "arena name {spec:?} is not addressable; use `<home>.<arena>` with home \
-         `geometry`, `model`, `design`, or `process`, `native.<codec>.<arena>`, or a \
+`geometry`, `model`, `design`, `native.<codec>.<arena>`, or a \
          bare `<arena>` shorthand for the arena in its home (same names as \
          `cadmpeg query counts --json`)"
     )

@@ -253,10 +253,8 @@ impl ExportLossCode {
             | EntityKind::DesignParameter
             | EntityKind::DesignSpreadsheet
             | EntityKind::DesignSheetMetalRule
-            | EntityKind::DesignProgram
             | EntityKind::DesignConfiguration
             | EntityKind::DesignArrangement
-            | EntityKind::DesignPublication
             | EntityKind::DesignEvaluation => LossTaxonomy::ParametricRecordOmitted,
             EntityKind::Appearance | EntityKind::AppearanceBinding => {
                 LossTaxonomy::MaterialNotTransferred
@@ -271,17 +269,6 @@ impl ExportLossCode {
             | EntityKind::Articulation
             | EntityKind::PhysicsScene
             | EntityKind::SolverSettings => LossTaxonomy::PhysicsNotTransferred,
-            EntityKind::ProcessSetup
-            | EntityKind::ProcessOperation
-            | EntityKind::ProcessFeature
-            | EntityKind::ProcessGroup
-            | EntityKind::ProcessTool
-            | EntityKind::ProcessPreset
-            | EntityKind::ProcessMachine
-            | EntityKind::ProcessProgram
-            | EntityKind::ProcessParameter
-            | EntityKind::ProcessToolpath
-            | EntityKind::ProcessState => LossTaxonomy::ProcessRecordOmitted,
         }
     }
 

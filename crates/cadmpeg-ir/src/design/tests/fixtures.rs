@@ -12,12 +12,12 @@ use crate::design::construction::{
     CurveValue, FrameAxis, FrameValue, InputReference, InputRole, PlaneValue, PostStep, Relation,
     ScalarDimension, SourceMode, Subject,
 };
-use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{
-    AddOp, BendVariable, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken,
-    Function, Measure, MeasureKind, MeasureTarget, Neutral, Node, UnaryOp,
+    BendVariable, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Function,
+    Measure, MeasureKind, MeasureTarget, Neutral, Node, UnaryOp,
 };
-use crate::design::ids::{ContainerId, ProcessParameterId, PublicationId};
+use crate::design::ids::ContainerId;
 use crate::design::names::{
     Base64Bytes, GenerationRole, Generator, HoleFaceRole, InstanceIndex, NameEntry, NameKind,
     NameTable, NativeName, NativeNameValue, TopoName,
@@ -479,7 +479,6 @@ pub(super) fn pick_targets() -> Vec<PickTarget> {
             input: 0,
         },
         PickTarget::Component,
-        PickTarget::Publication(id::<PublicationId>("publication", 1)),
     ]
 }
 
@@ -911,28 +910,10 @@ pub(super) fn expressions() -> Vec<Expression<ParameterRef>> {
     out
 }
 
-pub(super) fn process_expressions() -> Vec<Expression<ParamRef>> {
-    vec![
-        Expression::Neutral(Neutral(Node::add(
-            Node::Reference(ParamRef::Design(parameter_ref(1))),
-            AddOp::Subtract,
-            Node::Reference(ParamRef::Process(id::<ProcessParameterId>(
-                "process-parameter",
-                1,
-            ))),
-        ))),
-        Expression::Source {
-            dialect: ExpressionDialect::FreeCad,
-            tokens: vec![ExpressionToken::Text("Box.Height".to_owned())],
-        },
-    ]
-}
-
 pub(super) fn dialects() -> Vec<ExpressionDialect> {
     vec![
         ExpressionDialect::SolidWorks,
         ExpressionDialect::Fusion,
-        ExpressionDialect::FusionCam,
         ExpressionDialect::Inventor,
         ExpressionDialect::Catia,
         ExpressionDialect::Creo,

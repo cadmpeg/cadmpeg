@@ -55,7 +55,6 @@ pub(in crate::validate) struct DesignIndex<'a> {
     places: BTreeMap<MemberKey<'a>, (&'a Container, usize)>,
     pub(super) sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Planar>>,
     pub(super) spatial_sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Spatial>>,
-    pub(super) publications: BTreeSet<&'a str>,
     /// The features each feature's references name.
     dependencies: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// Memoized [`Self::state_features`] results, keyed by state.
@@ -87,11 +86,6 @@ impl<'a> DesignIndex<'a> {
                 .spatial_sketch_entities
                 .iter()
                 .map(|entity| (entity.id.as_str(), entity))
-                .collect(),
-            publications: design
-                .publications
-                .iter()
-                .map(|publication| publication.id.as_str())
                 .collect(),
             dependencies: BTreeMap::new(),
             state_cache: RefCell::new(HashMap::new()),
@@ -182,10 +176,7 @@ impl<'a> DesignIndex<'a> {
                 NativeOwner::SpatialSketch(sketch) => self.spatial_sketch_owner(sketch.as_str()),
                 NativeOwner::Feature(feature) => Some(feature.as_str()),
             },
-            PickTarget::Entity(_)
-            | PickTarget::Principal { .. }
-            | PickTarget::Component
-            | PickTarget::Publication(_) => None,
+            PickTarget::Entity(_) | PickTarget::Principal { .. } | PickTarget::Component => None,
         }
     }
 

@@ -13,10 +13,10 @@ use super::fixtures::{
 };
 use super::round_trip;
 use crate::design::construction::{kinds, FrameAxis, InputRole, Relation, Subject};
-use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{
     AddOp, BendVariable, BinaryOp, Constant, ExpressionToken, Function, Measure, MeasureKind,
-    MeasureTarget, MulOp, Neutral, Node, UnaryOp,
+    MeasureTarget, MulOp, Neutral, UnaryOp,
 };
 use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::options::{
@@ -28,7 +28,7 @@ use crate::design::selection::{
     DatumPart, Fragment, OccurrencePath, Ordered, PathStep, StepRef, Unordered,
 };
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem, ValueKind};
-use crate::scalar::{Angle, FiniteReal, Length};
+use crate::scalar::{FiniteReal, Length};
 
 #[derive(Default)]
 struct Report {
@@ -156,18 +156,6 @@ fn measures() -> Vec<Measure> {
     out
 }
 
-fn process_nodes() -> Vec<Node<ParamRef>> {
-    vec![
-        Node::Reference(ParamRef::Process(id("process-parameter", 1))),
-        Node::Unary {
-            op: UnaryOp::Negate,
-            operand: Box::new(Node::Reference(ParamRef::Design(fixtures::parameter_ref(
-                1,
-            )))),
-        },
-    ]
-}
-
 #[test]
 fn every_design_type_round_trips() {
     let mut report = Report::default();
@@ -285,14 +273,9 @@ fn every_design_type_round_trips() {
     );
     report.check("Quantity", vec![Quantity::AREA, Quantity::ANGLE]);
     report.check("Expression<ParameterRef>", fixtures::expressions());
-    report.check("Expression<ParamRef>", fixtures::process_expressions());
     report.check(
         "Neutral<ParameterRef>",
         fixtures::nodes().into_iter().map(Neutral).collect(),
-    );
-    report.check(
-        "Neutral<ParamRef>",
-        process_nodes().into_iter().map(Neutral).collect(),
     );
     report.check(
         "ExpressionToken<ParameterRef>",
@@ -300,13 +283,6 @@ fn every_design_type_round_trips() {
             ExpressionToken::Text("+ 1".to_owned()),
             ExpressionToken::Reference(fixtures::parameter_ref(1)),
         ],
-    );
-    report.check(
-        "ExpressionToken<ParamRef>",
-        vec![ExpressionToken::Reference(ParamRef::Process(id(
-            "process-parameter",
-            1,
-        )))],
     );
     report.check("ExpressionDialect", fixtures::dialects());
     report.check("ParameterRef", fixtures::parameter_refs());
@@ -320,15 +296,7 @@ fn every_design_type_round_trips() {
             },
         ],
     );
-    report.check(
-        "ParamRef",
-        vec![
-            ParamRef::Process(id("process-parameter", 1)),
-            ParamRef::Design(fixtures::parameter_ref(2)),
-        ],
-    );
     report.check("Node<ParameterRef>", fixtures::nodes());
-    report.check("Node<ParamRef>", process_nodes());
     report.check("Constant", vec![Constant::Pi, Constant::E]);
     report.check(
         "BendVariable",
@@ -375,13 +343,6 @@ fn every_design_type_round_trips() {
         ],
     );
     report.check("Dimension<bool>", vec![Dimension::<bool>::Literal(false)]);
-    report.check(
-        "Dimension<Angle, ParamRef>",
-        vec![
-            Dimension::<Angle, ParamRef>::Literal(angle(0.5)),
-            Dimension::Parameter(ParamRef::Process(id("process-parameter", 1))),
-        ],
-    );
     report.check(
         "Dimension<Hand>",
         vec![Dimension::<Hand>::Literal(Hand::Left)],

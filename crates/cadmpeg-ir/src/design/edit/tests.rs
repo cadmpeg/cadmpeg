@@ -40,7 +40,9 @@ use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::features::geometry::FinitePoint3;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use crate::pmi::LimitsAndFits;
+use crate::pmi::{
+    FitZone, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension, PmiDimensionKind,
+};
 use crate::scalar::{FiniteReal, Length};
 use crate::topology::{Body, BodyKind, Region};
 use crate::CadIr;
@@ -314,6 +316,77 @@ fn timeline() -> CadIr {
         }
     }
     document
+}
+
+#[test]
+fn pmi_fit_cache_is_cleared_only_for_dependent_dimensions() {
+    let mut document = timeline();
+    document.design.parameters[1] = length(2, neutral("5[mm]", &[], &[]), Some(5.0));
+    let deviations = Deviations {
+        upper: real(0.1),
+        lower: real(0.0),
+    };
+    let fit = |cached: FitDeviations| Tolerance::Fit {
+        fit: LimitsAndFits {
+            form_variance: "H".into(),
+            zone: FitZone::Hole,
+            grade: "7".into(),
+            source: None,
+        },
+        mate: None,
+        deviations: Some(cached),
+    };
+    let annotation = |key: u32, nominal: Dimension<_>, tolerance: Tolerance| {
+        let mut dimension = PmiDimension::new(PmiDimensionKind::Diameter);
+        dimension.nominal = Some(nominal);
+        dimension.tolerance = Some(tolerance);
+        PmiAnnotation {
+            id: id("pmi", key),
+            name: None,
+            visible: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::Dimension(dimension),
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }
+    };
+    document.model.pmi = vec![
+        annotation(
+            1,
+            Dimension::Parameter(parameter_id(1)),
+            fit(FitDeviations::Cell(deviations.clone())),
+        ),
+        annotation(
+            2,
+            Dimension::Parameter(parameter_id(1)),
+            fit(FitDeviations::Own(deviations.clone())),
+        ),
+        annotation(
+            3,
+            Dimension::Parameter(parameter_id(2)),
+            fit(FitDeviations::Unchecked(deviations.clone())),
+        ),
+    ];
+    document
+        .set_dimension(
+            &parameter_id(1),
+            Literal::Number {
+                value: real(20.0),
+                unit: mm(),
+            },
+        )
+        .unwrap();
+    let cached = |key: usize| match &document.model.pmi[key].definition {
+        PmiDefinition::Dimension(dimension) => match &dimension.tolerance {
+            Some(Tolerance::Fit { deviations, .. }) => deviations.clone(),
+            other => panic!("{other:?}"),
+        },
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(cached(0), None);
+    assert_eq!(cached(1), Some(FitDeviations::Own(deviations.clone())));
+    assert_eq!(cached(2), Some(FitDeviations::Unchecked(deviations)));
 }
 
 /// Gives the timeline's scope configuration 9, a base with no overrides,

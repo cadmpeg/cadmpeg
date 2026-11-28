@@ -474,35 +474,6 @@ fn an_evaluation_vertex_off_an_edge_its_delta_does_not_restate_is_widened_in_its
     assert_eq!(gaps_on(&ir, &holder), 0);
 }
 
-#[test]
-fn a_process_state_vertex_off_its_edges_ends_is_widened_in_its_delta() {
-    // The stock's delta moves the corner's point; the state after the mill,
-    // based on the stock with a delta of no topology record, inherits the
-    // widened vertex and restates nothing.
-    let mut ir = crate::validate::process::fixture::document();
-    let corner = moved_origin_corner(&ir);
-    let state = ir
-        .process
-        .states
-        .iter_mut()
-        .find(|state| state.id.as_str().ends_with("state#stock"))
-        .unwrap();
-    let holder = state.id.as_str().to_owned();
-    state.content.as_mut().unwrap().delta.records.points = vec![corner];
-    assert!(gaps_on(&ir, &holder) > 0);
-    let key = format!("{holder} {}", vertex_id(&ir, 0));
-    let ir = assert_widened_in_deltas(ir, &[key]);
-    for state in &ir.process.states {
-        let delta = &state.content.as_ref().unwrap().delta;
-        if state.id.as_str() == holder {
-            assert_close(delta_vertex_tolerance(delta, 0), moved_corner_gap());
-        } else {
-            assert!(delta.records.vertices.is_empty());
-        }
-    }
-    assert_eq!(gaps_on(&ir, &holder), 0);
-}
-
 /// The line of the cube's edge 0 (corner 0 to corner 1) moved `offset`
 /// along -z.
 fn moved_edge_line(ir: &CadIr, offset: f64) -> crate::geometry::Curve {

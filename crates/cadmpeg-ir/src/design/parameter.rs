@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::expr::Expression;
-use super::ids::{ContainerId, ParameterProgramId};
+use super::ids::ContainerId;
 use super::options::NativeOptions;
 use super::units::{Unit, ValueKind};
 use crate::features::{FeatureId, ParameterId};
@@ -156,8 +156,6 @@ pub enum ParameterDefinition {
     /// Geometry determines the value: a reference dimension.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Driven,
-    /// A parameter program sets the value.
-    Assigned(ParameterProgramId),
     /// The source holds the parameter with no value and no definition of it.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unset,

@@ -1245,7 +1245,6 @@ fn printed_expression<'a>(
         }) => expression::print_tokens(tokens, name),
         ParameterDefinition::Expression(Expression::Source { .. })
         | ParameterDefinition::Driven
-        | ParameterDefinition::Assigned(_)
         | ParameterDefinition::Unset => None,
     }
 }
@@ -1263,9 +1262,7 @@ fn references(definition: &ParameterDefinition) -> Vec<&ParameterRef> {
                 ExpressionToken::Text(_) => None,
             }));
         }
-        ParameterDefinition::Driven
-        | ParameterDefinition::Assigned(_)
-        | ParameterDefinition::Unset => {}
+        ParameterDefinition::Driven | ParameterDefinition::Unset => {}
     }
     out
 }

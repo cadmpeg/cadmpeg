@@ -31,8 +31,6 @@ pub enum LossCategory {
     DesignIntent,
     /// Product structure, component occurrences, placements, or external dependencies.
     Product,
-    /// Manufacturing process records not transferred.
-    Process,
     /// Anything else.
     Other,
 }
@@ -47,7 +45,6 @@ impl fmt::Display for LossCategory {
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
             Self::Product => "product",
-            Self::Process => "process",
             Self::Other => "other",
         })
     }
@@ -180,9 +177,6 @@ pub enum LossTaxonomy {
     /// Physical materials, mass properties, rigid bodies, colliders, or joint
     /// drives were not transferred.
     PhysicsNotTransferred,
-    /// Manufacturing process records (setups, operations, tools, programs,
-    /// toolpaths, or process states) were not represented in the target.
-    ProcessRecordOmitted,
 }
 
 impl LossTaxonomy {
@@ -233,7 +227,6 @@ impl LossTaxonomy {
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
             Self::PhysicsNotTransferred => "physics_not_transferred",
-            Self::ProcessRecordOmitted => "process_record_omitted",
         }
     }
 
@@ -255,7 +248,6 @@ impl LossTaxonomy {
             Self::AssemblyComponentsExternal
             | Self::AssemblyPlacementsNotTransferred
             | Self::PhysicsNotTransferred => LossCategory::Product,
-            Self::ProcessRecordOmitted => LossCategory::Process,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure

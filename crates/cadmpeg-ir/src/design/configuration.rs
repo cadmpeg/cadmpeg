@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Configurations, arrangements, and publications.
+//! Configurations and arrangements.
 //!
 //! A configuration's value for a parameter, feature state, occurrence state,
 //! or material is its own where it states one, else its parent's resolved
 //! value, else the base's. An arrangement is a named set of overrides that
-//! the user activates independently of a configuration. A publication is a
-//! named entry point into a scope.
+//! the user activates independently of a configuration.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,12 +16,11 @@ use serde::{Deserialize, Serialize};
 use super::dimension::RefTarget;
 use super::expr::{print, Expression, Neutral};
 use super::feature::FeatureDefinition;
-use super::ids::{ArrangementId, ParameterProgramId, PublicationId};
+use super::ids::ArrangementId;
 use super::ops::body::TransformStep;
 use super::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
-use super::program::{ParameterProgram, ProgramBody, Statement};
 use super::refs::ConfigurationRef;
-use super::selection::{OccurrencePath, Picked, SetSelection};
+use super::selection::{OccurrencePath, SetSelection};
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{AppearanceId, OccurrenceId, PhysicalMaterialId, ProductDefinitionId};
 use crate::products::NestedOverride;
@@ -115,24 +113,22 @@ impl Stated {
 
 /// Whether a parameter's own `value` holds where overrides apply (§5.13):
 /// nothing it rests on can differ there from the base. `overridden` tells
-/// whether an override that applies states a parameter; `parameter` and
-/// `program` look up records of the design.
+/// whether an override that applies states a parameter; `parameter` looks up
+/// records of the design.
 ///
 /// It does not hold where the parameter's definition reads, directly or
 /// through other parameters, an overridden parameter. Where `stated`
 /// holds anything it also does not hold where the parameter or one it reads
-/// is `Driven`, is assigned by a `Source` program, or has a `Source`
+/// is `Driven` or has a `Source`
 /// expression; where a definition among them reads a measure or a reference
 /// `through` an occurrence path; or, where `stated` holds an occurrence
-/// override, an `External` reference. An `Assigned` parameter reads what its
-/// `Neutral` program's conditions and assigned values read. A record that
+/// override, an `External` reference. A record that
 /// does not resolve or print does not let the value hold.
 pub(crate) fn own_value_holds<'a>(
     record: &'a DesignParameter,
     stated: Stated,
     overridden: &dyn Fn(&ParameterId) -> bool,
     parameter: &dyn Fn(&ParameterId) -> Option<&'a DesignParameter>,
-    program: &dyn Fn(&ParameterProgramId) -> Option<&'a ParameterProgram>,
 ) -> bool {
     if !stated.anything {
         return true;
@@ -147,29 +143,6 @@ pub(crate) fn own_value_holds<'a>(
             | ParameterDefinition::Expression(Expression::Source { .. }) => return false,
             ParameterDefinition::Expression(Expression::Neutral(Neutral(node))) => {
                 nodes.push(node);
-            }
-            ParameterDefinition::Assigned(id) => {
-                let Some(ParameterProgram {
-                    body: ProgramBody::Neutral(statements),
-                    ..
-                }) = program(id)
-                else {
-                    return false;
-                };
-                let mut statements: Vec<&Statement> = statements.iter().collect();
-                while let Some(statement) = statements.pop() {
-                    match statement {
-                        Statement::Assign { value, .. } => nodes.push(&value.0),
-                        Statement::If {
-                            condition,
-                            then,
-                            otherwise,
-                        } => {
-                            nodes.push(&condition.0);
-                            statements.extend(then.iter().chain(otherwise));
-                        }
-                    }
-                }
             }
         }
         for node in nodes {
@@ -433,21 +406,6 @@ pub enum MaterialRef {
     Material(PhysicalMaterialId),
     /// A material by its name.
     Named(NonBlankString),
-}
-
-/// A named entry point into a scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Publication {
-    /// The publication's identity.
-    pub id: PublicationId,
-    /// The product definition whose scope the publication enters.
-    pub scope: ProductDefinitionId,
-    /// The publication's name.
-    pub name: NonBlankString,
-    /// What the publication names, resolved in the scope's current geometry.
-    pub target: Picked,
 }
 
 /// A named set of overrides of a scope's occurrences, constraint values, and

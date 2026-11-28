@@ -253,11 +253,6 @@ fn other_bindings(index: &DesignRecords<'_>) -> Vec<String> {
                 .flatten(),
         );
     }
-    if !ir.process.is_empty() {
-        if let Some(process) = wire_if_bound(&mut scratch, &ir.process) {
-            found.extend(design_targets(&process));
-        }
-    }
     found
 }
 
@@ -295,30 +290,6 @@ fn bound_parameters(wire: &Json) -> Vec<String> {
                     continue;
                 }
                 pending.extend(object.iter().map(|(key, item)| (item, key == "target")));
-            }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
-        }
-    }
-    found
-}
-
-/// The design parameter ids a wire value names as a parameter reference's
-/// `target`.
-fn design_targets(wire: &Json) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut pending = vec![wire];
-    while let Some(node) = pending.pop() {
-        match node {
-            Json::Array(items) => pending.extend(items),
-            Json::Object(object) => {
-                if let Some(Json::Object(target)) = object.get("target") {
-                    if target.get("kind").and_then(Json::as_str) == Some("parameter") {
-                        if let Some(Json::String(id)) = target.get("value") {
-                            found.push(id.clone());
-                        }
-                    }
-                }
-                pending.extend(object.values());
             }
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
         }

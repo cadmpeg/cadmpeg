@@ -334,20 +334,18 @@ pub(crate) struct Restate<'a> {
 }
 
 impl<'a> Restate<'a> {
-    /// The rewrite of the records of the codec that minted `holder`, a record
-    /// of the `process` home where `process`.
+    /// The rewrite of the records of the codec that minted `holder`.
     pub(crate) fn new(
         schema: &'a Schema,
         gone: &'a BTreeSet<String>,
         holder: &str,
-        process: bool,
     ) -> Option<Self> {
         let codec = holder.split(':').next().unwrap_or_default();
         Some(Self {
             schema,
             gone,
             past_the_bound: false,
-            dialect: ExpressionDialect::of_codec(codec, process).and_then(|dialect| {
+            dialect: ExpressionDialect::of_codec(codec).and_then(|dialect| {
                 cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
                     serde::Serialize::serialize(&dialect, adapter)
                 })

@@ -47,7 +47,6 @@ fn new_member(records: &Design) -> Result<Member, EditError> {
         ("sheet_metal_rules", records.sheet_metal_rules.is_empty()),
         ("configurations", records.configurations.is_empty()),
         ("arrangements", records.arrangements.is_empty()),
-        ("publications", records.publications.is_empty()),
         ("evaluations", records.evaluations.is_empty()),
         ("names", records.names.entries().is_empty()),
     ];
@@ -144,13 +143,7 @@ fn new_member(records: &Design) -> Result<Member, EditError> {
                     !containers.contains(container.as_str())
                 }
                 Some(ParameterOwner::Attribute(_)) | None => true,
-            })
-        || records.programs.iter().any(|program| {
-            !program
-                .owner
-                .as_ref()
-                .is_some_and(|feature| features.contains(feature.as_str()))
-        });
+            });
     if unowned {
         return refuse("a record is owned by no feature or container of the records".into());
     }
@@ -229,7 +222,6 @@ impl CadIr {
             .extend(records.spatial_sketch_constraints);
         design.parameters.extend(records.parameters);
         design.spreadsheets.extend(records.spreadsheets);
-        design.programs.extend(records.programs);
         design.finalize();
         let history = History::new(&self.design);
         let features = self.features_after_edit(&history, &member)?;

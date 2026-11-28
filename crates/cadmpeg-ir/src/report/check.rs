@@ -134,11 +134,6 @@ pub enum Check {
     /// an evaluation key or base, a current state, a resolved state, or a
     /// configuration, arrangement, or override.
     Design,
-    /// A record of the process layer breaks a rule of part 10 of the CADIR
-    /// v11 specification: an operation's setup membership, a step, a
-    /// reference between process records, a toolpath or process state key,
-    /// a binding, or a setting stated off its operation's class.
-    Process,
 }
 
 impl Check {
@@ -174,7 +169,6 @@ impl Check {
             }
             Self::DeclaredMeasure => cadmpeg_core::nonblank_literal!("declared_measure"),
             Self::Design => cadmpeg_core::nonblank_literal!("design"),
-            Self::Process => cadmpeg_core::nonblank_literal!("process"),
         }
     }
 }

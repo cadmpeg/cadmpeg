@@ -20,10 +20,6 @@ use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::{Curve, CurveGeometry, InlineCurve, SolvedCurveGeometry};
 use crate::ids::{EdgeId, OccurrenceId, ProductDefinitionId};
 use crate::math::Point3;
-use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
-use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
-use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
-use crate::process::{ProcessConstruction, WorkpieceSelection};
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::loss::LossNote;
 use crate::report::Severity;
@@ -898,76 +894,6 @@ fn a_parameter_ratio_on_an_edge_that_a_stored_state_holds_as_a_spline_stays() {
         Some(ScalarDimension::ParameterRatio(Dimension::Literal(real(
             0.25
         ))))
-    );
-}
-
-#[test]
-fn process_records_take_their_one_spelling() {
-    let mut ir = document();
-    let workpiece = WorkpieceSelection {
-        workpiece: None,
-        selection: Selection {
-            at: Anchor::Input,
-            picks: rule(vec![explicit(vec![picks_feature("a")])]),
-            native: None,
-        },
-    };
-    let end = ProcessConstruction {
-        workpiece: None,
-        construction: point_at(selection(named(vec![picks_feature("fillet")])), 1.0),
-    };
-    let geometry = |source| ProcessGeometry {
-        role: GeometryRole::Machine,
-        source,
-        slot: None,
-        combine: None,
-    };
-    ir.process.features.push(MachiningFeature {
-        id: id("machining", "pocket"),
-        name: None,
-        class: MachiningFeatureClass::ClosedPocket {},
-        native_kind: NativeName {
-            codec: crate::codec_id!("test"),
-            value: NativeNameValue::Text(NonBlankString::new("pocket").unwrap()),
-        },
-        geometry: vec![
-            geometry(GeometrySource::Selection(vec![workpiece])),
-            geometry(GeometrySource::Points(vec![end])),
-        ],
-        native_ref: None,
-    });
-    ir.process.states.push(ProcessState {
-        id: id("process", "stock"),
-        of: ProcessStateOf::Stock(id("setup", "one")),
-        configuration: None,
-        status: EvaluationStatus::Current,
-        content: Some(ProcessContent {
-            base: ProcessBase::Design(StateBase::Current(after_body())),
-            delta: StateDelta::default(),
-        }),
-        feature: None,
-    });
-    normalize(&mut ir).unwrap();
-    let [selected, points] = ir.process.features[0].geometry.as_slice() else {
-        panic!("two geometries");
-    };
-    let GeometrySource::Selection(selections) = &selected.source else {
-        panic!("a selection");
-    };
-    assert_eq!(
-        selections[0].selection.picks,
-        named(vec![picks_feature("a")])
-    );
-    let GeometrySource::Points(points) = &points.source else {
-        panic!("points");
-    };
-    assert_eq!(
-        points[0].construction.inputs[0].value,
-        Some(ScalarDimension::Ratio(Dimension::Literal(real(1.0))))
-    );
-    assert_eq!(
-        ir.process.states[0].content.as_ref().unwrap().base,
-        ProcessBase::Design(StateBase::Current(after_feature("fillet")))
     );
 }
 

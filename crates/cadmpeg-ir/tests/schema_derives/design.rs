@@ -10,15 +10,13 @@ use cadmpeg_ir::design::construction::{
     FrameValue, InputReference, InputRole, PlaneValue, PostStep, Relation, ScalarDimension,
     SourceMode, Subject,
 };
-use cadmpeg_ir::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     BendVariable, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Function,
     Measure, MeasureKind, MeasureTarget, Neutral, NeutralWire, Node, UnaryOp,
 };
 use cadmpeg_ir::design::ids::{
-    ArrangementId, ContainerId, EvaluationId, MachineId, MachiningFeatureId, OperationId,
-    ParameterProgramId, PresetId, ProcessGroupId, ProcessParameterId, ProcessStateId, ProgramId,
-    PublicationId, SetupId, SheetMetalRuleId, SpatialSketchConstraintId, ToolId, ToolpathId,
+    ArrangementId, ContainerId, EvaluationId, SheetMetalRuleId, SpatialSketchConstraintId,
 };
 use cadmpeg_ir::design::names::{
     Base64Bytes, CodecId, GenerationRole, Generator, HoleFaceRole, InstanceIndex, NameEntry,
@@ -52,22 +50,9 @@ fn every_design_type_has_a_schema() {
     let mut generator = SchemaGenerator::default();
     generates::<ContainerId>(&mut generator);
     generates::<EvaluationId>(&mut generator);
-    generates::<PublicationId>(&mut generator);
     generates::<ArrangementId>(&mut generator);
-    generates::<ParameterProgramId>(&mut generator);
     generates::<SheetMetalRuleId>(&mut generator);
     generates::<SpatialSketchConstraintId>(&mut generator);
-    generates::<SetupId>(&mut generator);
-    generates::<OperationId>(&mut generator);
-    generates::<MachiningFeatureId>(&mut generator);
-    generates::<ToolId>(&mut generator);
-    generates::<PresetId>(&mut generator);
-    generates::<MachineId>(&mut generator);
-    generates::<ProgramId>(&mut generator);
-    generates::<ProcessGroupId>(&mut generator);
-    generates::<ProcessParameterId>(&mut generator);
-    generates::<ToolpathId>(&mut generator);
-    generates::<ProcessStateId>(&mut generator);
     generates::<EntityRef>(&mut generator);
     generates::<RecordRef>(&mut generator);
     generates::<ConfigurationRef>(&mut generator);
@@ -136,9 +121,7 @@ fn every_design_type_has_a_schema() {
     generates::<FrameValue>(&mut generator);
     generates::<CurveValue>(&mut generator);
     generates::<Expression<ParameterRef>>(&mut generator);
-    generates::<Expression<ParamRef>>(&mut generator);
     generates::<Neutral<ParameterRef>>(&mut generator);
-    generates::<NeutralWire<ParamRef>>(&mut generator);
     generates::<ExpressionToken<ParameterRef>>(&mut generator);
     generates::<ExpressionDialect>(&mut generator);
     generates::<Node<ParameterRef>>(&mut generator);
@@ -152,13 +135,11 @@ fn every_design_type_has_a_schema() {
     generates::<MeasureTarget>(&mut generator);
     generates::<Dimension<Length>>(&mut generator);
     generates::<Dimension<bool>>(&mut generator);
-    generates::<Dimension<Angle, ParamRef>>(&mut generator);
     generates::<Dimension<Hand>>(&mut generator);
     generates::<Dimension<NonBlankString>>(&mut generator);
     generates::<Dimension<u32>>(&mut generator);
     generates::<ParameterRef>(&mut generator);
     generates::<RefTarget>(&mut generator);
-    generates::<ParamRef>(&mut generator);
     generates::<Unit>(&mut generator);
     generates::<UnitFactor>(&mut generator);
     generates::<UnitSymbol>(&mut generator);
@@ -203,9 +184,7 @@ fn a_neutral_schema_is_its_wire_form() {
 
 #[test]
 fn every_design_root_type_has_a_schema() {
-    use cadmpeg_ir::design::{
-        configuration, container, evaluation, feature, parameter, program, scope,
-    };
+    use cadmpeg_ir::design::{configuration, container, evaluation, feature, parameter, scope};
     let mut generator = SchemaGenerator::default();
     generates::<cadmpeg_ir::document::Design>(&mut generator);
     generates::<scope::DesignScope>(&mut generator);
@@ -239,7 +218,6 @@ fn every_design_root_type_has_a_schema() {
     generates::<configuration::OccurrenceOverride>(&mut generator);
     generates::<configuration::MaterialOverride>(&mut generator);
     generates::<configuration::MaterialRef>(&mut generator);
-    generates::<configuration::Publication>(&mut generator);
     generates::<configuration::Arrangement>(&mut generator);
     generates::<configuration::ArrangementKind>(&mut generator);
     generates::<configuration::ArrangementAppearance>(&mut generator);
@@ -257,10 +235,6 @@ fn every_design_root_type_has_a_schema() {
     generates::<parameter::Deviations>(&mut generator);
     generates::<parameter::FitDeviations>(&mut generator);
     generates::<parameter::LimitSide>(&mut generator);
-    generates::<program::ParameterProgram>(&mut generator);
-    generates::<program::ProgramStage>(&mut generator);
-    generates::<program::ProgramBody>(&mut generator);
-    generates::<program::Statement>(&mut generator);
     generates::<cadmpeg_ir::design::spreadsheet::Spreadsheet>(&mut generator);
 }
 

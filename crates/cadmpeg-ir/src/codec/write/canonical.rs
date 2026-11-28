@@ -160,16 +160,13 @@ fn holds_unowned_constructions(ir: &CadIr) -> bool {
         .any(|geometry| !unowned_constructions(geometry).is_empty())
 }
 
-/// The stored state of `field`, `evaluations` of the design or `states` of
-/// the process, whose id is `id`.
-fn stored_state(field: &'static str, id: &str) -> Seed {
-    let home = if field == "evaluations" {
-        "design"
-    } else {
-        "process"
-    };
+/// The evaluation whose id is `id`.
+fn stored_state(id: &str) -> Seed {
     Seed {
-        arena: Arena::Home { home, field },
+        arena: Arena::Home {
+            home: "design",
+            field: "evaluations",
+        },
         id: id.to_owned(),
     }
 }
@@ -178,31 +175,19 @@ fn stored_state(field: &'static str, id: &str) -> Seed {
 fn stored_deltas(ir: &CadIr) -> Vec<(Seed, &StateDelta)> {
     let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
         let content = evaluation.content.as_ref()?;
-        Some((
-            stored_state("evaluations", evaluation.id.as_str()),
-            &content.delta,
-        ))
+        Some((stored_state(evaluation.id.as_str()), &content.delta))
     });
-    let states = ir.process.states.iter().filter_map(|stored| {
-        let content = stored.content.as_ref()?;
-        Some((stored_state("states", stored.id.as_str()), &content.delta))
-    });
-    evaluations.chain(states).collect()
+    evaluations.collect()
 }
 
 /// The records of the delta of each stored state of `ir`, with the state.
 fn stored_deltas_mut(ir: &mut CadIr) -> Vec<(Seed, &mut Topology)> {
     let evaluations = ir.design.evaluations.iter_mut().filter_map(|evaluation| {
-        let state = stored_state("evaluations", evaluation.id.as_str());
+        let state = stored_state(evaluation.id.as_str());
         let content = evaluation.content.as_mut()?;
         Some((state, &mut content.delta.records))
     });
-    let states = ir.process.states.iter_mut().filter_map(|stored| {
-        let state = stored_state("states", stored.id.as_str());
-        let content = stored.content.as_mut()?;
-        Some((state, &mut content.delta.records))
-    });
-    evaluations.chain(states).collect()
+    evaluations.collect()
 }
 
 /// Copies into the delta of each stored state, for each procedural
@@ -220,11 +205,7 @@ fn adopt_base_owners(ir: &mut CadIr) {
         if unowned.is_empty() {
             continue;
         }
-        let base = if matches!(state.arena, Arena::Home { home: "design", .. }) {
-            ir.evaluation_base_records(&state.id)
-        } else {
-            ir.process_base_records(&state.id)
-        };
+        let base = ir.evaluation_base_records(&state.id);
         let Some(base) = base else {
             continue;
         };

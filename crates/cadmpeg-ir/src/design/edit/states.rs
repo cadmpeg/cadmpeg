@@ -554,56 +554,6 @@ impl CadIr {
         Some(base.records)
     }
 
-    /// The records of the state the delta of the process state `id` applies
-    /// to: its chain of process bases with each delta applied over the
-    /// design state the chain starts from. `None` where a state of the chain
-    /// stores no content, a base does not resolve, or the chain is a cycle.
-    /// A current design state is the one of the scope whose current states
-    /// hold its position.
-    pub(crate) fn process_base_records(&self, id: &str) -> Option<Topology> {
-        use crate::process::state::ProcessBase;
-        let content = |id: &str| {
-            self.process
-                .states
-                .iter()
-                .find(|state| state.id.as_str() == id)
-                .and_then(|state| state.content.as_ref())
-        };
-        let mut deltas = Vec::new();
-        let mut base = &content(id)?.base;
-        let mut state = loop {
-            match base {
-                ProcessBase::State(parent) => {
-                    if deltas.len() >= self.process.states.len() {
-                        return None;
-                    }
-                    let parent = content(parent.as_str())?;
-                    deltas.push(&parent.delta);
-                    base = &parent.base;
-                }
-                ProcessBase::Design(StateBase::Current(at)) => {
-                    let mut holders = self.design.scopes.iter().filter_map(|scope| {
-                        let current = scope.current.iter().find(|current| &current.at == at)?;
-                        Some((scope, current))
-                    });
-                    let (scope, current) = holders.next()?;
-                    if holders.next().is_some() {
-                        return None;
-                    }
-                    break self.extent(&scope.definition, current).ok()?;
-                }
-                ProcessBase::Design(StateBase::Empty) => break State::default(),
-                ProcessBase::Design(StateBase::Evaluation(evaluation)) => {
-                    break self.resolved(evaluation).ok()?;
-                }
-            }
-        };
-        for delta in deltas.into_iter().rev() {
-            state.apply(delta);
-        }
-        Some(state.records)
-    }
-
     /// An evaluation's state: its chain of bases with each delta applied.
     pub(super) fn resolved(&self, id: &EvaluationId) -> Result<State, EditError> {
         let mut chain: Vec<&Evaluation> = Vec::new();

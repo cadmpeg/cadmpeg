@@ -65,7 +65,6 @@ pub(super) fn check_linkage(
 enum Home {
     Model,
     Design,
-    Process,
 }
 
 macro_rules! visit_identities {
@@ -88,20 +87,11 @@ macro_rules! visit_identities {
             );
         }
     };
-    (@arena $ir:ident, $visit:ident, $field:ident, process, [$($attribute:meta),*]) => {
-        for record in &$ir.process.$field {
-            $visit(
-                Home::Process,
-                crate::document::arena_label!($field, process),
-                ArenaRecord::record_identity(record),
-            );
-        }
-    };
     (@arena $ir:ident, $visit:ident, $field:ident, $home:ident, [$($attribute:meta),*]) => {};
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// Visit the home, arena label, and identity of every record of the
         /// arenas outside `Topology` that the CADIR wire carries: the model
-        /// arenas first, then the design and process arenas. A design
+        /// arenas first, then the design arenas. A design
         /// scope's identity is the definition whose design it is, so the
         /// scopes are not visited.
         fn visit_identities<'a>(ir: &'a CadIr, mut visit: impl FnMut(Home, &'static str, &'a str)) {
@@ -216,9 +206,6 @@ fn check_native_refs(index: &DesignRecords<'_>, ids: &ModelIndex<'_>, findings: 
     }
     for rule in &design.sheet_metal_rules {
         check(rule.id.as_str(), rule.native_ref.as_ref());
-    }
-    for program in &design.programs {
-        check(program.id.as_str(), program.native_ref.as_ref());
     }
     for configuration in &design.configurations {
         check(configuration.id.as_str(), configuration.native_ref.as_ref());

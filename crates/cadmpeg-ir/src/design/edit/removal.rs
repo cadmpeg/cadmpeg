@@ -2,7 +2,7 @@
 //! Removing a member from its container (§4).
 //!
 //! Removal deletes the member with what it owns: the members under a
-//! container, the sketches, sheets, parameters, and programs their features
+//! container, the sketches, sheets, and parameters their features
 //! and containers own, and the overrides keyed by a deleted record. It
 //! refuses where a record it keeps names a deleted record by id. It marks
 //! `Stale` the states that depend on the removal, deletes the evaluations
@@ -31,7 +31,6 @@ use crate::design::parameter::ParameterOwner;
 use crate::design::refs::{Evaluated, Member, Position, StateRef};
 use crate::features::FeatureId;
 use crate::ids::{BodyId, ProductDefinitionId};
-use crate::process::state::{ProcessBase, ProcessContent};
 use crate::CadIr;
 
 /// Lists the model-class arenas of the `model` home.
@@ -187,18 +186,6 @@ impl CadIr {
                 })
                 .map(|parameter| parameter.id.as_str().to_owned()),
         );
-        records.extend(
-            design
-                .programs
-                .iter()
-                .filter(|program| {
-                    program
-                        .owner
-                        .as_ref()
-                        .is_some_and(|owner| features.contains(owner))
-                })
-                .map(|program| program.id.as_str().to_owned()),
-        );
         let positions = members
             .iter()
             .map(|member| Position::After(member.clone()))
@@ -304,12 +291,10 @@ impl CadIr {
             Some(before) => {
                 let to = crate::hash::finite_json::to_json_value(before).map_err(malformed)?;
                 rewrite(&mut self.design, |json| Ok(retarget(json, &from, &to)))?;
-                rewrite(&mut self.process, |json| Ok(retarget(json, &from, &to)))?;
                 rewrite(&mut self.model, |json| Ok(retarget(json, &from, &to)))?;
             }
             None => {
                 rewrite(&mut self.design, |json| Ok(re_anchor(json, &from)))?;
-                rewrite(&mut self.process, |json| Ok(re_anchor(json, &from)))?;
             }
         }
         let stored: BTreeSet<String> = if step.ordered {
@@ -330,7 +315,6 @@ impl CadIr {
         gone.extend(self.delete_model_targets(&lost, &states, &stored)?);
         let cleared: BTreeSet<String> = lost.union(&removal.records).cloned().collect();
         rewrite(&mut self.design, |json| Ok(clear_resolved(json, &cleared)))?;
-        rewrite(&mut self.process, |json| Ok(clear_resolved(json, &cleared)))?;
         self.clean_names(&removal.records)?;
         self.delete_records(&removal);
         self.leave_container(member, &step)?;
@@ -341,7 +325,7 @@ impl CadIr {
         Ok(())
     }
 
-    /// Rebases every evaluation and process state based on the current
+    /// Rebases every evaluation based on the current
     /// state at `at` onto `Empty`, its delta composed with that state's
     /// extent, so its resolved state is unchanged.
     pub(super) fn rebase_off_current(
@@ -366,18 +350,10 @@ impl CadIr {
                 }
             }
         }
-        for state in &mut self.process.states {
-            if let Some(ProcessContent { base, delta }) = &mut state.content {
-                if *base == ProcessBase::Design(based.clone()) {
-                    *delta = compose(&extent, delta, &empty);
-                    *base = ProcessBase::Design(StateBase::Empty);
-                }
-            }
-        }
         Ok(())
     }
 
-    /// Deletes an evaluation, and rebases every evaluation and process state
+    /// Deletes an evaluation, and rebases every evaluation
     /// based on it onto its base, composing the two deltas, so their resolved
     /// states are unchanged.
     fn delete_evaluation(&mut self, id: &EvaluationId) -> Result<(), EditError> {
@@ -402,15 +378,6 @@ impl CadIr {
             if *base == based {
                 *delta = compose(&content.delta, delta, &base_ids);
                 base.clone_from(&content.base);
-            }
-        }
-        for state in &mut self.process.states {
-            let Some(ProcessContent { base, delta }) = &mut state.content else {
-                continue;
-            };
-            if *base == ProcessBase::Design(based.clone()) {
-                *delta = compose(&content.delta, delta, &base_ids);
-                *base = ProcessBase::Design(content.base.clone());
             }
         }
         Ok(())
@@ -572,21 +539,12 @@ impl CadIr {
             }
         }
         self.design.names = table.into();
-        let deltas =
-            self.design
-                .evaluations
-                .iter_mut()
-                .filter_map(|evaluation| {
-                    evaluation
-                        .content
-                        .as_mut()
-                        .map(|content| &mut content.delta)
-                })
-                .chain(
-                    self.process.states.iter_mut().filter_map(|state| {
-                        state.content.as_mut().map(|content| &mut content.delta)
-                    }),
-                );
+        let deltas = self.design.evaluations.iter_mut().filter_map(|evaluation| {
+            evaluation
+                .content
+                .as_mut()
+                .map(|content| &mut content.delta)
+        });
         for delta in deltas {
             clean_delta_names(delta, records)?;
         }
@@ -622,7 +580,6 @@ impl CadIr {
             .parameters
             .retain(|parameter| !gone(parameter.id.as_str()));
         design.spreadsheets.retain(|sheet| !gone(sheet.id.as_str()));
-        design.programs.retain(|program| !gone(program.id.as_str()));
         let overrides = design
             .configurations
             .iter_mut()
@@ -694,10 +651,7 @@ impl CadIr {
     ) -> Result<Vec<String>, EditError> {
         let mut found = BTreeSet::new();
         let none = BTreeSet::new();
-        for (arena, record) in arena_records(&self.design)?
-            .into_iter()
-            .chain(arena_records(&self.process)?)
-        {
+        for (arena, record) in arena_records(&self.design)? {
             if names_deleted(&record, gone, &none) {
                 found.insert(label(&arena, &record));
             }

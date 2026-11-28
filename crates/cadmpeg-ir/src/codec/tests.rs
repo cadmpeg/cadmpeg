@@ -157,7 +157,7 @@ fn the_sealed_decode_flags_a_shallower_delivery_that_a_strict_decode_admits() {
         .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &options)
         .unwrap();
     assert_eq!(result.ir().scope(), ContentScope::geometry());
-    assert_eq!(depth_losses(&result).len(), 2);
+    assert_eq!(depth_losses(&result).len(), 1);
 
     let strict = GeometryOnlyCodec
         .decode(
@@ -166,7 +166,7 @@ fn the_sealed_decode_flags_a_shallower_delivery_that_a_strict_decode_admits() {
         )
         .unwrap();
     let losses = depth_losses(&strict);
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 1);
     assert!(losses
         .iter()
         .all(|loss| loss.severity == crate::report::Severity::Error
@@ -689,17 +689,13 @@ fn the_document_records_the_depth_the_backend_reported() {
 
 #[test]
 fn the_wrapper_flags_each_requested_class_left_undelivered() {
-    use cadmpeg_core::decode::ArenaClass::{Design, Model, Process};
+    use cadmpeg_core::decode::ArenaClass::{Design, Model};
     for (delivered, requested, missing) in [
         (DecodeDepth::Container, DecodeDepth::Geometry, &[Model][..]),
-        (
-            DecodeDepth::Container,
-            DecodeDepth::Full,
-            &[Model, Design, Process],
-        ),
+        (DecodeDepth::Container, DecodeDepth::Full, &[Model, Design]),
         (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
-        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
-        (DecodeDepth::Design, DecodeDepth::Full, &[Process]),
+        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design]),
+        (DecodeDepth::Design, DecodeDepth::Full, &[]),
     ] {
         let mut decoded = decoded(if delivered == DecodeDepth::Container {
             CadIr::empty()
@@ -735,11 +731,11 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
 /// delivers charges `design` once, and the wrapper adds no second charge.
 #[test]
 fn a_class_the_source_holds_beyond_the_delivered_depth_is_charged_once() {
-    use cadmpeg_core::decode::ArenaClass::{Design, Process};
+    use cadmpeg_core::decode::ArenaClass::Design;
     for (delivered, requested, missing) in [
         (DecodeDepth::Geometry, DecodeDepth::Geometry, &[Design][..]),
         (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
-        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
+        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design]),
         (DecodeDepth::Design, DecodeDepth::Design, &[]),
         (DecodeDepth::Full, DecodeDepth::Full, &[]),
     ] {
@@ -990,7 +986,7 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
 
     let (mut ir, _, fidelity) = result.into_parts();
     let mut scope = ContentScope::full();
-    scope.process = false;
+    scope.design = false;
     ir.set_scope(scope);
     assert!(
         fidelity.edited(&ctx, &ir).unwrap(),

@@ -505,16 +505,23 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a, R = ParameterRef> {
-    Visit(&'a Node<R>),
+enum Task<'a> {
+    Visit(&'a Node<ParameterRef>),
     Unary(UnaryOp),
-    Binary(Pair, &'a Node<R>),
+    Binary(Pair, &'a Node<ParameterRef>),
     Call(Function, usize),
     /// Tests the ladder's first condition, or takes `otherwise` where no
     /// case is left.
-    Ladder(&'a [(Node<R>, Node<R>)], &'a Node<R>),
+    Ladder(
+        &'a [(Node<ParameterRef>, Node<ParameterRef>)],
+        &'a Node<ParameterRef>,
+    ),
     /// Takes the value of the condition just tested, or tests the rest.
-    Branch(&'a Node<R>, &'a [(Node<R>, Node<R>)], &'a Node<R>),
+    Branch(
+        &'a Node<ParameterRef>,
+        &'a [(Node<ParameterRef>, Node<ParameterRef>)],
+        &'a Node<ParameterRef>,
+    ),
 }
 
 /// Evaluates a neutral design expression tree on canonical values.
@@ -529,15 +536,6 @@ enum Task<'a, R = ParameterRef> {
 pub fn evaluate(
     root: &Node<ParameterRef>,
     reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
-) -> Result<Value, EvalError> {
-    evaluate_tree(root, reference)
-}
-
-/// [`evaluate`] over a tree of any reference type: a design expression, or
-/// a process expression whose references are `ParamRef`s.
-pub(super) fn evaluate_tree<R>(
-    root: &Node<R>,
-    reference: &mut dyn FnMut(&R) -> Option<Value>,
 ) -> Result<Value, EvalError> {
     let mut tasks = vec![Task::Visit(root)];
     let mut values: Vec<Value> = Vec::new();

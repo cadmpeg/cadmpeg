@@ -94,7 +94,7 @@ impl DecodeLossCode {
                 class: ArenaClass::Model,
             } => LossTaxonomy::GeometryNotTransferred,
             Self::DepthNotDelivered {
-                class: ArenaClass::Design | ArenaClass::Process,
+                class: ArenaClass::Design,
             } => LossTaxonomy::ParametricRecordOmitted,
             Self::IdRepeated
             | Self::NormalizeIncomplete

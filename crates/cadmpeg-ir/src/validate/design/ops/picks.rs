@@ -93,9 +93,7 @@ pub(in crate::validate) fn class(pick: &Picked) -> Class {
         PickTarget::Feature(_) => Class::Feature,
         PickTarget::FeatureResult(_) => Class::FeatureResult,
         PickTarget::Component => Class::Component,
-        PickTarget::Native { .. }
-        | PickTarget::TemplateInput { .. }
-        | PickTarget::Publication(_) => Class::Unknown,
+        PickTarget::Native { .. } | PickTarget::TemplateInput { .. } => Class::Unknown,
     }
 }
 

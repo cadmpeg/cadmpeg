@@ -2,8 +2,8 @@
 //! CADIR v11 design layer.
 //!
 //! The design root's records: scopes, containers, features, parameters,
-//! spreadsheets, programs, configurations, arrangements, publications, and
-//! evaluations, and the foundation types they share with process records and
+//! spreadsheets, configurations, arrangements, and evaluations, and the
+//! foundation types they share with
 //! model-class targets: the v11 identities, references to entities and
 //! states, structured names, selections, constructions, expressions,
 //! dimensions, units, and the shared option types of the feature vocabulary.
@@ -28,7 +28,6 @@ pub(crate) mod normalize;
 pub mod ops;
 pub mod options;
 pub mod parameter;
-pub mod program;
 pub mod projection;
 pub mod read;
 pub mod refs;

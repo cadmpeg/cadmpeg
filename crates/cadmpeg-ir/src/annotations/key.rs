@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The key of an annotation: a top-level entity id, or a delta record's id
-//! qualified by the evaluation or process state that holds the delta (§3.2).
+//! qualified by the evaluation that holds the delta (§3.2).
 
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::design::ids::{EvaluationId, ProcessStateId};
+use crate::design::ids::EvaluationId;
 use crate::ids::{Identity, NativeId};
 
 /// The separator between a delta record's qualifier and its id.
@@ -15,7 +15,7 @@ const QUALIFIER_SEPARATOR: char = ' ';
 /// The key of one annotation, in its wire form.
 ///
 /// A key that holds a space is `<qualifier id> <record id>`: the record of
-/// that id in the delta of the evaluation or process state of the qualifier
+/// that id in the delta of the evaluation of the qualifier
 /// id. Any other key is a top-level entity id. Ids hold no whitespace (§2.2),
 /// so every string is one key of one form.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -27,45 +27,20 @@ pub struct AnnotationKey(String);
 pub enum AnnotationTarget<'key> {
     /// A top-level entity, by its id.
     Entity(&'key str),
-    /// A record of the delta of an evaluation or a process state.
+    /// A record of the delta of an evaluation.
     Delta {
-        /// The id of the evaluation or process state.
+        /// The id of the evaluation.
         qualifier: &'key str,
         /// The id of the record in that delta.
         record: &'key str,
     },
 }
 
-/// The id of a record that holds a delta: an evaluation or a process state.
-pub trait Qualifier: sealed::Sealed {
-    /// The id, in its wire form.
-    fn as_qualifier(&self) -> &str;
-}
-
-mod sealed {
-    pub trait Sealed {}
-    impl Sealed for crate::design::ids::EvaluationId {}
-    impl Sealed for crate::design::ids::ProcessStateId {}
-}
-
-impl Qualifier for EvaluationId {
-    fn as_qualifier(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl Qualifier for ProcessStateId {
-    fn as_qualifier(&self) -> &str {
-        self.as_str()
-    }
-}
-
 impl AnnotationKey {
-    /// The key of `record` in the delta of `qualifier`, an evaluation or a
-    /// process state.
+    /// The key of `record` in the delta of `qualifier`.
     #[must_use]
-    pub fn in_delta(qualifier: &impl Qualifier, record: &impl AsRef<Identity>) -> Self {
-        Self::qualified(qualifier.as_qualifier(), record.as_ref().as_str())
+    pub fn in_delta(qualifier: &EvaluationId, record: &impl AsRef<Identity>) -> Self {
+        Self::qualified(qualifier.as_str(), record.as_ref().as_str())
     }
 
     pub(super) fn qualified(qualifier: &str, record: &str) -> Self {
@@ -82,7 +57,7 @@ impl AnnotationKey {
     }
 
     /// The id of the top-level record the annotation belongs to: the entity,
-    /// or the evaluation or process state whose delta holds the record.
+    /// or the evaluation whose delta holds the record.
     #[must_use]
     pub fn owner(&self) -> &str {
         match self.target() {

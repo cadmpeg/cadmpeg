@@ -780,8 +780,8 @@ mod tests {
             cadmpeg_core::serde_erase::json::to_value(&result).expect("diff serializes")
                 ["scope_change"],
             cadmpeg_core::json!([
-                {"model": true, "design": true, "process": true},
-                {"model": true, "design": false, "process": false}
+                {"model": true, "design": true},
+                {"model": true, "design": false}
             ])
         );
         assert!(diff(&left, &left).scope_change.is_none());

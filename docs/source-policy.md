@@ -97,7 +97,7 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   (`json_second_deserializer`). The rule rejects `serde_json::from_value`,
   `serde_json::from_slice` and `Deserializer::from_slice` in production and
   test code, and a read of `CadIr`, `Annotations`, `AsmBrep`, `Topology`,
-  `Model`, `Design` or `Process` through `T::deserialize` from anything but a
+`Model` or `Design` through `T::deserialize` from anything but a
   `deserializer` binding. Each deserializer type compiles the read tree of
   every type it reads once more. Tests that check a reader agrees across
   deserializer types are listed in `JSON_READ_EXEMPT_FILES`.

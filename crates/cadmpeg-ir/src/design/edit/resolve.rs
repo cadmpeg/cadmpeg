@@ -165,12 +165,6 @@ impl CadIr {
             stated,
             &|target| levels.iter().any(|level| level.contains_key(target)),
             &|target| self.design_parameter(target).ok(),
-            &|program| {
-                self.design
-                    .programs
-                    .iter()
-                    .find(|candidate| &candidate.id == program)
-            },
         )
         .then_some(record.value.as_ref())
         .flatten()

@@ -48,8 +48,8 @@ pub enum DecodeTransfer {
         /// Whether B-rep geometry was transferred into the IR.
         geometry_transferred: bool,
     },
-    /// The decoder transferred the model and its design and left every
-    /// process arena empty, with the recorded B-rep geometry outcome.
+    /// The decoder transferred the model and its design, with the recorded
+    /// B-rep geometry outcome.
     Design {
         /// Whether B-rep geometry was transferred into the IR.
         geometry_transferred: bool,

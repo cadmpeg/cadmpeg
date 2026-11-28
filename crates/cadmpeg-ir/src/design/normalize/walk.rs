@@ -15,7 +15,6 @@ mod assembly;
 mod body;
 mod datum;
 mod dressup;
-mod process;
 mod root;
 mod shared;
 mod sheet_metal;

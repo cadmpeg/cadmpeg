@@ -268,20 +268,6 @@ impl<'a> ComponentRecords<'a> {
             )
             .chain(
                 design
-                    .publications
-                    .iter()
-                    .filter(|row| row.scope == *definition)
-                    .map(|row| row.id.as_str()),
-            )
-            .chain(
-                design
-                    .programs
-                    .iter()
-                    .filter(|row| row.scope == *definition)
-                    .map(|row| row.id.as_str()),
-            )
-            .chain(
-                design
                     .sheet_metal_rules
                     .iter()
                     .filter(|row| row.scope == *definition)

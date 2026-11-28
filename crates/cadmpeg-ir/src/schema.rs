@@ -137,38 +137,12 @@ pub enum EntityKind {
     DesignSpreadsheet,
     /// Sheet-metal rule.
     DesignSheetMetalRule,
-    /// Parameter program.
-    DesignProgram,
     /// Configuration of the `design` home.
     DesignConfiguration,
     /// Arrangement.
     DesignArrangement,
-    /// Publication.
-    DesignPublication,
     /// Evaluation.
     DesignEvaluation,
-    /// Setup.
-    ProcessSetup,
-    /// Operation.
-    ProcessOperation,
-    /// Machining feature.
-    ProcessFeature,
-    /// Process group.
-    ProcessGroup,
-    /// Tool.
-    ProcessTool,
-    /// Tool preset.
-    ProcessPreset,
-    /// Machine.
-    ProcessMachine,
-    /// NC program.
-    ProcessProgram,
-    /// Process parameter.
-    ProcessParameter,
-    /// Toolpath.
-    ProcessToolpath,
-    /// Process state.
-    ProcessState,
 }
 
 impl EntityKind {
@@ -238,27 +212,14 @@ impl EntityKind {
             Self::DesignParameter => 60,
             Self::DesignSpreadsheet => 61,
             Self::DesignSheetMetalRule => 62,
-            Self::DesignProgram => 63,
-            Self::DesignConfiguration => 64,
-            Self::DesignArrangement => 65,
-            Self::DesignPublication => 66,
-            Self::DesignEvaluation => 67,
-            Self::ProcessSetup => 68,
-            Self::ProcessOperation => 69,
-            Self::ProcessFeature => 70,
-            Self::ProcessGroup => 71,
-            Self::ProcessTool => 72,
-            Self::ProcessPreset => 73,
-            Self::ProcessMachine => 74,
-            Self::ProcessProgram => 75,
-            Self::ProcessParameter => 76,
-            Self::ProcessToolpath => 77,
-            Self::ProcessState => 78,
+            Self::DesignConfiguration => 63,
+            Self::DesignArrangement => 64,
+            Self::DesignEvaluation => 65,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 79] = [
+    pub const ALL: [Self; 66] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -322,29 +283,16 @@ impl EntityKind {
         Self::DesignParameter,
         Self::DesignSpreadsheet,
         Self::DesignSheetMetalRule,
-        Self::DesignProgram,
         Self::DesignConfiguration,
         Self::DesignArrangement,
-        Self::DesignPublication,
         Self::DesignEvaluation,
-        Self::ProcessSetup,
-        Self::ProcessOperation,
-        Self::ProcessFeature,
-        Self::ProcessGroup,
-        Self::ProcessTool,
-        Self::ProcessPreset,
-        Self::ProcessMachine,
-        Self::ProcessProgram,
-        Self::ProcessParameter,
-        Self::ProcessToolpath,
-        Self::ProcessState,
     ];
 }
 
 /// The kind and identity of a record of any registered arena.
 ///
-/// Every [`EntitySchema`] record has them. A record of the `design` or
-/// `process` home has them without the identity rewrite of [`EntitySchema`];
+/// Every [`EntitySchema`] record has them. A record of the `design` home has
+/// them without the identity rewrite of [`EntitySchema`];
 /// a design record shares the id of the `model` record it restates.
 pub trait ArenaRecord {
     /// The record's canonical arena kind.
@@ -418,7 +366,6 @@ impl_arena_record!(
     DesignSheetMetalRule,
     id
 );
-impl_arena_record!(crate::design::program::ParameterProgram, DesignProgram, id);
 impl_arena_record!(
     crate::design::configuration::DesignConfiguration,
     DesignConfiguration,
@@ -429,31 +376,7 @@ impl_arena_record!(
     DesignArrangement,
     id
 );
-impl_arena_record!(
-    crate::design::configuration::Publication,
-    DesignPublication,
-    id
-);
 impl_arena_record!(crate::design::evaluation::Evaluation, DesignEvaluation, id);
-impl_arena_record!(crate::process::setup::Setup, ProcessSetup, id);
-impl_arena_record!(crate::process::operation::Operation, ProcessOperation, id);
-impl_arena_record!(
-    crate::process::feature::MachiningFeature,
-    ProcessFeature,
-    id
-);
-impl_arena_record!(crate::process::groups::ProcessGroup, ProcessGroup, id);
-impl_arena_record!(crate::process::tool::Tool, ProcessTool, id);
-impl_arena_record!(crate::process::tool::Preset, ProcessPreset, id);
-impl_arena_record!(crate::process::tool::Machine, ProcessMachine, id);
-impl_arena_record!(crate::process::setup::Program, ProcessProgram, id);
-impl_arena_record!(
-    crate::process::groups::ProcessParameter,
-    ProcessParameter,
-    id
-);
-impl_arena_record!(crate::process::toolpath::Toolpath, ProcessToolpath, id);
-impl_arena_record!(crate::process::state::ProcessState, ProcessState, id);
 
 /// Schema behavior required for every entity admitted to a model arena.
 pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {

@@ -527,9 +527,7 @@ fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool 
                 (None, number) => number.is_none(),
             }
         }
-        ParameterDefinition::Driven
-        | ParameterDefinition::Assigned(_)
-        | ParameterDefinition::Unset => {
+        ParameterDefinition::Driven | ParameterDefinition::Unset => {
             let held = json_strings(&design.native_options)
                 .into_iter()
                 .chain(json_strings(&design.source_settings))

@@ -27,7 +27,7 @@ use serde_json::Value;
 
 use self::loss::ReadLossCode;
 use self::text::{Found, Member, Scanner, Span};
-use super::{one_zero, CadIr, Design, Model, Process, Topology};
+use super::{one_zero, CadIr, Design, Model, Topology};
 use crate::annotations::Removed;
 use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::evaluation::Cycles;
@@ -59,7 +59,6 @@ const ROOT_MEMBERS: &[&str] = &[
     "geometry",
     "model",
     "design",
-    "process",
     "native",
 ];
 
@@ -850,10 +849,6 @@ impl<'r, 'a> Reader<'r, 'a> {
             let mut home = self.home(&mut root, "design", Design::READ_FIELDS);
             Design::read_from(&mut home)
         };
-        let process = {
-            let mut home = self.home(&mut root, "process", Process::READ_FIELDS);
-            Process::read_from(&mut home)
-        };
         let native = self.native(&mut root);
         if let Some(limit) = self.refusal {
             return Err(ReadFailure::ResourceLimit(limit));
@@ -883,12 +878,11 @@ impl<'r, 'a> Reader<'r, 'a> {
             geometry,
             model,
             design,
-            process,
             native,
         };
         self.release_lost(&mut document)?;
         let (_, ceiling) = crate::design::read::with_limits(&self.limits, || {
-            super::admit_state_chains(&document.design, &document.process, Cycles::End)
+            super::admit_state_chains(&document.design, Cycles::End)
         });
         if let Some(limit) = ceiling {
             return Err(ReadFailure::ResourceLimit(ResourceLimit {
@@ -1128,7 +1122,6 @@ impl<'r, 'a> Reader<'r, 'a> {
     ) -> Home<'h, 'r, 'a> {
         let class = match name {
             "design" => ArenaClass::Design,
-            "process" => ArenaClass::Process,
             _ => ArenaClass::Model,
         };
         let members = match root.take(name) {

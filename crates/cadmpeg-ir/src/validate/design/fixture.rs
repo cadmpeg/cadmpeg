@@ -239,11 +239,11 @@ pub(in crate::validate) fn family_findings(
 }
 
 pub(in crate::validate) fn design_findings(ir: &CadIr) -> Vec<Finding> {
-    family_findings(
-        ir,
-        Check::Design,
-        crate::validate::process::check_design_and_process,
-    )
+    family_findings(ir, Check::Design, |ctx, ir, ids, findings| {
+        let records = std::rc::Rc::new(super::records::DesignRecords::new(ir));
+        let matchers = super::matching::Matchers::owned(super::states::States::new(ir));
+        super::check_design(ctx, records, ids, &matchers, findings).map(|_| ())
+    })
 }
 
 #[track_caller]

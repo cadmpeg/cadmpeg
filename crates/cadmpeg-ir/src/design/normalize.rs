@@ -3,7 +3,7 @@
 //!
 //! After the wrapper sorts every arena, it puts each one-spelling rule of
 //! the specification into its canonical form, so no decoder implements a
-//! spelling rule of its own, in design and process records alike: the
+//! spelling rule of its own in design records: the
 //! positions of §5.3, the selection and construction spellings of §5.8 and
 //! §5.9 (D43 among them), the instance-target `state` of §8, the letter and
 //! grade of a combined `LimitsAndFits`, and a `DimensionModifier::Other` or
@@ -56,7 +56,7 @@ use crate::schema::ArenaRecord;
 /// A refusal that stops the session (a `ResourceLimit` of `scope:
 /// Session`); every other refusal gives up one record.
 pub(crate) fn normalize(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<String>, CodecError> {
-    if ir.design.is_empty() && ir.process.is_empty() {
+    if ir.design.is_empty() {
         if !ir.model.pmi.is_empty() {
             pmi::normalize_model(&mut ir.model);
         }
@@ -73,11 +73,9 @@ fn normalize_in(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<String>, 
     let states = States::new(&ir.design);
     states.normalize_design(&mut ir.design);
     states.normalize_model(ir);
-    states.normalize_process(&mut ir.process);
     let CadIr {
         geometry,
         design,
-        process,
         model,
         ..
     } = ir;
@@ -87,7 +85,6 @@ fn normalize_in(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<String>, 
         &design.sketch_entities,
         &design.spatial_sketch_entities,
         &design.evaluations,
-        &process.states,
     );
     let mut records = Records {
         ctx,
@@ -105,16 +102,8 @@ fn normalize_in(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<String>, 
     records.arena(&mut design.spatial_sketch_constraints)?;
     records.arena(&mut design.parameters)?;
     records.arena(&mut design.sheet_metal_rules)?;
-    records.arena(&mut design.programs)?;
     records.arena(&mut design.configurations)?;
     records.arena(&mut design.arrangements)?;
-    records.arena(&mut design.publications)?;
-    records.arena(&mut process.setups)?;
-    records.arena(&mut process.operations)?;
-    records.arena(&mut process.features)?;
-    records.arena(&mut process.groups)?;
-    records.arena(&mut process.presets)?;
-    records.arena(&mut process.parameters)?;
     let given_up = records.given_up;
     pmi::normalize_design(design);
     if !model.pmi.is_empty() {

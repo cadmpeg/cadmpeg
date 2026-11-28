@@ -447,14 +447,12 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
     }
 }
 
-/// Returns the sidecar wire name of an arena class (`model`, `design`, or
-/// `process`).
+/// Returns the sidecar wire name of an arena class (`model` or `design`).
 #[must_use]
 pub const fn arena_class_name(class: ArenaClass) -> &'static str {
     match class {
         ArenaClass::Model => "model",
         ArenaClass::Design => "design",
-        ArenaClass::Process => "process",
     }
 }
 

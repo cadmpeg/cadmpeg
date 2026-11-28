@@ -38,7 +38,6 @@ mod parameter_records;
 mod parameter_tests;
 mod parameters;
 mod picked;
-mod programs;
 pub(super) mod records;
 pub(crate) mod resolved;
 pub(super) mod selections;
@@ -130,9 +129,6 @@ pub(super) fn check_design<'a>(
         linkage::check_scope(ir, findings);
         linkage::check_identities(ir, findings);
         tolerances::check_definition_general_tolerances(ir, findings);
-        if !ir.process.parameters.is_empty() {
-            expressions::check_process_parameters(&index.records, findings);
-        }
         return Ok(index);
     }
     let records = &index.records;
@@ -146,7 +142,6 @@ pub(super) fn check_design<'a>(
     overrides::check(records, findings);
     target_states::check(ir, findings);
     parameter_records::check_parameter_records(records, findings);
-    programs::check_programs(records, findings);
     expressions::check_expressions(ctx, records, findings)?;
     dimensions::check_dimensions(records, findings);
     tolerances::check_tolerances(records, findings);
@@ -270,13 +265,6 @@ fn collect<'a>(
             },
         };
         add(holder, parameter)?;
-    }
-    for program in &design.programs {
-        let holder = Holder::Record {
-            record: program.id.as_str(),
-            scope: Some(&program.scope),
-        };
-        add(holder, program)?;
     }
     for rule in &design.sheet_metal_rules {
         let holder = Holder::Record {

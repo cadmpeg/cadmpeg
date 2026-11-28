@@ -477,19 +477,16 @@ struct CadirProbe {
     #[serde(default)]
     design: BTreeMap<String, ArenaLen>,
     #[serde(default)]
-    process: BTreeMap<String, ArenaLen>,
-    #[serde(default)]
     native: BTreeMap<String, BTreeMap<String, ArenaLen>>,
 }
 
 impl CadirProbe {
     /// The arena homes in wire order, each with its arenas.
-    fn homes(&self) -> [(&'static str, &BTreeMap<String, ArenaLen>); 4] {
+    fn homes(&self) -> [(&'static str, &BTreeMap<String, ArenaLen>); 3] {
         [
             ("geometry", &self.geometry),
             ("model", &self.model),
             ("design", &self.design),
-            ("process", &self.process),
         ]
     }
 }

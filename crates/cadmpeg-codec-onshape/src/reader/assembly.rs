@@ -515,10 +515,8 @@ fn merge_design(target: &mut cadmpeg_ir::document::Design, source: cadmpeg_ir::d
         parameters,
         spreadsheets,
         sheet_metal_rules,
-        programs,
         configurations,
         arrangements,
-        publications,
         evaluations
     );
 }

@@ -46,9 +46,7 @@ fn value_in(
     let record = index.parameters.get(parameter.as_str())?;
     let expression = match &record.definition {
         ParameterDefinition::Expression(expression) => Some(expression),
-        ParameterDefinition::Driven
-        | ParameterDefinition::Assigned(_)
-        | ParameterDefinition::Unset => None,
+        ParameterDefinition::Driven | ParameterDefinition::Unset => None,
     };
     if !reads_override(index, chain, parameter) {
         if let Some(value) = &record.value {
@@ -111,14 +109,6 @@ fn reads_override(
         Stated::of(chain),
         &|target| nearest_override(chain, target).is_some(),
         &|target| index.parameters.get(target.as_str()).copied(),
-        &|program| {
-            index
-                .ir
-                .design
-                .programs
-                .iter()
-                .find(|candidate| &candidate.id == program)
-        },
     )
 }
 

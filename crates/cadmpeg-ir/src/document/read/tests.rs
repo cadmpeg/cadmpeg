@@ -41,15 +41,30 @@ fn canonical_text_reads_with_an_empty_report() {
     assert!(read.report.is_empty(), "{:?}", read.report);
 }
 
+#[test]
+fn removed_process_members_are_ignored_and_reported() {
+    let (ir, mut value) = wire();
+    value["scope"]["process"] = json!(true);
+    value["process"] = json!({"setups": []});
+    let read = read(value.to_string().as_bytes());
+    assert_eq!(read.document, ir);
+    assert_eq!(
+        codes(&read.report),
+        ["read/member.ignored", "read/member.ignored"]
+    );
+    let written = json::to_value(&read.document).unwrap();
+    assert!(written.get("process").is_none());
+    assert!(written["scope"].get("process").is_none());
+}
+
 /// A scope that breaks a rule of §2.1 is read and written as stated; the
 /// breach is a part 10 finding (§3.3).
 #[test]
 fn a_scope_that_breaks_its_rules_is_read_as_written() {
     let (_, mut value) = wire();
     for scope in [
-        json!({"model": false, "design": true, "process": false}),
-        json!({"model": true, "design": false, "process": true}),
-        json!({"model": false, "design": false, "process": false}),
+        json!({"model": false, "design": true}),
+        json!({"model": false, "design": false}),
     ] {
         value["scope"] = scope.clone();
         let read = read(value.to_string().as_bytes());

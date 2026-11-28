@@ -211,11 +211,6 @@ fn every_name<'a>(
             found.extend(entry.name.iter().map(|name| (name, evaluation.id.as_str())));
         }
     }
-    for publication in &ir.design.publications {
-        if let PickTarget::Entity(name) = &publication.target.target {
-            found.push((name, publication.id.as_str()));
-        }
-    }
     for record in held {
         for selection in &record.selections {
             for pick in selection.picks() {

@@ -943,29 +943,32 @@ fn current_pick(target: PickTarget) -> Picked {
     }
 }
 
-/// The current geometry's scope publishes one pick.
-fn publish(ir: &mut CadIr, target: Picked) {
-    ir.design
-        .publications
-        .push(crate::design::configuration::Publication {
-            id: id("publication", "1"),
-            scope: id("product_definition", "part"),
-            name: cadmpeg_core::text::NonBlankString::new("face").unwrap(),
-            target,
-        });
+/// Adds one current-state pick to the second datum's source options.
+fn attach_current_pick(ir: &mut CadIr, target: Picked) {
+    let FeatureOperation::Datum(datum) = &mut ir.design.features[1].definition.operation else {
+        panic!("expected a datum");
+    };
+    let selection = from(named(
+        json!({"kind": "current"}),
+        vec![json::to_value(target).unwrap()],
+    ));
+    datum.native_options.insert(
+        crate::codec_name!("test:pick"),
+        crate::design::options::NativeOption::Selection(selection),
+    );
 }
 
 #[test]
 fn an_entity_pick_matches_a_name_of_its_anchored_state() {
     let mut ir = named_cube();
-    publish(
+    attach_current_pick(
         &mut ir,
         current_pick(PickTarget::Entity(generated("face", "a"))),
     );
     assert_clean(&ir);
 
     let mut ir = named_cube();
-    publish(
+    attach_current_pick(
         &mut ir,
         current_pick(PickTarget::Entity(generated("face", "b"))),
     );
@@ -986,7 +989,7 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
         },
     ] {
         let mut ir = named_cube();
-        publish(&mut ir, current_pick(PickTarget::Entity(name.clone())));
+        attach_current_pick(&mut ir, current_pick(PickTarget::Entity(name.clone())));
         let errors: Vec<_> = findings(&ir)
             .into_iter()
             .filter(|finding| finding.severity == Severity::Error)
@@ -998,7 +1001,7 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
     let mut ir = named_cube();
     let mut pick = current_pick(PickTarget::Entity(generated("face", "a")));
     pick.resolved = Some(vec![EntityRef::Face(id("face", "elsewhere"))]);
-    publish(&mut ir, pick);
+    attach_current_pick(&mut ir, pick);
     assert_finding(
         &ir,
         Check::Design,
@@ -1014,7 +1017,7 @@ fn a_witness_body_is_closed_over_its_own_references() {
     body.shells.clear();
     let mut pick = current_pick(PickTarget::Native { within: None });
     pick.witness = Some(witness_body(body));
-    publish(&mut ir, pick);
+    attach_current_pick(&mut ir, pick);
     let findings = findings(&ir);
     assert!(
         findings
@@ -1043,7 +1046,7 @@ fn a_witness_body_meets_the_rules_of_one_topology() {
         let mut ir = named_cube();
         let mut pick = current_pick(PickTarget::Native { within: None });
         pick.witness = Some(witness_body(body));
-        publish(&mut ir, pick);
+        attach_current_pick(&mut ir, pick);
         findings(&ir)
             .into_iter()
             .filter(|finding| finding.message.starts_with("witness body:"))

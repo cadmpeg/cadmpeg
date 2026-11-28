@@ -72,7 +72,6 @@ pub mod physics;
 pub mod pmi;
 pub mod point_cloud;
 pub mod presentation;
-pub mod process;
 pub mod products;
 mod provenance;
 pub mod references;

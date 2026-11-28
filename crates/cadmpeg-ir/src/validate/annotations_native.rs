@@ -59,8 +59,8 @@ macro_rules! define_entity_projection {
 crate::document::classified_arena_registry!(define_entity_projection);
 
 /// The records that annotation keys name outside `all_ids`: the records of
-/// the design and process arenas, and the records of the deltas of the
-/// evaluations and process states that have content, with the structural
+/// the design arenas, and the records of the deltas of the
+/// evaluations that have content, with the structural
 /// JSON value of each delta record that an exactness key with field
 /// overrides names, or `None` where it could not be serialized.
 struct Unindexed<'ir> {
@@ -93,7 +93,7 @@ impl<'ir> Unindexed<'ir> {
         if keys().any(
             |key| matches!(key.target(), AnnotationTarget::Entity(id) if !all_ids.contains(id)),
         ) {
-            unindexed.records = crate::annotations::design_and_process_records(ir);
+            unindexed.records = crate::annotations::design_records(ir);
         }
         if !keys().any(|key| matches!(key.target(), AnnotationTarget::Delta { .. })) {
             return Ok(unindexed);

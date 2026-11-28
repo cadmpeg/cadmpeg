@@ -11,18 +11,12 @@ use crate::native::NativeRecord;
 /// The id and the delta records of each evaluation and process state of `ir`
 /// that has content.
 pub(crate) fn deltas(ir: &CadIr) -> impl Iterator<Item = (&str, &Topology)> {
-    let evaluations = ir.design.evaluations.iter().filter_map(|evaluation| {
+    ir.design.evaluations.iter().filter_map(|evaluation| {
         Some((
             evaluation.id.as_str(),
             &evaluation.content.as_ref()?.delta.records,
         ))
-    });
-    let states = ir
-        .process
-        .states
-        .iter()
-        .filter_map(|state| Some((state.id.as_str(), &state.content.as_ref()?.delta.records)));
-    evaluations.chain(states)
+    })
 }
 
 /// The `(qualifier, record)` ids of each record of each delta of [`deltas`].
@@ -39,11 +33,11 @@ pub(crate) fn delta_records(ir: &CadIr) -> BTreeSet<(&str, &str)> {
 
 /// The ids of the records of the design and process arenas of `ir`, which
 /// the model index leaves out.
-pub(crate) fn design_and_process_records(ir: &CadIr) -> BTreeSet<&str> {
+pub(crate) fn design_records(ir: &CadIr) -> BTreeSet<&str> {
     ir.arenas()
         .record_ids()
         .into_iter()
-        .filter(|(arena, _)| matches!(arena.home(), ArenaHome::Design | ArenaHome::Process))
+        .filter(|(arena, _)| arena.home() == ArenaHome::Design)
         .flat_map(|(_, (_, ids))| ids)
         .collect()
 }

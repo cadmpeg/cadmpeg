@@ -61,10 +61,7 @@ pub mod subset_lowering;
 pub mod target;
 
 use carried::{EntityLocation, FindingLocator};
-pub use coverage::{
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
-    ProcessArenaDispositions,
-};
+pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions};
 pub use native::{NativeDisposition, NativeDispositions};
 pub use scene::SceneOptions;
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};

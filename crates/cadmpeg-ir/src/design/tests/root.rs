@@ -6,22 +6,18 @@
 use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use super::fixtures::{feature, id, name_tables};
 use super::root_fixtures as root;
-use super::{read_desktop, refuses, round_trip, to_value};
-use crate::bounds::MAX_DOCUMENT_DEPTH;
+use super::{refuses, round_trip, to_value};
 use crate::design::configuration::{OccurrenceOverride, Overrides};
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
-use crate::design::expr::{Neutral, Node};
 use crate::design::feature::{
     FeatureDefinition, FeatureOperation, FuzzyTolerance, OperationFamily, StoredOrigin,
 };
-use crate::design::program::{ParameterProgram, ProgramBody, Statement};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::document::{ArenaName, CadIr, Design, ScopeViolation};
@@ -68,7 +64,6 @@ fn every_design_root_type_round_trips() {
     check(f, "MaterialRef", root::material_refs());
     check(f, "MaterialOverride", root::material_overrides());
     check(f, "DesignConfiguration", root::design_configurations());
-    check(f, "Publication", root::publications());
     check(f, "ArrangementKind", root::arrangement_kinds());
     check(f, "ArrangementAppearance", root::arrangement_appearances());
     check(f, "ArrangementMove", root::arrangement_moves());
@@ -84,10 +79,6 @@ fn every_design_root_type_round_trips() {
     check(f, "LimitSide", root::limit_sides());
     check(f, "Tolerance", root::tolerances());
     check(f, "DesignParameter", root::design_parameters());
-    check(f, "ProgramStage", root::program_stages());
-    check(f, "Statement", root::statements());
-    check(f, "ProgramBody", root::program_bodies());
-    check(f, "ParameterProgram", root::programs());
     check(f, "Spreadsheet", root::spreadsheets());
     check(f, "SheetMetalRule", root::sheet_metal_rules());
     check(f, "Design", root::designs());
@@ -288,28 +279,13 @@ fn a_set_refuses_a_repeated_member_and_an_unsorted_array() {
     assert!(refuses::<Container>(&container.to_string()).contains("out of order"));
 }
 
-/// §5.13, §5.14: a program's statements hold `Neutral`s, which write
-/// canonical text.
-#[test]
-fn a_neutral_program_writes_its_statements_as_canonical_text() {
-    let value = to_value(&root::program_bodies().remove(0));
-    assert_eq!(value["kind"], json!("neutral"));
-    let statement = &value["value"][0];
-    assert_eq!(statement["kind"], json!("assign"));
-    assert!(statement["value"]["text"].is_string(), "{statement}");
-    assert!(statement["value"]["refs"].is_array() && statement["value"]["measures"].is_array());
-    let program: ParameterProgram =
-        read_desktop(&json::to_string(&root::programs().remove(0)).unwrap()).unwrap();
-    assert!(matches!(program.body, ProgramBody::Neutral(_)));
-}
-
 /// §5: the design root's keys, in the order the document states them.
 #[test]
 fn the_design_root_writes_every_arena_in_order() {
     let text = json::to_string(&Design::default()).unwrap();
     assert_eq!(
         text,
-        r#"{"scopes":[],"containers":[],"features":[],"sketches":[],"sketch_entities":[],"sketch_constraints":[],"spatial_sketches":[],"spatial_sketch_entities":[],"spatial_sketch_constraints":[],"parameters":[],"spreadsheets":[],"sheet_metal_rules":[],"programs":[],"configurations":[],"arrangements":[],"publications":[],"evaluations":[],"names":[]}"#
+        r#"{"scopes":[],"containers":[],"features":[],"sketches":[],"sketch_entities":[],"sketch_constraints":[],"spatial_sketches":[],"spatial_sketch_entities":[],"spatial_sketch_constraints":[],"parameters":[],"spreadsheets":[],"sheet_metal_rules":[],"configurations":[],"arrangements":[],"evaluations":[],"names":[]}"#
     );
     refuses::<Design>(r#"{"scopes": []}"#);
     let mut extra = to_value(&Design::default());
@@ -406,63 +382,4 @@ fn diff_reports_design_arenas_and_names() {
         .unwrap();
     assert_eq!(names.added.len(), right.design.names.entries().len());
     assert!(crate::diff::diff(&right, &right).is_empty());
-}
-
-/// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
-/// thread.
-fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    std::thread::Builder::new()
-        .stack_size(2 << 20)
-        .spawn(work)
-        .unwrap()
-        .join()
-        .unwrap()
-}
-
-/// The document's depth bound (§2.5) bounds statement nesting. One level
-/// past the deepest nesting the reader admits is refused by that bound, and
-/// the deepest reads, prints the same bytes, clones, compares, and drops on
-/// a default thread.
-#[test]
-fn statements_nest_to_the_document_depth_bound_on_a_default_thread() {
-    fn nested(depth: usize) -> String {
-        let condition = || Neutral(Node::Boolean(true));
-        let leaf = Statement::If {
-            condition: condition(),
-            then: Vec::new(),
-            otherwise: Vec::new(),
-        };
-        let statement = (1..depth).fold(leaf, |statement, _| Statement::If {
-            condition: condition(),
-            then: vec![statement],
-            otherwise: Vec::new(),
-        });
-        json::to_string(&statement).unwrap()
-    }
-    let past = (1..=MAX_DOCUMENT_DEPTH + 1)
-        .find(|&depth| read_desktop::<Statement>(&nested(depth)).is_err())
-        .expect("the reader refuses a depth past the document bound");
-    assert!(past > 1, "a single statement is refused");
-    let refusal = on_a_default_thread({
-        let text = nested(past);
-        move || read_desktop::<Statement>(&text).err()
-    });
-    assert!(
-        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("levels of a CADIR document")),
-        "depth {past}: {refusal:?}"
-    );
-    let deepest = nested(past - 1);
-    let printed = on_a_default_thread({
-        let deepest = deepest.clone();
-        move || {
-            let read = read_desktop::<Statement>(&deepest).unwrap();
-            let printed = json::to_string(&read).unwrap();
-            let cloned = read.clone();
-            assert_eq!(cloned, read);
-            drop(cloned);
-            drop(read);
-            printed
-        }
-    });
-    assert_eq!(printed, deepest);
 }

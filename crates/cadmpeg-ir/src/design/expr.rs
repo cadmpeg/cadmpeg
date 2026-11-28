@@ -164,9 +164,6 @@ pub enum ExpressionDialect {
     /// Fusion parameter expressions.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Fusion,
-    /// Fusion CAM expressions.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    FusionCam,
     /// Inventor parameter expressions.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inventor,
@@ -191,20 +188,17 @@ pub enum ExpressionDialect {
 }
 
 impl ExpressionDialect {
-    /// The expression language of the sources the codec `codec` reads: the
-    /// language of their process records where `process`, and of their
-    /// design otherwise. `None` where `codec` is blank.
-    pub(crate) fn of_codec(codec: &str, process: bool) -> Option<Self> {
-        Some(match (codec, process) {
-            ("catia", _) => Self::Catia,
-            ("creo", _) => Self::Creo,
-            ("f3d", false) => Self::Fusion,
-            ("f3d", true) => Self::FusionCam,
-            ("fcstd", _) => Self::FreeCad,
-            ("inventor", _) => Self::Inventor,
-            ("nx", _) => Self::Nx,
-            ("sldprt", _) => Self::SolidWorks,
-            (codec, _) => Self::Native(NonBlankString::new(codec)?),
+    /// The expression language of the sources the codec reads.
+    pub(crate) fn of_codec(codec: &str) -> Option<Self> {
+        Some(match codec {
+            "catia" => Self::Catia,
+            "creo" => Self::Creo,
+            "f3d" => Self::Fusion,
+            "fcstd" => Self::FreeCad,
+            "inventor" => Self::Inventor,
+            "nx" => Self::Nx,
+            "sldprt" => Self::SolidWorks,
+            codec => Self::Native(NonBlankString::new(codec)?),
         })
     }
 }
