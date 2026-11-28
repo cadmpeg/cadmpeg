@@ -10,7 +10,7 @@ checks against the merge base with the upstream default branch, and prints one
 summary line per result:
 
     preflight: PASS  branch      up to date with origin/main
-    preflight: FAIL  ir-version  IR_VERSION is 12 but 1 file(s) still pin "ir_version": "11"
+    preflight: FAIL  branch      branch conflicts with upstream
       fix: ...
 
 A FAIL is a problem that review or CI rejects. A WARN asks for a human
@@ -20,7 +20,7 @@ The upstream remote is the one whose URL names ``cadmpeg/cadmpeg``, or
 ``origin`` when no remote does. ``--upstream REF`` selects another base.
 
 Usage: scripts/preflight.py [--upstream REF] [--rev REV] [--no-fetch]
-                            [--full] [--run-layout] [--only NAME ...]
+                            [--run-layout] [--only NAME ...]
 With no ``--rev`` it checks the working tree, including uncommitted and
 untracked files. With ``--rev`` it checks that commit; checks that run
 programs over the tree are skipped.
@@ -57,9 +57,7 @@ class Result:
 
 @dataclass
 class Options:
-    full: bool = False
     run_layout: bool = False
-    offline: bool = False
 
 
 class Context:
@@ -256,8 +254,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--upstream", help="base ref (default: the upstream default branch)")
     parser.add_argument("--rev", help="check this commit instead of the working tree")
     parser.add_argument("--no-fetch", action="store_true", help="do not fetch the upstream branch")
-    parser.add_argument("--offline", action="store_true", help="no network: no fetch, no GitHub")
-    parser.add_argument("--full", action="store_true", help="also run CI's Cargo lint gate")
     parser.add_argument("--run-layout", action="store_true",
                         help="regenerate and test the layout tables when they changed")
     parser.add_argument("--only", nargs="+", metavar="NAME", help="run only these checks")
@@ -278,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     if upstream is None:
         remote = upstream_remote(root)
         upstream = default_branch(root, remote)
-        if not (args.no_fetch or args.offline):
+        if not args.no_fetch:
             branch = upstream.split("/", 1)[1]
             fetch = subprocess.run(["git", "fetch", "-q", remote, branch], cwd=root,
                                    capture_output=True, text=True)
@@ -291,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"preflight: no merge base with {upstream}: {merge_base.stderr.strip()}",
               file=sys.stderr)
         return 2
-    options = Options(full=args.full, run_layout=args.run_layout, offline=args.offline)
+    options = Options(run_layout=args.run_layout)
     context = Context(root, upstream, merge_base.stdout.strip(), args.rev, options)
     print(f"preflight: {args.rev or 'working tree'} against {upstream} "
           f"(merge base {context.base[:10]}, {len(context.changed_paths())} changed paths)")
