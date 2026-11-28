@@ -238,3 +238,107 @@ fn typed_zero_body_base_feature_reads_its_typed_metadata_reference() {
             .is_none()
     );
 }
+
+/// A typed local reference of `target` with the type GUID `guid`.
+fn typed_element(out: &mut Vec<u8>, target: u32, guid: &str) {
+    out.push(1);
+    out.extend_from_slice(&u64::from(target).to_le_bytes());
+    out.extend_from_slice(&36u32.to_le_bytes());
+    out.extend_from_slice(guid.as_bytes());
+    out.extend_from_slice(&[0, 0]);
+}
+
+const BODY_PRESENTATION: &str = "D3937028-C20C-4E65-B010-94AD418A5C20";
+const BODY_NODE: &str = "D26351F0-5940-4D23-AA20-2C35475A6D9E";
+const METADATA: &str = "493A89BA-E146-498D-9033-2783FE727AF4";
+
+/// A typed-reference one-body result-body Base Feature. `passives_first`
+/// selects the repeat marker and the order of the two parallel runs; the
+/// repeated run names `repeated` as the passive reference.
+fn typed_result_body_base_feature_frame(passives_first: bool, repeated: u32) -> Vec<u8> {
+    let (passive, entity) = (208, 214);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"403");
+    bytes.extend_from_slice(&226u32.to_le_bytes());
+    bytes.resize(19, 0);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in if passives_first {
+        [passive, entity]
+    } else {
+        [entity, passive]
+    } {
+        typed_element(&mut bytes, target, BODY_PRESENTATION);
+        bytes.extend_from_slice(&[0; 4]);
+    }
+    bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0, u8::from(passives_first)]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    typed_element(&mut bytes, repeated, BODY_PRESENTATION);
+    bytes.push(0);
+    typed_element(&mut bytes, 342, METADATA);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    typed_element(&mut bytes, 203, BODY_NODE);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&[0; 4]);
+    lp_utf16(&mut bytes, "9a8b7c6d-1234-4567-89ab-0123456789ab");
+    bytes.extend_from_slice(&[0; 3]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    typed_element(&mut bytes, 342, METADATA);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Base Feature");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 15]);
+    typed_reference(&mut bytes, 341);
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    bytes.extend_from_slice(&64u32.to_le_bytes());
+    bytes.extend_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&64u32.to_le_bytes());
+    typed_reference(&mut bytes, 340);
+    bytes.extend_from_slice(&[0; 2]);
+    typed_reference(&mut bytes, 339);
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"257");
+    bytes.extend_from_slice(&226u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn typed_result_body_base_feature_orders_its_runs_by_the_repeat_marker() {
+    use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
+
+    for passives_first in [true, false] {
+        let bytes = typed_result_body_base_feature_frame(passives_first, 208);
+        let scope = parse(&bytes).expect("typed Base Feature scope");
+        let construction =
+            super::super::base_feature::exact_base_feature_construction(&bytes, &scope)
+                .unwrap()
+                .expect("typed result-body Base Feature");
+        let DesignBaseFeatureConstruction::ResultBodies {
+            bodies,
+            metadata_record,
+            ..
+        } = construction
+        else {
+            panic!("result-body form");
+        };
+        assert_eq!(metadata_record, 342);
+        let rows = bodies.iter().collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].entity.value, 214);
+        assert_eq!(rows[0].reference.value, 208);
+        assert_eq!(rows[0].result.value, 203);
+    }
+}
+
+#[test]
+fn typed_result_body_base_feature_requires_the_repeated_run_to_name_the_passive_reference() {
+    let bytes = typed_result_body_base_feature_frame(true, 214);
+    let scope = parse(&bytes).expect("typed Base Feature scope");
+    assert!(
+        super::super::base_feature::exact_base_feature_construction(&bytes, &scope)
+            .unwrap()
+            .is_none()
+    );
+}
