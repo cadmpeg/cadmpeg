@@ -8,6 +8,7 @@ use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::features::{
     Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
+
 use cadmpeg_ir::ids::ProductDefinitionId;
 
 use super::{legacy, tail_flags, timeline, STREAM};

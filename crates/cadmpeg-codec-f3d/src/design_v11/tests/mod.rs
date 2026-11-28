@@ -1876,3 +1876,30 @@ fn the_parameter_of_a_diameter_dimension_states_its_display() {
 }
 
 mod timeline_match;
+
+#[test]
+fn a_parameter_preserves_each_stored_dimension_display() {
+    use cadmpeg_ir::design::parameter::DimensionDisplay;
+    use cadmpeg_ir::features::parameters::DimensionDisplay as LegacyDisplay;
+
+    for (stored, expected) in [
+        (
+            Some(LegacyDisplay::Diameter),
+            Some(DimensionDisplay::Diameter),
+        ),
+        (Some(LegacyDisplay::Radius), Some(DimensionDisplay::Radius)),
+        (None, None),
+    ] {
+        let mut legacy = parameter("d1", None, "10 mm", None, &[], &[]);
+        legacy.display = stored;
+        let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+        let projected = super::parameters::project(
+            &[legacy],
+            &scopes,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &mut Vec::new(),
+        );
+        assert_eq!(projected[0].display, expected);
+    }
+}

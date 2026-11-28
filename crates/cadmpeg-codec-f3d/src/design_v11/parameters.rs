@@ -230,7 +230,14 @@ fn record(
         unit: None,
         definition,
         value,
-        display: None,
+        display: parameter.display.as_ref().map(|display| match display {
+            cadmpeg_ir::features::parameters::DimensionDisplay::Diameter => {
+                cadmpeg_ir::design::parameter::DimensionDisplay::Diameter
+            }
+            cadmpeg_ir::features::parameters::DimensionDisplay::Radius => {
+                cadmpeg_ir::design::parameter::DimensionDisplay::Radius
+            }
+        }),
         tolerance: None,
         decimals: None,
         comment: property(COMMENT).map(str::to_owned),
