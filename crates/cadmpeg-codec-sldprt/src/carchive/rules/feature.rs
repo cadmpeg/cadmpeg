@@ -1461,15 +1461,30 @@ pub(crate) fn scale(r: &mut Reader<'_>) -> Res<V> {
         k.push(V::from(r.f64()?));
     }
     r.expect_zeros(6, "scale 6 zero")?;
-    r.expect_bytes(&[1, 0], "scale u16 1")?;
-    r.ptr(None)?;
+    scaled_bodies(r)?;
+    Ok(V::map([("n", n), ("factors", V::List(k))]))
+}
+
+/// The bytes of a `moScale_c` after its six zero bytes: the scaled bodies,
+/// the identifier list and, when the stream continues, i32 `-1` and twelve
+/// zero bytes.
+fn scaled_bodies(r: &mut Reader<'_>) -> Res<()> {
+    let bodies = r.u16()?;
+    if bodies > 1 {
+        return Err(bad(format!("scale body count {bodies}")));
+    }
+    for _ in 0..bodies {
+        r.ptr(None)?;
+    }
     let count = r.u32()?;
     for _ in 0..count {
         r.u32()?;
     }
+    if r.p == r.len() {
+        return Ok(());
+    }
     r.expect_bytes(&[0xff; 4], "scale -1")?;
-    r.expect_zeros(12, "scale 12 zero")?;
-    Ok(V::map([("n", n), ("factors", V::List(k))]))
+    r.expect_zeros(12, "scale 12 zero")
 }
 
 /// A body head's `g == 1` continuation: u32 count and that many body ids,

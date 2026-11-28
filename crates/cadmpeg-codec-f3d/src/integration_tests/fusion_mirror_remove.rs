@@ -42,13 +42,13 @@ fn a_mirrored_then_removed_body_is_generated_by_the_extrude_that_made_it() {
         .as_array()
         .expect("features")
         .iter()
-        .find(|feature| feature["name"] == "Extrude 1")
-        .expect("Extrude 1")["id"]
+        .find(|feature| feature["name"] == "Extrude1")
+        .expect("Extrude1")["id"]
         .clone();
     let generated =
         json!({"kind": "generated", "value": {"bodies": [{"feature": extrude, "local_id": "1"}]}});
 
-    let mirror = &definition(&ir, "Mirror 1")["value"]["value"];
+    let mirror = &definition(&ir, "Mirror1")["value"]["value"];
     assert_eq!(mirror["pattern"]["kind"], "mirror");
     assert_eq!(
         mirror["pattern"]["plane_origin"],
