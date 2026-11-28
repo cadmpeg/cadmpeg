@@ -71,7 +71,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `edrawings.md` §3.4 and §3.11 give the lists and the forms that were seen. The reader refuses any other list or form. The `R` record with mask `0x00100000` holds 16 bytes and a run of the pairs `ff 01` or of the bytes `ff` of unknown meaning. The `R` list `0x80010000 0x80000000 0x00000002` has one extra byte of unknown meaning. The `H` records with masks `0x0002` and `0x0004` and the `V` record with the bytes `40 00` have unknown meaning.
 
-**Need.** A file with another list is refused with `edrawings/model.malformed`. We must know the rule to read such a file.
+**Need.** The decoder gives up the `eModel` member of a file with another list with `record.undecoded`. We must know the rule to read such a file.
 
 ### EDR-08. Exact geometry and annotations
 **Question.** Does any file carry exact surfaces, curves, edges, 2D drawing content, or annotations in the model stream?
@@ -92,7 +92,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `edrawings.md` §3.11 and §3.12 give the rules of the files with versions `18.00` and `19.00`. SolidWorks wrote these files. The codec selects the rules from the declared version. In the `18.00` file, every `assempart` of the tree is a leaf, no `subassem` occurs, each `part` holds an absolute matrix, and the include paths have the form `/include library/shared/bodyN`.
 
-**Need.** We must know whether the version or the writer selects the rules. A file in the other combination can be refused with `edrawings/model.malformed` or read with wrong rules.
+**Need.** We must know whether the version or the writer selects the rules. The decoder can give up the `eModel` member of a file in the other combination, or read it with wrong rules.
 
 ### EDR-11. Header length and trailer code
 **Question.** Why does the closing bracket of the header block stand L + 7 bytes after the opcode in `edrawings:hsf-18-00` and L + 6 in `edrawings:hsf-19-10`? What does the code `be 2c` of the trailer mean, against `be 33`?

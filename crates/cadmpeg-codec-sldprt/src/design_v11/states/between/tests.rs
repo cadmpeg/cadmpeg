@@ -243,6 +243,7 @@ fn replayed(
                 annotations: Annotations::default(),
                 losses: vec![cadmpeg_ir::unknown::part::GivenUpRecord::new(
                     Identity::new("sldprt:brep:edge#4").unwrap(),
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
                     "unread edge use",
                 )
                 .loss()],

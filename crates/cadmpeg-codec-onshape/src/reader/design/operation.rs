@@ -1170,6 +1170,7 @@ fn sweep_twist(
             id: id.clone(),
             scope: context.scope.clone(),
             owner: Some(ParameterOwner::Feature(feature.id.clone())),
+            position: None,
             name: Some(cadmpeg_core::nonblank_const!("Total twist")),
             kind: ValueKind::Quantity(Quantity::ANGLE),
             unit: None,

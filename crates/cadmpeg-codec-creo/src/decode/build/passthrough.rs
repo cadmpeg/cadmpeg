@@ -396,6 +396,7 @@ mod tests {
             .push(crate::container::SectionExpansionLoss {
                 section_offset: 0,
                 message: "truncated compressed payload".to_owned(),
+                cause: cadmpeg_ir::unknown::part::Cause::Unreadable,
             });
         let records = crate::decode::with_service_context(|ctx| {
             preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())

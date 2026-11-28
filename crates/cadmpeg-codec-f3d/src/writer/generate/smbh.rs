@@ -23,9 +23,9 @@ use cadmpeg_ir::topology::Sense;
 
 use super::{
     attributes::{
-        edge_persistent_attribute_ref, encode_source_less_attributes, owner_attribute_ref,
-        sketch_link_attribute_ref, source_less_body_key, timestamp_attribute_ref, AttributeIndex,
-        AttributeOwner, AttributeOwnerStarts, SurfaceOwnerStarts,
+        edge_persistent_attribute_ref, encode_source_less_attributes, link_chain_attribute_ref,
+        owner_attribute_ref, source_less_body_key, AttributeIndex, AttributeOwner,
+        AttributeOwnerStarts, SurfaceOwnerStarts,
     },
     index::NativeGenerationIndex,
     native_bytes::{
@@ -1456,7 +1456,12 @@ fn encode_face_topology_smbh(
         )?;
         native_ref(
             &mut records,
-            sketch_link_attribute_ref(target, attributes, coedge, coedge_ordinal, attribute_start)?,
+            link_chain_attribute_ref(
+                target,
+                attributes,
+                &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
+                attribute_start,
+            )?,
         );
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -1809,13 +1814,12 @@ fn encode_source_less_edges_vertices_points(
             if let Some(reference) = persistent {
                 reference
             } else {
-                timestamp_attribute_ref(
+                link_chain_attribute_ref(
                     target,
                     attributes,
                     &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
                     attribute_start,
                 )?
-                .unwrap_or(-1)
             },
         );
         native_i64(records, -1);
@@ -1853,13 +1857,12 @@ fn encode_source_less_edges_vertices_points(
         )?;
         native_ref(
             records,
-            timestamp_attribute_ref(
+            link_chain_attribute_ref(
                 target,
                 attributes,
                 &cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone()),
                 attribute_start,
-            )?
-            .unwrap_or(-1),
+            )?,
         );
         native_i64(records, -1);
         native_ref(records, -1);

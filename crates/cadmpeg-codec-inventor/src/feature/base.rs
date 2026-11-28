@@ -2,7 +2,7 @@
 //! Stored-body Base features and their current-model body joins.
 
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::decode::{unique_index, DecodeContext, View};
+use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -16,14 +16,11 @@ use super::{
 };
 use crate::design::DesignInventory;
 use crate::kernel::ActiveCarrier;
-use crate::layout::{
-    meta_external_reference as external, meta_external_revision as revision,
-    meta_segment_pair as pair,
-};
+use crate::layout::meta_external_revision as revision;
 use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::reader;
-use crate::records::MetaSection;
+use crate::records::ReferenceTable;
 use crate::rse::{
     RecordFrameState, RseInventory, SegmentBulkState, SegmentDescriptor, SegmentKind,
     SegmentMetaState,
@@ -36,37 +33,20 @@ fn one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
     values.next().is_none().then_some(value)
 }
 
-fn section_count(section: &MetaSection<'_>, width: usize) -> Option<usize> {
-    let count = section
-        .payload
-        .counted(u64::from(section.discriminator), width)?;
-    (count.get().checked_mul(width)? == section.payload.remaining()).then_some(count.get())
-}
-
-fn entry<'a>(section: &MetaSection<'a>, index: u32, width: usize) -> Option<View<'a>> {
-    section_count(section, width)?;
-    if index >= section.discriminator {
-        return None;
-    }
-    let offset = usize::try_from(index).ok()?.checked_mul(width)?;
-    let start = section.payload.start().checked_add(offset)?;
-    section.payload.child(start, start.checked_add(width)?)
-}
-
 pub(super) fn reference_counts(
     ctx: &DecodeContext<'_>,
-    revisions: &MetaSection<'_>,
-    references: &MetaSection<'_>,
+    revisions: &ReferenceTable<'_>,
+    references: &ReferenceTable<'_>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let Some(count) = section_count(revisions, revision::LEN) else {
+    let Some(count) = revisions.count else {
         return Ok(None);
     };
-    if section_count(references, external::LEN).is_none() {
+    if references.count.is_none() {
         return Ok(None);
     }
     let mut counts = ctx.alloc_filled(count, 0_u32, "count Inventor external references")?;
-    for index in 0..references.discriminator {
-        let Some(mut node) = entry(references, index, external::LEN) else {
+    for index in 0..references.declared_count {
+        let Some(mut node) = references.entry(index) else {
             return Ok(None);
         };
         let revision_index = reader::u32(&mut node, "external revision index")?;
@@ -83,7 +63,7 @@ pub(super) fn reference_counts(
     for (index, &count) in counts.iter().enumerate() {
         let Some(mut node) = u32::try_from(index)
             .ok()
-            .and_then(|index| entry(revisions, index, revision::LEN))
+            .and_then(|index| revisions.entry(index))
         else {
             return Ok(None);
         };
@@ -127,11 +107,11 @@ pub(super) fn external_link<'a>(
     else {
         return Ok(None);
     };
-    let sections = &meta.tables.sections;
+    let [pairs, revisions, external] = &meta.tables.references;
     let Some(mut node) = reference
         .index()
         .checked_sub(1)
-        .and_then(|index| entry(&sections[9], index, external::LEN))
+        .and_then(|index| external.entry(index))
     else {
         return Ok(None);
     };
@@ -141,7 +121,7 @@ pub(super) fn external_link<'a>(
     if extension != 0 {
         return Ok(None);
     }
-    let Some(mut revision_entry) = entry(&sections[7], revision_index, revision::LEN) else {
+    let Some(mut revision_entry) = revisions.entry(revision_index) else {
         return Ok(None);
     };
     reader::take(
@@ -159,7 +139,7 @@ pub(super) fn external_link<'a>(
     {
         return Ok(None);
     }
-    let Some(mut segment_pair) = entry(&sections[6], u32::from(pair_index), pair::LEN) else {
+    let Some(mut segment_pair) = pairs.entry(u32::from(pair_index)) else {
         return Ok(None);
     };
     let segment_id = reader::array::<16>(&mut segment_pair, "external segment identifier")?;
@@ -624,9 +604,11 @@ pub(crate) fn project(
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let counts = match &segment.meta {
-                    SegmentMetaState::Parsed(meta) => {
-                        reference_counts(ctx, &meta.tables.sections[7], &meta.tables.sections[9])?
-                    }
+                    SegmentMetaState::Parsed(meta) => reference_counts(
+                        ctx,
+                        &meta.tables.references[1],
+                        &meta.tables.references[2],
+                    )?,
                     SegmentMetaState::Malformed { .. } => None,
                 };
                 entry.insert(counts)

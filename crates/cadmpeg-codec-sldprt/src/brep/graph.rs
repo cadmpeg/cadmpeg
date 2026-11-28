@@ -81,7 +81,7 @@ const EPS_SWEEP_EXTENT_ABSOLUTE_MM: f64 = 1.0e-6;
 const EPS_SWEEP_EXTENT_RELATIVE: f64 = 1.0e-3;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Brep {
     pub(crate) approximations: super::approximation::ApproximationCounts,
     /// Source locations for decoded entities.
@@ -157,7 +157,9 @@ pub(crate) struct Brep {
 /// A topology record the decode drops (CADIR §3.3).
 #[derive(Debug, Clone)]
 pub(crate) enum DroppedRecord {
-    /// A record given up for its own content, and the records dropped with it.
+    /// A record given up for its own content, and the records dropped with
+    /// it. The record frames, and the builder does not tell a defect from a
+    /// form it does not resolve, so the give-up is `record.undecoded`.
     GivenUp {
         record: String,
         at: Option<cadmpeg_ir::SourceProvenance>,
@@ -201,15 +203,19 @@ impl DroppedRecord {
                 at,
                 error,
                 dropping,
-            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(Identity::new(record)?, error)
-                .at(at)
-                .dropping(
-                    dropping
-                        .into_iter()
-                        .map(Identity::new)
-                        .collect::<Result<Vec<_>, _>>()?,
-                )
-                .loss(),
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                Identity::new(record)?,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
+                error,
+            )
+            .at(at)
+            .dropping(
+                dropping
+                    .into_iter()
+                    .map(Identity::new)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+            .loss(),
             Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
                 Identity::new(record)?,
                 Identity::new(needs)?,
@@ -541,7 +547,7 @@ struct ShellRecord {
 }
 
 /// Transfer limitations found while building a [`Brep`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Stats {
     /// Framed top-level model entity records across the selected stream site.
     pub(crate) source_entity_records: usize,
@@ -557,8 +563,6 @@ pub(crate) struct Stats {
     /// contradicts the ring order or an unwalked boundary-dummy canonical
     /// lacks partner corroboration.
     pub(crate) withheld_fin_partners: usize,
-    /// Rings withheld because a FIN forward link is not reciprocal.
-    pub(crate) withheld_fin_links: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -689,14 +693,28 @@ fn qualified_reference(value: &str, site: &str) -> String {
     }
 }
 
-/// The topology record `record` that the decode gives up for `code`, at
+/// The cause of the give-up of a face that names no loop.
+pub(crate) const FACE_WITHHELD: &str =
+    "the face names no loop and does not cover a whole closed surface";
+/// The cause of the give-up of a vertexless ring edge.
+pub(crate) const RING_EDGE_WITHHELD: &str =
+    "the vertexless ring edge fails reciprocal closed-carrier single-loop admission";
+/// The cause of the give-up of an edge whose FIN partners do not corroborate
+/// its ends.
+pub(crate) const FIN_PARTNERS_UNCORROBORATED: &str =
+    "the FIN partners of the edge do not corroborate its ends";
+/// The cause of the give-up of a loop with an edge whose canonical FIN the
+/// decode does not read.
+pub(crate) const LOOP_FIN_UNREAD: &str =
+    "an edge of the loop has no canonical FIN the decode reads";
+
+/// The topology record `record` that the decode gives up for `why`, at
 /// `offset` in `stream` where the record has one. `dropped` names the
 /// records the decode drops with it.
 fn topology_given_up(
     record: impl std::fmt::Display,
     stream: &cadmpeg_ir::StreamName,
     offset: Option<usize>,
-    code: crate::loss::SldprtLossCode,
     why: &str,
     dropped: &[SurfaceId],
 ) -> DroppedRecord {
@@ -709,7 +727,7 @@ fn topology_given_up(
                 u64_from_index(offset),
             )
         }),
-        error: format!("{}: {why}", code.kind()),
+        error: why.to_owned(),
         dropping: dropped
             .iter()
             .map(|surface| surface.as_str().to_owned())
@@ -790,7 +808,6 @@ struct WalkedFace {
     vertex_loops: Vec<(u32, u32)>,
     unresolved_loop: Option<u32>,
     unresolved_fins: Vec<u32>,
-    withheld_forward_links: usize,
     /// Walked loops that are not forward linked.
     unlinked_loops: HashSet<u32>,
     /// The loop records of the face whose FIN ring does not close, by cause,
@@ -1441,7 +1458,6 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut loop_ref = bridge.refs[2];
     let mut unresolved_loop = None;
     let mut unresolved_fins = Vec::new();
-    let mut withheld_forward_links = 0usize;
     let mut unlinked_loops = HashSet::new();
     let mut lost_loops = Vec::new();
     let mut chain_cut = None;
@@ -1508,7 +1524,6 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             }
             loops.push((loop_ref, ring));
         } else if ring_closed {
-            withheld_forward_links += 1;
             lost_loops.push((loop_ref, RingLoss::NonReciprocal));
         } else if ambiguous_fin {
             lost_loops.push((loop_ref, RingLoss::AmbiguousFin));
@@ -1525,7 +1540,6 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         vertex_loops,
         unresolved_loop,
         unresolved_fins,
-        withheld_forward_links,
         unlinked_loops,
         lost_loops,
         chain_cut,
@@ -3582,8 +3596,7 @@ fn report_withheld_ownership(
             id,
             stream,
             Some(node.offset),
-            crate::loss::SldprtLossCode::TopologyFaceWithheld,
-            "the face names no loop and does not cover a whole closed surface",
+            FACE_WITHHELD,
             &[id_surf(attr)],
         ));
     }
@@ -3752,7 +3765,6 @@ fn decode_graph_inner(
         .flat_map(|face| face.unresolved_fins.iter().copied())
         .collect::<HashSet<_>>()
         .len();
-    out.stats.withheld_fin_links = faces.iter().map(|face| face.withheld_forward_links).sum();
 
     // Edge attr -> walked FINs of the edge. The ring order supplies one end of
     // a boundary edge; a reciprocal twin corroborates it for a two-sided edge.
@@ -3823,8 +3835,7 @@ fn decode_graph_inner(
                 id_edge(edge_attr),
                 stream,
                 Some(record.offset),
-                crate::loss::SldprtLossCode::TopologyFinPartnerUnresolved,
-                "the FIN partners of the edge do not corroborate its ends",
+                FIN_PARTNERS_UNCORROBORATED,
                 &[],
             ));
         } else {
@@ -4016,8 +4027,7 @@ fn decode_graph_inner(
                 id_edge(e),
                 stream,
                 t.edge_uses().get(&e).map(|record| record.offset),
-                crate::loss::SldprtLossCode::TopologyRingEdgeWithheld,
-                "the vertexless ring edge fails reciprocal closed-carrier single-loop admission",
+                RING_EDGE_WITHHELD,
                 &[],
             ));
             continue;
@@ -4029,7 +4039,6 @@ fn decode_graph_inner(
                     id_edge(e),
                     stream,
                     Some(record.offset),
-                    crate::loss::SldprtLossCode::TopologyVertexRecordUnresolved,
                     "an end vertex of the edge does not resolve",
                     &[],
                 ));
@@ -4644,7 +4653,6 @@ fn decode_graph_inner(
                 t.bridges()
                     .get(&face.bridge_attr)
                     .map(|record| record.offset),
-                crate::loss::SldprtLossCode::TopologyFaceUnclaimed,
                 "no body record claims the face",
                 &[id_surf(face.bridge_attr)],
             ));
@@ -4710,15 +4718,14 @@ fn decode_graph_inner(
                 id_face(f.bridge_attr),
                 stream,
                 t.bridges().get(&f.bridge_attr).map(|record| record.offset),
-                crate::loss::SldprtLossCode::TopologyFaceWithheld,
-                "the face names no loop and does not cover a whole closed surface",
+                FACE_WITHHELD,
                 &[id_surf(f.bridge_attr)],
             ));
             continue;
         }
         let mut lost = Vec::new();
         for (loop_attr, loss) in &f.lost_loops {
-            lost.push((*loop_attr, loss.code(), loss.why()));
+            lost.push((*loop_attr, loss.why()));
         }
         for (loop_attr, ring) in &f.loops {
             if loop_set.contains(loop_attr) {
@@ -4732,43 +4739,29 @@ fn decode_graph_inner(
                 })
             };
             if broken_rings.contains(loop_attr) {
+                lost.push((*loop_attr, "the coedges of the loop do not form a ring"));
+            } else if !edge_of_ring(&withheld_edges) {
                 lost.push((
                     *loop_attr,
-                    crate::loss::SldprtLossCode::TopologyFinLinkUnresolved,
-                    "the coedges of the loop do not form a ring",
+                    if edge_of_ring(&unresolved_end_edges) {
+                        "an end vertex of an edge of the loop does not resolve"
+                    } else {
+                        LOOP_FIN_UNREAD
+                    },
                 ));
-            } else if !edge_of_ring(&withheld_edges) {
-                lost.push(if edge_of_ring(&unresolved_end_edges) {
-                    (
-                        *loop_attr,
-                        crate::loss::SldprtLossCode::TopologyVertexRecordUnresolved,
-                        "an end vertex of an edge of the loop does not resolve",
-                    )
-                } else {
-                    (
-                        *loop_attr,
-                        crate::loss::SldprtLossCode::TopologyFinPartnerUnresolved,
-                        "an edge of the loop has no canonical FIN the decode reads",
-                    )
-                });
             }
         }
         for (loop_attr, _) in &f.vertex_loops {
             if !loop_set.contains(loop_attr) {
-                lost.push((
-                    *loop_attr,
-                    crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
-                    "the vertex loop names no resolved vertex",
-                ));
+                lost.push((*loop_attr, "the vertex loop names no resolved vertex"));
             }
         }
-        for (loop_attr, code, why) in lost {
+        for (loop_attr, why) in lost {
             let loop_id = id_loop(loop_attr);
             out.dropped.push(topology_given_up(
                 &loop_id,
                 stream,
                 t.loops().get(&loop_attr).map(|record| record.offset),
-                code,
                 why,
                 &[],
             ));
@@ -10938,11 +10931,10 @@ mod tests {
             assert!(face.loops.is_partial());
             assert_eq!(face.loops.stated().count(), 0);
             assert_eq!(decoded.surfaces.len(), 1);
-            assert_eq!(decoded.stats.withheld_fin_links, 1);
             let losses = decoded.take_losses().unwrap();
             let charges = losses
                 .iter()
-                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
                 .map(|loss| loss.message.as_str())
                 .collect::<Vec<_>>();
             let [charge] = charges[..] else {

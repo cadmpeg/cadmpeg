@@ -6,11 +6,12 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    code_count, point_file_with_field, report_code_count, resolve_global_fields, strict_options,
-    valid_global_fields,
+    code_count, pinned_refusal, point_file_with_field, report_code_count, resolve_global_fields,
+    strict_options, valid_global_fields,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 
 #[test]
@@ -51,12 +52,12 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
         (5, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
         (6, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
         (7, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
-        (8, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
+        (8, Some(IgesLossCode::GlobalSemanticContextInvalid)),
         (9, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
-        (10, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
+        (10, Some(IgesLossCode::GlobalSemanticContextInvalid)),
         (16, Some(IgesLossCode::LineWeightScaleUnavailable)),
         (17, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
-        (18, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
+        (18, Some(IgesLossCode::GlobalSemanticContextInvalid)),
     ] {
         let mut fields = valid_global_fields();
         fields[index].clear();
@@ -125,7 +126,7 @@ fn omitted_sender_product_is_retained_as_null_for_reader_compatibility() {
 #[test]
 fn malformed_global_values_select_the_matrix_disposition_and_loss() {
     let metadata = IgesLossCode::GlobalMetadataFieldUnusable;
-    let semantic = IgesLossCode::GlobalSemanticContextSubstituted;
+    let semantic = IgesLossCode::GlobalSemanticContextInvalid;
     let length = IgesLossCode::GlobalLengthUnitUnresolved;
     let presentation = IgesLossCode::LineWeightScaleUnavailable;
     for (index, value, expected) in [
@@ -261,7 +262,7 @@ fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
         assert_eq!(substituted, 17, "field {field}");
         assert_eq!(losses.len(), 1, "field {field}: {losses:#?}");
         assert_eq!(
-            code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+            code_count(&losses, IgesLossCode::GlobalSemanticContextInvalid),
             1,
             "field {field}"
         );
@@ -325,7 +326,7 @@ fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
 }
 
 #[test]
-fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
+fn a_malformed_single_precision_significance_decodes_in_salvage_and_is_refused_when_pinned() {
     for value in ["-3", "1Hx"] {
         let bytes = point_file_with_field(8, value);
 
@@ -340,31 +341,52 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
             .unwrap();
         assert_eq!(result.ir().geometry.points.len(), 1, "{value}");
         assert_eq!(
-            report_code_count(
-                result.report(),
-                IgesLossCode::GlobalSemanticContextSubstituted
-            ),
+            report_code_count(result.report(), IgesLossCode::GlobalSemanticContextInvalid),
             1,
             "{value}: {:#?}",
             result.report().losses
         );
 
-        let error = IgesCodec
-            .decode(
-                &mut Cursor::new(bytes),
-                &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
-            )
-            .unwrap_err();
-        match error {
-            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-                rejection.loss().code.to_string(),
-                IgesLossCode::GlobalSemanticContextSubstituted
-                    .kind()
-                    .to_string()
-            ),
-            other => panic!("expected a shared-gate strict refusal, got {other:?}"),
-        }
+        assert_eq!(
+            pinned_refusal(bytes),
+            IgesLossCode::GlobalSemanticContextInvalid
+                .kind()
+                .to_string(),
+            "{value}"
+        );
     }
+}
+
+#[test]
+fn an_absent_significance_in_a_legacy_global_substitutes_without_a_floor() {
+    // Version flag 3 (IGES 2.0) states no Global field as required, so an
+    // absent field 9 is valid input and the substitution decodes when pinned.
+    let mut fields = valid_global_fields();
+    fields[8].clear();
+    fields[22] = "3".into();
+    let mut global = fields.join(",");
+    global.push(';');
+    let bytes = point_file_with_global(global.as_bytes());
+
+    let strict = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
+        .unwrap();
+    assert_eq!(
+        report_code_count(
+            strict.report(),
+            IgesLossCode::GlobalSemanticContextSubstituted
+        ),
+        1,
+        "{:#?}",
+        strict.report().losses
+    );
+    assert_eq!(
+        report_code_count(strict.report(), IgesLossCode::GlobalSemanticContextInvalid),
+        0
+    );
 }
 
 #[test]
@@ -382,10 +404,7 @@ fn a_negative_minimum_resolution_decodes_with_the_semantic_context_loss() {
     );
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
-        report_code_count(
-            result.report(),
-            IgesLossCode::GlobalSemanticContextSubstituted
-        ),
+        report_code_count(result.report(), IgesLossCode::GlobalSemanticContextInvalid),
         1
     );
 }

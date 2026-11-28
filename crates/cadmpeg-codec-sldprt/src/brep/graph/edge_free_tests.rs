@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::loss::SldprtLossCode;
 use crate::test_support::parasolid::sequence::{face_fields, loopless_nodes, sequence_of, F};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::loss::SldprtLossCode;
-
-/// The records the decode gave up with `code`.
-fn given_up(out: &super::Brep, code: SldprtLossCode) -> usize {
-    let prefix = format!("{}:", code.kind());
+/// How many records `out` gives up for one of `causes`.
+fn given_up(out: &super::Brep, causes: &[&str]) -> usize {
     out.dropped
         .iter()
         .filter(|dropped| {
-            matches!(dropped, super::DroppedRecord::GivenUp { error, .. } if error.starts_with(&prefix))
+            matches!(dropped, super::DroppedRecord::GivenUp { error, .. } if causes.contains(&error.as_str()))
         })
         .count()
 }
@@ -116,7 +114,7 @@ fn a_loopless_plane_keeps_its_shell_region_and_body_marked() {
     use cadmpeg_ir::topology::{BodyKind, Unstated};
     let out = decode(&loopless_nodes(50));
     assert!(out.faces.is_empty());
-    assert_eq!(given_up(&out, SldprtLossCode::TopologyFaceWithheld), 1);
+    assert_eq!(given_up(&out, &[super::FACE_WITHHELD]), 1);
     assert!(!out
         .dropped
         .iter()
@@ -207,7 +205,7 @@ fn a_spherical_face_whose_loop_record_is_missing_keeps_a_partial_loop_list() {
     };
     assert!(face.loops.is_partial());
     assert_eq!(face.loops.stated().count(), 0);
-    assert_eq!(given_up(&out, SldprtLossCode::TopologyFaceWithheld), 0);
+    assert_eq!(given_up(&out, &[crate::brep::graph::FACE_WITHHELD]), 0);
 }
 
 fn indexed(geometry: SolvedCurveGeometry) -> super::IndexedCurve {
@@ -277,7 +275,7 @@ fn a_reciprocal_ellipse_ring_keeps_its_sheet_face() {
         out.edges[0].param_range().unwrap().get(),
         [0.0, std::f64::consts::TAU]
     );
-    assert_eq!(given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld), 0);
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 0);
 }
 
 #[test]
@@ -288,7 +286,7 @@ fn an_ellipse_ring_without_a_mutual_partner_stays_withheld() {
     };
     assert!(face.loops.is_partial());
     assert!(out.edges.is_empty());
-    assert_eq!(given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld), 1);
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 1);
 }
 
 #[test]
@@ -377,7 +375,7 @@ fn a_bounded_ellipse_ring_requires_one_complete_revolution() {
         };
         assert_eq!(face.loops.is_partial(), !admitted);
         assert_eq!(
-            given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld),
+            given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]),
             usize::from(!admitted)
         );
     }
@@ -405,10 +403,16 @@ fn a_vertexless_ring_recovers_a_canonical_boundary_dummy() {
     );
     assert_eq!(out.stats.withheld_fin_partners, 0);
     assert_eq!(
-        given_up(&out, SldprtLossCode::TopologyFinPartnerUnresolved),
+        given_up(
+            &out,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
         0
     );
-    assert_eq!(given_up(&out, SldprtLossCode::TopologyRingEdgeWithheld), 0);
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 0);
 }
 
 #[test]
@@ -516,7 +520,6 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
         vertex_loops: Vec::new(),
         unresolved_loop: None,
         unresolved_fins: Vec::new(),
-        withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
         lost_loops: Vec::new(),
         chain_cut: None,
@@ -634,18 +637,24 @@ fn a_loop_whose_unrecorded_edge_has_an_unresolved_end_names_the_vertex() {
     let out = decode(&unresolved_end_sheet());
     assert!(out.loops.is_empty());
     assert!(out.edges.is_empty());
-    let loop_charge = format!("{}:", SldprtLossCode::TopologyVertexRecordUnresolved.kind());
+    let loop_charge = "an end vertex of an edge of the loop does not resolve";
     assert!(
         out.dropped.iter().any(|dropped| matches!(
             dropped,
             super::DroppedRecord::GivenUp { record, error, .. }
-                if record.contains("loop") && error.starts_with(&loop_charge)
+                if record.contains("loop") && error == loop_charge
         )),
         "{:#?}",
         out.dropped
     );
     assert_eq!(
-        given_up(&out, SldprtLossCode::TopologyFinPartnerUnresolved),
+        given_up(
+            &out,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
         0
     );
 }
