@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::design::configuration::DesignConfiguration;
 use cadmpeg_ir::design::evaluation::{
     ChainBack, Evaluation, EvaluationStatus, HeldState, StateBase,
 };
@@ -26,9 +27,10 @@ use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_parasolid::deltas::replay::MainLine;
+use cadmpeg_parasolid::records::deltas::{EventContent, Metadata};
 use cadmpeg_parasolid::records::PrimaryRecords;
 
-use super::{stateless, topology_ids, topology_len, Reach, Scope};
+use super::{admit_state, stateless, topology_ids, topology_len, Reach, Scope};
 use crate::container::{contains_ascii_case_insensitive, ContainerScan, Section};
 use crate::design_v11::names::{Names, Persistent};
 use crate::loss::SldprtLossCode;
@@ -184,9 +186,22 @@ pub(in crate::design_v11) fn states(
         else {
             continue;
         };
-        let Some(section) =
-            configuration_site(sources, scope, configuration, &content.delta.records)
+        let Some(configuration) = scope
+            .configurations
+            .iter()
+            .find(|record| &record.id == configuration)
         else {
+            continue;
+        };
+        let (section, has_unjoined_history) =
+            configuration_site(sources, configuration, &content.delta.records);
+        let Some(section) = section else {
+            if has_unjoined_history {
+                output.losses.push(configuration_unread(
+                    configuration,
+                    "its partition site could not be uniquely identified",
+                ));
+            }
             continue;
         };
         let key = section.site_key();
@@ -195,6 +210,12 @@ pub(in crate::design_v11) fn states(
         };
         evaluation.native_ref = native_ref(stored);
         let Some(mut joined) = latest.joins.sites.get(&key).cloned() else {
+            if has_earlier_marks(stored) {
+                output.losses.push(configuration_unread(
+                    configuration,
+                    "its saved marks cannot be joined to feature records",
+                ));
+            }
             continue;
         };
         if let Ok(marks) = &stored.marks {
@@ -222,7 +243,7 @@ pub(in crate::design_v11) fn states(
             });
         }
         let end = End {
-            configuration: Some(configuration),
+            configuration: Some(&configuration.id),
             base: StateBase::Evaluation(evaluation.id.clone()),
             status: evaluation.status,
             held: Held::Evaluation {
@@ -259,32 +280,30 @@ fn native_ref(stored: &StoredSite<'_>) -> Option<String> {
 
 fn configuration_site<'a>(
     sources: &Sources<'a>,
-    scope: &Scope<'_>,
-    configuration: &ConfigurationId,
+    configuration: &DesignConfiguration,
     records: &Topology,
-) -> Option<Section<'a>> {
-    let native = scope
-        .configurations
-        .iter()
-        .find(|record| &record.id == configuration)?
-        .native_ref
-        .as_deref()?;
+) -> (Option<Section<'a>>, bool) {
     let index = sources
         .histories
         .iter()
         .flat_map(|history| &history.configurations)
-        .find(|record| record.id == native)
+        .find(|record| Some(&record.id) == configuration.native_ref.as_ref())
         .and_then(crate::records::Configuration::partition_index)
         .and_then(|index| usize::try_from(index).ok());
-    let mut matches = sources.scan.sections().filter(|section| {
-        let Some(name) = section
-            .name()
-            .filter(|name| crate::container::is_partition_section(name))
-        else {
-            return false;
-        };
+    let partitions = || {
+        sources.scan.sections().filter_map(|section| {
+            let name = section
+                .name()
+                .filter(|name| crate::container::is_partition_section(name))?;
+            Some((
+                section,
+                index.is_some() && crate::container::configuration_index(name) == index,
+            ))
+        })
+    };
+    let mut matches = partitions().filter(|(section, indexed)| {
         if records.bodies.is_empty() {
-            index.is_some() && crate::container::configuration_index(name) == index
+            *indexed
         } else {
             let tail = format!("@{}", section.site_key());
             records
@@ -293,8 +312,42 @@ fn configuration_site<'a>(
                 .all(|body| body.id.as_str().ends_with(&tail))
         }
     });
-    let site = matches.next()?;
-    matches.next().is_none().then_some(site)
+    let site = matches
+        .next()
+        .filter(|_| matches.next().is_none())
+        .map(|(section, _)| section);
+    let has_unjoined_history = site.is_none()
+        && partitions().any(|(section, indexed)| {
+            let key = section.site_key();
+            let tail = format!("@{key}");
+            ((records.bodies.is_empty() && indexed)
+                || records
+                    .bodies
+                    .iter()
+                    .any(|body| body.id.as_str().ends_with(&tail)))
+                && sources.marks.get(&key).is_some_and(has_earlier_marks)
+        });
+    (site, has_unjoined_history)
+}
+
+fn has_earlier_marks(stored: &StoredSite<'_>) -> bool {
+    stored.chain.as_ref().map_or_else(
+        || {
+            stored
+                .frame
+                .events()
+                .iter()
+                .any(|event| matches!(event.content(), EventContent::Metadata(Metadata::Pmark(_))))
+        },
+        |chain| chain.main.len() > 1,
+    )
+}
+
+fn configuration_unread(configuration: &DesignConfiguration, reason: &str) -> LossNote {
+    SldprtLossCode::HistoryStatesUnread.note(format!(
+        "Configuration {} ({:?}) stores states between features that could not be read ({}).",
+        configuration.id, configuration.name, reason,
+    ))
 }
 
 fn qualified(section: Section<'_>, bodies: &[BodyId]) -> Option<String> {
@@ -477,16 +530,11 @@ impl Reader<'_, '_> {
             }
         };
         let mut depth = u64::from(matches!(end.base, StateBase::Evaluation(_)));
-        let limit = self.ctx.policy().limits.max_state_chain_depth;
         let mut chain = None;
         let mut changed = end.held.has_bodies() == replay.state().is_empty();
         let mut generated = None;
         for delta in line.deltas() {
             if joined.states.is_empty() {
-                break;
-            }
-            if depth >= limit {
-                joined.refuse("the part's evaluation-chain depth limit is reached");
                 break;
             }
             if let Err(error) = replay.step() {
@@ -520,6 +568,7 @@ impl Reader<'_, '_> {
                             continue;
                         }
                     };
+                    admit_state(self.ctx, depth)?;
                     let chain = match &mut chain {
                         Some(chain) => chain,
                         None => chain
@@ -531,6 +580,7 @@ impl Reader<'_, '_> {
                     generated = None;
                     (content, state.annotations)
                 } else {
+                    admit_state(self.ctx, depth)?;
                     let chain = match &mut chain {
                         Some(chain) => chain,
                         None => chain

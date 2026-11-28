@@ -270,7 +270,7 @@ pub(crate) fn cache(value: &LegacyValue) -> (ValueKind, Option<ParameterValue>) 
 
 /// The expression `text` states for a parameter of `kind`, whose names in
 /// `vocabulary` are references to those parameters.
-pub(super) fn expression(
+pub(crate) fn expression(
     text: &str,
     kind: &ValueKind,
     vocabulary: &HashMap<&str, &ParameterId>,
@@ -366,7 +366,7 @@ pub(crate) fn literal(text: &str, kind: &ValueKind) -> Option<Node<ParameterRef>
 
 /// The tokens of an expression's source text, each name of a parameter it
 /// reads a reference token.
-fn tokens(
+pub(crate) fn tokens(
     text: &str,
     references: &HashMap<&str, &ParameterId>,
 ) -> Vec<ExpressionToken<ParameterRef>> {

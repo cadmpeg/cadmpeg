@@ -459,6 +459,7 @@ pub(super) fn boolean_inputs<'a>(
     feature: &'a Value,
     ordinal: usize,
     inputs: &topology::Inputs<'_>,
+    usage: Option<&super::parameter_usage::ParameterUsage<'_>>,
 ) -> Mapping<BooleanInputs<'a>> {
     if feature
         .get("namespace")
@@ -503,6 +504,17 @@ pub(super) fn boolean_inputs<'a>(
         return Err("Boolean parameter offset is not supported yet".into());
     }
     let keep = features::enabled(feature, "keepTools")?;
+    if let Some(usage) = usage {
+        usage.account(&["operationType", "keepTools"]);
+        usage.account(&[
+            "offset",
+            "offsetAll",
+            "entitiesToOffset",
+            "offsetDistance",
+            "oppositeDirection",
+            "reFillet",
+        ]);
+    }
     let parts = inputs.solid_parts(ordinal)?;
     let selected = |key| -> Mapping<Vec<BooleanBody<'a>>> {
         let mut picked: Vec<BooleanBody<'a>> = Vec::new();
@@ -550,6 +562,9 @@ pub(super) fn boolean_inputs<'a>(
     if tools.is_empty() {
         return Err("the Boolean names no tools".into());
     }
+    if let Some(usage) = usage {
+        usage.account(&["tools", "targets"]);
+    }
     Ok(BooleanInputs {
         operation,
         keep,
@@ -571,7 +586,7 @@ pub(super) fn boolean(
         keep,
         target,
         tools,
-    } = boolean_inputs(feature, ordinal, inputs)?;
+    } = boolean_inputs(feature, ordinal, inputs, None)?;
     if target.is_empty() {
         return Err(format!(
             "a {operation} Boolean combines its {} tool bodies as peers; the combine form names one target body, so the operands cannot be stated",

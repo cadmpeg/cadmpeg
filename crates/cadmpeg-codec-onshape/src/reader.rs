@@ -9,6 +9,7 @@ mod design;
 pub(super) mod expression;
 mod features;
 mod intersection;
+mod parameter_usage;
 mod planes;
 pub(super) mod query;
 mod regions;
@@ -810,6 +811,7 @@ fn studio_in(
             }
         }
         admit_history(ctx, feature, &mut model.ir.model)?;
+        let usage = parameter_usage::ParameterUsage::new(feature);
         let sizes = (
             model.ir.model.sketches.len(),
             model.ir.model.sketch_entities.len(),
@@ -845,6 +847,7 @@ fn studio_in(
                 &mut model.ir.model,
                 report,
                 &unresolved_variables,
+                &usage,
             )
             .and_then(|definition| {
                 json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
@@ -868,6 +871,7 @@ fn studio_in(
                         &inputs,
                         ordinal,
                         &unresolved_variables,
+                        &usage,
                     )?;
                     thin_design = Some(design);
                     if let Some(assumed) = assumed {
@@ -946,6 +950,7 @@ fn studio_in(
             feature,
             ordinal,
             thin_design.take(),
+            usage,
             &model.ir.model,
             &unresolved_variables,
         );
