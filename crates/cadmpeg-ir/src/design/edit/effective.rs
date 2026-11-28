@@ -140,6 +140,9 @@ fn same_record(item: &PresentationItem, entity: &AppearanceTarget) -> bool {
         (PresentationItem::Tessellation { tessellation }, AppearanceTarget::Tessellation(id)) => {
             tessellation == id
         }
+        (PresentationItem::PointCloud { point_cloud }, AppearanceTarget::Record { arena, id }) => {
+            arena.as_str() == "point_clouds" && point_cloud.as_ref() == id
+        }
         _ => false,
     }
 }
@@ -212,7 +215,25 @@ impl CadIr {
                 .find(|record| &record.id == body)
                 .and_then(|record| record.visible)
         });
-        if own == Some(false) {
+        let carrier = match &target.entity {
+            AppearanceTarget::Tessellation(id) => self
+                .model
+                .tessellations
+                .iter()
+                .find(|mesh| &mesh.id == id)
+                .and_then(|mesh| match &mesh.of {
+                    crate::tessellation::Meshed::Definition { visible, .. } => *visible,
+                    _ => None,
+                }),
+            AppearanceTarget::Record { arena, id } if arena.as_str() == "point_clouds" => self
+                .model
+                .point_clouds
+                .iter()
+                .find(|cloud| cloud.id.as_ref() == id)
+                .and_then(|cloud| cloud.visible),
+            _ => None,
+        };
+        if own == Some(false) || carrier == Some(false) {
             return Ok(false);
         }
         let mut entities = vec![target.entity.clone()];

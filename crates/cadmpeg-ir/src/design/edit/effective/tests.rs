@@ -654,6 +654,66 @@ fn a_hidden_parent_layer_hides_its_sublayers_items() {
     assert!(document.effective_visibility(&target).unwrap());
 }
 
+#[test]
+fn a_definition_mesh_visibility_is_a_display_gate() {
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+
+    let mut document = assembly();
+    let mesh_id = id("tessellation", 1);
+    let mesh = Tessellation::new(
+        mesh_id,
+        TessellationMesh::List {
+            vertices: Vec::new(),
+            triangles: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_of(Meshed::Definition {
+        definition: definition(2),
+        name: None,
+        color: None,
+        visible: Some(false),
+    });
+    let target = InstanceTarget::new(AppearanceTarget::Tessellation(mesh.id.clone()));
+    document.model.tessellations.push(mesh);
+    assert!(!document.effective_visibility(&target).unwrap());
+    if let Meshed::Definition { visible, .. } = &mut document.model.tessellations[0].of {
+        *visible = Some(true);
+    }
+    assert!(document.effective_visibility(&target).unwrap());
+}
+
+#[test]
+fn a_point_cloud_visibility_and_its_layer_are_display_gates() {
+    let mut document = assembly();
+    let cloud: crate::point_cloud::PointCloud = json::from_value(cadmpeg_core::json!({
+        "id": "test:effective:point-cloud#1", "definition": definition(2),
+        "positions": [], "normals": [], "colors": [], "channels": [], "visible": false
+    }))
+    .unwrap();
+    let target = InstanceTarget::new(AppearanceTarget::Record {
+        arena: NonBlankString::new("point_clouds").unwrap(),
+        id: (&cloud.id).into(),
+    });
+    document.model.point_clouds.push(cloud);
+    assert!(!document.effective_visibility(&target).unwrap());
+    document.model.point_clouds[0].visible = Some(true);
+    assert!(document.effective_visibility(&target).unwrap());
+    document.model.presentation_layers.push(PresentationLayer {
+        id: id("layer", 1),
+        name: "cloud".into(),
+        parent: None,
+        description: None,
+        visible: Some(false),
+        items: vec![InstanceTarget::new(PresentationItem::PointCloud {
+            point_cloud: document.model.point_clouds[0].id.clone(),
+        })],
+        native_ref: None,
+    });
+    assert!(!document.effective_visibility(&target).unwrap());
+}
+
 fn arrangement(key: u32, scope: u32, overrides: Overrides) -> Arrangement {
     Arrangement {
         id: id("arrangement", key),
