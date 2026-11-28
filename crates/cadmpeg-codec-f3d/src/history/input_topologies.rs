@@ -11,6 +11,7 @@ use crate::history_records::{
 };
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 pub(crate) fn project_feature_input_topologies(
     features: &[cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -18,19 +19,45 @@ pub(crate) fn project_feature_input_topologies(
     edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
     scope_histories: &HashMap<String, String>,
 ) -> Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
+    project_feature_input_topologies_with_senses(
+        features,
+        scopes,
+        histories,
+        edge_operands,
+        scope_histories,
+        &super::chamfer_supports::ChamferSenses::default(),
+    )
+}
+
+/// Project the input topology of every feature, with the edge and face
+/// geometry of each input state.
+pub(crate) fn project_feature_input_topologies_with_senses(
+    features: &[cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    histories: &mut [AsmHistory],
+    edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
+    scope_histories: &HashMap<String, String>,
+    chamfer_senses: &super::chamfer_supports::ChamferSenses,
+) -> Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
+    let mut scope_by_id = HashMap::<
+        &str,
+        Option<&crate::records::feature::scope::DesignParameterScope>,
+    >::with_capacity(scopes.len());
+    for scope in scopes {
+        scope_by_id
+            .entry(scope.id.as_str())
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(scope));
+    }
     let mut jobs = Vec::new();
     for (feature_position, feature) in features.iter().enumerate() {
         let histories = &*histories;
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
+        let Some(Some(scope)) = scope_by_id.get(native_ref).copied() else {
             continue;
         };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
         let scoped_history = if scope_histories.contains_key(&scope.id) {
             let Some(history) = bound_scope_history(&scope.id, scope_histories, histories) else {
                 continue;
@@ -81,7 +108,13 @@ pub(crate) fn project_feature_input_topologies(
         .iter()
         .all(|history| history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES);
     let mut projected = if keep_materialized && workers > 1 && jobs.len() >= 8 {
-        super::output_measure::project_input_topologies_parallel(features, histories, jobs, workers)
+        super::output_measure::project_input_topologies_parallel(
+            features,
+            histories,
+            jobs,
+            workers,
+            chamfer_senses,
+        )
     } else {
         let mut projected = Vec::new();
         visit_states_oldest_first(
@@ -91,9 +124,13 @@ pub(crate) fn project_feature_input_topologies(
                 let Some(feature) = features.get(feature_position) else {
                     return;
                 };
-                if let Some(input) =
-                    project_input_topology(feature, history, state, previous_state_id)
-                {
+                if let Some(input) = project_input_topology_with_senses(
+                    feature,
+                    history,
+                    state,
+                    previous_state_id,
+                    chamfer_senses,
+                ) {
                     projected.push((feature_position, input));
                 }
             },
@@ -104,11 +141,28 @@ pub(crate) fn project_feature_input_topologies(
     projected.into_iter().map(|(_, input)| input).collect()
 }
 
+#[cfg(test)]
 pub(super) fn project_input_topology(
     feature: &cadmpeg_ir::features::Feature,
     history: &AsmHistory,
     state: &AsmDeltaState,
     previous_state_id: i64,
+) -> Option<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
+    project_input_topology_with_senses(
+        feature,
+        history,
+        state,
+        previous_state_id,
+        &super::chamfer_supports::ChamferSenses::default(),
+    )
+}
+
+pub(super) fn project_input_topology_with_senses(
+    feature: &cadmpeg_ir::features::Feature,
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+    previous_state_id: i64,
+    chamfer_senses: &super::chamfer_supports::ChamferSenses,
 ) -> Option<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
     let topology = history.topology(state)?;
     let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
@@ -125,7 +179,14 @@ pub(super) fn project_input_topology(
         crate::ids::history_input_vertex_id(&prefix, slot)
     })?;
     let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
-    super::chamfer_supports::attach(feature, &history.id, topology, &prefix, &mut edge_geometry);
+    super::chamfer_supports::attach(
+        feature,
+        chamfer_senses,
+        &history.id,
+        topology,
+        &prefix,
+        &mut edge_geometry,
+    );
     let face_owners = project_input_face_owners(topology, &prefix);
     let face_geometry = project_input_face_geometry(topology, &prefix);
     let id = crate::ids::history_input_state_id(&prefix);

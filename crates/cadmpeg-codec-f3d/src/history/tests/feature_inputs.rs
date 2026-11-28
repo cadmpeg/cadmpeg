@@ -688,3 +688,182 @@ fn input_face_geometry_keeps_only_the_faces_a_feature_selects() {
     .unwrap();
     assert_eq!(topologies[0].face_geometry, vec![geometry(3, cylinder)]);
 }
+
+/// A Hole that selects face 10 and a Chamfer that selects edge 2, both on the
+/// input state 4 of one history, projected as the decode path projects them:
+/// before the history releases its projection rows, then reduced to the
+/// selected geometry once the definitions are final.
+#[test]
+fn hole_and_chamfer_keep_selected_input_geometry_across_projection_release() {
+    use crate::history_records::{
+        AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalTopology,
+    };
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection, NonEmptyMembers};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let (base, _, history) = input_fixture();
+    let mut topology = AsmHistoricalTopology {
+        bodies: vec![1],
+        faces: vec![10, 20, 30],
+        edges: vec![1, 2],
+        vertices: vec![4, 5],
+        loops: vec![100, 200, 300],
+        ..AsmHistoricalTopology::default()
+    };
+    for (face, loop_) in [(10, 100), (20, 200), (30, 300)] {
+        topology.face_loops.push(AsmHistoricalRelation {
+            owner_ref: face,
+            member_refs: vec![loop_],
+        });
+    }
+    for (coedge, loop_, edge) in [(101, 100, 1), (201, 200, 1), (202, 200, 2), (301, 300, 2)] {
+        topology.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop: loop_,
+            edge,
+            next: coedge,
+            previous: coedge,
+            radial_next: coedge,
+        });
+    }
+    for edge in [1, 2] {
+        topology.edge_vertices.push(AsmHistoricalEdge {
+            edge,
+            start_vertex: 4,
+            end_vertex: 5,
+        });
+        topology
+            .edge_samples
+            .push(crate::test_support::history::edge_sample(
+                edge,
+                Point3::new(0.0, 0.0, f64::from(u8::try_from(edge).unwrap())),
+                None,
+            ));
+    }
+    let state = history.states()[0].clone();
+    let mut histories = vec![crate::test_support::history::history(
+        history.id.clone(),
+        history.byte_offset,
+        history.preamble,
+        false,
+        vec![(state, Some(topology), Vec::new())],
+    )];
+
+    let scope_for = |id: &str| {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            id,
+            crate::records::feature::scope::DesignFeatureKind::WorkPoint,
+            7,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.previous_history_state_id = Some(4);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    let mut hole = base.clone();
+    hole.id = "f3d:model:feature#hole".to_owned().try_into().unwrap();
+    hole.native_ref = Some("f3d:design:scope#hole".to_owned());
+    let mut chamfer = base.clone();
+    chamfer.id = "f3d:model:feature#chamfer".to_owned().try_into().unwrap();
+    chamfer.native_ref = Some("f3d:design:scope#chamfer".to_owned());
+    let scopes = [
+        scope_for("f3d:design:scope#hole"),
+        scope_for("f3d:design:scope#chamfer"),
+    ];
+
+    let hole_prefix = crate::ids::feature_input_prefix(&hole.id, 4);
+    let chamfer_prefix = crate::ids::feature_input_prefix(&chamfer.id, 4);
+    let mut hole_definition: cadmpeg_ir::features::FeatureDefinition =
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({"kind": "operation", "value": {"kind": "hole", "value": {"face": {"kind": "faces", "value": ["test:model:face#support"]},
+            "placements": [{
+                "kind": "directed",
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": -1.0}
+            }],
+            "shape": {
+                "construction": {
+                    "kind": "form",
+                    "value": {"kind": {"kind": "simple_drilled", "drill_point_angle": 2.0}}
+                },
+                "diameter": 5.0
+            },
+            "extent": {"kind": "blind", "length": 10.0}}}}))
+        .unwrap();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(FeatureOperation::Hole { face, .. }) =
+        &mut hole_definition
+    else {
+        panic!("Hole definition");
+    };
+    *face = Some(
+        FaceSelection::historical(
+            crate::ids::history_input_state_id(&hole_prefix),
+            vec![crate::ids::history_input_face_id(&hole_prefix, 10)],
+            "f3d:test:hole-face".to_owned(),
+        )
+        .unwrap(),
+    );
+    hole.evaluation = FeatureEvaluation::from_definition(hole_definition);
+    chamfer.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Chamfer {
+            groups: NonEmptyMembers::one(ChamferGroup {
+                edges: EdgeSelection::historical(
+                    crate::ids::history_input_state_id(&chamfer_prefix),
+                    vec![crate::ids::history_input_edge_id(&chamfer_prefix, 2)],
+                    "f3d:test:chamfer-group".to_owned(),
+                )
+                .unwrap(),
+                spec: ChamferSpec::Distance {
+                    distance: PositiveLength::new(1.0).unwrap(),
+                },
+            }),
+            flip_direction: false,
+        },
+    ));
+    let features = [hole, chamfer];
+
+    let mut topologies =
+        super::super::input_topologies::project_feature_input_topologies_with_senses(
+            &features,
+            &scopes,
+            &mut histories,
+            &[],
+            &std::collections::HashMap::new(),
+            &crate::history::ChamferSenses::default(),
+        );
+    assert_eq!(topologies.len(), 2);
+    crate::history::discard_projection_caches(&mut histories);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::input_topologies::retain_selected_edge_geometry(&ctx, &features, &mut topologies)
+        .unwrap();
+
+    let edges_of = |topology: &cadmpeg_ir::features::evaluation::FeatureInputTopology| {
+        topology
+            .edge_geometry
+            .iter()
+            .map(|geometry| geometry.edge.as_str().to_owned())
+            .collect::<Vec<_>>()
+    };
+    // The Hole selects face 10, so it keeps edge 1, the one edge that bounds it.
+    assert_eq!(
+        edges_of(&topologies[0]),
+        vec![crate::ids::history_input_edge_id(&hole_prefix, 1)
+            .as_str()
+            .to_owned()]
+    );
+    // The Chamfer keeps the edge it selects.
+    assert_eq!(
+        edges_of(&topologies[1]),
+        vec![crate::ids::history_input_edge_id(&chamfer_prefix, 2)
+            .as_str()
+            .to_owned()]
+    );
+}

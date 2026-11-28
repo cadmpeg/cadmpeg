@@ -5,7 +5,7 @@ pub(crate) mod identities;
 
 use std::collections::HashMap;
 
-use identities::FastBuildHasher;
+pub use identities::{FastBuildHasher, IdentityHasher};
 use std::sync::OnceLock;
 
 use crate::appearance::Appearance;

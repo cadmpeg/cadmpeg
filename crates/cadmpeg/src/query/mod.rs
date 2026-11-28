@@ -309,7 +309,7 @@ struct ExportReportProbe {
     losses: Vec<LossProbe>,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ExportIdentityProbe {
     Cadir {},

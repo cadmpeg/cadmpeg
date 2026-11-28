@@ -97,3 +97,38 @@ fn a_loft_pass_refusal_keeps_the_decode_and_charges_a_loss() {
         inferred[0]
     );
 }
+
+#[test]
+fn loft_evidence_leaves_the_required_design_timeline_its_entities() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let bytes = include_bytes!("../../../../corpus/f3d/reverse_normal_loft.f3d");
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes_at(
+        bytes,
+        &arena,
+        &DecodePolicy::default(),
+        DecodeDepth::Design,
+    )
+    .expect("fixture root");
+    crate::history::history_bodies::inject_loft_pass_refusal();
+    let required = crate::decode::decode(&ctx, root).expect("timeline without optional evidence");
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_entities(u64::MAX, "measure charge")
+    else {
+        panic!("session use is measurable");
+    };
+    assert!(!required.ir.design.containers.is_empty());
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_entities = limit.used;
+    let (bounded, root) =
+        DecodeContext::from_root_bytes_at(bytes, &arena, &policy, DecodeDepth::Design)
+            .expect("bounded fixture root");
+    let decoded = crate::decode::decode(&bounded, root)
+        .expect("the optional Loft pass leaves enough entities for the timeline");
+    assert_eq!(decoded.ir, required.ir);
+    assert!(decoded.body.losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureLoftSolidInferred.kind()
+            && loss.message.contains("at its own history state")
+    }));
+}

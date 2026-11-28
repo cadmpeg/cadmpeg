@@ -16,6 +16,7 @@ categories = ["encoding", "parser-implementations", "graphics"]
 [dependencies]
 cadmpeg-container.workspace = true
 cadmpeg-core.workspace = true
+cadmpeg-derive.workspace = true
 cadmpeg-ir.workspace = true
 # Select flate2's default Rust backend when this crate is built in isolation.
 flate2.workspace = true

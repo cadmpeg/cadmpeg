@@ -398,6 +398,74 @@ fn sketch_owner_native() -> CatiaNative {
     }
 }
 
+/// An entity record of `graph` whose compact definition names `class`.
+fn compact_entity(
+    object: &mut CatiaObjectRecord,
+    class: &str,
+) -> crate::native::entity_record::CatiaEntityRecord {
+    let pair = object.entity.as_mut().unwrap();
+    let entity_id = pair.id;
+    pair.record = format!("entity-{entity_id}");
+    crate::native::entity_record::CatiaEntityRecord {
+        id: pair.record.clone(),
+        object_graph: object.parent.clone(),
+        object_record: object.id.clone(),
+        ordinal: 0,
+        byte_offset: 0,
+        lead: 0,
+        body: crate::native::entity_record::CatiaEntityRecordBody::empty_nested(),
+        definition_schema_selections: Vec::new(),
+        compact_class: Some(crate::native::feature_tree::CatiaCompactClass {
+            token: crate::native::feature_tree::CatiaFieldToken::Tag(0x40),
+            ordinal: 12,
+            entry: "class-entry".to_string(),
+            name: class.to_string(),
+        }),
+        entity_id,
+        value_schema_selections: Vec::new(),
+        range_interval: None,
+        object_production: None,
+        value_production: None,
+        reference_signature: None,
+        suffix: None,
+        suffix_schema_selection: None,
+        cached_value_views: crate::native::entity_record::CachedValueViews::default(),
+    }
+}
+
+/// Only a unique reciprocal pair with a read class can contradict a sketch owner.
+#[test]
+fn a_sketch_owner_whose_entity_is_another_class_is_no_sketch() {
+    let sketches = |class: &str, paired: bool, duplicate: bool| {
+        let mut native = sketch_owner_native();
+        let mut entity = compact_entity(&mut native.object_graphs[0].records[0], class);
+        if !paired {
+            entity.object_record = "unpaired-record".to_owned();
+        }
+        native.entity_records = vec![entity.clone()];
+        if duplicate {
+            native.entity_records.push(entity);
+        }
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_design_features(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
+        .unwrap();
+        ir.model.sketches.len()
+    };
+    assert_eq!(sketches("PRTSketch", true, false), 1);
+    assert_eq!(sketches("Pad", true, false), 0);
+    assert_eq!(sketches("", true, false), 1);
+    assert_eq!(sketches(" ", true, false), 1);
+    assert_eq!(sketches("Pad", false, false), 1);
+    assert_eq!(sketches("Pad", true, true), 1);
+}
+
 #[test]
 fn design_sketch_entity_limit_refuses_before_sketch_push() {
     let native = sketch_owner_native();
@@ -839,4 +907,39 @@ fn feature_parent_cycles_and_their_tails_are_cyclic() {
         .chain((0..=LENGTH).map(|index| id("tail", index)))
         .collect::<HashSet<_>>();
     assert_eq!(cyclic, expected);
+}
+
+/// A principal-plane declaration on a record whose compact class is no
+/// plane reads no feature; on a `GSMPlane` record it reads one.
+#[test]
+fn a_principal_plane_needs_a_plane_record() {
+    use crate::test_support::test_container::outer_container_catpart;
+    use crate::test_support::test_feature_tree::{compact, stream_with_catalog};
+    use cadmpeg_ir::codec::Codec;
+
+    let catalog = [
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+        "Pad",
+        "GSMPlane",
+    ];
+    let features = |tag: u8| {
+        let records = [
+            (2, compact(0x08, tag), vec![0xfe]),
+            (3, compact(0x08, tag), vec![0xfe]),
+        ];
+        let bytes = outer_container_catpart(&stream_with_catalog(&records, &catalog)).0;
+        CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode")
+            .ir()
+            .model
+            .features
+            .len()
+    };
+    assert_eq!(features(0x39), 0);
+    assert_eq!(features(0x3a), 1);
 }

@@ -1360,7 +1360,6 @@ pub(crate) fn decode_parameter_owners(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
         let stream = crate::ids::native_scope(&entry.name);
         if streams.contains_key(&stream) {
             return Err(CodecError::Malformed(
@@ -1371,7 +1370,7 @@ pub(crate) fn decode_parameter_owners(
         // Primary frames whose MetaStream type is the parameter-owner type.
         let owner_typed = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
             .and_then(|meta| {
-                super::meta::design_primary_frames(bytes, &meta)
+                super::meta::scan_design_primary_frames(scan, &entry.name, &meta)
                     .ok()
                     .map(|frames| {
                         frames
@@ -1388,9 +1387,9 @@ pub(crate) fn decode_parameter_owners(
                     })
             })
             .unwrap_or_default();
-        streams
-            .entry(stream)
-            .or_insert((entry, IndexedRecordOffsets::build(bytes), owner_typed));
+        if let std::collections::hash_map::Entry::Vacant(slot) = streams.entry(stream) {
+            slot.insert((entry, scan.design_record_offsets(&entry.name)?, owner_typed));
+        }
     }
     let mut out = Vec::new();
     // Pipe scalar owners are canonical records of their scope; they are read
@@ -1546,7 +1545,7 @@ fn pipe_scalar_owners(
         return Ok(Vec::new());
     }
     let bytes = scan.entry_bytes(entry_name)?;
-    let Ok(frames) = super::meta::design_primary_frames(bytes, &meta) else {
+    let Ok(frames) = super::meta::scan_design_primary_frames(scan, entry_name, &meta) else {
         return Ok(Vec::new());
     };
     let mut registrations = HashMap::<u64, usize>::new();

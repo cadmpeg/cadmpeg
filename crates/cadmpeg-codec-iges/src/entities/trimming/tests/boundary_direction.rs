@@ -401,7 +401,7 @@ fn an_invalid_face_charges_no_unresolved_winding_for_its_valid_boundaries() {
     assert!(result.ir().geometry.faces.is_empty());
     assert!(
         losses.iter().any(|loss| {
-            loss.code == IgesLossCode::GeometryNotProjected.kind()
+            crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
                 && loss.message.contains("do not form a closed ring")
         }),
         "{losses:#?}"
