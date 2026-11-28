@@ -2553,6 +2553,24 @@ pub(crate) mod cut_list_folder_tail {
     pub(crate) const ONE_LAST_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `cut_list_sort_head` record.
+///
+/// Spec §Extrusion feature objects. Record length 10 B.
+///
+/// ```text
+/// The bytes a solid-body folder that holds a cut list writes before its `moCutListSortOptions_c`.
+/// ```
+pub(crate) mod cut_list_sort_head {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 10;
+    /// Offset of `word` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const WORD: usize = 0;
+    /// Offset of `zeros` (`bytes[6]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS: usize = 4;
+    /// Stated value of `zeros` (`bytes[6]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
 /// Byte offsets for the `revolution_turn_block` record.
 ///
 /// Spec §Extrusion feature objects. Record length 9 B.

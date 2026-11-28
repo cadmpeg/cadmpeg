@@ -2828,6 +2828,20 @@ Parsed by:
 | 35 | 4 | `one_after_zeros` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
 | 39 | 4 | `one_last` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
 
+## `cut_list_sort_head`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 10 B
+
+The bytes a solid-body folder that holds a cut list writes before its `moCutListSortOptions_c`.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word` | `u32` | little | spec | u32 `0` or `1`, six zero bytes |
+| 4 | 6 | `zeros` | `bytes[6]` | little | spec | six zero bytes and a `moCutListSortOptions_c` · value `[0, 0, 0, 0, 0, 0]` |
+
 ## `revolution_turn_block`
 
 Spec §Extrusion feature objects · layout: byte offsets · size: 9 B

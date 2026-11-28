@@ -1,5 +1,6 @@
 use super::{
-    at_cut_list_tail, axistail, is_turn_block, scaled_bodies, turn_block_after_zeros, M12345,
+    at_cut_list_tail, axistail, cut_list_sort_head, is_turn_block, scaled_bodies,
+    turn_block_after_zeros, M12345,
 };
 use crate::carchive::reader::Reader;
 use crate::carchive::reader::V;
@@ -233,4 +234,45 @@ fn a_cut_list_tail_cut_short_by_the_stream_end_is_not_a_tail() {
     let mut bytes = cut_list_tail(3);
     bytes.pop();
     assert!(!with_reader(&bytes, at_cut_list_tail));
+}
+
+const SORT_OPTIONS: &[u8] = b"\xff\xff\x01\x00\x16\x00moCutListSortOptions_c";
+/// A cut-list sort head with `word` and `six` as its six bytes, then `next`.
+fn sort_head(word: u32, six: [u8; 6], next: &[u8]) -> Vec<u8> {
+    let mut bytes = word.to_le_bytes().to_vec();
+    bytes.extend(six);
+    bytes.extend(next);
+    bytes
+}
+
+#[test]
+fn a_cut_list_sort_head_holds_word_zero_or_one() {
+    for word in [0, 1] {
+        let bytes = sort_head(word, [0; 6], SORT_OPTIONS);
+        assert_eq!(with_reader(&bytes, cut_list_sort_head), Some(word));
+    }
+}
+
+#[test]
+fn a_cut_list_sort_head_with_another_word_is_not_a_head() {
+    let bytes = sort_head(2, [0; 6], SORT_OPTIONS);
+    assert_eq!(with_reader(&bytes, cut_list_sort_head), None);
+}
+
+#[test]
+fn a_cut_list_sort_head_with_a_nonzero_byte_is_not_a_head() {
+    let bytes = sort_head(0, [0, 0, 0, 1, 0, 0], SORT_OPTIONS);
+    assert_eq!(with_reader(&bytes, cut_list_sort_head), None);
+}
+
+#[test]
+fn twelve_zero_bytes_are_not_a_cut_list_sort_head() {
+    let bytes = sort_head(0, [0; 6], &[0, 0, 0x01, 0x80]);
+    assert_eq!(with_reader(&bytes, cut_list_sort_head), None);
+}
+
+#[test]
+fn a_cut_list_sort_head_cut_short_by_the_stream_end_is_not_a_head() {
+    let bytes = sort_head(0, [0; 6], &[0xff]);
+    assert_eq!(with_reader(&bytes, cut_list_sort_head), None);
 }
