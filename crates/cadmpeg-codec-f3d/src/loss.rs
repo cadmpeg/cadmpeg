@@ -206,6 +206,9 @@ pub(crate) enum F3dLossCode {
     /// Sketches take the Feature label composed from the scope kind spelling
     /// and feature ordinal instead of a stored name.
     SketchNameComposedFromFeatureOrdinal,
+    /// A construction Feature takes the name composed from the scope kind
+    /// spelling and feature ordinal instead of a stored name.
+    FeatureConstructionNameComposed,
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
@@ -1586,6 +1589,7 @@ impl F3dLossCode {
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
         Self::SketchNameComposedFromFeatureOrdinal,
+        Self::FeatureConstructionNameComposed,
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
@@ -2473,6 +2477,7 @@ impl F3dLossCode {
             Self::SketchNameComposedFromFeatureOrdinal => {
                 "sketch.name-composed-from-feature-ordinal"
             }
+            Self::FeatureConstructionNameComposed => "feature.construction-name-composed",
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
@@ -3741,6 +3746,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
             | Self::SketchNameComposedFromFeatureOrdinal
+            | Self::FeatureConstructionNameComposed
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
@@ -5171,6 +5177,7 @@ impl F3dLossCode {
             | Self::DesignBodyBindingUnresolved
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::SketchNameComposedFromFeatureOrdinal
+            | Self::FeatureConstructionNameComposed
             | Self::ReferenceImageNativeRetained
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
@@ -5438,6 +5445,7 @@ mod tests {
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
                 "sketch.name-composed-from-feature-ordinal",
+                "feature.construction-name-composed",
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
