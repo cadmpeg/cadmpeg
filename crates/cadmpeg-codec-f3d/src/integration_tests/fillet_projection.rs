@@ -277,7 +277,7 @@ fn full_round_group(scope: &DesignParameterScope) -> DesignConstructionOperandGr
     bytes.extend_from_slice(&[1, 1, 0]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(BULK, stored).unwrap();
     zip.write_all(&bytes).unwrap();
     let archive = zip.finish().unwrap().into_inner();
@@ -287,7 +287,7 @@ fn full_round_group(scope: &DesignParameterScope) -> DesignConstructionOperandGr
         class_tag: DesignClassTag::try_from("321".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::decode::operands::construction_groups::bind_construction_operand_trailing_records(
             scan,
             std::slice::from_mut(&mut group),

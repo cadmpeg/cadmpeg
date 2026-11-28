@@ -32,6 +32,7 @@ pub(crate) enum TraversalError {
 }
 
 /// Steps of one ring traversal search.
+// resource-cap: MAX_RING_CHAIN_STEPS = 4
 const MAX_RING_CHAIN_STEPS: usize = 1 << 16;
 
 /// The traversal of a ring whose coedges run from `ends[i].0` to `ends[i].1`.

@@ -43,9 +43,25 @@ pub(super) fn project(
     let rows = quantity_rows(sources);
     let variables = variables(sources, parameters);
     let mut texts = Vec::new();
-    let projected = parameters
-        .iter()
-        .chain(sources.values().flat_map(|source| &source.parameters))
+    let all = || {
+        parameters
+            .iter()
+            .chain(sources.values().flat_map(|source| &source.parameters))
+    };
+    let mut lists = BTreeMap::new();
+    for parameter in all() {
+        if let Some(row) = rows.get(parameter.id.as_str()) {
+            lists
+                .entry(parameter.owner.as_ref())
+                .and_modify(|list| {
+                    if *list != Some(row.list) {
+                        *list = None;
+                    }
+                })
+                .or_insert(Some(row.list));
+        }
+    }
+    let projected = all()
         .map(|parameter| {
             let property_value = |key: &str| {
                 parameter
@@ -55,12 +71,12 @@ pub(super) fn project(
                     .map(|(_, value)| value.as_str())
             };
             let source = rows.get(parameter.id.as_str());
-            let row = source.map(|(row, _)| *row);
+            let row = source.map(|source| source.row);
             let raw = row
                 .and_then(|row| row.get("expression"))
                 .and_then(Value::as_str)
                 .or_else(|| property_value("source_expression"));
-            let ordinal = source.map(|(_, ordinal)| *ordinal);
+            let ordinal = source.map(|source| source.feature_index);
             let resolve = |name: &str| {
                 let bindings = variables.get(name)?;
                 let end =
@@ -140,6 +156,9 @@ pub(super) fn project(
                 id: parameter.id.clone(),
                 scope: scope.clone(),
                 owner: parameter.owner.clone().map(ParameterOwner::Feature),
+                position: source
+                    .filter(|row| lists[&parameter.owner.as_ref()] == Some(row.list))
+                    .and_then(|row| u32::try_from(row.index).ok()),
                 name: NonBlankString::new(parameter.name.clone()),
                 unit: unit.filter(|unit| {
                     matches!(
@@ -165,10 +184,10 @@ pub(super) fn project(
                 display: None,
                 tolerance: None,
                 decimals: None,
-                comment: source
-                    .and_then(|(_, ordinal)| {
+                comment: ordinal
+                    .and_then(|ordinal| {
                         sources.values().find(|source| {
-                            source.ordinal == *ordinal && source.kind() == Some("assignVariable")
+                            source.ordinal == ordinal && source.kind() == Some("assignVariable")
                         })
                     })
                     .and_then(|source| source.tag("description"))
@@ -243,25 +262,45 @@ fn variables<'a>(sources: &'a Sources<'_>, parameters: &'a [ModelParameter]) -> 
     bindings
 }
 
-fn quantity_rows<'a>(sources: &Sources<'a>) -> BTreeMap<String, (&'a Value, usize)> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParameterList {
+    Variables,
+    FeatureParameters(usize),
+    SketchConstraints(usize),
+}
+
+struct QuantityRow<'a> {
+    row: &'a Value,
+    feature_index: usize,
+    list: ParameterList,
+    index: usize,
+}
+
+fn quantity_rows<'a>(sources: &Sources<'a>) -> BTreeMap<String, QuantityRow<'a>> {
     let mut result = BTreeMap::new();
     for source in sources.values() {
         let row = source.record;
         let Some(feature) = row.get("featureId").and_then(Value::as_str) else {
             continue;
         };
-        for parameter in row
+        for (index, parameter) in row
             .get("parameters")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
+            .enumerate()
         {
             let Some(key) = parameter.get("parameterId").and_then(Value::as_str) else {
                 continue;
             };
             result.insert(
                 id("parameter", &format!("{feature}/{key}")),
-                (parameter, source.ordinal),
+                QuantityRow {
+                    row: parameter,
+                    feature_index: source.ordinal,
+                    list: ParameterList::FeatureParameters(source.ordinal),
+                    index,
+                },
             );
         }
         if source.kind() == Some("assignVariable") {
@@ -272,15 +311,24 @@ fn quantity_rows<'a>(sources: &Sources<'a>) -> BTreeMap<String, (&'a Value, usiz
                 _ => continue,
             };
             if let Ok(parameter) = features::parameter(row, key) {
-                result.insert(id("parameter", feature), (parameter, source.ordinal));
+                result.insert(
+                    id("parameter", feature),
+                    QuantityRow {
+                        row: parameter,
+                        feature_index: source.ordinal,
+                        list: ParameterList::Variables,
+                        index: source.ordinal,
+                    },
+                );
             }
         }
         if source.kind() == Some("newSketch") {
-            for constraint in row
+            for (index, constraint) in row
                 .get("constraints")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
+                .enumerate()
             {
                 let Some(name) = constraint.get("entityId").and_then(Value::as_str) else {
                     continue;
@@ -300,7 +348,12 @@ fn quantity_rows<'a>(sources: &Sources<'a>) -> BTreeMap<String, (&'a Value, usiz
                 if let Ok(parameter) = parameter {
                     result.insert(
                         id("parameter", &format!("{feature}/{name}")),
-                        (parameter, source.ordinal),
+                        QuantityRow {
+                            row: parameter,
+                            feature_index: source.ordinal,
+                            list: ParameterList::SketchConstraints(source.ordinal),
+                            index,
+                        },
                     );
                 }
             }
@@ -374,6 +427,7 @@ pub(super) fn unit(symbol: UnitSymbol) -> Option<Unit> {
     NonZeroI8::new(1).map(|power| Unit(vec![UnitFactor { symbol, power }]))
 }
 
+// resource-cap: MAX_DEPTH = 2
 const MAX_DEPTH: usize = 64;
 
 /// Translate the syntax and dimensions of a quantity independently of its evaluation.

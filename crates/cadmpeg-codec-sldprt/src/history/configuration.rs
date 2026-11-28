@@ -20,7 +20,9 @@ use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignConfiguration, ParameterValue,
 };
 use cadmpeg_ir::features::selections::FaceSelection;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::{
+    ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -184,7 +186,7 @@ pub(crate) fn enrich_history_semantic(
         )?;
     } else {
         crate::resolved_features::holes::
-            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes)?;
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes, |_, _| {})?;
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(
         ctx,
@@ -293,10 +295,18 @@ fn configuration_history_units(histories: &[FeatureHistory]) -> Option<usize> {
     })
 }
 
+pub(crate) type ConfigurationSamples = HashMap<ConfigurationId, HashSet<ParameterId>>;
+
+#[derive(Default)]
+pub(crate) struct ConfigurationProjection {
+    pub(crate) unprojected: usize,
+    pub(crate) observed: ConfigurationSamples,
+    pub(crate) unmatched: crate::loss::NamedCount,
+}
+
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
 ///
-/// Returns how many configurations were left unprojected because the pass
-/// reached [`configuration_projection_work_limit`].
+/// Returns the lane observations and the work left at the projection cap.
 pub(crate) fn project_configuration_design_states(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -305,7 +315,7 @@ pub(crate) fn project_configuration_design_states(
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
     length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
-) -> Result<usize, cadmpeg_core::CodecError> {
+) -> Result<ConfigurationProjection, cadmpeg_core::CodecError> {
     let work_limit = configuration_projection_work_limit(ir.model.configurations.len(), histories);
     project_configuration_design_states_within(
         ctx,
@@ -337,7 +347,7 @@ fn project_configuration_design_states_within(
     sources: ConfigurationSources<'_>,
     form_padding: Option<usize>,
     work_limit: usize,
-) -> Result<usize, cadmpeg_core::CodecError> {
+) -> Result<ConfigurationProjection, cadmpeg_core::CodecError> {
     let ConfigurationSources {
         histories,
         lanes,
@@ -371,9 +381,22 @@ fn project_configuration_design_states_within(
     let assignments = configuration_lane_assignments(&ir.model.configurations, lanes);
     let work = cadmpeg_core::decode::WorkBudget::new(work_limit);
     let history_units = configuration_history_units(histories);
+    let mut identities = HashMap::<&FeatureId, HashMap<&str, &ParameterId>>::new();
+    for parameter in &ir.model.parameters {
+        let Some(owner) = &parameter.owner else {
+            continue;
+        };
+        identities
+            .entry(owner)
+            .or_default()
+            .entry(&parameter.name)
+            .or_insert(&parameter.id);
+    }
+    let mut result = ConfigurationProjection::default();
     for (position, &(configuration_index, lane_index)) in assignments.iter().enumerate() {
         if !history_units.is_some_and(|units| work.charge_by(units)) {
-            return Ok(assignments.len() - position);
+            result.unprojected = assignments.len() - position;
+            break;
         }
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut projection = histories.to_vec();
@@ -385,22 +408,67 @@ fn project_configuration_design_states_within(
             pmi_dimensions,
             &ir.model.features,
         );
-        enrich_history_parameters_semantic(&mut projection, scoped_lanes);
+        let mut observations = HashMap::<String, std::collections::BTreeSet<String>>::new();
+        let mut observe = |feature: &str, name: &str| {
+            observations
+                .entry(feature.to_owned())
+                .or_default()
+                .insert(name.to_owned());
+        };
+        crate::resolved_features::parameters::enrich_parameters(
+            &mut projection,
+            scoped_lanes,
+            true,
+            &mut observe,
+        );
         crate::resolved_features::holes::
-            enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut projection, scoped_lanes)?;
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut projection, scoped_lanes, observe)?;
         crate::pmi::enrich_history_parameters_with_features(
             &mut projection,
             pmi_dimensions,
             &ir.model.features,
         );
         let mut parameter_values = BTreeMap::new();
+        let mut observed = HashSet::new();
+        for feature in projection
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+        {
+            let Some(names) = observations.get(&feature.id) else {
+                continue;
+            };
+            let owner = crate::history::project::neutral_feature_id(&feature.id)?;
+            for name in names {
+                if let Some(properties) = feature.dimension_properties.get_mut(name.as_str()) {
+                    properties.remove("Value");
+                }
+                if let Some(id) = identities
+                    .get(&owner)
+                    .and_then(|roster| roster.get(name.as_str()))
+                {
+                    observed.insert((*id).clone());
+                } else {
+                    result.unmatched.push(&format!("{owner}/{name}"));
+                }
+            }
+        }
         for parameter in project_parameters(ctx, &projection)? {
             let Some(value) = parameter.value else {
                 continue;
             };
-            parameter_values.insert(parameter.id, value);
+            let Some(id) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| identities.get(owner))
+                .and_then(|roster| roster.get(parameter.name.as_str()))
+            else {
+                continue;
+            };
+            parameter_values.insert((*id).clone(), value);
         }
-        ir.model.configurations[configuration_index].parameter_values = parameter_values;
+        let configuration = &mut ir.model.configurations[configuration_index];
+        configuration.parameter_values = parameter_values;
+        result.observed.insert(configuration.id.clone(), observed);
 
         let mut projection = histories.to_vec();
         enrich_history_semantic(
@@ -498,7 +566,7 @@ fn project_configuration_design_states_within(
         ir.model.configurations[configuration_index].feature_states = feature_states;
     }
 
-    Ok(0)
+    Ok(result)
 }
 
 /// Project edge operands carried only by supplemental config-object lanes into
@@ -1760,7 +1828,7 @@ impl ConfigurationSlots {
     }
 }
 
-pub(super) fn configuration_lane_assignments(
+pub(crate) fn configuration_lane_assignments(
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<(usize, usize)> {

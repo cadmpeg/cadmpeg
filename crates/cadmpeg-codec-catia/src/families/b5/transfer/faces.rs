@@ -10,13 +10,14 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Face, FaceLoops, Loop, Region, Sense, Shell,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{controls::B5FramingControl, B5Face, B5Graph, B5Surface};
-use super::super::vecmath::{components, cross};
+use super::super::vecmath::components;
 use super::pcurves::PcurveUses;
 use super::{annotate, dot, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::union_find::UnionFind;
@@ -28,7 +29,9 @@ pub(super) fn native_carrier_face_sense(graph: &B5Graph, face: &B5Face) -> Optio
             frame, direction_v, ..
         } => {
             (dot(
-                cross(components(frame.reference()), direction_v.get()),
+                Vector3::from(components(frame.reference()))
+                    .cross(Vector3::from(direction_v.get()))
+                    .into(),
                 components(frame.axis()),
             ) > 0.0)
                 .then_some(())?;
@@ -43,7 +46,9 @@ pub(super) fn native_carrier_face_sense(graph: &B5Graph, face: &B5Face) -> Optio
             ..
         } => {
             let orientation = dot(
-                cross(components(frame.reference()), components(direction_y)),
+                Vector3::from(components(frame.reference()))
+                    .cross(Vector3::from(components(direction_y)))
+                    .into(),
                 components(frame.axis()),
             );
             if orientation == 0.0 {

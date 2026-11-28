@@ -34,6 +34,7 @@ use cadmpeg_ir::unknown::part::{record_given_up, Cause, GivenUpPart};
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
 /// Nesting limit of referenced Part Studios.
+// resource-cap: MAX_REFERENCE_DEPTH = 2
 pub(super) const MAX_REFERENCE_DEPTH: usize = 7;
 
 fn text<'a>(row: &'a Value, key: &str) -> Mapping<&'a str> {
@@ -1448,6 +1449,8 @@ const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
     cadmpeg_ir::design::projection::Restatement {
         feature: feature_inputs,
         parameter: parameter_inputs,
+        arrangement: |_| &[],
+        active_arrangements: &[],
     };
 
 #[deny(clippy::wildcard_enum_match_arm)]
@@ -1481,6 +1484,7 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
         }
         ParameterField::NativeRef => &[ModelParameterField::NativeRef],
         ParameterField::Scope
+        | ParameterField::Position
         | ParameterField::Display
         | ParameterField::Tolerance
         | ParameterField::Decimals

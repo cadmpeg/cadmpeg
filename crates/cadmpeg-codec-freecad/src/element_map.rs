@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{bounded_len, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::Identity;
@@ -55,9 +56,13 @@ fn past_cap(what: &str, count: usize, cap: usize) -> CodecError {
     CodecError::NotImplemented(format!("FreeCAD {what} {count} exceeds {cap}"))
 }
 
+// resource-cap: MAX_TABLE_ENTRIES = 2
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
+// resource-cap: MAX_MAP_NODES = 2
 const MAX_MAP_NODES: usize = 1_000_000;
+// resource-cap: MAX_GROUPS = 2
 const MAX_GROUPS: usize = 1_000_000;
+// resource-cap: MAX_NAMES = 2
 const MAX_NAMES: usize = 10_000_000;
 
 struct LegacyElementRecord {
@@ -88,7 +93,7 @@ enum ElementMapCarrier<'a, 'input> {
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
-    xml: &roxmltree::Document<'_>,
+    xml: &XmlDocument<'_>,
     file_version: Option<usize>,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
@@ -162,7 +167,7 @@ pub(crate) fn parse(
             losses,
             "StringHasher threshold",
         )?;
-        let owner_property = owning_property(node, &ownership)?;
+        let owner_property = owning_property(xml.source_range(node.range()).start, &ownership)?;
         let parent = node.parent();
         let parent_id = parent.map(|parent| parent.id());
         let framed = if let Some(framed) = framing_by_parent.get(&parent_id) {
@@ -385,7 +390,7 @@ pub(crate) fn parse(
                 let identity = |id: String| Identity::new(id).map_err(CodecError::malformed);
                 // The kept property record holds the same raw XML.
                 let part = Part::at(
-                    crate::dialect::FORMAT,
+                    crate::dialect::registry_ids::FORMAT,
                     "property-element",
                     property.xml.start(),
                     property.xml.text().as_bytes(),
@@ -454,10 +459,10 @@ pub(crate) fn bind_topology<'a>(
 }
 
 fn owning_property(
-    node: roxmltree::Node<'_, '_>,
+    source_start: usize,
     ownership: &[OwnershipPrefix<'_>],
 ) -> Result<Option<String>, CodecError> {
-    let start = cadmpeg_core::decode::u64_from_index(node.range().start);
+    let start = cadmpeg_core::decode::u64_from_index(source_start);
     let upper = ownership.partition_point(|prefix| prefix.start <= start);
     let Some(prefix) = upper.checked_sub(1).and_then(|index| ownership.get(index)) else {
         return Ok(None);

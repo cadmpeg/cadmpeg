@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Optional archive recovery and required-member admission boundaries.
 
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::{F3dCodec, F3dLossCode};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::CodecBackend;
@@ -190,7 +190,7 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
 #[test]
 fn a_merged_member_part_loss_names_the_stub_in_the_document() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
-    let mut component = crate::test_support::zip_test::f3d_with_configuration(
+    let mut component = crate::test_support::zip_fixture::f3d_with_configuration(
         &synthetic_geometry_smbh(),
         preview,
         b"preview",
@@ -248,7 +248,7 @@ fn a_merged_member_part_loss_names_the_stub_in_the_document() {
 fn each_member_part_links_to_its_own_member_definition() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
     let member = || {
-        let mut member = crate::test_support::zip_test::f3d_with_configuration(
+        let mut member = crate::test_support::zip_fixture::f3d_with_configuration(
             &synthetic_geometry_smbh(),
             preview,
             b"preview",
@@ -349,7 +349,7 @@ fn each_member_part_links_to_its_own_member_definition() {
 #[test]
 fn a_model_root_part_keeps_its_bytes_when_the_root_source_image_is_replaced() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
-    let mut root = crate::test_support::zip_test::f3d_with_configuration(
+    let mut root = crate::test_support::zip_fixture::f3d_with_configuration(
         &synthetic_geometry_smbh(),
         preview,
         b"preview",

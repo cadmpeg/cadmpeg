@@ -20,18 +20,22 @@ use crate::reason::UnavailableReason;
 use crate::report::UvSource;
 
 /// Samples of one piece's unwrap reference or polyline.
+// resource-cap: MAX_NESTING_SAMPLES_PER_PIECE = 4
 const MAX_NESTING_SAMPLES_PER_PIECE: usize = 1 << 10;
 
 /// Golden-section steps of the search for a singular point of the carrier
 /// between two samples whose parameter image jumps.
+// resource-cap: MAX_SINGULAR_APPROACH_STEPS = 4
 const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
 
 /// Bisection steps of the search for the parameter where a piece enters the
 /// allowance of a singular point of the carrier.
+// resource-cap: MAX_SINGULAR_ENTRY_STEPS = 4
 const MAX_SINGULAR_ENTRY_STEPS: usize = 64;
 
 /// False-position steps of the search for the parameter where a piece's
 /// parameter image crosses a knot value.
+// resource-cap: MAX_KNOT_CROSSING_STEPS = 4
 const MAX_KNOT_CROSSING_STEPS: usize = 64;
 
 /// The step, relative to the piece's parameter span, at which the search
@@ -40,6 +44,7 @@ const KNOT_CROSSING_RESOLUTION: f64 = 1.0e-9;
 
 /// Passes through singular points of the carrier at which one inverted
 /// curve interval splits into pieces.
+// resource-cap: MAX_SINGULAR_CROSSINGS_PER_PIECE = 4
 const MAX_SINGULAR_CROSSINGS_PER_PIECE: usize = 4;
 
 /// An inverted curve interval: its piece, or the parameter inside it where

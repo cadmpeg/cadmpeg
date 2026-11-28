@@ -31,6 +31,7 @@ use super::super::rolling_ball_patch::fit_rectangular_patch;
 use super::ruled::Ruled;
 use super::{near, surface_fit, SheetSurfaceFit};
 
+// resource-cap: MAX_ROLLING_EXTENSION_MM = N
 const MAX_ROLLING_EXTENSION_MM: f64 = 0.005;
 
 pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;

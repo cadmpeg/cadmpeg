@@ -129,16 +129,29 @@ pub(crate) fn project_local_components_with_types(
                     .occurrence_id(stream, &root.occurrence_guid)
                     .as_str()
                     .to_owned();
-                if !projector.occurrences.contains_key(&occurrence_key) {
-                    qualifier_placed.insert(occurrence_key);
+                let unplaced = !projector.occurrences.contains_key(&occurrence_key);
+                let pose = projector
+                    .root_contained_pose(root)
+                    .filter(|_| unplaced && super::assembly::rigid_as_built_scope(scope));
+                if unplaced {
+                    qualifier_placed.insert(occurrence_key.clone());
                 }
                 projector.place(
                     stream,
                     ComponentIdentity::CarrierGuid(&root.component_guid),
                     &root.occurrence_guid,
-                    root.transform()
-                        .map_or(IDENTITY, |frame| frame.value.into()),
+                    pose.unwrap_or_else(|| {
+                        root.transform()
+                            .map_or(IDENTITY, |frame| frame.value.into())
+                    }),
                 )?;
+                if pose.is_some() {
+                    projector.current_poses += 1;
+                    projector
+                        .path_poses
+                        .applied_instances
+                        .insert(occurrence_key);
+                }
             }
         }
         if let Some(operation) = scope.copy_paste_component_operation() {
@@ -331,6 +344,7 @@ const EPS_PATH_POSE_LINEAR: f64 = 1.0e-6;
 /// absolutely, translation scaled to its magnitude (at least 1 mm).
 const EPS_PATH_POSE_LOCAL_REL: f64 = 1.0e-6;
 /// Search steps allowed when assigning carriers to instances.
+// resource-cap: MAX_PATH_ASSIGNMENT_STEPS = 4
 const MAX_PATH_ASSIGNMENT_STEPS: usize = 100_000;
 
 /// One unit of work for the component-path pose pass.
@@ -425,7 +439,8 @@ struct PathPoseOutcome {
     /// Occurrences that an assembly operation or a derived-instance
     /// construction placed from an operation matrix before any carrier
     /// matrix was read. An occurrence that an assembly alignment qualifier
-    /// places from its carrier's closing matrix is not among them.
+    /// places from its carrier's closing matrix or component-path pose is not
+    /// among them.
     operation_placed: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
@@ -632,6 +647,19 @@ impl<'a> Projector<'a> {
             stream,
             components.roots.get(&carrier.component_record_index)?,
         ))
+    }
+
+    /// The component-path pose of a carrier that the stream's root component
+    /// contains.
+    fn root_contained_pose(&self, carrier: &DesignComponentOccurrence) -> Option<[[f64; 4]; 4]> {
+        let (_, components) = self.stream_components(carrier)?;
+        let root = components.roots.get(&components.root_component?)?;
+        let rows = carrier
+            .current_pose
+            .as_ref()?
+            .transform
+            .map_or(IDENTITY, crate::records::xref::XrefPlacementTransform::rows);
+        (root.root_entity == carrier.owner_entity).then_some(rows)
     }
 
     /// Place one occurrence once. The first placement of an occurrence wins.
@@ -1965,6 +1993,91 @@ impl<'a> Projector<'a> {
             })
         })
     }
+}
+
+/// Where the component-ownership rule places the body of one body-map pair
+/// in its Design stream.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Placement {
+    /// In the naming space whose root entity this is.
+    Definition(u64),
+    /// In the component record of this index, which no naming space binds.
+    Record(u64),
+    /// In the stored-frame group of its stream.
+    Group,
+}
+
+/// The owner that the component-ownership rule gives the body of a
+/// history-only body-map pair.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct HistoryPairOwner {
+    /// The current bodies of the live pairs that the rule places with it.
+    pub(crate) peers: BTreeSet<BodyId>,
+    /// The definition of the naming space bound to its entity cluster.
+    pub(crate) definition: Option<ProductDefinitionId>,
+}
+
+/// The owner of each history-only pair of `bindings`, by pair id. A
+/// history-only pair has no Body-container owner, so its entity cluster
+/// places it: in the naming space bound to the cluster, or in the
+/// stored-frame group of its stream. A live pair is placed by its
+/// Body-container owner, by its entity cluster where it has none, and in the
+/// stored-frame group where its owner is unresolved. `bodies` holds the
+/// current bodies.
+pub(crate) fn history_pair_owners(
+    bindings: &[DesignBodyBinding],
+    components: &BTreeMap<String, StreamComponents>,
+    bodies: Option<&BTreeSet<BodyId>>,
+) -> std::collections::HashMap<String, HistoryPairOwner> {
+    let cluster = |stream: &str, suffix: u64| {
+        components
+            .get(stream)
+            .and_then(|components| components.cluster_owner(suffix))
+    };
+    let place = |binding: &DesignBodyBinding| {
+        let stream = crate::ids::native_stream(binding.id())?;
+        let placement = match &binding.component_owner {
+            Some(owner) => {
+                let component = owner.component_for(binding.entity_suffix)?;
+                match components
+                    .get(stream)
+                    .and_then(|components| components.roots.get(&component))
+                {
+                    Some(root) => Placement::Definition(root.root_entity),
+                    None => Placement::Record(component),
+                }
+            }
+            None if binding.component_owner_unresolved => Placement::Group,
+            None => cluster(stream, binding.entity_suffix).map_or(Placement::Group, |root| {
+                Placement::Definition(root.root_entity)
+            }),
+        };
+        Some((stream.to_owned(), placement))
+    };
+    let mut live = std::collections::HashMap::<_, BTreeSet<BodyId>>::new();
+    for binding in bindings.iter().filter(|binding| !binding.history_only) {
+        let Some(body) = binding
+            .body
+            .as_ref()
+            .filter(|body| bodies.is_none_or(|bodies| bodies.contains(*body)))
+        else {
+            continue;
+        };
+        if let Some(placement) = place(binding) {
+            live.entry(placement).or_default().insert(body.clone());
+        }
+    }
+    bindings
+        .iter()
+        .filter(|binding| binding.history_only)
+        .filter_map(|binding| {
+            let placement = place(binding)?;
+            let definition = cluster(&placement.0, binding.entity_suffix)
+                .map(|root| crate::ids::neutral_component_id(&root.context_uuid));
+            let peers = live.get(&placement).cloned().unwrap_or_default();
+            Some((binding.id().clone(), HistoryPairOwner { peers, definition }))
+        })
+        .collect()
 }
 
 /// A Fusion component, which holds bodies and occurrences alike and has no

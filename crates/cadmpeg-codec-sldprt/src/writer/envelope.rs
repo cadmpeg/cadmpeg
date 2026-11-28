@@ -139,7 +139,7 @@ fn shared<const N: usize>(
 fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecError> {
     let envelope = match native_layout::source_envelope(scan.source_image, &scan.blocks, &[]) {
         Ok(Some(envelope)) => envelope,
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Ok(None) | Err(_) => return Ok(None),
     };
     let image = scan.source_image;

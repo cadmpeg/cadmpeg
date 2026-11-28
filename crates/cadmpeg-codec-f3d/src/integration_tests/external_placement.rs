@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_identity_xrefs, f3d_with_redirections_json, f3d_without_brep, redirections_json,
 };
 use cadmpeg_core::serde_erase::json;

@@ -90,7 +90,7 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)?;
     let xml = crate::container::admit_document(&ctx, document.as_bytes())?;
-    let (_facts, schema_version) = crate::container::parse_document(&xml, &mut Vec::new())
+    let (_facts, schema_version) = crate::container::parse_document(xml.tree(), &mut Vec::new())
         .map_err(|error| match error {
             cadmpeg_core::CodecError::WrongFormat(message) => {
                 cadmpeg_core::CodecError::Malformed(message)
@@ -834,11 +834,13 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
     let document = format!(
         r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#
     );
-    let xml = roxmltree::Document::parse(&document).expect("XML");
+    let xml = cadmpeg_core::decode::tree::XmlDocument::original(
+        roxmltree::Document::parse(&document).expect("XML"),
+    );
     let mut properties = Vec::new();
     let mut losses = Vec::new();
     super::parse_properties(
-        &document,
+        &xml,
         xml.root_element(),
         "owner",
         &mut properties,

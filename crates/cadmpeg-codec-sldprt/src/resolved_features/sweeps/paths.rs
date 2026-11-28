@@ -9,6 +9,7 @@ use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SpatialSketchGeometry};
 
 const PATH_JOIN_TOLERANCE_MM: f64 = 1.0e-7;
+// resource-cap: MAX_SWEEP_PATH_CURVES = 4
 const MAX_SWEEP_PATH_CURVES: usize = 1024;
 
 /// A reading of a path curve record that the format does not establish.
