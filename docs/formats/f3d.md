@@ -2771,7 +2771,7 @@ The alternate form's marked pathless-locator reference is at offset 26.
 Four zero bytes at offset 37 precede the member count at offset 41.
 Its member references start at offsets 45 and 56. The joint reference and
 all later fields are four bytes after the corresponding canonical fields.
-The alternate form uses the same member count, eleven-byte references,
+The alternate ordinary form uses the same member count, eleven-byte references,
 empty reference table, and ordinary tail grammar. Its paired indexed header
 starts at `163 + 11N + T`.
 

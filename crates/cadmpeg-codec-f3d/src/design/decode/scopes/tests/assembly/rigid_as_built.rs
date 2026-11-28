@@ -713,6 +713,7 @@ fn typed_rigid_group_takes_the_alternate_prologue() {
     use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::layout::assembly_alternate_rigid_group_prefix as prefix;
     use crate::layout::assembly_rigid_as_built_scope as canonical;
+    use crate::layout::assembly_typed_alternate_rigid_group_prefix as typed_alternate;
     use crate::layout::assembly_typed_rigid_group_scope as typed;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     let mut bytes = typed_rigid_group_stream();
@@ -748,9 +749,9 @@ fn typed_rigid_group_takes_the_alternate_prologue() {
         ),
         (
             3,
-            prefix::PATHLESS_LOCATOR_REFERENCE,
-            typed::LOCATOR_COUNT + shift,
-            typed::FIRST_LOCATOR_REFERENCE + shift,
+            typed_alternate::PATHLESS_LOCATOR_REFERENCE,
+            typed_alternate::LOCATOR_COUNT,
+            typed_alternate::FIRST_LOCATOR_REFERENCE,
             51,
             typed::REFERENCE_COUNT + shift + 51,
         )
@@ -783,21 +784,35 @@ fn typed_rigid_group_takes_the_alternate_prologue() {
         prefix::PROPERTY_BLOCK_PRESENCE,
         prefix::PROPERTY_COUNT,
         prefix::ZERO_SEPARATOR,
-        prefix::PATHLESS_LOCATOR_REFERENCE,
-        typed::LOCATOR_COUNT + shift,
-        typed::FIRST_LOCATOR_REFERENCE + shift,
+        typed_alternate::ZERO_RUN_8,
+        typed_alternate::PATHLESS_LOCATOR_REFERENCE,
+        typed_alternate::ZERO_RUN_77,
+        typed_alternate::LOCATOR_COUNT,
+        typed_alternate::FIRST_LOCATOR_REFERENCE,
+        typed_alternate::SECOND_LOCATOR_REFERENCE,
     ] {
         let mut bad = bytes.clone();
         bad[at] ^= 2;
         assert!(parse(&bad).is_none(), "mutation at {at}");
     }
+    let end = 439 + 51 * 3;
+    let mut short = bytes.clone();
+    short.remove(end - 1);
+    assert!(parse(&short).is_none());
+    let mut long = bytes.clone();
+    long.insert(end, 0);
+    assert!(parse(&long).is_none());
 }
 
 #[test]
 fn rigid_group_tail_selects_between_equal_frame_lengths() {
     use crate::design::assembly::RigidGroupLayout;
-    assert_eq!(RigidGroupLayout::new(541, 196).unwrap().members, 2);
-    assert_eq!(RigidGroupLayout::new(1051, 196).unwrap().members, 12);
+    for (frame, members) in [(541, 2), (1051, 12)] {
+        let layout = RigidGroupLayout::new(frame, 196).unwrap();
+        assert_eq!((layout.members, layout.first_reference), (members, 85));
+    }
+    assert_eq!(RigidGroupLayout::new(537, 196).unwrap().first_reference, 81);
+    assert!(RigidGroupLayout::new(540, 196).is_none());
     assert_eq!(RigidGroupLayout::new(741, 76).unwrap().members, 46);
     assert_eq!(RigidGroupLayout::new(741, 196).unwrap().members, 6);
     assert_eq!(RigidGroupLayout::new(537, 88).unwrap().members, 26);
