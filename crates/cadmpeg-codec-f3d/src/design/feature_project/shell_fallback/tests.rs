@@ -82,10 +82,10 @@ fn projected(
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
 ) -> (Feature, Vec<LossNote>) {
-    let archive = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_header_fixture::synthetic_smbh(),
     );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             let inputs = Inputs {
                 scan,
@@ -333,12 +333,12 @@ fn ambiguous_partial_slot_order_retains_the_common_magnitude() {
 
 #[test]
 fn source_retention_refusal_leaves_the_feature_unchanged() {
-    let archive = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_header_fixture::synthetic_smbh(),
     );
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let inputs = Inputs {
                 scan,

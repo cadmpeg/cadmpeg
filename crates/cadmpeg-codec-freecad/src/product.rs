@@ -32,10 +32,12 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 
 /// Elements one restored link array may contain. A larger count is malformed.
+// resource-cap: MAX_LINK_ARRAY_ELEMENTS = 2
 const MAX_LINK_ARRAY_ELEMENTS: usize = 1_000_000;
 
 /// Records a give-up names, such as the occurrences it leaves with no
 /// transform; the rest are counted.
+// resource-cap: MAX_NAMED_RECORDS = 4
 const MAX_NAMED_RECORDS: usize = 8;
 
 /// The product records of a document, and the product objects among them

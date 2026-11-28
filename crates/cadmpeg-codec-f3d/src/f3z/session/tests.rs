@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::{F3dCodec, F3zDecodedMember, F3zMemberKind, F3zSession};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -144,8 +144,10 @@ fn archive_session_open_lists_stable_paths_roles_sizes_and_references() {
 
 #[test]
 fn archive_session_reference_error_keeps_the_member_decode_loss() {
-    let root =
-        crate::test_support::assembly_test::f3d_with_redirections_json("part-design", b"{invalid}");
+    let root = crate::test_support::assembly_fixture::f3d_with_redirections_json(
+        "part-design",
+        b"{invalid}",
+    );
     let bytes = f3z_archive("root.f3d", &[("root.f3d", &root)]);
     let arena = DecodeArena::new();
     let (ctx, view) =
@@ -167,8 +169,8 @@ mod preparation;
 
 #[test]
 fn archive_session_expanded_member_traces_avoid_reexecution() {
-    let leaf = crate::test_support::zip_test::f3d_with_smbh_and_protein(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let leaf = crate::test_support::zip_fixture::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
     );
     let root = f3d_without_brep(
         "assembly-design",

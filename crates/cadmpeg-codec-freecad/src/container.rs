@@ -8,6 +8,7 @@ use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -78,7 +79,7 @@ pub(crate) struct Persistence<'a> {
     /// Declared persistence schema version, owned by the source declaration.
     pub(crate) schema_version: String,
     /// One admitted persistence tree shared by all document readers.
-    pub(crate) xml: roxmltree::Document<'a>,
+    pub(crate) xml: XmlDocument<'a>,
 }
 
 /// An archive entry that could not be opened. It is given up once the
@@ -228,7 +229,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
             })
             .or_else(|| span_of(false));
         let mut part = Part::new(
-            crate::dialect::FORMAT,
+            crate::dialect::registry_ids::FORMAT,
             "archive-entry",
             stored,
             held_classes(classify(&name)).iter().copied(),
@@ -270,7 +271,7 @@ fn admit_persistence<'a>(
     }
     let xml = admit_document(ctx, bytes)?;
     let mut losses = Vec::new();
-    let (document, schema_version) = parse_document(&xml, &mut losses)?;
+    let (document, schema_version) = parse_document(xml.tree(), &mut losses)?;
     Ok((
         view,
         Persistence {
@@ -423,7 +424,7 @@ pub(crate) fn summarize(
             notes,
         ),
         None => ContainerSummary::unclassified(
-            cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+            cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
             kind,
             entries,
             losses,
@@ -620,7 +621,7 @@ fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
 pub(crate) fn admit_document<'input>(
     ctx: &DecodeContext<'_>,
     bytes: &'input [u8],
-) -> Result<roxmltree::Document<'input>, CodecError> {
+) -> Result<XmlDocument<'input>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {

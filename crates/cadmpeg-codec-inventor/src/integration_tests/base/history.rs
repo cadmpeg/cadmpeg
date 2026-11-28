@@ -57,6 +57,11 @@ fn a_closed_chain_types_a_base_whose_final_model_holds_no_body() {
 fn a_closed_chain_that_introduces_another_key_leaves_the_base_native() {
     let ir = decode_over_chain(RESULT_KEY + 1);
     assert!(ir.model.feature_result_topologies.is_empty());
+    assert!(ir.model.history_bodies.is_empty());
+    assert_eq!(
+        ir.design.scopes[0].current[0].native_ref.as_deref(),
+        Some("inventor:history:state#2")
+    );
     assert!(ir.model.features.iter().all(|feature| matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })

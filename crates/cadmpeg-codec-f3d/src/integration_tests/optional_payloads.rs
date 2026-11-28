@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_configuration;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_configuration;
 use crate::F3dCodec;
 
 #[test]
@@ -272,7 +272,7 @@ fn two_entries_that_name_one_unreadable_span_are_given_up_once() {
 fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_definition() {
     let name = "FusionAssetName[Active]/Previews/thumbnail.png";
     let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[]);
-    let original = crate::test_support::body_map_test::f3d_with_breps_design_and_assets(
+    let original = crate::test_support::body_map_fixture::f3d_with_breps_design_and_assets(
         &[("BREP.module.smbh", &synthetic_geometry_smbh())],
         &bulk,
         &meta,
@@ -344,7 +344,7 @@ fn a_brep_payload_that_does_not_open_is_given_up_alone() {
     let name = "FusionAssetName[Active]/Breps.BlobParts/BREP.lost.smbh";
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut writer, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut writer, stored);
     for entry in [kept, name] {
         writer.start_file(entry, stored).unwrap();
         writer.write_all(&synthetic_geometry_smbh()).unwrap();
@@ -429,7 +429,7 @@ fn optional_asset_past_the_per_expansion_allowance_is_given_up_alone() {
 #[test]
 fn a_required_entry_past_the_per_expansion_allowance_is_given_up_alone() {
     let smbh = synthetic_geometry_smbh();
-    let bytes = crate::test_support::zip_test::f3d_with_deflated_smbh(&smbh);
+    let bytes = crate::test_support::zip_fixture::f3d_with_deflated_smbh(&smbh);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_decompressed_bytes_per_expand = u64::try_from(smbh.len() - 1).unwrap();
@@ -470,7 +470,7 @@ fn optional_deflated_preview() -> Vec<u8> {
     use std::io::Write;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut writer, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut writer, stored);
     writer
         .start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();

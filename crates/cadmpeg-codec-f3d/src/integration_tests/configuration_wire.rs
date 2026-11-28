@@ -33,7 +33,7 @@ use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, root_record, string_cell,
     table_document, with_root_segment_in, written_on, ROOT_RECORD,
 };
-use crate::test_support::native_test::f3d_native;
+use crate::test_support::native_fixture::f3d_native;
 use crate::F3dCodec;
 
 const SOURCE: &[u8] = include_bytes!("../../../../corpus/f3d/region_A.f3d");
@@ -471,6 +471,26 @@ fn a_configuration_table_survives_a_cadir_write_and_read_whole() {
 }
 
 #[test]
+fn configuration_positions_edited_through_cadir_order_the_written_rows() {
+    let (decoded, _) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let first = named(&read, "A").position.unwrap();
+    let second = named(&read, "B").position.unwrap();
+    assert_ne!(first, second);
+    named_mut(&mut read, "A").position = Some(second);
+    named_mut(&mut read, "B").position = Some(first);
+
+    let round_trip = written(&read, decoded.source_fidelity());
+    for (name, position) in [("A", second), ("B", first)] {
+        let configuration = named(round_trip.ir(), name);
+        assert_eq!(configuration.id, named(&read, name).id);
+        assert_eq!(configuration.position, Some(position));
+        assert_eq!(row(round_trip.ir(), name).ordinal, position);
+    }
+    assert_eq!(active(round_trip.ir()), active(&read));
+}
+
+#[test]
 fn a_cell_edited_through_cadir_reaches_the_written_table() {
     let (decoded, fixture) = fixture(true);
     let mut read = saved(decoded.ir());
@@ -577,6 +597,7 @@ fn a_configuration_added_through_cadir_is_a_row_of_the_written_table() {
     let mut added = named(&read, "B").clone();
     added.id = cadmpeg_ir::features::ConfigurationId::mint("test:configuration:variant#d").unwrap();
     added.name = "D".into();
+    added.position = None;
     added.native_ref = None;
     added
         .overrides
@@ -810,7 +831,7 @@ fn a_native_cell_edit_loses_to_the_design_configuration() {
     use crate::records::configuration::table::{set_cell, CellData};
     let (decoded, fixture) = fixture(true);
     let edit = |ir: &mut CadIr| {
-        crate::test_support::native_test::update_f3d_native(ir, |native| {
+        crate::test_support::native_fixture::update_f3d_native(ir, |native| {
             let document = native
                 .design_configurations
                 .iter_mut()
@@ -1067,6 +1088,7 @@ fn every_other_configuration_keeps_its_value_when_the_base_takes_the_active_one(
         let mut added = named(&ir, "C").clone();
         added.id = ConfigurationId::mint(format!("test:configuration:role#{name}")).unwrap();
         added.name = name.into();
+        added.position = None;
         added.native_ref = None;
         added.parent = parent.cloned();
         added

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::test_support::body_reference_tail_test::{archive, frame, metadata};
+use crate::test_support::body_reference_tail_fixture::{archive, frame, metadata};
 
 #[test]
 fn inline_nested_prefix_and_nonzero_source_origin_keep_exact_locations() {
@@ -32,7 +32,7 @@ fn archive_registration_selects_the_family_and_unrecognized_forms_abstain() {
     for (version, expected) in [(1, 1), (2, 0)] {
         let source = archive(&bytes, &metadata(frame, version));
         crate::test_support::with_decode_context(|ctx| {
-            crate::test_support::zip_test::with_scan(&source, |scan| {
+            crate::test_support::zip_fixture::with_scan(&source, |scan| {
                 let decoded = decode(ctx, scan).expect("native tails");
                 assert_eq!(decoded.records.len(), expected);
                 assert_eq!(decoded.unparsed, 0);
@@ -48,7 +48,7 @@ fn archive_registration_selects_the_family_and_unrecognized_forms_abstain() {
     corrupt[frame.member_end - 4..frame.member_end].copy_from_slice(&0u32.to_le_bytes());
     let source = archive(&corrupt, &metadata(frame, 1));
     crate::test_support::with_decode_context(|ctx| {
-        crate::test_support::zip_test::with_scan(&source, |scan| {
+        crate::test_support::zip_fixture::with_scan(&source, |scan| {
             let decoded = decode(ctx, scan).expect("source-only tail");
             assert!(decoded.records.is_empty());
             assert_eq!(decoded.unparsed, 1);

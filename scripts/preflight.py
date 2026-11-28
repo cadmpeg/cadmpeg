@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Check a branch against the upstream default branch before a pull request.
 
-Each check is a module ``scripts/preflight_<name>.py`` that defines ``NAME``,
-``ORDER``, and ``run(context)``. This program loads every such module, runs the
+Each check defines ``NAME``, ``ORDER``, and ``run(context)``. Built-in
+checks are named ``preflight_<name>.py``. Site-local checks load from
+``$CADMPEG_PREFLIGHT_DIR`` (default ``~/.config/cadmpeg/preflight``).
+This program loads the modules, runs the
 checks against the merge base with the upstream default branch, and prints one
 summary line per result:
 
     preflight: PASS  branch      up to date with origin/main
-    preflight: FAIL  ir-version  IR_VERSION is 12 but 1 file(s) still pin "ir_version": "11"
+    preflight: FAIL  branch      branch conflicts with upstream
       fix: ...
 
 A FAIL is a problem that review or CI rejects. A WARN asks for a human
@@ -18,7 +20,7 @@ The upstream remote is the one whose URL names ``cadmpeg/cadmpeg``, or
 ``origin`` when no remote does. ``--upstream REF`` selects another base.
 
 Usage: scripts/preflight.py [--upstream REF] [--rev REV] [--no-fetch]
-                            [--full] [--run-layout] [--only NAME ...]
+                            [--run-layout] [--only NAME ...]
 With no ``--rev`` it checks the working tree, including uncommitted and
 untracked files. With ``--rev`` it checks that commit; checks that run
 programs over the tree are skipped.
@@ -55,9 +57,7 @@ class Result:
 
 @dataclass
 class Options:
-    full: bool = False
     run_layout: bool = False
-    offline: bool = False
 
 
 class Context:
@@ -193,18 +193,30 @@ def default_branch(root: Path, remote: str) -> str:
 
 
 def load_checks(directory: Path = SCRIPTS) -> list:
-    """Import every preflight_<name>.py module in ORDER."""
+    """Import built-in and site-local checks in ORDER."""
+    configured = os.environ.get("CADMPEG_PREFLIGHT_DIR")
+    site = Path(configured or "~/.config/cadmpeg/preflight").expanduser()
+    if configured and not site.is_dir():
+        raise FileNotFoundError(f"site check directory is unavailable: {site}")
     modules = []
-    for path in sorted(directory.glob("preflight_*.py")):
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        if spec is None or spec.loader is None:
-            continue
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        if hasattr(module, "run") and hasattr(module, "NAME"):
+    names = set()
+    for location, pattern in ((directory, "preflight_*.py"), (site, "*.py")):
+        for path in sorted(location.glob(pattern)):
+            if path.name.startswith("_"):
+                continue
+            spec = importlib.util.spec_from_file_location(f"preflight_check_{len(modules)}", path)
+            if spec is None or spec.loader is None:
+                raise ValueError(f"cannot load check: {path}")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+            if not all(hasattr(module, field) for field in ("NAME", "ORDER", "run")):
+                raise ValueError(f"invalid check: {path}")
+            if module.NAME in names:
+                raise ValueError(f"duplicate check name: {module.NAME}")
+            names.add(module.NAME)
             modules.append(module)
-    return sorted(modules, key=lambda module: (getattr(module, "ORDER", 100), module.NAME))
+    return sorted(modules, key=lambda module: (module.ORDER, module.NAME))
 
 
 def run_checks(context: Context, modules: list, only: set[str] | None = None) -> list[Result]:
@@ -242,8 +254,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--upstream", help="base ref (default: the upstream default branch)")
     parser.add_argument("--rev", help="check this commit instead of the working tree")
     parser.add_argument("--no-fetch", action="store_true", help="do not fetch the upstream branch")
-    parser.add_argument("--offline", action="store_true", help="no network: no fetch, no GitHub")
-    parser.add_argument("--full", action="store_true", help="also run CI's Cargo lint gate")
     parser.add_argument("--run-layout", action="store_true",
                         help="regenerate and test the layout tables when they changed")
     parser.add_argument("--only", nargs="+", metavar="NAME", help="run only these checks")
@@ -251,16 +261,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     modules = load_checks()
+    unknown = set(args.only or ()) - {module.NAME for module in modules}
+    if unknown:
+        parser.error(f"unknown checks: {', '.join(sorted(unknown))}")
     if args.list:
         for module in modules:
-            print(f"{module.NAME}: {(module.__doc__ or '').strip().splitlines()[0]}")
+            description = (module.__doc__ or "").strip().splitlines()
+            print(f"{module.NAME}: {description[0] if description else ''}")
         return 0
     root = args.repo.resolve()
     upstream = args.upstream
     if upstream is None:
         remote = upstream_remote(root)
         upstream = default_branch(root, remote)
-        if not (args.no_fetch or args.offline):
+        if not args.no_fetch:
             branch = upstream.split("/", 1)[1]
             fetch = subprocess.run(["git", "fetch", "-q", remote, branch], cwd=root,
                                    capture_output=True, text=True)
@@ -273,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"preflight: no merge base with {upstream}: {merge_base.stderr.strip()}",
               file=sys.stderr)
         return 2
-    options = Options(full=args.full, run_layout=args.run_layout, offline=args.offline)
+    options = Options(run_layout=args.run_layout)
     context = Context(root, upstream, merge_base.stdout.strip(), args.rev, options)
     print(f"preflight: {args.rev or 'working tree'} against {upstream} "
           f"(merge base {context.base[:10]}, {len(context.changed_paths())} changed paths)")

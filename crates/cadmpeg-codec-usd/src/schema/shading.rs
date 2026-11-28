@@ -36,6 +36,7 @@ const SURFACE_OUTPUTS: &[&str] = &[
     "outputs:mdl:surface",
 ];
 /// Longest chain of input connections followed to a value.
+// resource-cap: MAX_CONNECTION_HOPS = 4
 const MAX_CONNECTION_HOPS: usize = 16;
 
 /// The column of a surface shader in [`TextureSlot::names`]: the preview

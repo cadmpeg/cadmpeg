@@ -57,6 +57,7 @@ use crate::product::{ProductNodes, UnresolvedLink};
 
 mod joints;
 mod parameters;
+pub(crate) mod sketches;
 pub(crate) mod states;
 
 /// The link records of a document, its joint records, and the decoded
@@ -82,11 +83,13 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: ProductDefinitionId,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
+    graph: &crate::persistence::Graph,
     assembly: &Assembly<'_>,
+    stored_sketches: &sketches::StoredSketches,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let objects = &graph.objects;
+    let properties = &graph.properties;
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
     let sheets = sheets(ir, &history);
@@ -110,6 +113,7 @@ pub(crate) fn project(
     features.extend(joints.features);
     let mut containers = Vec::new();
     let mut body_containers = BTreeMap::new();
+    let mut body_objects = HashMap::new();
     let mut roots = Vec::new();
     let mut current = Vec::new();
     let mut nodes = Vec::new();
@@ -179,6 +183,9 @@ pub(crate) fn project(
         ));
         roots.push(id.clone());
         body_containers.insert(body.feature.clone(), id.clone());
+        if let Some(object) = body.native_ref.as_deref() {
+            body_objects.insert(object, id.clone());
+        }
         containers.push(Container::Ordered {
             id,
             kind: OrderedKind::Body,
@@ -219,6 +226,23 @@ pub(crate) fn project(
     if features.is_empty() && parameters.is_empty() {
         return Ok(());
     }
+    let sketches = sketches::project(
+        &sketches::Scope {
+            ctx,
+            ir,
+            stored: stored_sketches,
+            source: &source,
+            objects,
+            bodies: body_objects,
+            grouped: &grouped,
+            containers: &containers,
+        },
+        &mut features,
+        losses,
+    )?;
+    ir.design.sketches = sketches.sketches;
+    ir.design.sketch_entities = sketches.entities;
+    ir.design.sketch_constraints = sketches.constraints;
     ir.design.containers = containers;
     ir.design.features = features;
     ir.design.parameters = parameters;
@@ -605,10 +629,8 @@ fn frame_value(frame: FiniteFrame) -> Option<FrameValue> {
 struct Source<'a> {
     /// The objects `FreeCAD` marks `Touched`, out of date.
     touched: BTreeSet<&'a str>,
-    /// The `Placement` property of each object that stores one.
-    placements: HashMap<&'a str, &'a PropertyRecord>,
     /// The properties each object stores, by object and name.
-    stored: BTreeSet<(&'a str, &'a str)>,
+    properties: HashMap<(&'a str, &'a str), &'a PropertyRecord>,
     named_tips: BTreeSet<&'a str>,
     /// The objects a `MultiTransform` lists in `Transformations`.
     stages: BTreeSet<&'a str>,
@@ -621,15 +643,12 @@ impl<'a> Source<'a> {
             .filter(|object| object.attributes.get("Touched").map(String::as_str) == Some("1"))
             .map(|object| object.id().as_str())
             .collect();
-        let stored = properties
-            .iter()
-            .map(|property| (property.owner.as_str(), property.name.as_str()))
-            .collect();
-        let placements = properties
-            .iter()
-            .filter(|property| property.name == "Placement")
-            .map(|property| (property.owner.as_str(), property))
-            .collect();
+        let mut stored = HashMap::new();
+        for property in properties {
+            stored
+                .entry((property.owner.as_str(), property.name.as_str()))
+                .or_insert(property);
+        }
         let named_tips = properties
             .iter()
             .filter(|property| {
@@ -644,8 +663,7 @@ impl<'a> Source<'a> {
             .collect();
         Self {
             touched,
-            placements,
-            stored,
+            properties: stored,
             named_tips,
             stages: multi_transform_stages(objects, properties),
         }
@@ -656,14 +674,20 @@ impl<'a> Source<'a> {
         legacy
             .native_ref
             .as_deref()
-            .is_some_and(|object| self.stored.contains(&(object, name)))
+            .is_some_and(|object| self.properties.contains_key(&(object, name)))
+    }
+
+    /// The property `name` that object `object` stores.
+    fn property(&self, object: &str, name: &str) -> Option<&'a PropertyRecord> {
+        self.properties.get(&(object, name)).copied()
     }
 
     /// The `Placement` that object `object` stores, as a construction: `None`
     /// where it stores none or the identity, which no binding of it is
     /// stated for (§2.4), and where the product layer reports it unreadable.
     fn placement(&self, object: &str) -> Option<Box<Construction<kinds::Frame>>> {
-        let frame = crate::placement::placement_matrix_unreported(self.placements.get(object)?)?;
+        let frame =
+            crate::placement::placement_matrix_unreported(self.property(object, "Placement")?)?;
         if frame.transform() == Transform::identity() {
             return None;
         }

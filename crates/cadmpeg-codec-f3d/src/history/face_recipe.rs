@@ -10,6 +10,7 @@ use crate::records::topology::face::{
 use cadmpeg_core::decode::{BudgetExhausted, WorkBudget};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
+// resource-cap: MAX_FACE_RECIPE_MATCH_WORK = 4
 const MAX_FACE_RECIPE_MATCH_WORK: usize = 1 << 22;
 const FAN_MATCH_PASSES: usize = 6;
 

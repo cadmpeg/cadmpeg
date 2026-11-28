@@ -14,7 +14,7 @@ use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use zip::CompressionMethod;
 
 use crate::records::recipes::CreationTimestamp;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 /// `archive` with every member re-stored as Zstandard.

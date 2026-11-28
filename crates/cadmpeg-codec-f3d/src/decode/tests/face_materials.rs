@@ -113,7 +113,7 @@ fn synthetic_body_presentation_payloads(entity: u64, body_name: &str) -> (Vec<u8
         PHYSICAL_MATERIAL_LIBRARY_ID,
     };
     use crate::records::entity_header::DESIGN_MODULE_BODY;
-    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
     use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
 
     let body_tag = 256u32;
@@ -169,7 +169,7 @@ fn synthetic_body_presentation_payloads(entity: u64, body_name: &str) -> (Vec<u8
 }
 
 fn synthetic_body_presentation_archive(stream_name: &str, entity: u64, body_name: &str) -> Vec<u8> {
-    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -199,7 +199,7 @@ fn synthetic_two_stream_presentation_archive(
     entity2: u64,
     name2: &str,
 ) -> Vec<u8> {
-    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -232,6 +232,7 @@ fn make_body_binding(
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
+            consumers: Vec::new(),
             id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
             stream: stream.into(),
             pair_count: 1,
@@ -269,7 +270,7 @@ fn apply_body_presentation_names_joins_custom_name_stream_qualified() {
     let entity = 42u64;
     let archive = synthetic_body_presentation_archive(stream, entity, "Bottom");
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = None;
@@ -288,7 +289,7 @@ fn apply_body_presentation_names_skips_when_stream_mismatches() {
     let entity = 42u64;
     let archive = synthetic_body_presentation_archive(presentation_stream, entity, "Bottom");
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = None;
@@ -306,7 +307,7 @@ fn apply_body_presentation_names_skips_ambiguous_bindings_in_same_stream() {
     let entity = 42u64;
     let archive = synthetic_body_presentation_archive(stream, entity, "Bottom");
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = None;
@@ -340,7 +341,7 @@ fn apply_body_presentation_names_reports_loss_on_conflicting_body_names() {
         stream1, entity, "Bottom", stream2, entity, "Top",
     );
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = None;
@@ -369,7 +370,7 @@ fn apply_body_presentation_names_ignores_default_body_names() {
     for default_name in ["Body", "Body1", "Body42"] {
         let archive = synthetic_body_presentation_archive(stream, entity, default_name);
 
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             let mut ir = model();
             let body_id = ir.geometry.bodies[0].id.clone();
             ir.geometry.bodies[0].name = None;
@@ -388,7 +389,7 @@ fn apply_body_presentation_names_renames_body_with_none_visibility() {
     let entity = 42u64;
     let archive = synthetic_body_presentation_archive(stream, entity, "Bottom");
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = None;
@@ -406,7 +407,7 @@ fn apply_body_presentation_names_preserves_existing_body_name() {
     let entity = 42u64;
     let archive = synthetic_body_presentation_archive(stream, entity, "Bottom");
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = Some("CustomExisting".to_string());
@@ -430,7 +431,7 @@ fn apply_body_presentation_names_does_not_alias_across_streams() {
         stream1, entity, "PlateOne", stream2, entity, "PlateTwo",
     );
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut ir = model();
         let body1_id = ir.geometry.bodies[0].id.clone();
         ir.geometry.bodies[0].name = None;

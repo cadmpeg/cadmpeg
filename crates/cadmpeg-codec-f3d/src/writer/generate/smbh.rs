@@ -23,9 +23,9 @@ use cadmpeg_ir::topology::Sense;
 
 use super::{
     attributes::{
-        edge_persistent_attribute_ref, encode_source_less_attributes, owner_attribute_ref,
-        sketch_link_attribute_ref, source_less_body_key, timestamp_attribute_ref, AttributeIndex,
-        AttributeOwner, AttributeOwnerStarts, SurfaceOwnerStarts,
+        edge_persistent_attribute_ref, encode_source_less_attributes, link_chain_attribute_ref,
+        owner_attribute_ref, source_less_body_key, AttributeIndex, AttributeOwner,
+        AttributeOwnerStarts, SurfaceOwnerStarts,
     },
     index::NativeGenerationIndex,
     native_bytes::{
@@ -1456,7 +1456,12 @@ fn encode_face_topology_smbh(
         )?;
         native_ref(
             &mut records,
-            sketch_link_attribute_ref(target, attributes, coedge, coedge_ordinal, attribute_start)?,
+            link_chain_attribute_ref(
+                target,
+                attributes,
+                &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
+                attribute_start,
+            )?,
         );
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -1809,13 +1814,12 @@ fn encode_source_less_edges_vertices_points(
             if let Some(reference) = persistent {
                 reference
             } else {
-                timestamp_attribute_ref(
+                link_chain_attribute_ref(
                     target,
                     attributes,
                     &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
                     attribute_start,
                 )?
-                .unwrap_or(-1)
             },
         );
         native_i64(records, -1);
@@ -1853,13 +1857,12 @@ fn encode_source_less_edges_vertices_points(
         )?;
         native_ref(
             records,
-            timestamp_attribute_ref(
+            link_chain_attribute_ref(
                 target,
                 attributes,
                 &cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone()),
                 attribute_start,
-            )?
-            .unwrap_or(-1),
+            )?,
         );
         native_i64(records, -1);
         native_ref(records, -1);
@@ -2143,10 +2146,10 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
-    use crate::test_support::smbh_geometry_test::{
+    use crate::test_support::smbh_geometry_fixture::{
         synthetic_free_vertex_body_smbh, synthetic_wire_body_smbh,
     };
-    use crate::test_support::zip_test::f3d_with_smbh;
+    use crate::test_support::zip_fixture::f3d_with_smbh;
     use crate::writer::generate::write_new;
 
     mod closed_edge_range;
@@ -2198,8 +2201,8 @@ mod tests {
     /// source carrier was reversed reads back with the sense of the neutral face.
     #[test]
     fn a_face_from_a_reversed_source_carrier_reads_back_with_its_sense() {
-        use crate::test_support::native_test::f3d_native_mut;
-        use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+        use crate::test_support::native_fixture::f3d_native_mut;
+        use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
         use cadmpeg_ir::topology::Sense;
 
         let decoded = crate::F3dCodec

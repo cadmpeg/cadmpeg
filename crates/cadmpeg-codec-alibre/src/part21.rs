@@ -12,11 +12,14 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 /// Deepest list nesting the reader admits.
+// resource-cap: MAX_DEPTH = 2
 const MAX_DEPTH: usize = 16;
 /// Most octets of one string parameter.
+// resource-cap: MAX_STRING_OCTETS = 2
 const MAX_STRING_OCTETS: usize = 32_767;
 /// Most parameters, list elements and typed parameters counted together, in
 /// one entity instance.
+// resource-cap: MAX_INSTANCE_PARAMETERS = 2
 const MAX_INSTANCE_PARAMETERS: usize = 65_536;
 
 /// One parameter of an entity instance.

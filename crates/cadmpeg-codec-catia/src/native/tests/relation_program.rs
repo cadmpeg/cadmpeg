@@ -247,6 +247,29 @@ fn relation_program_output_entity_serializes_its_class_name() {
 }
 
 #[test]
+fn relation_program_wire_requires_nullable_reference_keys() {
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance(1, 1, 1, 2),
+    );
+    let instance = native.entity_records[1]
+        .relation_program_instance()
+        .expect("complete instance frame")
+        .clone();
+    let wire = json::to_value(super::super::CatiaRelationProgramInstanceWire::from(
+        instance,
+    ))
+    .expect("serialize relation-program wire");
+    for key in ["program_entity", "repeated_entity"] {
+        let mut malformed = wire.clone();
+        malformed.as_object_mut().unwrap().remove(key);
+        assert!(
+            json::from_value::<super::super::CatiaRelationProgramInstanceWire>(malformed).is_err(),
+            "{key}"
+        );
+    }
+}
+
+#[test]
 fn relation_program_inputs_require_complete_unique_signature_bindings() {
     let resolve =
         |signature: &crate::native::CatiaRelationTypeSignature,

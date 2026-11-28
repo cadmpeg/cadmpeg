@@ -100,16 +100,22 @@ const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 /// The most vertices, and the most faces, one mesh declares.
+// resource-cap: MAX_MESH_COUNT = 2
 pub(crate) const MAX_MESH_COUNT: usize = 1 << 24;
 /// Maximum number of legacy n-gon records accepted by the bounded reader.
+// resource-cap: MAX_MESH_NGONS = 2
 const MAX_MESH_NGONS: usize = 1 << 20;
 /// Maximum corners in one legacy n-gon record.
+// resource-cap: MAX_MESH_NGON_CORNERS = 2
 const MAX_MESH_NGON_CORNERS: usize = 100_000;
 /// Maximum mapping-mesh face-source IDs accepted in one correspondence carrier.
+// resource-cap: MAX_MESH_FACE_SOURCE_IDS = 2
 const MAX_MESH_FACE_SOURCE_IDS: usize = 1 << 24;
 /// Maximum decompressed size of one mesh buffer.
+// resource-cap: MAX_BUFFER_OUTPUT = 2
 const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 /// Maximum retained mesh-buffer bytes per document.
+// resource-cap: MAX_DOCUMENT_BUFFER_OUTPUT = 4
 const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 
 /// Monotonic document-wide count of retained mesh-buffer bytes.

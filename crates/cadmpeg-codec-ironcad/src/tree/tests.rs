@@ -144,3 +144,27 @@ fn nodes_that_hold_pairs_are_assemblies_numbered_in_closing_order() {
         [Assembly { parent: Some(1) }, Assembly { parent: None }]
     );
 }
+
+#[test]
+fn a_record_is_selected_by_a_nonzero_marker_of_any_value() {
+    let mut older = record(PARASOLID, b"older");
+    older[4..8].copy_from_slice(&0x0008_6801_u32.to_le_bytes());
+    let payload = node(&[
+        node(&[node(&[node(&[])]), older]),
+        record(PARASOLID, b"result"),
+    ]);
+    let records = read(View::over_retained(&payload)).unwrap().records;
+    let bodies: Vec<_> = records.iter().map(|record| record.bytes.window()).collect();
+    assert_eq!(bodies, [b"older".as_slice(), b"result".as_slice()]);
+    assert!(records.iter().all(|record| record.canonical_header));
+}
+
+#[test]
+fn a_marker_with_another_low_byte_is_read_and_marked_noncanonical() {
+    let mut odd = record(PARASOLID, b"odd");
+    odd[4..8].copy_from_slice(&0x0009_b402_u32.to_le_bytes());
+    let payload = node(&[odd]);
+    let records = read(View::over_retained(&payload)).unwrap().records;
+    assert_eq!(records[0].bytes.window(), b"odd");
+    assert!(!records[0].canonical_header);
+}

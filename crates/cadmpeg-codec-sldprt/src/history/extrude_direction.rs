@@ -29,6 +29,7 @@ const EPS_SOLID_SIDE: f64 = 1.0e-6;
 const MIN_TRIANGLE_DETERMINANT: f64 = 1.0e-24;
 const EPS_CAP_BOX_SCALE_MARGIN: f64 = 1.0e-6;
 const CURVE_SAMPLE_INTERVALS: u32 = 16;
+// resource-cap: MAX_WITNESS_WORK = 4
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
 /// The source property that the decoder sets to `false` where an extrusion
