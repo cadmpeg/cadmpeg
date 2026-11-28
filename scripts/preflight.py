@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Check a branch against the upstream default branch before a pull request.
 
-Each check is a module ``scripts/preflight_<name>.py`` that defines ``NAME``,
-``ORDER``, and ``run(context)``. This program loads every such module, runs the
+Each check is a module ``preflight_<name>.py`` that defines ``NAME``,
+``ORDER``, and ``run(context)``. Site-local checks load from
+``$CADMPEG_PREFLIGHT_DIR`` (default ``~/.config/cadmpeg/preflight``).
+This program loads the modules, runs the
 checks against the merge base with the upstream default branch, and prints one
 summary line per result:
 
@@ -193,18 +195,26 @@ def default_branch(root: Path, remote: str) -> str:
 
 
 def load_checks(directory: Path = SCRIPTS) -> list:
-    """Import every preflight_<name>.py module in ORDER."""
+    """Import built-in and site-local checks in ORDER."""
+    site = Path(os.environ.get("CADMPEG_PREFLIGHT_DIR") or
+                "~/.config/cadmpeg/preflight").expanduser()
     modules = []
-    for path in sorted(directory.glob("preflight_*.py")):
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        if spec is None or spec.loader is None:
-            continue
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        if hasattr(module, "run") and hasattr(module, "NAME"):
+    names = set()
+    for location in (directory, site):
+        for path in sorted(location.glob("preflight_*.py")):
+            spec = importlib.util.spec_from_file_location(f"preflight_check_{len(modules)}", path)
+            if spec is None or spec.loader is None:
+                raise ValueError(f"cannot load check: {path}")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)
+            if not all(hasattr(module, field) for field in ("NAME", "ORDER", "run")):
+                raise ValueError(f"invalid check: {path}")
+            if module.NAME in names:
+                raise ValueError(f"duplicate check name: {module.NAME}")
+            names.add(module.NAME)
             modules.append(module)
-    return sorted(modules, key=lambda module: (getattr(module, "ORDER", 100), module.NAME))
+    return sorted(modules, key=lambda module: (module.ORDER, module.NAME))
 
 
 def run_checks(context: Context, modules: list, only: set[str] | None = None) -> list[Result]:
@@ -251,6 +261,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     modules = load_checks()
+    unknown = set(args.only or ()) - {module.NAME for module in modules}
+    if unknown:
+        parser.error(f"unknown checks: {', '.join(sorted(unknown))}")
     if args.list:
         for module in modules:
             print(f"{module.NAME}: {(module.__doc__ or '').strip().splitlines()[0]}")
