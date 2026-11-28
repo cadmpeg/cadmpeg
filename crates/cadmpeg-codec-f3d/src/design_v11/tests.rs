@@ -8,6 +8,7 @@ use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
@@ -222,14 +223,6 @@ fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
         ),
     ]);
     let spans = super::span(&definitions, &super::Placers::new(&definitions), &scopes);
-    let spanned = spans
-        .iter()
-        .map(|(prefix, span)| (prefix.clone(), span.definitions.len()))
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(
-        spanned,
-        BTreeMap::from([(String::new(), 2), (XREF.to_owned(), 2)])
-    );
     let bodies = spans
         .into_iter()
         .map(|(prefix, span)| {
@@ -263,6 +256,371 @@ fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
     );
 }
 
+/// A scope over the file-stored definition `scope`, holding one feature per
+/// `(key, owner)`, each naming its owner as its component.
+fn component_document(
+    scope: &str,
+    definitions: Vec<ProductDefinition>,
+    features: &[(&str, &str)],
+) -> (
+    cadmpeg_ir::CadIr,
+    BTreeSet<FeatureId>,
+    HashMap<FeatureId, ProductDefinitionId>,
+) {
+    use cadmpeg_ir::design::feature::{Feature, FeatureDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.product_definitions = definitions;
+    ir.design
+        .scopes
+        .push(cadmpeg_ir::design::scope::DesignScope {
+            definition: ProductDefinitionId::mint(scope).unwrap(),
+            roots: vec![ContainerId::mint("f3d:design:container#timeline").unwrap()],
+            active_configuration: None,
+            active_arrangements: BTreeSet::new(),
+            occurrences: BTreeMap::new(),
+            current: Vec::new(),
+            unproduced: BTreeSet::default(),
+        });
+    let mut ids = BTreeSet::new();
+    let mut owners = HashMap::new();
+    let mut members = Vec::new();
+    for (key, owner) in features {
+        let id = FeatureId::mint(format!("f3d:design:feature#{key}")).unwrap();
+        let owner = ProductDefinitionId::mint(*owner).unwrap();
+        members.push(Member::Feature(id.clone()));
+        ir.design.features.push(Feature {
+            id: id.clone(),
+            name: None,
+            suppressed: None,
+            definition: FeatureDefinition {
+                operation: FeatureOperation::Unresolved {
+                    family: OperationFamily::Extrude,
+                },
+                assembly: None,
+                refine: None,
+                fuzzy_tolerance: None,
+            },
+            placement: None,
+            component: Some(owner.clone()),
+            driven_by: None,
+            native_ref: None,
+        });
+        ids.insert(id.clone());
+        owners.insert(id, owner);
+    }
+    ir.design.containers.push(Container::Ordered {
+        id: ContainerId::mint("f3d:design:container#timeline").unwrap(),
+        kind: OrderedKind::Timeline,
+        members,
+        folders: Vec::new(),
+        rollback: None,
+        placement: None,
+    });
+    (ir, ids, owners)
+}
+
+fn file_definition(id: &str) -> ProductDefinition {
+    ProductDefinition::new(
+        ProductDefinitionId::mint(id).unwrap(),
+        Storage::File {
+            document: ExternalDocument::path("part.f3d"),
+            source: Some(cadmpeg_ir::SourceMeta::classified(
+                cadmpeg_core::dialect::DialectLayers::of(
+                    cadmpeg_core::dialect::DialectMatch::admitted(
+                        cadmpeg_core::dialect::DialectId::parse("f3d:manifest-3-2-0-0").unwrap(),
+                    ),
+                ),
+                BTreeMap::new(),
+            )),
+        },
+    )
+}
+
+#[test]
+fn projected_components_are_settled_before_operation_projection() {
+    let scope = "f3d:archive:product-definition#0";
+    let owner = "f3d:model:component#part";
+    let (mut ir, _, owners) = component_document(
+        scope,
+        vec![
+            file_definition(scope),
+            definition(owner, Storage::Embedded, &[]),
+        ],
+        &[("feature", owner)],
+    );
+    let occurrence = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#part").unwrap();
+    ir.model.product_definitions[0]
+        .occurrences
+        .push(occurrence.clone());
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            occurrence,
+            ProductDefinitionId::mint(owner).unwrap(),
+            None,
+        ));
+    let mut projected = crate::design_v11::timeline::Projected::default();
+    projected.features = std::mem::take(&mut ir.design.features);
+    projected.containers = std::mem::take(&mut ir.design.containers);
+    for feature in &mut projected.features {
+        feature.component = None;
+    }
+    ir.design.scopes.clear();
+    let mut scopes = BTreeMap::from([(
+        String::new(),
+        (ProductDefinitionId::mint(scope).unwrap(), projected),
+    )]);
+    super::settle_projected_components(
+        &mut ir,
+        &mut scopes,
+        &owners,
+        &BTreeSet::new(),
+        &mut Vec::new(),
+    );
+    assert!(ir.design.scopes.is_empty());
+    assert!(ir.design.features.is_empty());
+    assert!(ir.design.containers.is_empty());
+    assert_eq!(scopes[""].1.features.len(), 1);
+    assert_eq!(scopes[""].1.containers.len(), 1);
+    assert_eq!(
+        scopes[""].1.features[0]
+            .component
+            .as_ref()
+            .map(ProductDefinitionId::as_str),
+        Some(owner)
+    );
+}
+
+#[test]
+fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
+    const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
+    let scope = format!("{XREF}archive:product-definition#0");
+    let placed = format!("{XREF}model:component#placed");
+    let unplaced = format!("{XREF}model:component#unplaced");
+    let mut member = file_definition(&scope);
+    member.occurrences =
+        vec![cadmpeg_ir::ids::OccurrenceId::mint(format!("{XREF}model:occurrence#0")).unwrap()];
+    let (mut ir, ids, owners) = component_document(
+        &scope,
+        vec![
+            member,
+            definition(&placed, Storage::Embedded, &[]),
+            definition(&unplaced, Storage::Embedded, &[]),
+        ],
+        &[("a", &scope), ("b", &placed), ("c", &unplaced)],
+    );
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            cadmpeg_ir::ids::OccurrenceId::mint(format!("{XREF}model:occurrence#0")).unwrap(),
+            ProductDefinitionId::mint(&placed).unwrap(),
+            None,
+        ));
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
+        &owners,
+        &BTreeSet::new(),
+        &mut Vec::new(),
+    );
+    let components = ir
+        .design
+        .features
+        .iter()
+        .map(|feature| feature.component.as_ref().map(ProductDefinitionId::as_str))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        components,
+        [Some(scope.as_str()), Some(placed.as_str()), None]
+    );
+}
+
+#[test]
+fn uncertain_item_kinds_in_a_spanned_component_keep_none_with_one_loss() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let scope = "f3d:xref/role-1/reference-0/occurrence-0/archive:product-definition#0";
+    let owner = "f3d:xref/role-1/reference-0/occurrence-0/model:component#embedded";
+    let occurrence = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#embedded").unwrap();
+    let mut member = file_definition(scope);
+    member.occurrences.push(occurrence.clone());
+    let (mut ir, ids, owners) = component_document(
+        scope,
+        vec![member, definition(owner, Storage::Embedded, &[])],
+        &[
+            ("base", owner),
+            ("cut", owner),
+            ("insert", owner),
+            ("extrude", owner),
+        ],
+    );
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            occurrence,
+            ProductDefinitionId::mint(owner).unwrap(),
+            None,
+        ));
+    let records = ["Base Feature", "CutPaste", "Component Insert", "Extrude"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| {
+            let id = format!("{STREAM}:design-parameter-scope#{}", 100 + index);
+            ir.design.features[index].native_ref = Some(id.clone());
+            DesignParameterScope::empty(
+                &id,
+                DesignFeatureKind::try_from(kind.to_owned()).unwrap(),
+                100 + u32::try_from(index).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &owners,
+        &super::unstated_components(&records),
+        &mut losses,
+    );
+    assert!(ir.design.features[..3]
+        .iter()
+        .all(|feature| feature.component.is_none()));
+    assert_eq!(
+        ir.design.features[3]
+            .component
+            .as_ref()
+            .map(ProductDefinitionId::as_str),
+        Some(owner)
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::HistoryMemberComponentUnstated.kind()
+    );
+    assert!(loss.message.contains(owner));
+    for key in ["base", "cut", "insert"] {
+        assert!(loss.message.contains(&format!("f3d:design:feature#{key}")));
+    }
+}
+
+#[test]
+fn a_component_named_in_one_round_widens_the_span_of_the_next() {
+    const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
+    let scope = format!("{XREF}archive:product-definition#0");
+    let embedded = format!("{XREF}model:component#embedded");
+    let child = format!("{XREF}archive:product-definition#1");
+    let occurrence = |key: &str| {
+        cadmpeg_ir::ids::OccurrenceId::mint(format!("{XREF}model:occurrence#{key}")).unwrap()
+    };
+    let mut member = file_definition(&scope);
+    member.occurrences = vec![occurrence("embedded"), occurrence("child")];
+    let (mut ir, ids, owners) = component_document(
+        &scope,
+        vec![
+            member,
+            definition(&embedded, Storage::Embedded, &[]),
+            file_definition(&child),
+        ],
+        &[("a", &scope), ("b", &embedded), ("c", &child)],
+    );
+    for (key, prototype) in [("embedded", &embedded), ("child", &child)] {
+        ir.model
+            .occurrences
+            .push(cadmpeg_ir::products::Occurrence::new(
+                occurrence(key),
+                ProductDefinitionId::mint(prototype).unwrap(),
+                None,
+            ));
+    }
+    for feature in &mut ir.design.features {
+        feature.component = None;
+    }
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
+        &owners,
+        &BTreeSet::new(),
+        &mut Vec::new(),
+    );
+    let components = ir
+        .design
+        .features
+        .iter()
+        .map(|feature| feature.component.as_ref().map(ProductDefinitionId::as_str))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        components,
+        [
+            Some(scope.as_str()),
+            Some(embedded.as_str()),
+            Some(child.as_str())
+        ]
+    );
+}
+
+#[test]
+fn a_hosted_owner_outside_the_span_charges_one_loss_for_its_features() {
+    const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
+    let scope = format!("{XREF}archive:product-definition#0");
+    let unplaced = "f3d:hosted@model:component#unplaced".to_owned();
+    let (mut ir, ids, owners) = component_document(
+        &scope,
+        vec![
+            file_definition(&scope),
+            definition(&unplaced, Storage::Embedded, &[]),
+        ],
+        &[("a", &scope), ("b", &unplaced), ("c", &unplaced)],
+    );
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
+        &owners,
+        &BTreeSet::new(),
+        &mut losses,
+    );
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| feature.component.is_none()));
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::HistoryMemberComponentUnstated.kind()
+    );
+    assert!(loss.message.contains(&unplaced));
+    assert!(loss.message.contains("f3d:design:feature#b"));
+    assert!(loss.message.contains("f3d:design:feature#c"));
+}
+
+#[test]
+fn the_scope_owner_needs_no_component_loss() {
+    let scope = "f3d:archive:product-definition#0";
+    let (mut ir, ids, owners) = component_document(
+        scope,
+        vec![file_definition(scope)],
+        &[("a", scope), ("b", scope)],
+    );
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &owners,
+        &BTreeSet::new(),
+        &mut losses,
+    );
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| feature.component.is_none()));
+    assert!(losses.is_empty());
+}
+
 #[test]
 fn the_root_scope_is_the_root_component_where_its_record_stands_for_the_root() {
     let root = "f3d:model:component#root";
@@ -285,13 +643,6 @@ fn the_root_scope_is_the_root_component_where_its_record_stands_for_the_root() {
     let span = super::span(&definitions, &super::Placers::new(&definitions), &scopes)
         .remove("")
         .unwrap();
-    assert_eq!(
-        span.definitions
-            .iter()
-            .map(ProductDefinitionId::as_str)
-            .collect::<Vec<_>>(),
-        ["f3d:model:component#a", root]
-    );
     assert_eq!(
         span.bodies.iter().map(BodyId::as_str).collect::<Vec<_>>(),
         ["f3d:brep:entity#1", "f3d:brep:entity#2"]
