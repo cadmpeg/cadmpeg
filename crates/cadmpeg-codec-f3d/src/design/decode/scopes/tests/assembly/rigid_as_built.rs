@@ -844,8 +844,110 @@ fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
 }
 
 #[test]
+fn typed_rigid_group_takes_the_alternate_prologue() {
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::layout::assembly_alternate_rigid_group_prefix as prefix;
+    use crate::layout::assembly_rigid_as_built_scope as canonical;
+    use crate::layout::assembly_typed_alternate_rigid_group_prefix as typed_alternate;
+    use crate::layout::assembly_typed_rigid_group_scope as typed;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    let mut bytes = typed_rigid_group_stream();
+    let mut prologue = vec![0; prefix::PATHLESS_LOCATOR_REFERENCE - prefix::ZERO_RUN_8];
+    prologue[prefix::PROPERTY_BLOCK_PRESENCE - prefix::ZERO_RUN_8] =
+        prefix::PROPERTY_BLOCK_PRESENCE_VALUE;
+    bytes.splice(
+        prefix::ZERO_RUN_8..canonical::PATHLESS_LOCATOR_REFERENCE,
+        prologue,
+    );
+    let shift = prefix::PATHLESS_LOCATOR_REFERENCE - canonical::PATHLESS_LOCATOR_REFERENCE;
+    let class = "328".to_owned().try_into().unwrap();
+    let parse = |bytes: &[u8]| {
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+        crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            bytes, &records, 10, &class, 0,
+        )
+        .unwrap()
+    };
+    let mut scope = parse(&bytes).unwrap();
+    scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+    assert_eq!(scope.frame_length(), 439 + 51 * 3);
+    assert!(scope.reference_members().is_empty());
+    let layout = crate::design::assembly::RigidGroupLayout::for_scope(&scope).unwrap();
+    assert_eq!(
+        (
+            layout.members,
+            layout.pathless_reference,
+            layout.count_at,
+            layout.first_reference,
+            layout.stride,
+            layout.empty_table,
+        ),
+        (
+            3,
+            typed_alternate::PATHLESS_LOCATOR_REFERENCE,
+            typed_alternate::LOCATOR_COUNT,
+            typed_alternate::FIRST_LOCATOR_REFERENCE,
+            51,
+            typed::REFERENCE_COUNT + shift + 51,
+        )
+    );
+    let types = [64, 67, 73]
+        .into_iter()
+        .flat_map(|index| {
+            [
+                (index, ("2E3AC990-483D-4A55-8662-C064B976A957", 5)),
+                (index + 1, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+            ]
+        })
+        .collect();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        alignment
+            .operand_path_refs()
+            .unwrap()
+            .map(|path| path.link().locator_record_index),
+        [64, 67]
+    );
+    assert_eq!(alignment.additional_members.len(), 1);
+    for at in [
+        prefix::LEADING_BLOCK_PRESENCE,
+        prefix::PROPERTY_BLOCK_PRESENCE,
+        prefix::PROPERTY_COUNT,
+        prefix::ZERO_SEPARATOR,
+        typed_alternate::ZERO_RUN_8,
+        typed_alternate::PATHLESS_LOCATOR_REFERENCE,
+        typed_alternate::ZERO_RUN_77,
+        typed_alternate::LOCATOR_COUNT,
+        typed_alternate::FIRST_LOCATOR_REFERENCE,
+        typed_alternate::SECOND_LOCATOR_REFERENCE,
+    ] {
+        let mut bad = bytes.clone();
+        bad[at] ^= 2;
+        assert!(parse(&bad).is_none(), "mutation at {at}");
+    }
+    let end = 439 + 51 * 3;
+    let mut short = bytes.clone();
+    short.remove(end - 1);
+    assert!(parse(&short).is_none());
+    let mut long = bytes.clone();
+    long.insert(end, 0);
+    assert!(parse(&long).is_none());
+}
+
+#[test]
 fn rigid_group_tail_selects_between_equal_frame_lengths() {
     use crate::design::assembly::RigidGroupLayout;
+    for (frame, members) in [(541, 2), (1051, 12)] {
+        let layout = RigidGroupLayout::new(frame, 196).unwrap();
+        assert_eq!((layout.members, layout.first_reference), (members, 85));
+    }
+    assert_eq!(RigidGroupLayout::new(537, 196).unwrap().first_reference, 81);
+    assert!(RigidGroupLayout::new(540, 196).is_none());
     assert_eq!(RigidGroupLayout::new(741, 76).unwrap().members, 46);
     assert_eq!(RigidGroupLayout::new(741, 196).unwrap().members, 6);
     assert_eq!(RigidGroupLayout::new(537, 88).unwrap().members, 26);

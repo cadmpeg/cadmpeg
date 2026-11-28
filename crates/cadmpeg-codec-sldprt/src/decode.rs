@@ -272,9 +272,11 @@ fn decode_scanned(
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
     // A scoped root lists only the bodies of its current states and its
-    // unproduced bodies. A body of a configuration that is not active and
-    // whose state the design does not state stays in the geometry unlisted,
-    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
+    // unproduced bodies. In a part with a timeline, a body of a configuration
+    // that is not active and whose state the design does not state stays in
+    // the geometry unlisted, as a scoped CATIA or Rhino root leaves its own
+    // (interim, errata A1). A part whose tree holds no feature lists such a
+    // body with its scope's unproduced bodies (interim).
     // Local digests are stamped after the root is complete.
     let current = if ctx.depth() == DecodeDepth::Geometry && part {
         decoded
@@ -3932,7 +3934,7 @@ fn build_geometry_ir(
         linear,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    project_design_history(
+    let (parameter_histories, configuration_samples) = project_design_history(
         ctx,
         &mut ir,
         DesignHistoryInput {
@@ -4833,6 +4835,8 @@ fn build_geometry_ir(
             &mut ir,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
+                parameter_histories: &parameter_histories,
+                configuration_samples: &configuration_samples,
                 lanes: &native.feature_input_lanes,
                 configuration_maps: &configuration_maps,
                 bodies: current_bodies,
@@ -5677,7 +5681,7 @@ fn build_metadata_ir(
         &mut annotations,
         &mut unknowns,
     )?);
-    project_design_history(
+    let (parameter_histories, configuration_samples) = project_design_history(
         ctx,
         &mut ir,
         DesignHistoryInput {
@@ -6128,6 +6132,8 @@ fn build_metadata_ir(
             &mut ir,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
+                parameter_histories: &parameter_histories,
+                configuration_samples: &configuration_samples,
                 lanes: &native.feature_input_lanes,
                 configuration_maps: &configuration_maps,
                 bodies,
@@ -6190,7 +6196,13 @@ fn project_design_history(
     scan: &ContainerScan,
     form_padding: Option<usize>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<crate::records::FeatureHistory>,
+        crate::history::configuration::ConfigurationSamples,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let DesignHistoryInput {
         histories,
         lanes,
@@ -6230,16 +6242,36 @@ fn project_design_history(
         &mut parameter_projection,
         lanes,
     );
+    let configurations = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_deref(), configuration.source_index))
+        .collect::<Vec<_>>();
+    if let Some(active) = active_configuration_position(ir.source.as_ref(), &configurations) {
+        if let Some((_, lane)) = crate::history::configuration::configuration_lane_assignments(
+            &ir.model.configurations,
+            lanes,
+        )
+        .into_iter()
+        .find(|(configuration, _)| *configuration == active)
+        {
+            crate::history::configuration::enrich_history_parameters_values_only(
+                &mut parameter_projection,
+                &lanes[lane..=lane],
+            );
+        }
+    }
     crate::history::configuration::enrich_history_parameters_values_only(
         &mut parameter_projection,
         lanes,
     );
     crate::resolved_features::holes::
-        enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut parameter_projection, lanes)?;
+        enrich_history_cosmetic_thread_diameters_without_hole_constructions(&mut parameter_projection, lanes, |_, _| {})?;
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters =
         crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
-    let unprojected = crate::history::configuration::project_configuration_design_states(
+    let projection = crate::history::configuration::project_configuration_design_states(
         ctx,
         ir,
         histories,
@@ -6248,10 +6280,10 @@ fn project_design_history(
         form_padding,
         length_unit,
     )?;
-    if unprojected > 0 {
+    if projection.unprojected > 0 {
         losses.push(
             crate::history::configuration::configuration_projection_capped_loss(
-                unprojected,
+                projection.unprojected,
                 crate::history::configuration::configuration_projection_work_limit(
                     ir.model.configurations.len(),
                     histories,
@@ -6282,7 +6314,16 @@ fn project_design_history(
         );
     }
 
-    Ok(())
+    if !projection.unmatched.is_empty() {
+        losses.push(
+            crate::loss::SldprtLossCode::DesignConfigurationParameterUnread.note(format!(
+                "{} lane dimensions have no identity in the combined parameter roster: {}",
+                projection.unmatched.count(),
+                projection.unmatched,
+            )),
+        );
+    }
+    Ok((parameter_projection, projection.observed))
 }
 
 fn parameter_identity_lanes(

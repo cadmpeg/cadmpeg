@@ -3,7 +3,7 @@ name: CodeQL
 on:
   # Rust takes over an hour. Python is cheap. Neither runs on pull requests.
   schedule:
-    - cron: "37 4 * * *"
+    - cron: "37 4 * * 1"
   workflow_dispatch:
 
 permissions:

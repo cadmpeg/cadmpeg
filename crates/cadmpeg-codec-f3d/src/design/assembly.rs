@@ -421,7 +421,7 @@ impl RigidGroupLayout {
                     ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE,
                     ordinary::REFERENCE_COUNT,
                 )
-            } else if !alternate && tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
+            } else if tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
                 (
                     typed::SCOPE_TAIL,
                     typed::LOCATOR_COUNT,

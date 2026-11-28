@@ -2789,7 +2789,7 @@ The alternate form's marked pathless-locator reference is at offset 26.
 Four zero bytes at offset 37 precede the member count at offset 41.
 Its member references start at offsets 45 and 56. The joint reference and
 all later fields are four bytes after the corresponding canonical fields.
-The alternate form uses the same member count, eleven-byte references,
+The alternate ordinary form uses the same member count, eleven-byte references,
 empty reference table, and ordinary tail grammar. Its paired indexed header
 starts at `163 + 11N + T`.
 
@@ -2835,6 +2835,13 @@ For `N` members the joint reference and all later fields shift by
 `51(N - 2)` bytes. The paired indexed header starts at `435 + 51N`.
 The tail form selects the reference width; the stored member count and
 paired header must close the complete scope at that width.
+
+The typed rigid-group scope also takes the alternate prologue. Its typed
+pathless-locator reference is at offset 26, four zero bytes are at offset 77,
+the u32 member count is at offset 81, and the typed member-locator references
+start at offset 85. The joint reference and all later fields are four bytes
+after the corresponding typed canonical fields. Its paired indexed header
+starts at `439 + 51N`.
 
 A rigid-group member locator has type
 `2E3AC990-483D-4A55-8662-C064B976A957`. Its registered type version and length

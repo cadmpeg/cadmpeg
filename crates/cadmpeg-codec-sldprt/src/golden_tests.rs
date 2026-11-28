@@ -264,13 +264,13 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
+                let written = decode_container(bytes);
                 let expected = match &source {
                     Ok(decoded) if omits_every_body(decoded.ir(), &report.losses) => {
                         brep_free_text(fixture, decoded)
                     }
                     _ => expected,
                 };
-                let written = decode_container(bytes);
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
@@ -373,17 +373,26 @@ fn omits_every_body(
 }
 
 /// [`neutral_text`] of `decoded` without its B-rep: the document a write
-/// states when it omits every body.
+/// states when it omits every body. The write keeps the active
+/// configuration, and a part with configurations whose tree holds no feature
+/// states a scope, which types the part's root definition.
 fn brep_free_text(bytes: &[u8], decoded: &DecodeResult) -> String {
     let mut ir = decoded.ir().clone();
     ir.geometry = cadmpeg_ir::document::Topology::default();
+    let configured = !ir.model.configurations.is_empty();
     for definition in &mut ir.model.product_definitions {
         definition.bodies.clear();
+        if configured && definition.id.as_str() == ROOT_DEFINITION {
+            definition.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+        }
     }
     let scan = crate::test_support::container::scan(bytes);
     let sections = section_identities(&scan).expect("unique admitted source member identities");
     snapshot_text(&normalized_document(&ir, &sections))
 }
+
+/// The id of a part's root definition, the part file itself.
+const ROOT_DEFINITION: &str = "sldprt:model:product-definition#root";
 
 /// Whether `message` names record `id` as a whole token.
 fn names_record(message: &str, id: &str) -> bool {
