@@ -6,7 +6,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{planar::line_circle_intersections, Point2, Point3, Vector3};
 
 use crate::decode::analytic::equations::{circular_cone, CarrierEquation};
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 const EPS_APEX_PLANE_ROUNDOFF: f64 = 8.0 * f64::EPSILON;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
@@ -134,7 +134,9 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     }
     let closest: [f64; 3] =
         std::array::from_fn(|index| cylinder.origin[index] - signed_distance * normal[index]);
-    let Some(transverse) = normalize(cross(axis, normal)) else {
+    let Some(transverse) = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(normal)),
+    )) else {
         return FixedCandidates::default();
     };
     let offset = offset_squared.sqrt() * scale;
@@ -199,7 +201,10 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     if height_squared <= EPS_HEIGHT_RESIDUAL {
         return FixedCandidates::default();
     }
-    let Some(perpendicular) = normalize(cross(first_axis, center_direction)) else {
+    let Some(perpendicular) = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(center_direction)),
+    )) else {
         return FixedCandidates::default();
     };
     let along = along * scale;
@@ -369,8 +374,14 @@ pub(in super::super) fn coaxial_cones_section_candidates(
     {
         return FixedCandidates::default();
     }
-    let first_y = cross(first_axis, reference);
-    let second_y = cross(second_axis, second_reference);
+    let first_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(reference)),
+    );
+    let second_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(second_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(second_reference)),
+    );
     let second_metric = |direction: [f64; 3]| {
         let x = dot(direction, second_reference);
         let y = dot(direction, second_y) / second.ratio();
@@ -527,8 +538,12 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     }
     let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal));
     let plane_u = [reference.x, reference.y, reference.z];
-    let plane_v = cross(normal, plane_u);
-    let y_axis = cross(axis, x_axis);
+    let plane_v = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(plane_u)),
+    );
+    let y_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+    );
     let cone_coordinates = |direction: [f64; 3]| {
         [
             dot(direction, x_axis),
@@ -961,7 +976,9 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
     {
         return FixedCandidates::default();
     }
-    let Some(radial) = normalize(cross(normal, axis)) else {
+    let Some(radial) = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(axis)),
+    )) else {
         return FixedCandidates::default();
     };
     [-1.0, 1.0]

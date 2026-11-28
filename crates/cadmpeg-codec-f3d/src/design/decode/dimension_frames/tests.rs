@@ -1050,11 +1050,11 @@ fn dimension_annotation_interval_of_zero_bytes_has_no_frames() {
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(STREAM, stored).unwrap();
     zip.write_all(&[0; 58]).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let companions = [companion];
         let inputs = super::DimensionDecodeInputs {
             scan,

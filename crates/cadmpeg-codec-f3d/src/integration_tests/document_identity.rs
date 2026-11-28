@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_identity_xrefs, f3d_with_redirections_json, f3d_without_brep,
     f3z_archive_with_design_description, redirections_json,
 };
@@ -46,7 +46,7 @@ fn redirections_state_self_and_linked_document_urns() {
         Some("child.f3d")
     );
     assert_eq!(
-        crate::test_support::native_test::f3d_native(decoded.ir())
+        crate::test_support::native_fixture::f3d_native(decoded.ir())
             .xref_designs
             .len(),
         2
@@ -70,7 +70,7 @@ fn unreferenced_design_identity_keeps_components_local() {
             zip.write_all(&json::to_vec(&table).unwrap()).unwrap();
         }
         let mut metadata =
-            crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+            crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
         metadata.truncate(metadata.len() - 8);
         metadata.extend_from_slice(&2u32.to_le_bytes());
         for key in ["RootKey", "Key0"] {
@@ -105,7 +105,7 @@ fn unreferenced_design_identity_keeps_components_local() {
             .iter()
             .all(|row| !matches!(row.storage, Storage::External(_))));
         assert_eq!(
-            crate::test_support::native_test::f3d_native(decoded.ir())
+            crate::test_support::native_fixture::f3d_native(decoded.ir())
                 .xref_designs
                 .len(),
             if retain_table { 2 } else { 0 }
@@ -190,7 +190,7 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
 fn archive_merge_keeps_redirections_member_identity() {
     let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
     let child = f3d_without_brep("part-design", "child.f3d", &[]);
-    let bytes = crate::test_support::assembly_test::f3z_archive(
+    let bytes = crate::test_support::assembly_fixture::f3z_archive(
         "root.f3d",
         &[("root.f3d", &root), ("child.f3d", &child)],
     );
@@ -302,7 +302,7 @@ fn api_export_archive(
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
             let mut extension =
-                crate::test_support::manifest_test::api_reference_extension(references);
+                crate::test_support::manifest_fixture::api_reference_extension(references);
             if let Some(field) = blank {
                 let mut key = Vec::new();
                 crate::test_support::lp_utf16(&mut key, field);
@@ -543,7 +543,7 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
         serde_json::from_str(&redirections_json("root.f3d", &targets)).unwrap();
     table["designs"][2]["lineageUrn"] = "".into();
     table["designs"][2]["versionUrn"] = "".into();
-    let root = crate::test_support::assembly_test::f3d_with_reference_table_and_identity_xrefs(
+    let root = crate::test_support::assembly_fixture::f3d_with_reference_table_and_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &targets,

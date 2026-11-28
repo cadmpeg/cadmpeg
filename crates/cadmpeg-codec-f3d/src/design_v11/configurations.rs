@@ -65,8 +65,9 @@ pub(crate) struct Configurations {
     pub(crate) active: BTreeMap<ProductDefinitionId, ConfigurationId>,
 }
 
-/// A document in `hosted`, or one `scopes` does not key, has no scope of its
-/// own. `features` holds the ids of the scopes' features and `parameters`
+/// Each row takes its place in the one table that holds rows. A document in
+/// `hosted`, or one `scopes` does not key, has no scope of its own.
+/// `features` holds the ids of the scopes' features and `parameters`
 /// their parameters. Each class of row or cell the design omits charges one
 /// loss to `losses`.
 pub(crate) fn project(
@@ -107,6 +108,7 @@ pub(crate) fn project(
             id: row.id.clone(),
             scope: scope.clone(),
             name: row.name.clone().unwrap_or_default(),
+            position: Some(row.ordinal),
             parent: None,
             comment: None,
             overrides,
@@ -381,9 +383,10 @@ struct Scoped<'a> {
 /// restates the rows of its documents where they name an active row or
 /// there are none. A row of such a scope that the stored tables hold and no
 /// configuration states is removed. A configuration with no row becomes a
-/// new row after the others, in arena order, unless the stored tables hold
-/// its row and it states what that row projects. The rows are numbered
-/// again in their order. `history` holds the v10 features whose states the
+/// new row unless the stored tables hold its row and it states what that
+/// row projects. A changed design position orders the rows by position and
+/// identity. Otherwise new rows follow the stored rows in arena order. The
+/// rows are numbered again in their order. `history` holds the v10 features whose states the
 /// rows set, and `own` the v10 parameters; a cache agrees with its
 /// expression's value within the tolerances of `target`. `which` selects
 /// the active rows.
@@ -497,6 +500,7 @@ pub(crate) fn restate(
             && !present.contains(&row.id)
     });
     let mut held = BTreeSet::new();
+    let mut positions = BTreeMap::new();
     for row in rows.iter().chain(retained) {
         let Some(scope) = scope_of(row).filter(|scope| restates(scope)) else {
             out.rows.rows.push(row.clone());
@@ -519,6 +523,9 @@ pub(crate) fn restate(
         held.insert(&row.id);
         let mut restated = row.clone();
         if record.scope == scope {
+            if let Some(position) = record.position {
+                positions.insert(&record.id, position);
+            }
             overlay(
                 &mut restated,
                 record,
@@ -573,12 +580,29 @@ pub(crate) fn restate(
             &mut out.charges,
             &mut out.rows.stated,
         );
+        if let Some(position) = record.position {
+            positions.insert(&record.id, position);
+        }
         added.push(row);
     }
     out.rows
         .rows
         .sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
     out.rows.rows.extend(added);
+    if positions
+        .iter()
+        .any(|(id, position)| stored.get(id).is_none_or(|row| row.ordinal != *position))
+    {
+        out.rows.rows.sort_by(|left, right| {
+            let left_position = positions.get(&left.id);
+            let right_position = positions.get(&right.id);
+            (left_position.is_none(), left_position, &left.id).cmp(&(
+                right_position.is_none(),
+                right_position,
+                &right.id,
+            ))
+        });
+    }
     for (at, row) in (0_u32..).zip(&mut out.rows.rows) {
         row.ordinal = at;
     }

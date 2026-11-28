@@ -205,7 +205,7 @@ fn discover(
         .iter()
         .map(|frame| (frame.start, frame.member_end))
         .collect();
-    let archive = crate::test_support::body_map_test::f3d_with_breps_and_design(&[], bytes, &[]);
+    let archive = crate::test_support::body_map_fixture::f3d_with_breps_and_design(&[], bytes, &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, root) =

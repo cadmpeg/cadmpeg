@@ -690,7 +690,7 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, options);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, options);
         for uuid in [FIRST_CAGE_UUID, SECOND_CAGE_UUID, THIRD] {
             archive
                 .start_file(
@@ -708,7 +708,7 @@ fn legacy_catalog_keeps_siblings_and_all_ambiguous_surface_paths() {
             neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID),
             neutral_form_cage("f3d:model:subd#3", THIRD),
         ];
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 let mut facts = super::FormFacts {
                     inputs: super::form_inputs(&scope)?,
@@ -1106,7 +1106,7 @@ fn body_construction_with_losses(
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     for uuid in [FIRST_CAGE_UUID, SECOND_CAGE_UUID] {
         archive
             .start_file(
@@ -1119,7 +1119,7 @@ fn body_construction_with_losses(
     let archive = archive.finish().unwrap().into_inner();
     let mut result = None;
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
             let mut facts = super::FormFacts {
@@ -1516,12 +1516,12 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
     let mut rows = vec![row.clone()];
     let mut losses = Vec::new();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
     let archive = archive.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let mut projection = super::FormProjection::new(scan);
             projection.project(
@@ -1581,7 +1581,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         form_scope(202, vec![208, 209]),
     ];
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
@@ -1607,7 +1607,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         let original = feature.clone();
         let mut features = [feature];
         let mut losses = Vec::new();
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 super::FormProjection::new(scan).project(
                     ctx,
@@ -1711,7 +1711,7 @@ fn form_resource_activity_uses_the_exact_active_asset_without_a_parse_diagnosis(
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     archive
         .start_file(
             format!("FusionAssetName[Active]/TSplines.BlobParts/TSpline.{FIRST_CAGE_UUID}.tsm"),
@@ -1834,7 +1834,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::io::Cursor;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
@@ -1850,7 +1850,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
     let mut rows = vec![json::from_value(cadmpeg_core::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
     let original = rows.clone();
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         assert!(matches!(
             super::FormProjection::new(scan).project(&ctx, &[], &mut rows, &[], &mut losses),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))

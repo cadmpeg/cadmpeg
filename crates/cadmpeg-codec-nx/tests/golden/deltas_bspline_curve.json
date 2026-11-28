@@ -434,6 +434,11 @@
             "offset": 53,
             "stream": "nx:parasolid#0:partition",
             "tag": "B_SPLINE_SURFACE"
+          },
+          "nx:s1:deltas-residual#0": {
+            "offset": 0,
+            "stream": "nx:s1",
+            "tag": "DELTAS_RESIDUAL"
           }
         }
       },

@@ -9,6 +9,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use cadmpeg_asm::brep::annotations::AnnotationRecord;
+use cadmpeg_asm::brep::inspect_with_source;
+use cadmpeg_asm::brep::transfer::{transfer_inspection, InspectionGeometry};
 use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -18,20 +21,23 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
-use cadmpeg_ir::ids::HistoryBodyId;
+use cadmpeg_ir::ids::{BodyId, HistoryBodyId};
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
+use cadmpeg_ir::UnknownRecord;
 
 use super::history_states::{
     Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
-use super::history_views::{decode_scratch, Decoded};
+use super::history_views::{with_state_table, Decoded};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
+// resource-cap: MAX_HISTORY_BODIES = 4
 pub(crate) const MAX_HISTORY_BODIES: usize = 8;
 /// Cap of records materialized for all nests of a part.
+// resource-cap: MAX_HISTORY_BODY_WORK = 4
 pub(crate) const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 /// Scope of every identity in a nest.
 const NEST_SCOPE: &str = "history-body";
@@ -78,11 +84,23 @@ pub(crate) struct Outcome {
     pub(crate) unlinked: usize,
 }
 
+/// The decoded geometry of a state and the source records it references.
+#[derive(Debug, Default)]
+pub(crate) struct StateRecords {
+    pub(crate) geometry: Topology,
+    /// Original body slots of the nests admitted from this state.
+    pub(crate) body_slots: BTreeMap<HistoryBodyId, BodyId>,
+    pub(crate) unknowns: Vec<UnknownRecord>,
+    pub(crate) provenance: Vec<AnnotationRecord>,
+}
+
 /// Nests of a part and their links.
 #[derive(Debug, Default)]
 pub(crate) struct Built {
     /// Nests, sorted by identity.
     pub(crate) bodies: Vec<HistoryBody>,
+    /// The states of admitted nests, by oldest-first ordinal.
+    pub(crate) states: BTreeMap<u32, StateRecords>,
     /// Identity of the nest of each feature record, by record index.
     pub(crate) links: HashMap<usize, HistoryBodyId>,
     /// The nest that each request whose body was given up would have, and
@@ -99,6 +117,8 @@ pub(crate) enum Unbuilt {
     Undecoded,
     /// A carrier of the body has no solved form.
     Unsolved,
+    /// The state has more than one body with the key.
+    Ambiguous,
     /// The body is not a closed manifold solid.
     NotClosed(Open),
     /// The feature of the body is not a projected feature.
@@ -258,6 +278,8 @@ pub(crate) fn build(
     let mut visited = 0_usize;
     let mut failure = None;
     let mut handled = [false; MAX_HISTORY_BODIES];
+    let bytes = carrier.bytes.window();
+    let stream = carrier.record_stream();
     walk_entity_versions(views, *active_count, archived_ids, |slot, versions| {
         let visit = visited;
         visited += 1;
@@ -278,80 +300,64 @@ pub(crate) fn build(
                 wants[index].state_id = views[slot].state_id;
             }
             let refused = |why| indices.iter().map(|_| Err(why)).collect::<Vec<_>>();
-            let candidates = if work.charge_by(work_units(versions.len())) {
-                match decode_scratch(
-                    ctx,
-                    header,
-                    archive,
-                    versions,
-                    ordinal,
-                    |state_ctx, state| {
-                        indices
-                            .iter()
-                            .map(|&index| {
-                                let want = &wants[index];
-                                let key = u64::try_from(want.key).ok();
-                                let Some(body) = state
-                                    .body_keys
-                                    .iter()
-                                    .find(|body| key.is_some() && body.asm_body_key == key)
-                                else {
-                                    return Ok(Ok(None));
-                                };
-                                let extracted =
-                                    state_ctx.scratch(carrier.bytes.window().len(), |scratch| {
-                                        Ok(
-                                            match extract(
-                                                scratch,
-                                                &state.geometry,
-                                                body.body.as_str(),
-                                            )? {
-                                                Extract::Absent => Ok(None),
-                                                Extract::Unsolved => Err(Unbuilt::Unsolved),
-                                                Extract::NotClosed(open) => {
-                                                    Err(Unbuilt::NotClosed(open))
-                                                }
-                                                Extract::Nest(topology) => {
-                                                    let Some(feature) = features
-                                                        .get(records[want.record].feature.as_str())
-                                                    else {
-                                                        return Ok(Err(Unbuilt::Unlinked));
-                                                    };
-                                                    Ok(Some(nest(
-                                                        scratch,
-                                                        want,
-                                                        (*feature).clone(),
-                                                        *topology,
-                                                    )?))
-                                                }
-                                            },
-                                        )
-                                    });
-                                match extracted {
-                                    Ok(Ok(result)) => Ok(result),
-                                    Ok(Err(limit)) => Ok(Err(Unbuilt::ResourceBounded(limit))),
-                                    Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-                                    Err(_) => Ok(Err(Unbuilt::Undecoded)),
-                                }
-                            })
-                            .collect::<Result<Vec<_>, CodecError>>()
-                    },
-                )? {
-                    Decoded::Scratch(candidates) => candidates,
-                    Decoded::Failed => refused(Unbuilt::Undecoded),
-                    Decoded::Bounded(limit) => refused(Unbuilt::ResourceBounded(limit)),
+            let (state, candidates) = if work.charge_by(work_units(versions.len())) {
+                match with_state_table(ctx, archive, versions, |state_ctx, table| {
+                    let mut brep = inspect_with_source(
+                        state_ctx,
+                        table,
+                        bytes,
+                        Some(&header.metadata),
+                        &stream,
+                        cadmpeg_asm::asm_format!("inventor"),
+                    )?;
+                    let unknowns = std::mem::take(&mut brep.unknowns);
+                    let ids: HashSet<_> =
+                        unknowns.iter().map(|record| record.id().as_str()).collect();
+                    let provenance = std::mem::take(&mut brep.annotation_records)
+                        .into_iter()
+                        .filter(|record| ids.contains(record.id.as_str()))
+                        .collect();
+                    let state = transfer_inspection(state_ctx, brep)?;
+                    let candidates = indices
+                        .iter()
+                        .map(|&index| {
+                            let want = &wants[index];
+                            let feature = features.get(records[want.record].feature.as_str());
+                            match state_ctx.scratch(bytes.len(), |scratch| {
+                                candidate(scratch, &state, want, feature.copied())
+                            }) {
+                                Ok(Ok(result)) => Ok(result),
+                                Ok(Err(limit)) => Ok(Err(Unbuilt::ResourceBounded(limit))),
+                                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+                                Err(_) => Ok(Err(Unbuilt::Undecoded)),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()?;
+                    let state = StateRecords {
+                        geometry: state.geometry,
+                        body_slots: BTreeMap::new(),
+                        unknowns,
+                        provenance,
+                    };
+                    Ok((state, candidates))
+                })? {
+                    Decoded::Scratch((state, candidates)) => (Some(state), candidates),
+                    Decoded::Failed => (None, refused(Unbuilt::Undecoded)),
+                    Decoded::Bounded(limit) => (None, refused(Unbuilt::ResourceBounded(limit))),
                 }
             } else {
-                refused(Unbuilt::Bounded)
+                (None, refused(Unbuilt::Bounded))
             };
+            let mut body_slots = BTreeMap::new();
             for (&index, candidate) in indices.iter().zip(candidates) {
                 let want = &wants[index];
                 handled[index] = true;
                 let why = match candidate {
-                    Ok(Some(body)) => {
+                    Ok(Some((body, slot))) => {
                         if let Err(limit) = admit_nest(ctx, &body) {
                             Unbuilt::ResourceBounded(limit)
                         } else {
+                            body_slots.insert(body.id.clone(), slot);
                             built.links.insert(want.record, body.id.clone());
                             built.bodies.push(body);
                             built.outcome.built += 1;
@@ -366,11 +372,17 @@ pub(crate) fn build(
                 };
                 match why {
                     Unbuilt::Bounded | Unbuilt::ResourceBounded(_) => built.outcome.bounded += 1,
-                    Unbuilt::Undecoded | Unbuilt::Unsolved => built.outcome.undecoded += 1,
+                    Unbuilt::Undecoded | Unbuilt::Unsolved | Unbuilt::Ambiguous => {
+                        built.outcome.undecoded += 1;
+                    }
                     Unbuilt::NotClosed(open) => built.outcome.open[open.slot()] += 1,
                     Unbuilt::Unlinked => built.outcome.unlinked += 1,
                 }
                 built.give_up(want, why, records)?;
+            }
+            if let Some(mut state) = state.filter(|_| !body_slots.is_empty()) {
+                state.body_slots = body_slots;
+                built.states.insert(ordinal, state);
             }
             Ok(())
         };
@@ -390,6 +402,41 @@ pub(crate) fn build(
     Ok(built)
 }
 
+type Candidate = Result<Option<(HistoryBody, BodyId)>, Unbuilt>;
+
+fn candidate(
+    ctx: &DecodeContext<'_>,
+    state: &InspectionGeometry,
+    want: &Want,
+    feature: Option<&FeatureId>,
+) -> Result<Candidate, CodecError> {
+    let Ok(key) = u64::try_from(want.key) else {
+        return Ok(Ok(None));
+    };
+    let mut slots = state
+        .body_keys
+        .iter()
+        .filter(|body| body.asm_body_key == Some(key));
+    let Some(body) = slots.next() else {
+        return Ok(Ok(None));
+    };
+    if slots.next().is_some() {
+        return Ok(Err(Unbuilt::Ambiguous));
+    }
+    Ok(match extract(ctx, &state.geometry, body.body.as_str())? {
+        Extract::Absent => Ok(None),
+        Extract::Unsolved => Err(Unbuilt::Unsolved),
+        Extract::NotClosed(open) => Err(Unbuilt::NotClosed(open)),
+        Extract::Nest(topology) => {
+            let Some(feature) = feature else {
+                return Ok(Err(Unbuilt::Unlinked));
+            };
+            let slot = topology.body.id.clone();
+            Ok(Some((nest(ctx, want, feature.clone(), *topology)?, slot)))
+        }
+    })
+}
+
 fn admit_nest(
     ctx: &DecodeContext<'_>,
     body: &HistoryBody,
@@ -405,6 +452,23 @@ fn admit_nest(
 fn nest_id(ordinal: usize) -> Result<HistoryBodyId, CodecError> {
     HistoryBodyId::mint(format!("inventor:{NEST_SCOPE}:nest#h{ordinal:04}"))
         .map_err(|error| CodecError::malformed(format_args!("{error}")))
+}
+
+/// The slot in the ASM state from which this nest's body ID was composed.
+pub(crate) fn original_body_slot(body: &HistoryBody) -> Option<BodyId> {
+    let request = body
+        .id
+        .as_str()
+        .strip_prefix("inventor:history-body:nest#")?;
+    let key = body
+        .topology
+        .body
+        .id
+        .as_str()
+        .strip_prefix("inventor:history-body:entity#")?
+        .strip_prefix(request)?
+        .strip_prefix('-')?;
+    BodyId::mint(format!("inventor:brep:entity#{key}")).ok()
 }
 
 /// The nest in the history-body scope, with the feature link of its role.

@@ -659,3 +659,44 @@ fn an_undecoded_kernel_carrier_is_given_up_as_untyped_model_content() {
     assert!(given_up[0].0.starts_with("inventor:source:part#"));
     assert_eq!(given_up[0].1, [cadmpeg_core::decode::ArenaClass::Model]);
 }
+
+#[test]
+fn a_bound_colour_reaches_the_faces_of_the_current_geometry_and_of_each_state() {
+    use cadmpeg_ir::topology::{Color, Face};
+    let face = |id: &str| -> Face {
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+            "id": id, "shell": "inventor:brep:entity#1", "surface": "inventor:brep:entity#2",
+            "sense": "forward", "loops": {"kind": "unspecified", "loops": []},
+        }))
+        .expect("face")
+    };
+    let topology = |ids: &[&str]| cadmpeg_ir::document::Topology {
+        faces: ids.iter().map(|id| face(id)).collect(),
+        ..Default::default()
+    };
+    let red = Color::new(1.0, 0.0, 0.0, 1.0).expect("red");
+    let blue = Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    let mut geometry = topology(&["inventor:brep:entity#30"]);
+    let mut states = std::collections::BTreeMap::from([(
+        4,
+        crate::feature::history_bodies::StateRecords {
+            geometry: topology(&["inventor:brep:entity#30", "inventor:brep:entity#31"]),
+            ..Default::default()
+        },
+    )]);
+    states.get_mut(&4).expect("state").geometry.faces[1].color = Some(blue);
+    let colours = std::collections::HashMap::from([
+        (face("inventor:brep:entity#30").id, red),
+        (face("inventor:brep:entity#31").id, red),
+    ]);
+    super::colour_faces(&mut geometry, &mut states, &colours);
+    let colours_of = |topology: &cadmpeg_ir::document::Topology| {
+        topology
+            .faces
+            .iter()
+            .map(|face| face.color)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(colours_of(&geometry), [Some(red)]);
+    assert_eq!(colours_of(&states[&4].geometry), [Some(red), Some(blue)]);
+}

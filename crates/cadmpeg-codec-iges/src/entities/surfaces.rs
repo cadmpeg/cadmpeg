@@ -45,6 +45,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_SURFACES_SIMILARITY_ORIENTATION_E10: f64 = 1.0e-10;
 
+// resource-cap: MAX_SURFACE_POLES = 2
 const MAX_SURFACE_POLES: usize = 1_000_000;
 
 trait SurfaceGridWeight {

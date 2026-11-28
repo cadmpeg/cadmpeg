@@ -3,7 +3,10 @@
 use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::CodecError;
 
-use super::{classify, USD_SDF_1_4_32, USD_UNKNOWN, USD_USDA_1_0, USD_USDA_1_3, USD_USDC_0_8_0};
+use super::classify;
+use super::registry_ids::{
+    USD_SDF_1_4_32, USD_UNKNOWN, USD_USDA_1_0, USD_USDA_1_3, USD_USDC_0_8_0,
+};
 use crate::detect::{Cookie, Header};
 use crate::loss::UsdLossCode;
 

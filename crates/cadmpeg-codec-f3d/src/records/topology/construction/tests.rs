@@ -52,7 +52,7 @@ fn construction_transform_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:construction-transform#0",
         value: &transform,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(0)),
@@ -152,7 +152,7 @@ fn construction_frame_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:construction-frame#0",
         value: &frame,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_construction_operand_groups",
         || super::CONSTRUCTION_FRAME_CLONE_COUNT.with(|count| count.set(0)),
@@ -220,7 +220,7 @@ fn construction_group_native_retained_limit_refuses_before_clone() {
         "paired_class_tag":"278","paired_byte_offset":200
     });
     let group: DesignConstructionOperandGroup = json::from_value(wire).unwrap();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &group,
         "design_construction_operand_groups",
         || super::CONSTRUCTION_GROUP_CLONE_COUNT.with(|count| count.set(0)),
@@ -315,7 +315,7 @@ fn construction_tracking_path_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:tracking-path#0",
         value: &path,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(|count| count.set(0)),
@@ -394,7 +394,7 @@ fn construction_path_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:construction-path#0",
         value: &path,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_construction_operand_identities",
         || super::CONSTRUCTION_PATH_CLONE_COUNT.with(|count| count.set(0)),
@@ -457,7 +457,7 @@ fn construction_identity_native_retained_limit_refuses_before_clone() {
     let identity: super::DesignConstructionOperandIdentity = serde_json::from_str(
         r#"{"id":"f3d:native:construction-identity#0","group_record_index":200,"wrapper_record_indices":[300,305],"wrapper_byte_offsets":[0,24],"wrapper_class_tags":["384","289"],"following_record_index":310,"following_byte_offset":48,"following_class_tag":"304"}"#
     ).unwrap();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &identity,
         "design_construction_operand_identities",
         || super::CONSTRUCTION_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
@@ -746,7 +746,7 @@ fn persistent_identity_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:persistent-identity#0",
         value: &value,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::PERSISTENT_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),

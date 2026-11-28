@@ -395,9 +395,9 @@ pub(super) fn results(
             }
             let tree = translate::tree(
                 &line.expression,
+                &names,
                 &translate::Typing {
                     parameters,
-                    names: &names,
                     target: &length,
                     length_unit: linking.length_unit,
                 },
@@ -617,9 +617,9 @@ fn bare_tree(
 ) -> Result<Node<ParameterRef>, Kept> {
     let tree = translate::tree(
         text,
+        names,
         &translate::Typing {
             parameters,
-            names,
             target: &parameters[target].kind,
             length_unit,
         },
@@ -649,6 +649,25 @@ fn bare_tree(
         Test::Unconfirmed => Err(Kept::Unconfirmed),
         Test::Disagrees => Err(Kept::Disagrees),
     }
+}
+
+/// The neutral interpretation of an expression with resolved `SolidWorks` tokens.
+pub(super) fn source_tree(
+    tokens: &[ExpressionToken<ParameterRef>],
+    parameters: &[DesignParameter],
+    kind: &ValueKind,
+    length_unit: Option<UnitSymbol>,
+    by_id: &HashMap<&ParameterId, usize>,
+) -> Option<Node<ParameterRef>> {
+    translate::source_tree(
+        tokens,
+        &translate::Typing {
+            parameters,
+            target: kind,
+            length_unit,
+        },
+        by_id,
+    )
 }
 
 /// The loss note of the active configuration's lines, for a part that states
@@ -732,6 +751,7 @@ fn mint(
             id,
             scope: scope.clone(),
             owner: None,
+            position: None,
             name: Some(name),
             kind,
             unit: None,
@@ -858,9 +878,9 @@ fn expression(
     let reads = resolved.iter().flatten().copied().collect::<Vec<_>>();
     let tree = translate::tree(
         &line.expression,
+        names,
         &translate::Typing {
             parameters,
-            names,
             target: &parameters[target].kind,
             length_unit: linking.length_unit,
         },
