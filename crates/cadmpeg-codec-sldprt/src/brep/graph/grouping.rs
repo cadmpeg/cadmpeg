@@ -15,6 +15,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Region, RegionUnstated, Sense, Shell,
 use cadmpeg_ir::{Exactness, StreamName};
 
 use super::{topology, BodyRecord, Brep, DroppedRecord, RegionRecord, ShellRecord};
+use crate::brep::typed::{shell_containment::ShellRole, Facts};
+use crate::loss::SldprtLossCode;
 
 /// The ids of the faces the decode states.
 pub(super) fn stated_face_ids(out: &Brep) -> HashSet<String> {
@@ -120,8 +122,7 @@ pub(super) fn state_unbuilt_records(
             }
             super::admit_brep_entity(ctx)?;
             annotate(AnnotationKey::from(&id), region.offset, "00_51_region");
-            out.regions
-                .push(region_of(id, body_id.clone(), added, None));
+            out.regions.push(region_of(id, body_id.clone(), added));
         }
         if body_new {
             super::admit_brep_entity(ctx)?;
@@ -150,20 +151,103 @@ pub(super) fn state_unbuilt_records(
     Ok(())
 }
 
-pub(super) fn region_of(
-    id: RegionId,
-    body: BodyId,
-    mut shells: Vec<ShellId>,
-    exterior: Option<usize>,
-) -> Region {
-    if let Some(exterior) = exterior {
-        shells[..=exterior].rotate_right(1);
-    } else if shells.len() > 1 {
+pub(super) fn region_of(id: RegionId, body: BodyId, shells: Vec<ShellId>) -> Region {
+    if shells.len() > 1 {
         let mut region = Region::new(id, body, Vec::new());
         region.unstated = Some(RegionUnstated::Unclassified { shells });
         return region;
     }
     Region::new(id, body, shells)
+}
+
+pub(super) fn classify_native_shells(out: &mut Brep, facts: &Facts) {
+    if out.stats.synthetic_body_grouping
+        || !out
+            .regions
+            .iter()
+            .any(|region| region.stated_shells().nth(1).is_some())
+    {
+        return;
+    }
+    let evidence: HashMap<_, _> = facts
+        .shell_evidence()
+        .into_iter()
+        .map(|(attr, evidence)| {
+            (
+                RegionId::compose(&super::region_namespace(), attr),
+                evidence,
+            )
+        })
+        .collect();
+    for region in &mut out.regions {
+        let Some(source) = evidence.get(&region.id) else {
+            continue;
+        };
+        let native: Vec<_> = source
+            .shells
+            .iter()
+            .map(|(attr, role)| (ShellId::compose(&super::shell_namespace(), *attr), *role))
+            .collect();
+        let order: HashMap<_, _> = native
+            .iter()
+            .enumerate()
+            .map(|(index, (id, role))| (id.as_str(), (index, *role)))
+            .collect();
+        let mut shells: Vec<_> = region.stated_shells().cloned().collect();
+        shells.sort_by_key(|id| {
+            order
+                .get(super::shell_source_id(id))
+                .map_or((true, 0), |(rank, _)| (false, *rank))
+        });
+        let mut counts = HashMap::<_, usize>::new();
+        for shell in &shells {
+            *counts.entry(super::shell_source_id(shell)).or_default() += 1;
+        }
+        let roles: Vec<_> = shells
+            .iter()
+            .map(|shell| {
+                let id = super::shell_source_id(shell);
+                if counts[id] == 1 {
+                    order.get(id).and_then(|(_, role)| *role)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let missing = !source.complete || order.keys().any(|id| !counts.contains_key(id));
+        let exterior = roles
+            .iter()
+            .position(|role| *role == Some(ShellRole::Exterior));
+        if let Some(exterior) = exterior.filter(|_| roles.iter().all(Option::is_some)) {
+            shells[..=exterior].rotate_right(1);
+            region.set_shells(shells);
+            region.unstated = missing.then_some(RegionUnstated::Voids);
+        } else if !shells.is_empty() && roles.iter().all(|role| *role == Some(ShellRole::Cavity)) {
+            region.set_shells(Vec::new());
+            region.unstated = Some(RegionUnstated::Exterior { voids: shells });
+        } else if shells.len() > 1 || (missing && !shells.is_empty()) {
+            let proven: Vec<_> = shells
+                .iter()
+                .zip(&roles)
+                .filter_map(|(shell, role)| {
+                    let role = match (*role)? {
+                        ShellRole::Exterior => "exterior",
+                        ShellRole::Cavity => "cavity",
+                    };
+                    Some(format!("{shell} {role}"))
+                })
+                .collect();
+            if !proven.is_empty() {
+                let proven = proven.join(", ");
+                out.losses.push(SldprtLossCode::TopologyShellRoleUnstated.note(format!(
+                    "{} keeps its shells in source order with unresolved roles. Stored face chains prove {proven}.",
+                    region.id
+                )));
+            }
+            region.set_shells(Vec::new());
+            region.unstated = Some(RegionUnstated::Unclassified { shells });
+        }
+    }
 }
 
 /// The body records of the typed `hierarchies`, sorted by attribute.
