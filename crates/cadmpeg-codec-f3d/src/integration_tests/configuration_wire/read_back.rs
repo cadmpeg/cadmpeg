@@ -255,6 +255,7 @@ fn authored_width(ir: &mut CadIr, rename: bool) -> cadmpeg_ir::features::Paramet
     let scopes = BTreeMap::from([(String::new(), definition.clone())]);
     ir.design.parameters = crate::design_v11::parameters::project(
         &ir.model.parameters,
+        &std::collections::HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::new(),

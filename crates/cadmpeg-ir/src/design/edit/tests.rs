@@ -159,6 +159,7 @@ fn parameter(
         id: parameter_id(key),
         scope: definition_id(),
         owner: None,
+        position: None,
         name: Some(NonBlankString::new(format!("p{key}")).unwrap()),
         kind,
         unit: None,
@@ -322,6 +323,7 @@ fn with_base(document: &mut CadIr) {
         id: configuration(9),
         scope: definition(),
         name: "Base".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),
@@ -461,6 +463,7 @@ fn a_dimension_resolves_through_the_active_configuration() {
         id: configuration(1),
         scope: definition(),
         name: "Long".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {
@@ -534,6 +537,7 @@ fn stateless_features_follow_their_configuration() {
         id: configuration(1),
         scope: definition(),
         name: "Lean".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {
@@ -754,6 +758,7 @@ fn a_resolver_reports_a_configuration_that_is_its_own_ancestor() {
             id: configuration(key),
             scope: definition(),
             name: format!("C{key}"),
+            position: None,
             parent: Some(configuration(parent)),
             comment: None,
             overrides: Overrides::default(),
@@ -799,6 +804,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
         id: configuration(1),
         scope: definition(),
         name: "Other".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {
@@ -973,6 +979,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         id: configuration(1),
         scope: definition(),
         name: "Seven".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {
@@ -1289,6 +1296,7 @@ fn removing_a_member_rebases_and_retargets() {
         id: configuration(1),
         scope: definition(),
         name: "Only".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {
@@ -1673,6 +1681,7 @@ fn configured() -> CadIr {
             id: configuration(key),
             scope: definition(),
             name: format!("C{key}"),
+            position: None,
             parent: None,
             comment: None,
             overrides: Overrides::default(),

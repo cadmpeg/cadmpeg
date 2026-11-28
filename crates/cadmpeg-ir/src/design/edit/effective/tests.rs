@@ -82,6 +82,7 @@ fn configuration_of(key: u32, scope: u32) -> DesignConfiguration {
         id: configuration(key),
         scope: definition(scope),
         name: format!("c{key}"),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),
