@@ -439,7 +439,10 @@ fn uncertain_item_kinds_in_a_spanned_component_keep_none_with_one_loss() {
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}")
     };
-    assert_eq!(loss.code, "history.member-component-unstated");
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::HistoryMemberComponentUnstated.kind()
+    );
     assert!(loss.message.contains(owner));
     for key in ["base", "cut", "insert"] {
         assert!(loss.message.contains(&format!("f3d:design:feature#{key}")));
@@ -530,7 +533,10 @@ fn a_hosted_owner_outside_the_span_charges_one_loss_for_its_features() {
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}")
     };
-    assert_eq!(loss.code, "history.member-component-unstated");
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::HistoryMemberComponentUnstated.kind()
+    );
     assert!(loss.message.contains(&unplaced));
     assert!(loss.message.contains("f3d:design:feature#b"));
     assert!(loss.message.contains("f3d:design:feature#c"));
