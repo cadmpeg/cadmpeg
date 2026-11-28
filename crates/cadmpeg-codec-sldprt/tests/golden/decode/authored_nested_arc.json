@@ -903,7 +903,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "3 sketch relations name one point entity for both operands of a coincidence; the point states the coincidence, and the relations are not restated: sldprt:model:sketch-constraint#348:0:0:0, sldprt:model:sketch-constraint#348:0:0:1, sldprt:model:sketch-constraint#348:0:0:2",
+        "message": "3 sketch relations name one point entity for both operands of a coincidence; the point states the coincidence, and the design holds no relation record for them: sldprt:model:sketch-constraint#348:0:0:0, sldprt:model:sketch-constraint#348:0:0:1, sldprt:model:sketch-constraint#348:0:0:2",
         "severity": "warning"
       }
     ],
