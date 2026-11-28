@@ -8,7 +8,8 @@
 //! [`is_stateless`](crate::CadIr::is_stateless) decides which features have
 //! evaluations, and
 //! [`effective_transform`](crate::CadIr::effective_transform),
-//! [`effective_visibility`](crate::CadIr::effective_visibility), and
+//! [`effective_visibility`](crate::CadIr::effective_visibility),
+//! [`effective_suppression`](crate::CadIr::effective_suppression), and
 //! [`effective_display_color`](crate::CadIr::effective_display_color)
 //! resolve an instance's placement, visibility, and colour. They read any
 //! document.

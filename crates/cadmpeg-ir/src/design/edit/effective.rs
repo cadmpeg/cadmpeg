@@ -42,6 +42,7 @@ mod tests;
 struct Resolved {
     transform: Option<Transform>,
     visible: Option<bool>,
+    suppressed: Option<bool>,
 }
 
 impl Resolved {
@@ -50,12 +51,14 @@ impl Resolved {
     fn take(&mut self, entry: &OccurrenceOverride) {
         self.transform = self.transform.or(entry.transform);
         self.visible = self.visible.or(entry.visible);
+        self.suppressed = self.suppressed.or(entry.suppressed);
     }
 
     /// As [`Resolved::take`], for a nested override.
     fn take_nested(&mut self, entry: &NestedOverride) {
         self.transform = self.transform.or(entry.transform);
         self.visible = self.visible.or(entry.visible);
+        self.suppressed = self.suppressed.or(entry.suppressed);
     }
 }
 
@@ -148,6 +151,123 @@ fn same_record(item: &PresentationItem, entity: &AppearanceTarget) -> bool {
 }
 
 impl CadIr {
+    /// Whether the instance is suppressed or a definition it uses is inactive.
+    ///
+    /// # Errors
+    ///
+    /// As [`CadIr::effective_visibility`].
+    pub fn effective_suppression(
+        &self,
+        target: &InstanceTarget<AppearanceTarget>,
+    ) -> Result<bool, EditError> {
+        let resolver = PathResolver::of(self);
+        if let Some(path) = &target.path {
+            if let Some((levels, ids)) = resolver.levels(path)? {
+                for (at, level) in levels.iter().enumerate() {
+                    if resolver.resolve_level(&levels, &ids, at)?.suppressed == Some(true)
+                        || self.definition_inactive(level.prototype)
+                    {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        let owner = match &target.entity {
+            AppearanceTarget::Definition(id) => Some(id.clone()),
+            AppearanceTarget::Occurrence(id) => {
+                crate::products::owner(&self.model.product_definitions, id)
+                    .map(|owner| owner.id.clone())
+            }
+            AppearanceTarget::Tessellation(id) => match self
+                .model
+                .tessellations
+                .iter()
+                .find(|mesh| &mesh.id == id)
+                .map(|mesh| &mesh.of)
+            {
+                Some(
+                    crate::tessellation::Meshed::Definition { definition, .. }
+                    | crate::tessellation::Meshed::Display { definition },
+                ) => Some(definition.clone()),
+                Some(crate::tessellation::Meshed::Body { body, .. }) => {
+                    self.body_owner_in_state(body, target.state.as_ref())?
+                }
+                _ => None,
+            },
+            AppearanceTarget::Record { arena, id } if arena.as_str() == "point_clouds" => self
+                .model
+                .point_clouds
+                .iter()
+                .find(|cloud| cloud.id.as_ref() == id)
+                .map(|cloud| cloud.definition.clone()),
+            _ => {
+                let evaluation = target.state.as_ref().and_then(|state| {
+                    self.design.evaluations.iter().find(|evaluation| {
+                        evaluation.configuration == state.configuration
+                            && evaluation.of == state.of
+                            && evaluation.content.is_some()
+                    })
+                });
+                if let Some(evaluation) = evaluation {
+                    let state = self.resolved(&evaluation.id)?;
+                    holding_body(&state.records, &target.entity).map(|body| {
+                        state
+                            .owners
+                            .get(&body)
+                            .or_else(|| self.body_owner(&body))
+                            .unwrap_or(&evaluation.scope)
+                            .clone()
+                    })
+                } else {
+                    let topology = self.state_topology(target.state.as_ref())?;
+                    holding_body(&topology, &target.entity)
+                        .and_then(|body| self.body_owner(&body).cloned())
+                }
+            }
+        };
+        Ok(owner
+            .as_ref()
+            .is_some_and(|owner| self.definition_inactive(owner)))
+    }
+
+    fn definition_inactive(&self, id: &ProductDefinitionId) -> bool {
+        self.model
+            .product_definitions
+            .iter()
+            .any(|definition| &definition.id == id && definition.active == Some(false))
+    }
+
+    fn body_owner_in_state(
+        &self,
+        body: &BodyId,
+        state: Option<&StateRef>,
+    ) -> Result<Option<ProductDefinitionId>, EditError> {
+        let Some(state) = state else {
+            return Ok(self.body_owner(body).cloned());
+        };
+        let Some(evaluation) = self.design.evaluations.iter().find(|evaluation| {
+            evaluation.configuration == state.configuration
+                && evaluation.of == state.of
+                && evaluation.content.is_some()
+        }) else {
+            return Ok(None);
+        };
+        let resolved = self.resolved(&evaluation.id)?;
+        Ok(resolved
+            .records
+            .bodies
+            .iter()
+            .any(|record| &record.id == body)
+            .then(|| {
+                resolved
+                    .owners
+                    .get(body)
+                    .or_else(|| self.body_owner(body))
+                    .unwrap_or(&evaluation.scope)
+                    .clone()
+            }))
+    }
+
     /// The placement of the instance at `path` in document coordinates: the
     /// placements of its occurrences, outermost first, each resolved as §4
     /// states, composed. `None` where an occurrence states no placement, or a
@@ -672,6 +792,11 @@ impl PathResolver<'_> {
                 .or(arranged.visible)
                 .or(configured.visible)
                 .or(level.record.visible),
+            suppressed: nested
+                .suppressed
+                .or(arranged.suppressed)
+                .or(configured.suppressed)
+                .or(level.record.suppressed),
         })
     }
 
@@ -840,28 +965,32 @@ impl PathResolver<'_> {
     }
 }
 
-/// The body that holds an entity: the body itself, or the body a face, an
-/// edge, or a vertex belongs to through the parent pointers and the coedges
-/// of `topology`.
+/// The body that holds an entity in `topology`.
 fn holding_body(topology: &Topology, entity: &AppearanceTarget) -> Option<BodyId> {
+    let of_shell = |shell: &crate::topology::Shell| {
+        topology
+            .regions
+            .iter()
+            .find(|region| region.id == shell.region)
+            .map(|region| region.body.clone())
+    };
     let of_face = |face: &crate::ids::FaceId| {
         let shell = &topology
             .faces
             .iter()
             .find(|record| &record.id == face)?
             .shell;
-        let region = &topology
-            .shells
-            .iter()
-            .find(|record| &record.id == shell)?
-            .region;
-        topology
-            .regions
-            .iter()
-            .find(|record| &record.id == region)
-            .map(|record| record.body.clone())
+        let shell = topology.shells.iter().find(|record| &record.id == shell)?;
+        of_shell(shell)
     };
     let of_edge = |edge: &crate::ids::EdgeId| {
+        if let Some(shell) = topology
+            .shells
+            .iter()
+            .find(|shell| shell.wire_edges().any(|id| id == edge))
+        {
+            return of_shell(shell);
+        }
         let coedge = topology
             .coedges
             .iter()
@@ -878,10 +1007,22 @@ fn holding_body(topology: &Topology, entity: &AppearanceTarget) -> Option<BodyId
         AppearanceTarget::Face(face) => of_face(face),
         AppearanceTarget::Edge(edge) => of_edge(edge),
         AppearanceTarget::Vertex(vertex) => topology
-            .edges
+            .shells
             .iter()
-            .filter(|record| record.vertices().any(|end| end == vertex))
-            .find_map(|record| of_edge(&record.id)),
+            .find(|shell| shell.free_vertices().any(|id| id == vertex))
+            .and_then(of_shell)
+            .or_else(|| {
+                topology
+                    .edges
+                    .iter()
+                    .filter(|record| record.vertices().any(|end| end == vertex))
+                    .find_map(|record| of_edge(&record.id))
+            }),
+        AppearanceTarget::Record { arena, id } if arena.as_str() == "subds" => topology
+            .shells
+            .iter()
+            .find(|shell| shell.subds().any(|subd| subd.as_ref() == id))
+            .and_then(of_shell),
         _ => None,
     }
 }

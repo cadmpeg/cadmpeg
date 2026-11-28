@@ -714,6 +714,239 @@ fn a_point_cloud_visibility_and_its_layer_are_display_gates() {
     assert!(!document.effective_visibility(&target).unwrap());
 }
 
+#[test]
+fn suppression_resolves_configuration_arrangement_and_nested_overrides() {
+    let mut document = assembly();
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Definition(definition(3)),
+        path: Some(path(&[1, 2])),
+        state: None,
+    };
+    assert!(!document.effective_suppression(&target).unwrap());
+    document.model.occurrences[1].suppressed = Some(true);
+    assert!(document.effective_suppression(&target).unwrap());
+    configured(&mut document, 21).occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            suppressed: Some(false),
+            ..OccurrenceOverride::default()
+        },
+    );
+    assert!(!document.effective_suppression(&target).unwrap());
+    let mut overrides = Overrides::default();
+    overrides.occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            suppressed: Some(true),
+            ..OccurrenceOverride::default()
+        },
+    );
+    document
+        .design
+        .arrangements
+        .push(arrangement(2, 2, overrides));
+    document.design.scopes[1]
+        .active_arrangements
+        .insert(id("arrangement", 2));
+    assert!(document.effective_suppression(&target).unwrap());
+    let mut outer = nested(&[2], None, None);
+    outer.suppressed = Some(false);
+    document.model.occurrences[0].overrides.push(outer);
+    assert!(!document.effective_suppression(&target).unwrap());
+    document.model.product_definitions[1].active = Some(false);
+    assert!(document.effective_suppression(&target).unwrap());
+}
+
+#[test]
+fn suppression_uses_the_configuration_selected_by_the_parent() {
+    let mut document = assembly();
+    configured(&mut document, 22).occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            suppressed: Some(true),
+            ..OccurrenceOverride::default()
+        },
+    );
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Definition(definition(3)),
+        path: Some(path(&[1, 2])),
+        state: None,
+    };
+    assert!(!document.effective_suppression(&target).unwrap());
+    document.design.scopes[0].occurrences.insert(
+        occurrence(1),
+        OccurrenceDesign {
+            configuration: Some(ConfigurationRef::Local(configuration(22))),
+            arrangements: Vec::new(),
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    assert!(document.effective_suppression(&target).unwrap());
+    document
+        .design
+        .configurations
+        .iter_mut()
+        .find(|candidate| candidate.id == configuration(22))
+        .unwrap()
+        .parent = Some(configuration(22));
+    assert!(matches!(
+        document.effective_suppression(&target),
+        Err(crate::design::edit::EditError::ConfigurationCycle(_))
+    ));
+}
+
+#[test]
+fn suppression_of_an_inactive_definitions_body_mesh_and_point_cloud() {
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+
+    let mut document = cube();
+    let body = document.geometry.bodies[0].id.clone();
+    document.model.product_definitions[1]
+        .bodies
+        .push(body.clone());
+    document.model.product_definitions[1].active = Some(false);
+    let face = document.geometry.faces[0].id.clone();
+    for entity in [AppearanceTarget::Body(body), AppearanceTarget::Face(face)] {
+        assert!(document
+            .effective_suppression(&InstanceTarget::new(entity))
+            .unwrap());
+    }
+    let mesh = Tessellation::new(
+        id("tessellation", 1),
+        TessellationMesh::List {
+            vertices: Vec::new(),
+            triangles: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_of(Meshed::definition(definition(2)));
+    let mesh_target = InstanceTarget::new(AppearanceTarget::Tessellation(mesh.id.clone()));
+    document.model.tessellations.push(mesh);
+    assert!(document.effective_suppression(&mesh_target).unwrap());
+    let cloud: crate::point_cloud::PointCloud = json::from_value(cadmpeg_core::json!({
+        "id": "test:effective:point-cloud#1", "definition": definition(2),
+        "positions": [], "normals": [], "colors": [], "channels": []
+    }))
+    .unwrap();
+    let cloud_target = InstanceTarget::new(AppearanceTarget::Record {
+        arena: NonBlankString::new("point_clouds").unwrap(),
+        id: (&cloud.id).into(),
+    });
+    document.model.point_clouds.push(cloud);
+    assert!(document.effective_suppression(&cloud_target).unwrap());
+}
+
+#[test]
+fn suppression_reads_the_body_owner_from_the_target_state() {
+    use crate::design::evaluation::{Evaluation, StateBase, StateContent, StateDelta};
+    use crate::design::refs::{Evaluated, StateRef};
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+
+    let mut document = cube();
+    let body = document.geometry.bodies[0].id.clone();
+    document.model.product_definitions[2]
+        .bodies
+        .push(body.clone());
+    document.model.product_definitions[1].active = Some(false);
+    let of = Evaluated::Tool(id("feature", 1));
+    let mut delta = StateDelta {
+        records: document.geometry.clone(),
+        ..StateDelta::default()
+    };
+    delta.owners.insert(body.clone(), Some(definition(2)));
+    document.design.evaluations.push(Evaluation {
+        id: id("evaluation", 1),
+        scope: definition(1),
+        configuration: None,
+        of: of.clone(),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta,
+        }),
+        native_ref: None,
+    });
+    let state = Some(StateRef {
+        configuration: None,
+        of,
+    });
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Body(body.clone()),
+        path: None,
+        state: state.clone(),
+    };
+    assert!(document.effective_suppression(&target).unwrap());
+    assert!(!document
+        .effective_suppression(&InstanceTarget::new(AppearanceTarget::Body(body.clone())))
+        .unwrap());
+    let mesh = Tessellation::new(
+        id("tessellation", 1),
+        TessellationMesh::List {
+            vertices: Vec::new(),
+            triangles: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_of(Meshed::Body {
+        body,
+        faces: Vec::new(),
+    });
+    let mesh_target = InstanceTarget {
+        entity: AppearanceTarget::Tessellation(mesh.id.clone()),
+        path: None,
+        state,
+    };
+    document.model.tessellations.push(mesh);
+    assert!(document.effective_suppression(&mesh_target).unwrap());
+}
+
+#[test]
+fn suppression_follows_wire_and_cage_shell_members_to_their_body() {
+    use crate::topology::ShellMember;
+
+    let mut document = cube();
+    let body = document.geometry.bodies[0].id.clone();
+    document.model.product_definitions[1].bodies.push(body);
+    document.model.product_definitions[1].active = Some(false);
+    let edge = document.geometry.edges[0].id.clone();
+    let end = document.geometry.edges[0]
+        .vertices()
+        .next()
+        .unwrap()
+        .clone();
+    let free = document
+        .geometry
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id != end)
+        .unwrap()
+        .id
+        .clone();
+    let cage = id::<crate::ids::SubdId>("subd", 1);
+    document.geometry.shells[0].members = vec![
+        ShellMember::WireEdge { id: edge.clone() },
+        ShellMember::FreeVertex { id: free.clone() },
+        ShellMember::Subd { id: cage.clone() },
+    ];
+    for entity in [
+        AppearanceTarget::Edge(edge),
+        AppearanceTarget::Vertex(end),
+        AppearanceTarget::Vertex(free),
+        AppearanceTarget::Record {
+            arena: NonBlankString::new("subds").unwrap(),
+            id: (&cage).into(),
+        },
+    ] {
+        assert!(document
+            .effective_suppression(&InstanceTarget::new(entity))
+            .unwrap());
+    }
+}
+
 fn arrangement(key: u32, scope: u32, overrides: Overrides) -> Arrangement {
     Arrangement {
         id: id("arrangement", key),
