@@ -30,7 +30,8 @@ use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, Parame
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::features as v10;
-use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
 use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::features::{FeatureDefinition, ParameterId};
@@ -157,8 +158,12 @@ pub(super) fn thin(
             return Err("the thin profile's sketch does not precede it in the timeline".into());
         }
     }
-    if let Some(Boolean::Apply { targets: scope, .. }) = &mut extrude.output.boolean {
-        *scope = targets(source, "defaultScope", "booleanScope")?;
+    match &mut extrude.output.boolean {
+        Some(Boolean::Apply { targets: scope, .. }) => {
+            *scope = targets(source, "defaultScope", "booleanScope")?;
+        }
+        Some(Boolean::NewBody) => source.usage.account(&["defaultScope", "booleanScope"]),
+        _ => {}
     }
     Ok(operation)
 }
@@ -257,9 +262,11 @@ pub(super) fn project(
                 reason: "the derived feature's captured design stays in its model record".into(),
             });
         }
-        v10::FeatureOperation::DatumOffsetPlane { .. } => {
-            offset_plane(model).map(|datum| FeatureOperation::Datum(Box::new(datum)))
-        }
+        v10::FeatureOperation::DatumOffsetPlane {
+            reference,
+            distance,
+        } => offset_plane(reference.as_ref(), *distance)
+            .map(|datum| FeatureOperation::Datum(Box::new(datum))),
         _ => Err("the design operation of this feature is not projected yet"),
     };
     typed
@@ -315,7 +322,10 @@ fn unresolved(kind: Option<&str>, family: Option<OperationFamily>, reason: &str)
 
 fn boolean(source: &Source<'_>) -> SourceMapping<Boolean> {
     let op = match source.tag("operationType") {
-        Some("NEW") => return Ok(Boolean::NewBody),
+        Some("NEW") => {
+            source.usage.account(&["defaultScope", "booleanScope"]);
+            return Ok(Boolean::NewBody);
+        }
         Some("ADD") => BooleanOp::Join,
         Some("REMOVE") => BooleanOp::Cut,
         Some("INTERSECT") => BooleanOp::Intersect,
@@ -327,14 +337,19 @@ fn boolean(source: &Source<'_>) -> SourceMapping<Boolean> {
     })
 }
 
-fn targets(source: &Source<'_>, default: &str, key: &str) -> SourceMapping<Option<Targets>> {
-    if source.default_scope(default)? {
+fn targets(
+    source: &Source<'_>,
+    default: &'static str,
+    key: &'static str,
+) -> SourceMapping<Option<Targets>> {
+    if source.flag(default)? || features::parameter(source.record, default).is_err() {
+        source.usage.account(&[key]);
         return Ok(Some(Targets::All));
     }
     let Ok(parameter) = features::parameter(source.record, key) else {
         return Ok(None);
     };
-    let ids = picks::ids(source.record, key)?;
+    let ids = picks::ids(source, key)?;
     if ids.is_empty() && crate::reader::query::has_unresolved_ids(parameter) {
         return Ok(None);
     }
@@ -343,7 +358,7 @@ fn targets(source: &Source<'_>, default: &str, key: &str) -> SourceMapping<Optio
 
 fn source_profile(
     source: &Source<'_>,
-    key: &str,
+    key: &'static str,
     context: &Context<'_, '_>,
 ) -> SourceMapping<cadmpeg_ir::design::selection::OrderedSelection> {
     let profile: PlanarProfileRef = json::from_value(features::profile(
@@ -353,19 +368,25 @@ fn source_profile(
         context.topology,
     )?)
     .map_err(|error| format!("{key}: {error}"))?;
-    Ok(picks::profile(&profile, context)?)
+    let picks = picks::profile(&profile, context)?;
+    source.usage.account(&[key]);
+    Ok(picks)
 }
 
 fn signed<Q>(
+    source: &Source<'_>,
+    key: &'static str,
     parameter: Option<ParameterId>,
     literal: impl FnOnce() -> SourceMapping<Q>,
     reverse: bool,
 ) -> SourceMapping<Dimension<Q>> {
-    Ok(match parameter {
+    let dimension = match parameter {
         Some(id) if reverse => Dimension::Negated(id),
         Some(id) => Dimension::Parameter(id),
         None => Dimension::Literal(literal()?),
-    })
+    };
+    source.usage.account(&[key]);
+    Ok(dimension)
 }
 
 fn extrude(
@@ -378,6 +399,39 @@ fn extrude(
         Some("SURFACE") => BodyForm::Sheet,
         _ => return Err("bodyType is outside the solid and surface extrusion forms".into()),
     };
+    source
+        .usage
+        .ignore_value(&["domain"], &Value::from("MODEL"));
+    source.usage.ignore_false(&["hasExtrudeDirection"]);
+    if source.peek_flag("hasExtrudeDirection") == Ok(false) {
+        source.usage.account(&["extrudeDirection"]);
+    }
+    if source
+        .peek_tag("domain")
+        .is_none_or(|domain| domain == "MODEL")
+    {
+        source.usage.account(&["flatOperationType"]);
+    }
+    source.usage.account(&[
+        "wallShape",
+        "midplane",
+        "flipWall",
+        "thickness",
+        "thickness1",
+        "thickness2",
+    ]);
+    if matches!(body, BodyForm::Sheet) {
+        source
+            .usage
+            .account(&["entities", "operationType", "defaultScope", "booleanScope"]);
+    } else {
+        source.usage.account(&[
+            "surfaceEntities",
+            "surfaceOperationType",
+            "defaultSurfaceScope",
+            "booleanSurfaceScope",
+        ]);
+    }
     let profile = source_profile(
         source,
         if matches!(body, BodyForm::Sheet) {
@@ -389,9 +443,11 @@ fn extrude(
     )?;
     let distance = |key, role, reverse| {
         signed(
+            source,
+            key,
             context.owned(feature, &[role]),
             || {
-                source.quantity(key, |value| {
+                source.quantity_value(key, |value| {
                     Length::new(if reverse { -value } else { value })
                 })
             },
@@ -399,7 +455,34 @@ fn extrude(
         )
     };
     let symmetric = source.symmetric_extrude()?;
-    let end = match source.tag("endBound") {
+    let bound = source.tag("endBound");
+    if matches!(bound, Some("BLIND" | "THROUGH_ALL")) {
+        source.usage.account(&["symmetric"]);
+    } else {
+        source.usage.ignore_false(&["symmetric"]);
+    }
+    for (key, active_bound) in [
+        ("depth", "BLIND"),
+        ("endBoundEntityFace", "UP_TO_SURFACE"),
+        ("endBoundEntityBody", "UP_TO_BODY"),
+        ("endBoundEntityVertex", "UP_TO_VERTEX"),
+    ] {
+        if bound != Some(active_bound) {
+            source.usage.account(&[key]);
+        }
+    }
+    let end_offset_active = matches!(bound, Some("UP_TO_NEXT" | "UP_TO_SURFACE" | "UP_TO_BODY"));
+    if !end_offset_active {
+        source.usage.account(&["hasOffset"]);
+    } else if bound == Some("UP_TO_NEXT") {
+        source.usage.ignore_false(&["hasOffset"]);
+    }
+    if !end_offset_active || source.peek_flag("hasOffset") == Ok(false) {
+        source
+            .usage
+            .account(&["offsetDistance", "offsetOppositeDirection"]);
+    }
+    let end = match bound {
         Some("BLIND") => Limit::Amount(distance(
             "depth",
             if symmetric {
@@ -413,7 +496,7 @@ fn extrude(
         Some("UP_TO_NEXT") => Limit::Next,
         Some(bound @ ("UP_TO_SURFACE" | "UP_TO_BODY")) => Limit::ToGeometry {
             target: picks::selected(
-                source.record,
+                source,
                 if bound == "UP_TO_SURFACE" {
                     "endBoundEntityFace"
                 } else {
@@ -437,11 +520,48 @@ fn extrude(
         _ => return Err("endBound is outside the admitted extrusion limits".into()),
     };
     let reversed = if features::parameter(source.record, "oppositeExtrudeDirection").is_ok() {
+        source.usage.account(&["oppositeDirection"]);
         source.flag("oppositeExtrudeDirection")?
     } else {
         source.flag("oppositeDirection")?
     };
     let second = !symmetric && source.flag("hasSecondDirection")?;
+    if !second {
+        source.usage.account(&[
+            "hasSecondDirection",
+            "secondDirectionBound",
+            "hasSecondDirectionDraft",
+        ]);
+    }
+    let second_bound = second.then(|| source.tag("secondDirectionBound")).flatten();
+    for (key, active_bound) in [
+        ("secondDirectionDepth", "BLIND"),
+        ("secondDirectionBoundEntityFace", "UP_TO_SURFACE"),
+        ("secondDirectionBoundEntityBody", "UP_TO_BODY"),
+        ("secondDirectionBoundEntityVertex", "UP_TO_VERTEX"),
+    ] {
+        if second_bound != Some(active_bound) {
+            source.usage.account(&[key]);
+        }
+    }
+    if !second {
+        source.usage.account(&[
+            "secondDirectionOppositeDirection",
+            "secondDirectionOppositeExtrudeDirection",
+        ]);
+    }
+    let second_offset_active = second_bound == Some("UP_TO_NEXT");
+    if second_offset_active {
+        source.usage.ignore_false(&["hasSecondDirectionOffset"]);
+    } else {
+        source.usage.account(&["hasSecondDirectionOffset"]);
+    }
+    if !second_offset_active || source.peek_flag("hasSecondDirectionOffset") == Ok(false) {
+        source.usage.account(&[
+            "secondDirectionOffsetDistance",
+            "secondDirectionOffsetOppositeDirection",
+        ]);
+    }
     let span = match end {
         Limit::Amount(amount) if symmetric => Span::Symmetric {
             amount,
@@ -449,7 +569,7 @@ fn extrude(
         },
         end => Span::Between {
             start: Box::new(if second {
-                match source.tag("secondDirectionBound") {
+                match second_bound {
                     Some("BLIND") => Limit::Amount(distance(
                         "secondDirectionDepth",
                         "AgainstDistance",
@@ -473,23 +593,41 @@ fn extrude(
     };
     let origin = if source.flag("startOffset")? {
         match source.tag("startOffsetBound") {
-            Some("BLIND") => ExtrudeOrigin::Offset(distance(
-                "startOffsetDistance",
-                "StartOffset",
-                source.flag("startOffsetOppositeDirection")?,
-            )?),
-            Some("ENTITY") => ExtrudeOrigin::Faces {
-                faces: picks::selected(source.record, "startOffsetEntity")?,
-                offset: None,
-            },
+            Some("BLIND") => {
+                source.usage.account(&["startOffsetEntity"]);
+                ExtrudeOrigin::Offset(distance(
+                    "startOffsetDistance",
+                    "StartOffset",
+                    source.flag("startOffsetOppositeDirection")?,
+                )?)
+            }
+            Some("ENTITY") => {
+                source.usage.account(&["startOffsetDistance"]);
+                source.usage.account(&["startOffsetOppositeDirection"]);
+                ExtrudeOrigin::Faces {
+                    faces: picks::selected(source, "startOffsetEntity")?,
+                    offset: None,
+                }
+            }
             _ => return Err("startOffsetBound does not name an admitted start".into()),
         }
     } else {
+        source.usage.account(&[
+            "startOffsetBound",
+            "startOffsetDistance",
+            "startOffsetOppositeDirection",
+            "startOffsetEntity",
+        ]);
         ExtrudeOrigin::ProfilePlane
     };
     let boolean = if matches!(body, BodyForm::Sheet) {
         match source.tag("surfaceOperationType") {
-            None | Some("NEW") => Boolean::NewBody,
+            None | Some("NEW") => {
+                source
+                    .usage
+                    .account(&["defaultSurfaceScope", "booleanSurfaceScope"]);
+                Boolean::NewBody
+            }
             Some("ADD") => Boolean::Apply {
                 op: BooleanOp::Join,
                 targets: targets(source, "defaultSurfaceScope", "booleanSurfaceScope")?,
@@ -501,8 +639,10 @@ fn extrude(
     };
     let draft_angle = |key, role, inward: bool| {
         signed(
+            source,
+            key,
             context.owned(feature, &[role]),
-            || source.quantity(key, |value| Angle::new(if inward { value } else { -value })),
+            || source.quantity_value(key, |value| Angle::new(if inward { value } else { -value })),
             !inward,
         )
     };
@@ -516,10 +656,20 @@ fn extrude(
             )
         })
         .transpose()?;
+    if end_draft.is_none() {
+        source.usage.account(&["draftAngle", "draftPullDirection"]);
+    }
+    let second_draft = second && source.flag("hasSecondDirectionDraft")?;
+    if !second_draft {
+        source.usage.account(&[
+            "secondDirectionDraftAngle",
+            "secondDirectionDraftPullDirection",
+        ]);
+    }
     let start_draft = if symmetric && matches!(span, Span::Between { .. }) {
         end_draft.clone()
     } else {
-        (second && source.flag("hasSecondDirectionDraft")?)
+        second_draft
             .then(|| {
                 draft_angle(
                     "secondDirectionDraftAngle",
@@ -564,6 +714,18 @@ fn revolve(
     if source.tag("bodyType") != Some("SOLID") {
         return Err("bodyType is outside the solid revolve form".into());
     }
+    source.usage.account(&[
+        "surfaceEntities",
+        "surfaceOperationType",
+        "defaultSurfaceScope",
+        "booleanSurfaceScope",
+        "wallShape",
+        "midplane",
+        "flipWall",
+        "thickness",
+        "thickness1",
+        "thickness2",
+    ]);
     let profile = source_profile(source, "entities", context)?;
     let queries = features::queries(source.record, "axis")?;
     let sketch_axis = queries.iter().any(|query| {
@@ -580,33 +742,59 @@ fn revolve(
     })
     .map_err(|error| format!("axis: {error}"))?;
     let axis = axis_construction(&axis)?;
-    let reverse = source.flag("oppositeDirection")?;
+    source.usage.account(&["axis"]);
+    let reverse = source.peek_flag("oppositeDirection")?;
     let angle = |key, role, reverse| {
         signed(
+            source,
+            key,
             context.owned(feature, &[role]),
             || {
-                source.quantity(key, |value| {
+                source.quantity_value(key, |value| {
                     Angle::new(if reverse { -value } else { value })
                 })
             },
             reverse,
         )
     };
-    let full = source.tag("revolveType") == Some("FULL") || source.flag("fullRevolve")?;
-    let blind = source.tag("revolveType") == Some("ONE_DIRECTION")
-        || source.tag("endBound") == Some("BLIND")
-        || source.tag("endBound").is_none()
-            && features::parameter(source.record, "fullRevolve").is_ok();
+    let revolve_type = source.peek_tag("revolveType");
+    let full = revolve_type == Some("FULL") || source.flag("fullRevolve")?;
+    let end_bound = source.peek_tag("endBound");
+    let blind = revolve_type == Some("ONE_DIRECTION")
+        || end_bound == Some("BLIND")
+        || end_bound.is_none() && features::parameter(source.record, "fullRevolve").is_ok();
     if !full
         && source
-            .quantity("angle", Some)
+            .quantity_value("angle", Some)
             .is_ok_and(|angle| angle < 0.0)
     {
         return Err("the direction convention for a negative revolve angle is unresolved".into());
     }
+    source.usage.ignore_false(&[
+        "endBoundHasOffset",
+        "startBoundHasOffset",
+        "startOppositeDirection",
+    ]);
     let end = if full {
+        source.usage.account(&[
+            "angle",
+            "endBound",
+            "hasStartBound",
+            "fullRevolve",
+            "oppositeDirection",
+        ]);
+        if revolve_type == Some("FULL") {
+            source.usage.account(&["revolveType"]);
+        }
         Limit::ThroughAll
     } else if blind {
+        if revolve_type == Some("ONE_DIRECTION") {
+            source.usage.account(&["revolveType"]);
+        }
+        if end_bound == Some("BLIND") {
+            source.usage.account(&["endBound"]);
+        }
+        source.usage.account(&["oppositeDirection"]);
         let amount = angle("angle", "AlongAngle", reverse)?;
         if matches!(amount, Dimension::Literal(angle) if
             (angle.get().abs() - std::f64::consts::TAU).abs() <= FULL_TURN_TOLERANCE_RAD)
@@ -619,10 +807,15 @@ fn revolve(
         return Err("endBound does not name a full or blind revolve".into());
     };
     let span = match end {
-        Limit::Amount(amount) if source.flag("symmetric")? => Span::Symmetric {
-            amount,
-            measure: Some(SymmetricMeasure::Total),
-        },
+        Limit::Amount(amount) if source.flag("symmetric")? => {
+            source
+                .usage
+                .account(&["hasStartBound", "startBound", "angleBack"]);
+            Span::Symmetric {
+                amount,
+                measure: Some(SymmetricMeasure::Total),
+            }
+        }
         end => Span::Between {
             start: Box::new(if !full && source.flag("hasStartBound")? {
                 if source.tag("startBound") != Some("BLIND") {
@@ -630,11 +823,13 @@ fn revolve(
                 }
                 Limit::Amount(angle("angleBack", "AgainstAngle", !reverse)?)
             } else {
+                source.usage.account(&["startBound", "angleBack"]);
                 Limit::AtOrigin
             }),
             end: Box::new(end),
         },
     };
+    source.usage.ignore_false(&["symmetric"]);
     Ok(FeatureOperation::Revolve(Box::new(Revolve {
         profile,
         loops: None,
@@ -685,60 +880,29 @@ fn axis_construction(axis: &RevolutionAxis) -> Result<Construction<kinds::Axis>,
     Ok(construction)
 }
 
-/// The plane of a model support frame (`origin`, `normal`, `u_axis`).
-fn plane_value(frame: &Value) -> Result<PlaneValue, &'static str> {
-    let vector = |key: &str| -> Result<UnitVector3, &'static str> {
-        let value: FiniteVector3 = json::from_value(
-            frame
-                .get(key)
-                .cloned()
-                .ok_or("the plane frame is incomplete")?,
-        )
-        .map_err(|_| "the plane frame is unreadable")?;
-        UnitVector3::normalized_nonzero(value).ok_or("the plane frame is degenerate")
-    };
-    Ok(PlaneValue {
-        origin: json::from_value(
-            frame
-                .get("origin")
-                .cloned()
-                .ok_or("the plane origin is missing")?,
-        )
-        .map_err(|_| "the plane origin is unreadable")?,
-        normal: vector("normal")?,
-        x_axis: vector("u_axis")?,
-    })
-}
-
-/// A datum plane offset by its distance along the normal of a support plane
-/// the model resolved: an `Offset` input on that plane, its value the
-/// distance (§6.2).
-fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
-    let wire = json::to_value(model.evaluation.definition())
-        .map_err(|_| "the datum plane is unreadable")?;
-    let value = wire
-        .pointer("/value/value")
-        .ok_or("the datum plane is missing")?;
-    if value.pointer("/reference/kind").and_then(Value::as_str) != Some("resolved_plane") {
+/// An offset input on the resolved support plane (§6.2).
+fn offset_plane(
+    reference: Option<&DatumPlaneReference>,
+    distance: Length,
+) -> Result<Datum, &'static str> {
+    let Some(DatumPlaneReference::ResolvedPlane { frame }) = reference else {
         return Err("the datum plane's support is not a resolved plane");
-    }
-    let support = plane_value(
-        value
-            .pointer("/reference/frame")
-            .ok_or("the support frame is missing")?,
-    )?;
-    let distance = value
-        .get("distance")
-        .and_then(Value::as_f64)
-        .ok_or("the plane offset is missing")?;
+    };
+    let support = PlaneValue {
+        origin: frame.origin(),
+        normal: UnitVector3::normalized_nonzero(frame.normal().into())
+            .ok_or("the plane frame is degenerate")?,
+        x_axis: UnitVector3::normalized_nonzero(frame.u_axis().into())
+            .ok_or("the plane frame is degenerate")?,
+    };
     let normal = support.normal.as_raw();
     let origin = support.origin.get();
-    let offset: FinitePoint3 = json::from_value(cadmpeg_core::json!({
-        "x": origin.x + distance * normal.x,
-        "y": origin.y + distance * normal.y,
-        "z": origin.z + distance * normal.z,
-    }))
-    .map_err(|_| "the offset plane origin is not finite")?;
+    let offset = FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        origin.x + distance.get() * normal.x,
+        origin.y + distance.get() * normal.y,
+        origin.z + distance.get() * normal.z,
+    ))
+    .ok_or("the offset plane origin is not finite")?;
     let resolved = PlaneValue {
         origin: offset,
         normal: support.normal,
@@ -762,9 +926,7 @@ fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
                 reference: Some(InputReference::Built(Box::new(AnyConstruction::Plane(
                     support,
                 )))),
-                value: Some(ScalarDimension::Length(Dimension::Literal(
-                    Length::new(distance).ok_or("the plane offset is not finite")?,
-                ))),
+                value: Some(ScalarDimension::Length(Dimension::Literal(distance))),
                 reversed: None,
             }],
             after: Vec::new(),
@@ -788,6 +950,20 @@ fn sweep(
     if source.tag("bodyType") != Some("SOLID") {
         return Err("bodyType is outside the solid sweep form".into());
     }
+    source.usage.account(&[
+        "surfaceProfiles",
+        "surfaceOperationType",
+        "defaultSurfaceScope",
+        "booleanSurfaceScope",
+        "wallShape",
+        "midplane",
+        "thickness",
+        "thickness1",
+        "thickness2",
+        "flipWall",
+        "trimEnds",
+    ]);
+    source.usage.ignore_false(&["extendToFullPath"]);
     let (profile, path) =
         crate::reader::sweep::operands(source.record, "profiles", context.model, context.topology)?;
     let profile = json::from_value(profile).map_err(|error| format!("profiles: {error}"))?;
@@ -804,12 +980,20 @@ fn sweep(
         }
     }
     let path = picks::path(&path, context)?;
-    let orientation = match source.tag("profileControl") {
+    source.usage.account(&["profiles", "path"]);
+    let profile_control = source.tag("profileControl");
+    if profile_control != Some("LOCK_FACES") {
+        source.usage.account(&["lockFaces"]);
+    }
+    if profile_control != Some("LOCK_DIRECTION") {
+        source.usage.account(&["lockDirectionQuery"]);
+    }
+    let orientation = match profile_control {
         None => None,
         Some("NONE") => Some(SweepOrientation::FollowPath),
         Some("KEEP_ORIENTATION") => Some(SweepOrientation::Fixed),
         Some("LOCK_FACES") => Some(SweepOrientation::Surface(picks::selected(
-            source.record,
+            source,
             "lockFaces",
         )?)),
         Some("LOCK_DIRECTION") => {
@@ -829,7 +1013,7 @@ fn sweep(
                         relation: Relation::Parallel,
                     }),
                     reference: Some(InputReference::Picks(picks::selected(
-                        source.record,
+                        source,
                         "lockDirectionQuery",
                     )?)),
                     value: None,
@@ -854,13 +1038,18 @@ fn sweep(
             Ok::<_, String>(ScalingLaw::Law(Law::Linear {
                 start: Dimension::Literal(FiniteReal::ONE),
                 end: signed(
+                    source,
+                    "scaleFactor",
                     context.owned(feature, &["ScaleFactor"]),
-                    || source.quantity("scaleFactor", FiniteReal::new),
+                    || source.quantity_value("scaleFactor", FiniteReal::new),
                     false,
                 )?,
             }))
         })
         .transpose()?;
+    if scaling.is_none() {
+        source.usage.account(&["scaleFactor"]);
+    }
     let section = SweepSection::Profile(picks::profile(&profile, context)?);
     let output = SolidOutput {
         body: Some(BodyForm::Solid),
@@ -869,6 +1058,9 @@ fn sweep(
     let twist = if can_twist && source.flag("hasTwist")? {
         Some(sweep_twist(feature, source, context, &path)?)
     } else {
+        source
+            .usage
+            .account(&["hasTwist", "twistType", "angle", "turns", "pitch", "ccw"]);
         None
     };
     Ok(FeatureOperation::Sweep(Box::new(Sweep {
@@ -902,16 +1094,26 @@ fn sweep_twist(
     let reverse = !source.flag("ccw")?;
     let angle = |value: f64| Angle::new(if reverse { -value } else { value });
     let kind = source.tag("twistType").unwrap_or("TURNS");
+    for (key, active_kind) in [("angle", "ANGLE"), ("turns", "TURNS"), ("pitch", "PITCH")] {
+        if kind != active_kind {
+            source.usage.account(&[key]);
+        }
+    }
     let revolutions = match kind {
         "ANGLE" => {
             return Ok(Twist::Angle(signed(
+                source,
+                "angle",
                 context.owned(feature, &["TwistAngle"]),
-                || source.quantity("angle", angle),
+                || source.quantity_value("angle", angle),
                 reverse,
             )?))
         }
         "TURNS" => match context.owned(feature, &["TwistTurns"]) {
-            Some(id) => parameter_node(id),
+            Some(id) => {
+                source.usage.account(&["turns"]);
+                parameter_node(id)
+            }
             None => {
                 return Ok(Twist::Angle(Dimension::Literal(
                     source.quantity("turns", |turns| angle(turns * std::f64::consts::TAU))?,
@@ -920,7 +1122,10 @@ fn sweep_twist(
         },
         "PITCH" => {
             let pitch = match context.owned(feature, &["TwistPitch"]) {
-                Some(id) => parameter_node(id),
+                Some(id) => {
+                    source.usage.account(&["pitch"]);
+                    parameter_node(id)
+                }
                 None => number_node(
                     source.quantity("pitch", NonNegativeReal::new)?,
                     UnitSymbol::Mm,
@@ -1004,7 +1209,12 @@ fn combine(
         keep,
         target,
         tools,
-    } = crate::reader::derived::boolean_inputs(source.record, source.ordinal, context.topology)?;
+    } = crate::reader::derived::boolean_inputs(
+        source.record,
+        source.ordinal,
+        context.topology,
+        Some(&source.usage),
+    )?;
     Ok(FeatureOperation::Combine(Box::new(Combine {
         target: (!target.is_empty())
             .then(|| picks::bodies(&target))
@@ -1032,6 +1242,46 @@ fn linked(source: &Source<'_>) -> crate::reader::Mapping<FeatureOperation> {
     use cadmpeg_ir::design::selection::DefinitionRef;
 
     let (document, version, element) = crate::reader::derived::reference(source.record)?;
+    let part_studio = features::parameter(source.record, "partStudio")?;
+    source.usage.account(&["partStudio"]);
+    let modern = source.peek_flag("newUI") != Ok(false)
+        || features::parameter(source.record, "newUI").is_err();
+    if modern
+        && part_studio.get("partQuery").is_some_and(|query| {
+            !query.is_null()
+                && (!query.is_object()
+                    || query
+                        .get("queries")
+                        .is_some_and(|rows| rows.as_array().is_none_or(|rows| !rows.is_empty())))
+        })
+    {
+        source
+            .usage
+            .partial("partStudio", "has an unprojected partQuery selection");
+    } else if modern
+        && part_studio
+            .get("configuration")
+            .is_some_and(|config| config.as_array().is_none_or(|entries| !entries.is_empty()))
+    {
+        source
+            .usage
+            .partial("partStudio", "has an unprojected configuration");
+    }
+    source.usage.ignore_value(&["newUI"], &Value::Bool(true));
+    source.usage.ignore_false(&[
+        "includeProperties",
+        "includeMateConnectors",
+        "preserveActiveSheetMetal",
+    ]);
+    source.usage.ignore_empty_queries(&["parts", "location"]);
+    if matches!(source.peek_tag("placement"), None | Some("AT_ORIGIN")) {
+        source.usage.account(&[
+            "placement",
+            "mateConnectorIndex",
+            "mateConnectorId",
+            "mateConnectorIndexInFeature",
+        ]);
+    }
     Ok(FeatureOperation::Stored {
         bodies: None,
         tessellations: Vec::new(),

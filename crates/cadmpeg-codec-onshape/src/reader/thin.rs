@@ -5,6 +5,7 @@ use cadmpeg_core::json;
 use cadmpeg_ir::document::Model;
 use serde_json::Value;
 
+use super::parameter_usage::ParameterUsage;
 use super::{features, id, number, rows, text, topology, Mapping};
 
 pub(super) fn profile(profile: Value, model: &Model) -> Mapping<Value> {
@@ -38,18 +39,44 @@ pub(super) fn feature(
     inputs: &topology::Inputs<'_>,
     ordinal: usize,
     unresolved: &BTreeSet<String>,
+    usage: &ParameterUsage<'_>,
 ) -> Mapping<(Value, Option<String>)> {
     if features::value(source, "domain") != Some("MODEL") {
         return Err("thin construction has no stored MODEL domain".into());
     }
     let midplane = features::required_boolean(source, "midplane")?;
     let flip = features::required_boolean(source, "flipWall")?;
-    let reversed = features::required_boolean(source, "oppositeDirection")?;
-    for key in ["hasExtrudeDirection", "startOffset"] {
-        if features::enabled(source, key)? {
-            return Err(format!("thin {key} construction is unresolved"));
-        }
+    let reversed = if features::parameter(source, "oppositeExtrudeDirection").is_ok() {
+        features::required_boolean(source, "oppositeExtrudeDirection")?
+    } else {
+        features::required_boolean(source, "oppositeDirection")?
+    };
+    usage.account(&[
+        "bodyType",
+        "domain",
+        "midplane",
+        "oppositeDirection",
+        "oppositeExtrudeDirection",
+        "entities",
+        "surfaceEntities",
+        "surfaceOperationType",
+        "defaultSurfaceScope",
+        "booleanSurfaceScope",
+    ]);
+    features::enabled(source, "hasExtrudeDirection")?;
+    if features::enabled(source, "startOffset")? {
+        return Err("thin startOffset construction is unresolved".into());
     }
+    usage.account(&[
+        "hasExtrudeDirection",
+        "extrudeDirection",
+        "flatOperationType",
+        "startOffset",
+        "startOffsetBound",
+        "startOffsetDistance",
+        "startOffsetOppositeDirection",
+        "startOffsetEntity",
+    ]);
     if features::value(source, "operationType") != Some("NEW") {
         inputs.load(ordinal, source)?.whole_body_scope(source)?;
     }
@@ -132,12 +159,14 @@ pub(super) fn feature(
             _ => return Err("stored thin curve direction is unresolved".into()),
         }
     }
+    usage.account(&["wallShape"]);
     let length = |key| -> Mapping<f64> {
         let value =
             features::quantity(features::parameter(source, key)?, false, model, unresolved)?;
         if value < 0.0 {
             return Err("thin thickness is negative".into());
         }
+        usage.account(&[key]);
         Ok(value)
     };
     let literal = |value| json!({"kind":"literal","value":value});
@@ -157,13 +186,16 @@ pub(super) fn feature(
         }
     };
     let mut assumed = None;
+    usage.account(&["flipWall"]);
     let thickness = if midplane {
+        usage.account(&["thickness1", "thickness2"]);
         let value = length("thickness")?;
         if value == 0.0 {
             return Err("thin thickness is zero".into());
         }
         json!({"kind":"symmetric","value":dimension("thickness", value)})
     } else {
+        usage.account(&["thickness"]);
         let first = length("thickness1")?;
         let second = length("thickness2")?;
         if first == 0.0 && second == 0.0 {
@@ -177,10 +209,26 @@ pub(super) fn feature(
             if !total.is_finite() {
                 return Err("thin thickness exceeds the finite range".into());
             }
+            for key in ["thickness1", "thickness2"] {
+                if formula(key) {
+                    usage.partial(
+                        key,
+                        "contributes to the evaluated symmetric wall without a formula binding",
+                    );
+                }
+            }
             json!({"kind":"symmetric","value":literal(total)})
         } else if entities.len() != 1 {
             return Err("thin side over multiple curves is unresolved".into());
         } else if second == 0.0 || first == 0.0 {
+            let omitted = if first == 0.0 {
+                "thickness1"
+            } else {
+                "thickness2"
+            };
+            if formula(omitted) {
+                usage.partial(omitted, "evaluates to zero without a wall formula binding");
+            }
             let (value, flip) = if first == 0.0 {
                 (dimension("thickness2", second), !flip)
             } else {
@@ -217,9 +265,13 @@ pub(super) fn feature(
         .ok_or("thin termination is missing")?;
     let limit = match text(termination, "kind")? {
         "blind" => {
+            usage.account(&["depth"]);
             json!({"kind":"amount","value":dimension("depth", number(termination,"length")?)})
         }
-        "through_all" => json!({"kind":"through_all"}),
+        "through_all" => {
+            usage.account(&["depth"]);
+            json!({"kind":"through_all"})
+        }
         _ => return Err("thin termination is unresolved".into()),
     };
     let span = if text(extent, "kind")? == "symmetric" {
@@ -227,6 +279,36 @@ pub(super) fn feature(
     } else {
         json!({"kind":"between","start":{"kind":"at_origin"},"end":limit})
     };
+    usage.account(&[
+        "endBound",
+        "endBoundEntityFace",
+        "endBoundEntityBody",
+        "endBoundEntityVertex",
+        "symmetric",
+        "operationType",
+        "secondDirectionBound",
+        "secondDirectionDepth",
+        "secondDirectionOppositeDirection",
+        "secondDirectionOppositeExtrudeDirection",
+        "secondDirectionBoundEntityFace",
+        "secondDirectionBoundEntityBody",
+        "secondDirectionBoundEntityVertex",
+        "hasSecondDirectionOffset",
+        "secondDirectionOffsetDistance",
+        "secondDirectionOffsetOppositeDirection",
+        "secondDirectionDraftAngle",
+        "secondDirectionDraftPullDirection",
+        "draftAngle",
+        "draftPullDirection",
+        "offsetDistance",
+        "offsetOppositeDirection",
+    ]);
+    usage.ignore_false(&[
+        "hasOffset",
+        "hasDraft",
+        "hasSecondDirection",
+        "hasSecondDirectionDraft",
+    ]);
     let op = text(operation, "op")?;
     let boolean = if op == "new_body" {
         json!({"kind":"new_body"})
