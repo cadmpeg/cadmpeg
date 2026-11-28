@@ -103,6 +103,7 @@ fn pair(entity_suffix: u64, history_only: bool) -> DesignBodyBinding {
         component_owner: None,
         component_owner_unresolved: false,
         history_only,
+        consumers: Vec::new(),
         id: format!("{STREAM}:design-body-binding#{}", entity_suffix * 100),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,

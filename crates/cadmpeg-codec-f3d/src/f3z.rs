@@ -272,7 +272,9 @@ fn finalize_result(
         "f3d",
         &mut ir,
         &mut body.losses,
-        |ir, losses| crate::design_v11::project(ctx, ir, depth, &joint_roots, losses),
+        |ir, losses| {
+            crate::design_v11::project(ctx, ir, depth, &joint_roots, None, losses).map(drop)
+        },
     )?;
     ir.finalize();
     ir.source = Some(source);

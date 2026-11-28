@@ -243,6 +243,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         component_owner: None,
         component_owner_unresolved: false,
         history_only: false,
+        consumers: Vec::new(),
         id: format!("{stream}:design-body-binding#0"),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,
