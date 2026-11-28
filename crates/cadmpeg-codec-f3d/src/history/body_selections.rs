@@ -817,8 +817,11 @@ pub(super) fn combine_external_local_tools(
     let operation = scope.combine_operation()?;
     let mut bodies = Vec::new();
     for tool in operation.tools.iter() {
-        let identity = tool.external_identity.as_ref()?;
-        let id = crate::ids::neutral_combine_external_body_id(identity);
+        let id = match (&tool.external_identity, &tool.legacy_external_identity) {
+            (Some(identity), None) => crate::ids::neutral_combine_external_body_id(identity),
+            (None, Some(identity)) => crate::ids::neutral_combine_legacy_external_body_id(identity),
+            _ => return None,
+        };
 
         if bodies.iter().any(|body| body == &id) {
             return None;
@@ -827,6 +830,29 @@ pub(super) fn combine_external_local_tools(
     }
     let native = scope.id.clone();
     cadmpeg_ir::features::selections::BodySelection::local(bodies, native).ok()
+}
+
+/// The loss for a `Combine` whose tools hold a legacy cross-document
+/// selector and that [`combine_external_local_tools`] refuses, because the
+/// selectors name one body twice or mix with other tool selectors.
+pub(super) fn combine_external_tools_refusal(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let operation = scope.combine_operation()?;
+    if !operation
+        .tools
+        .iter()
+        .any(|tool| tool.legacy_external_identity.is_some())
+        || combine_external_local_tools(scope).is_some()
+    {
+        return None;
+    }
+    Some(
+        crate::loss::F3dLossCode::FeatureCombineToolExternalBodyUnbound.note(format!(
+            "Combine scope {}: the legacy cross-document tool selectors name one body twice or mix with other tool selectors; the tools stay native",
+            scope.id
+        )),
+    )
 }
 
 pub(super) fn historical_body_slot(id: &str) -> Option<i64> {

@@ -9817,6 +9817,126 @@ source = "spec"
 anchor = "a same-segment reference to the owning scope"
 
 [[record]]
+name = "combine_legacy_external_body_reference"
+kind = "byte"
+section = "3.1"
+anchor = "Its cross-document body reference is a legacy target reference"
+size = 60
+note = "Offsets are relative to the first byte after the u32 one that follows the occurrence reference."
+
+[[record.field]]
+name = "body_marker"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "Its cross-document body reference is a legacy target reference (§1.4): `u8 1`"
+
+[[record.field]]
+name = "browser_node_entity"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "the u64 entity ID of a body-visibility browser node in the referenced design"
+
+[[record.field]]
+name = "occurrence_marker"
+offset = 9
+type = "u8"
+value = 1
+source = "spec"
+anchor = "in the referenced design, `u8 1`"
+
+[[record.field]]
+name = "source_occurrence_identity"
+offset = 10
+type = "u64"
+source = "spec"
+anchor = "a u64 source occurrence identity, `u8 0`"
+
+[[record.field]]
+name = "cross_document_flag"
+offset = 18
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a u64 source occurrence identity, `u8 0`"
+
+[[record.field]]
+name = "type_guid"
+offset = 19
+type = "bytes[40]"
+source = "spec"
+anchor = "the LP-ASCII 36 type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E`"
+
+[[record.field]]
+name = "closing_zero"
+offset = 59
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`D26351F0-5940-4D23-AA20-2C35475A6D9E`, and `u8 0`"
+
+[[record]]
+name = "combine_legacy_external_selector_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy selector tail is u32 `9`, u16 `2`"
+size = 41
+note = "Offsets are relative to the first byte after the legacy cross-document body reference. The separator after the reference to `N+2` is two or three bytes long."
+
+[[record.field]]
+name = "constant_nine"
+offset = 0
+type = "u32"
+value = 9
+source = "spec"
+anchor = "The legacy selector tail is u32 `9`"
+
+[[record.field]]
+name = "constant_two"
+offset = 4
+type = "u16"
+value = 2
+source = "spec"
+anchor = "The legacy selector tail is u32 `9`, u16 `2`"
+
+[[record.field]]
+name = "selection_payload_stamp"
+offset = 6
+type = "u64"
+source = "spec"
+anchor = "a u64 selection-payload stamp"
+
+[[record.field]]
+name = "evaluation_epoch"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "a u32 evaluation epoch"
+
+[[record.field]]
+name = "evaluation_scalar"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "a finite nonnegative f64 evaluation scalar"
+
+[[record.field]]
+name = "repeated_epoch"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a u32 equal to the epoch"
+
+[[record.field]]
+name = "nested_two_reference"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "a u32 equal to the epoch, a same-segment reference to `N+2`"
+
+[[record]]
 name = "indexed_companion_record_prefix"
 kind = "byte"
 section = "3.1"
@@ -35726,6 +35846,96 @@ offset = 56
 type = "bytes[11]"
 source = "spec"
 anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record]]
+name = "assembly_typed_alternate_rigid_group_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+size = 187
+note = "The typed alternate prologue through its first two member references. Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+value = 0
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+value = 0
+
+[[record.field]]
+name = "zero_separator"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+value = 0
+
+[[record.field]]
+name = "pathless_locator_reference"
+offset = 26
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+
+[[record.field]]
+name = "zero_run_77"
+offset = 77
+type = "bytes[4]"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+
+[[record.field]]
+name = "locator_count"
+offset = 81
+type = "u32"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 85
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 136
+type = "bytes[51]"
+source = "spec"
+anchor = "The typed rigid-group scope also takes the alternate prologue. Its typed"
 
 [[record]]
 name = "assembly_compact_rigid_group_identity_locator"

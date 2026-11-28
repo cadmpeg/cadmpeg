@@ -11,7 +11,7 @@ use super::selections::check_path;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
+use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::refs::Position;
 use crate::design::selection::OccurrencePath;
 use crate::features::ConfigurationId;
@@ -83,7 +83,7 @@ pub(in crate::validate) fn check_position(
 /// unordered container: `After(m)` is then `m`'s own result (§5.3).
 fn unordered_feature<'a>(
     index: &DesignRecords<'a>,
-    position: PositionKey<'a>,
+    position: PositionKey<'_>,
 ) -> Option<&'a Feature> {
     let PositionKey::After(MemberKey::Feature(id)) = position else {
         return None;
@@ -110,24 +110,7 @@ fn has_own_result(
     if is_stateless(index, feature, configuration) {
         return Some(false);
     }
-    let places = matches!(
-        operation,
-        FeatureOperation::Place(_)
-            | FeatureOperation::PlaceSet(_)
-            | FeatureOperation::Joint(_)
-            | FeatureOperation::RigidGroup(_)
-            | FeatureOperation::ComponentPattern(_)
-            | FeatureOperation::MirrorComponents(_)
-            | FeatureOperation::Unresolved {
-                family: OperationFamily::Place
-                    | OperationFamily::PlaceSet
-                    | OperationFamily::Joint
-                    | OperationFamily::RigidGroup
-                    | OperationFamily::ComponentPattern
-                    | OperationFamily::MirrorComponents
-            }
-    );
-    Some(!places)
+    Some(!operation.places_occurrences())
 }
 
 /// A `Pinned` anchor or a `StateBase::Current` is at no `After(m)` for a
@@ -216,7 +199,7 @@ pub(super) fn check_evaluations(
         .max()
         .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
     {
-        return Err(refusal);
+        return Err(CodecError::ResourceLimit(refusal));
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
@@ -578,7 +561,7 @@ fn listed_bodies(definition: &ProductDefinition) -> impl Iterator<Item = &crate:
 
 pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
-    let moved = super::selections::moved_occurrences(ir);
+    let moved = index.moved_occurrences();
     let bodies: BTreeSet<&str> = ir
         .geometry
         .bodies
@@ -630,7 +613,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
             for path in current.poses.keys() {
                 *posed.entry(path).or_default() += 1;
-                check_path(index, Some(entity), path, &moved, entity, findings);
+                check_path(index, Some(entity), path, moved, entity, findings);
             }
         }
         for body in &scope.unproduced {

@@ -107,7 +107,7 @@ pub(crate) fn decode_body_members(
 pub(crate) fn decode_body_bounds(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
     let mut out = Vec::new();
     for entity in entities
@@ -202,7 +202,7 @@ pub(crate) fn decode_body_bounds(
         if repeated.any(|candidate| candidate.0 != values || candidate.1 != value_offsets) {
             continue;
         }
-        let Some(record) = super::record::recover(
+        let Some(record) = super::record::recover_frame(
             body_bounds_record(
                 &entry.name,
                 entity,
@@ -211,8 +211,9 @@ pub(crate) fn decode_body_bounds(
                 values,
                 value_offsets,
             ),
-            losses,
-            crate::loss::F3dLossCode::DesignBodyBoundsUndecoded,
+            given_up,
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
+            super::record::RecordFrame::new(&entry.name, first, third_end),
             format_args!(
                 "Body bounds for Design entity {}",
                 entity.entity_id.suffix()
@@ -1215,11 +1216,13 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        let memberships = super::component_bodies::owners(ctx, bytes, &metadata)?;
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        let memberships =
+            super::component_bodies::owners_from_scan(ctx, scan, &entry.name, bytes, &metadata)?;
+        let hidden_by_entity =
+            typed_browser_node_hidden_flags_from_scan(scan, &entry.name, bytes, &metadata)?;
         let consumed = match scan.entry_view(&entry.name) {
             Some(root) => super::body_consumers::consumed_body_entities(root, &metadata)?,
-            None => std::collections::HashSet::new(),
+            None => std::collections::HashMap::new(),
         };
         for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
@@ -1243,10 +1246,10 @@ pub(crate) fn decode_design_body_bindings(
                 let hidden = hidden_by_entity
                     .get(&binding.entity_suffix)
                     .is_some_and(|node| node.hidden);
+                let consumers = consumed.get(&binding.entity_suffix);
                 let history_only = memberships.complete
                     && owner.is_none()
-                    && (consumed.contains(&binding.entity_suffix)
-                        || (hidden && cluster_owner.is_none()));
+                    && (consumers.is_some() || (hidden && cluster_owner.is_none()));
                 let body = if history_only {
                     None
                 } else {
@@ -1279,6 +1282,10 @@ pub(crate) fn decode_design_body_bindings(
                         component_owner_unresolved: owner
                             .is_some_and(|owner| owner.admitted().is_none()),
                         history_only,
+                        consumers: consumers
+                            .filter(|_| history_only)
+                            .map(|consumers| consumers.iter().copied().collect())
+                            .unwrap_or_default(),
                     })
                     .map_err(CodecError::Malformed)?;
 
@@ -1336,6 +1343,7 @@ pub(crate) struct DecodedBodyVisibility {
     pub(crate) byte_offset: u64,
     pub(crate) asm_body_key_offset: u64,
     pub(crate) entity_suffix: u64,
+    pub(crate) browser_node_entity: u64,
     pub(crate) visible: bool,
 }
 
@@ -1354,7 +1362,8 @@ pub(crate) fn decode_all_body_visibility(
         else {
             continue;
         };
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        let hidden_by_entity =
+            typed_browser_node_hidden_flags_from_scan(scan, &entry.name, bytes, &metadata)?;
         for record in selected_body_map_records(bytes, &metadata)? {
             for binding in record.bindings {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
@@ -1369,6 +1378,7 @@ pub(crate) fn decode_all_body_visibility(
                         byte_offset: node.byte_offset,
                         asm_body_key_offset: u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
+                        browser_node_entity: node.entity,
                         visible: !node.hidden,
                     },
                 );
@@ -1381,18 +1391,48 @@ pub(crate) fn decode_all_body_visibility(
 /// Visibility selected from one typed browser-node record.
 #[derive(Debug, Clone, Copy)]
 struct BrowserNodeVisibility {
+    entity: u64,
     byte_offset: u64,
     hidden: bool,
 }
 
+#[cfg(test)]
 fn typed_browser_node_hidden_flags(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
     let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
     let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
+    Ok(typed_browser_node_hidden_flags_from_parts(
+        &nodes,
+        &presentations,
+    ))
+}
+
+fn typed_browser_node_hidden_flags_from_scan(
+    scan: &ContainerScan<'_>,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
+    let nodes = crate::design::decode::presentation::scan_browser_node_records(
+        scan, entry_name, bytes, meta,
+    )?;
+    let presentations = crate::design::decode::presentation::scan_body_presentations(
+        scan, entry_name, bytes, meta,
+    )?;
+    Ok(typed_browser_node_hidden_flags_from_parts(
+        &nodes,
+        &presentations,
+    ))
+}
+
+fn typed_browser_node_hidden_flags_from_parts(
+    nodes: &[crate::design::decode::presentation::BrowserNodeRecord],
+    presentations: &[crate::design::decode::presentation::BodyPresentation],
+) -> HashMap<u64, BrowserNodeVisibility> {
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
-    for node in &nodes {
+    for node in nodes {
         nodes_by_entity
             .entry(node.entity_suffix)
             .or_default()
@@ -1433,13 +1473,14 @@ fn typed_browser_node_hidden_flags(
             out.insert(
                 entity_suffix,
                 BrowserNodeVisibility {
+                    entity: u64::from(node.record_index),
                     byte_offset: node.hidden_offset,
                     hidden: node.hidden,
                 },
             );
         }
     }
-    Ok(out)
+    out
 }
 
 /// Map each browser-node GUID to its Design entity suffix.
@@ -1532,9 +1573,9 @@ mod tests {
     use crate::records::entity_header::DESIGN_MODULE_BODY;
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
     use crate::test_support::indexed_header;
-    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
     use crate::test_support::push_reference_u64;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
     use std::collections::HashSet;
 
     #[test]
@@ -1798,7 +1839,7 @@ mod tests {
         if truncate_last {
             bulk.pop();
         }
-        let meta = crate::test_support::streams_test::design_metastream_with_records(
+        let meta = crate::test_support::streams_fixture::design_metastream_with_records(
             &[
                 (
                     crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID,
@@ -1829,7 +1870,7 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         let breps: Vec<_> = names.into_iter().map(|name| (name, &[0][..])).collect();
-        crate::test_support::body_map_test::f3d_with_breps_and_design(&breps, &bulk, &meta)
+        crate::test_support::body_map_fixture::f3d_with_breps_and_design(&breps, &bulk, &meta)
     }
 
     fn snapshot_record(name: &str, entities: &[u64]) -> BodyMapRecord {
@@ -2146,7 +2187,7 @@ mod tests {
     #[test]
     fn empty_modern_map_without_any_brep_is_an_explicit_empty_selection() {
         let bulk = body_map_bytes(10, 0, &[]);
-        let meta = crate::test_support::streams_test::design_metastream_with_records(
+        let meta = crate::test_support::streams_fixture::design_metastream_with_records(
             &[(
                 crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
                 crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
@@ -2157,7 +2198,7 @@ mod tests {
             &[(900, 0)],
         );
         let archive =
-            crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &bulk, &meta);
+            crate::test_support::body_map_fixture::f3d_with_breps_and_design(&[], &bulk, &meta);
         with_scan(&archive, |scan| {
             let selection = super::design_model_selection(scan).unwrap();
             assert!(selection.explicitly_empty);
@@ -2208,7 +2249,7 @@ mod tests {
             false,
             42,
         );
-        let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
             &[
                 (
                     crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
@@ -2262,14 +2303,14 @@ mod tests {
 
     fn bindings_with_consumer(
         pairs: &[(u64, u64, Option<bool>)],
-        container: crate::test_support::component_body_test::HistoryOnlyContainer<'_>,
+        container: crate::test_support::component_body_fixture::HistoryOnlyContainer<'_>,
         bound_cluster: bool,
-        consumer: Option<crate::test_support::component_body_test::BodyConsumer<'_>>,
+        consumer: Option<crate::test_support::component_body_fixture::BodyConsumer<'_>>,
     ) -> Vec<(u64, bool)> {
         const PREFIX: &str = "FusionAssetName[Active]/Design1/";
         const BLOB: &str = "BREP.synthetic.smbh";
         let (bulk, metadata) =
-            crate::test_support::component_body_test::history_only_pairs_with_consumer(
+            crate::test_support::component_body_fixture::history_only_pairs_with_consumer(
                 BLOB,
                 pairs,
                 container,
@@ -2312,7 +2353,7 @@ mod tests {
     #[test]
     fn a_consuming_scope_removes_a_hidden_uncontained_pair_from_a_bound_cluster() {
         use crate::design::decode::body_consumers::{COMBINE_TYPE_GUID, REMOVE_BODY_TYPE_GUID};
-        use crate::test_support::component_body_test::{
+        use crate::test_support::component_body_fixture::{
             BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
         };
         const MOVE_TYPE_GUID: &str = "64E40C8E-E564-469C-8690-5C4E77C1B02C";
@@ -2467,7 +2508,7 @@ mod tests {
     #[test]
     fn a_consumer_removes_only_the_pair_it_names() {
         use crate::design::decode::body_consumers::COMBINE_TYPE_GUID;
-        use crate::test_support::component_body_test::{
+        use crate::test_support::component_body_fixture::{
             BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
         };
         assert_eq!(
@@ -2490,7 +2531,7 @@ mod tests {
 
     #[test]
     fn history_only_pair_requires_complete_memberships_that_omit_a_hidden_entity() {
-        use crate::test_support::component_body_test::{
+        use crate::test_support::component_body_fixture::{
             history_only_design, HistoryOnlyContainer as Container,
         };
         const PREFIX: &str = "FusionAssetName[Active]/Design1/";
@@ -2752,6 +2793,7 @@ mod tests {
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
+            consumers: Vec::new(),
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,
@@ -2887,12 +2929,16 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let mut losses = Vec::new();
-            let bounds = super::decode_body_bounds(scan, &[entity, sibling], &mut losses).unwrap();
-            assert_eq!(losses.len(), 1);
+            let mut given_up = Vec::new();
+            let bounds =
+                super::decode_body_bounds(scan, &[entity, sibling], &mut given_up).unwrap();
+            let [frame] = given_up.as_slice() else {
+                panic!("one given-up bounds frame: {given_up:?}");
+            };
+            assert_eq!(frame.span().0, ENTRY);
             assert_eq!(
-                losses[0].code,
-                crate::loss::F3dLossCode::DesignBodyBoundsUndecoded.kind()
+                frame.reason().0,
+                cadmpeg_ir::unknown::part::Cause::Undecoded
             );
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 107);

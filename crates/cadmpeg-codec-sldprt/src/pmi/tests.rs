@@ -800,7 +800,7 @@ fn malformed_pmi_map_emits_attributed_loss() {
     let mut losses = Vec::new();
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
-    assert_eq!(losses.len(), 1);
+    assert_given_up(&losses, "01234567-89ab-cdef-0123-456789abcdef");
     assert!(
         losses[0]
             .message
@@ -829,10 +829,31 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
     let mut losses = Vec::new();
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
-    assert_eq!(losses.len(), 1);
+    assert_given_up(&losses, "abcdef01-89ab-cdef-0123-456789abcdef");
     assert!(losses[0]
         .message
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
+}
+
+/// `losses` holds only the `record.undecoded` naming the dimension of
+/// `guid`.
+fn assert_given_up(losses: &[cadmpeg_ir::report::loss::LossNote], guid: &str) {
+    let [given_up] = losses else {
+        panic!("one given-up record: {losses:?}");
+    };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    let record = format!("sldprt:pmi:dimension#{guid}");
+    assert!(
+        given_up
+            .message
+            .split_whitespace()
+            .any(|token| token == record),
+        "{}",
+        given_up.message
+    );
 }
 
 #[test]
@@ -1023,10 +1044,11 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
             .expect("PMI dimension");
         assert_eq!(dimension.value.get(), value);
         assert_eq!(dimension.item_count.get(), item_count);
-        assert!(decoded.report().losses.iter().all(|loss| {
-            !loss.message.contains("semantic-record-malformed")
-                && !loss.message.contains("failed to parse MessagePack map")
-        }));
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| { !loss.message.contains("failed to parse MessagePack map") }));
     }
 }
 
@@ -1045,14 +1067,32 @@ fn decode_reports_malformed_pmi_semantic_map() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
     assert!(sldprt_native(decoded.ir()).pmi_dimensions.is_empty());
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("01234567-89ab-cdef-0123-456789abcdef")
-            && loss.message.contains("failed to parse MessagePack map")
-    }));
+    let [given_up] = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .contains("01234567-89ab-cdef-0123-456789abcdef")
+        })
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one loss names the dimension");
+    };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(given_up.message.contains("failed to parse MessagePack map"));
+    SldprtCodec
+        .decode(
+            &mut Cursor::new(source),
+            &crate::test_support::ir::strict_options(),
+        )
+        .expect("a pinned decode keeps an undecoded dimension");
 }
 
 #[test]
@@ -1356,7 +1396,14 @@ fn u16_precision_survives_plain_patch_round_trip() {
         .iter()
         .any(|p| p.pmi.is_some()));
     let original = payload.clone();
-    patch_payload(decoded.ir(), &record.parent, &mut payload, &|_| true).unwrap();
+    patch_payload(
+        decoded.ir(),
+        &record.parent,
+        &mut payload,
+        &|_| true,
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
+    )
+    .unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
 }
@@ -1419,7 +1466,14 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
         parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
     }
     let mut patched = payload.clone();
-    let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
+    let kept = patch_payload(
+        decoded.ir(),
+        &parent,
+        &mut patched,
+        &|_| true,
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
+    )
+    .unwrap();
     assert_eq!(patched, payload);
     assert_eq!(kept.len(), 1, "{kept:?}");
     assert!(crate::test_support::is_edit_dropped(&kept[0].code));
@@ -1487,8 +1541,9 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load(
+    if let Err(error) = crate::test_support::native::load_under(
         namespace,
+        cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
     ) {
         assert!(!matches!(
@@ -1497,7 +1552,13 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         ));
     }
     assert!(!matches!(
-        patch_payload(&ir, "block", &mut [], &|_| true),
+        patch_payload(
+            &ir,
+            "block",
+            &mut [],
+            &|_| true,
+            &cadmpeg_core::decode::test_support::desktop_decode_context()
+        ),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }
@@ -1555,13 +1616,17 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     let mut losses = Vec::new();
     let integer_key = record_with_trailing_entry("bulk", &[0x91, 0x81, 0x01, 0x02]);
     assert!(parse_payload(&integer_key, &mut losses).is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one malformed-record loss: {losses:?}");
+    let [given_up] = losses.as_slice() else {
+        panic!("one given-up record: {losses:?}");
     };
     assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
+    assert!(given_up
+        .message
+        .split_whitespace()
+        .any(|token| token == "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef"));
 }
 
 /// `count` candidate maps whose arrays run to the end of the payload. Each
@@ -1688,7 +1753,6 @@ fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_s
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &SldprtCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())

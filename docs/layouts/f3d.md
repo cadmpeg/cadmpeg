@@ -3336,6 +3336,38 @@ Offsets are relative to the first byte after the cross-document reference. The s
 | 50 | 1 | `zero_flag` | `u8` | little | spec | one zero byte |
 | 51 | 11 | `scope_reference` | `bytes[11]` | little | spec | a same-segment reference to the owning scope |
 
+## `combine_legacy_external_body_reference`
+
+Spec §3.1 · layout: byte offsets · size: 60 B
+
+Offsets are relative to the first byte after the u32 one that follows the occurrence reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `body_marker` | `u8` | little | spec | Its cross-document body reference is a legacy target reference (§1.4): `u8 1` · value `1` |
+| 1 | 8 | `browser_node_entity` | `u64` | little | spec | the u64 entity ID of a body-visibility browser node in the referenced design |
+| 9 | 1 | `occurrence_marker` | `u8` | little | spec | in the referenced design, `u8 1` · value `1` |
+| 10 | 8 | `source_occurrence_identity` | `u64` | little | spec | a u64 source occurrence identity, `u8 0` |
+| 18 | 1 | `cross_document_flag` | `u8` | little | spec | a u64 source occurrence identity, `u8 0` · value `0` |
+| 19 | 40 | `type_guid` | `bytes[40]` | little | spec | the LP-ASCII 36 type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E` |
+| 59 | 1 | `closing_zero` | `u8` | little | spec | `D26351F0-5940-4D23-AA20-2C35475A6D9E`, and `u8 0` · value `0` |
+
+## `combine_legacy_external_selector_tail`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the first byte after the legacy cross-document body reference. The separator after the reference to `N+2` is two or three bytes long.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `constant_nine` | `u32` | little | spec | The legacy selector tail is u32 `9` · value `9` |
+| 4 | 2 | `constant_two` | `u16` | little | spec | The legacy selector tail is u32 `9`, u16 `2` · value `2` |
+| 6 | 8 | `selection_payload_stamp` | `u64` | little | spec | a u64 selection-payload stamp |
+| 14 | 4 | `evaluation_epoch` | `u32` | little | spec | a u32 evaluation epoch |
+| 18 | 8 | `evaluation_scalar` | `f64` | little | spec | a finite nonnegative f64 evaluation scalar |
+| 26 | 4 | `repeated_epoch` | `u32` | little | spec | a u32 equal to the epoch |
+| 30 | 11 | `nested_two_reference` | `bytes[11]` | little | spec | a u32 equal to the epoch, a same-segment reference to `N+2` |
+
 ## `indexed_companion_record_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 58 B
@@ -10702,6 +10734,29 @@ Parsed by:
 | 41 | 4 | `locator_count` | `u32` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 45 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 56 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+
+## `assembly_typed_alternate_rigid_group_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 187 B
+
+The typed alternate prologue through its first two member references. Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `0` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `0` |
+| 25 | 1 | `zero_separator` | `u8` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `0` |
+| 26 | 51 | `pathless_locator_reference` | `bytes[51]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 77 | 4 | `zero_run_77` | `bytes[4]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 81 | 4 | `locator_count` | `u32` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 85 | 51 | `first_locator_reference` | `bytes[51]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 136 | 51 | `second_locator_reference` | `bytes[51]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
 
 ## `assembly_compact_rigid_group_identity_locator`
 

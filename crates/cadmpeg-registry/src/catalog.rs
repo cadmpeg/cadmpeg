@@ -264,6 +264,7 @@ impl InputCatalog {
                             feature = "sat",
                             feature = "pvz",
                             feature = "edrawings",
+                            feature = "alibre",
                             feature = "usd",
                             feature = "onshape"
                         ))]

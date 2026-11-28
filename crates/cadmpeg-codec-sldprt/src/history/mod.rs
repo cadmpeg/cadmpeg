@@ -15,16 +15,17 @@ pub(crate) mod write;
 
 use self::classify::classless_builtin_node;
 
-use crate::container::ContainerScan;
+use crate::container::{ContainerScan, Section};
 use crate::records::FeatureSource;
 use crate::records::{
     Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent, HistoryElement,
     HistoryElementContent,
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 
@@ -106,11 +107,35 @@ fn names_history(name: Option<&str>) -> bool {
         })
 }
 
-/// Charges a Keywords history member that no record is read from.
-fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
-    losses.push(crate::loss::SldprtLossCode::HistoryUnread.note(format!(
-        "Keywords member {member}: {cause}; no configuration or feature of the history is read"
-    )));
+/// The part a Keywords history member is when no record is read from it.
+const HISTORY_MEMBER_PART: &str = "history-member";
+
+/// Gives up, for `cause`, the section of a Keywords history member that no
+/// record is read from. The source record holds the section's bytes, so the
+/// part keeps only their digest.
+fn report_unread(
+    ctx: &DecodeContext<'_>,
+    section: Section<'_>,
+    given_up: &mut Vec<GivenUpPart>,
+    (cause, why): (Cause, &str),
+) -> Result<(), CodecError> {
+    let stream = section.source_stream();
+    let part = Part::at(
+        "sldprt",
+        HISTORY_MEMBER_PART,
+        0,
+        section.stored_payload(),
+        [ArenaClass::Design],
+    )
+    .named(stream.as_str())
+    .in_stream(stream.clone())
+    .digest_only();
+    let error = CodecError::malformed(format_args!(
+        "Keywords member {}: {why}; no configuration or feature of the history is read",
+        stream.as_str()
+    ));
+    given_up.push(ctx.give_up_part(part, cause, error)?);
+    Ok(())
 }
 
 /// Element levels of one `Application` element the native history keeps, the
@@ -121,6 +146,7 @@ fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
 /// 128 containers a `serde_json` text parse admits from the document root. A
 /// stored element of 40 levels is the deepest that reads back, so 16 levels
 /// keep the record under half of that; corpus elements nest 2 levels.
+// resource-cap: MAX_APPLICATION_LEVELS = 2
 const MAX_APPLICATION_LEVELS: usize = 16;
 
 /// The elements of one `Application` subtree below [`MAX_APPLICATION_LEVELS`].
@@ -335,6 +361,7 @@ pub(crate) fn histories(
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Vec<FeatureHistory>, CodecError> {
     // A generated part holds its history in the writer's summary; its native
     // Keywords index lists the skeleton tree the summary already accounts for.
@@ -350,33 +377,49 @@ pub(crate) fn histories(
             let stream = section.source_stream();
             let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
-                if named {
-                    report_unread(losses, stream.as_str(), "no XML payload is decoded from it");
+                // A wrapped member that does not inflate is given up by the
+                // container, and that give-up states the lost history.
+                let member_given_up = scan.given_up.iter().any(|part| {
+                    part.kind() == crate::container::WRAPPED_MEMBER_PART
+                        && part.stream() == Some(stream)
+                });
+                if named && !member_given_up {
+                    report_unread(
+                        ctx,
+                        section,
+                        given_up,
+                        (Cause::Unreadable, "no XML payload is decoded from it"),
+                    )?;
                 }
                 return Ok(histories);
             };
             let Some(text) = crate::container::xml_text(payload) else {
                 if named {
                     report_unread(
-                        losses,
-                        stream.as_str(),
-                        "its bytes are not UTF-8 or UTF-16LE text",
-                    );
+                        ctx,
+                        section,
+                        given_up,
+                        (
+                            Cause::Unreadable,
+                            "its bytes are not UTF-8 or UTF-16LE text",
+                        ),
+                    )?;
                 }
                 return Ok(histories);
             };
-            let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+            let doc = match ctx.run_part(|| ctx.parse_xml(text.as_str(), "decode XML tree"))? {
                 Ok(tree) => tree,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     if named {
-                        let cause = match error {
-                            CodecError::Malformed(message) => {
-                                format!("its XML does not parse: {message}")
-                            }
-                            refused => format!("its XML is refused: {refused}"),
+                        // A refusal is a parser bound, not a defect of the text.
+                        let (cause, why) = match error {
+                            CodecError::Malformed(message) => (
+                                Cause::Unreadable,
+                                format!("its XML does not parse: {message}"),
+                            ),
+                            refused => (Cause::Undecoded, format!("its XML is refused: {refused}")),
                         };
-                        report_unread(losses, stream.as_str(), &cause);
+                        report_unread(ctx, section, given_up, (cause, &why))?;
                     }
                     return Ok(histories);
                 }
@@ -384,18 +427,15 @@ pub(crate) fn histories(
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
                 if named {
-                    report_unread(
-                        losses,
-                        stream.as_str(),
-                        &format!(
-                            "its root element {:?} is not a Keywords root",
-                            root.tag_name().name()
-                        ),
+                    let why = format!(
+                        "its root element {:?} is not a Keywords root",
+                        root.tag_name().name()
                     );
+                    report_unread(ctx, section, given_up, (Cause::Undecoded, &why))?;
                 }
                 return Ok(histories);
             }
-            report_normalised(losses, stream.as_str(), &doc);
+            report_normalised(losses, stream.as_str(), doc.tree());
             let parent = format!("sldprt:history:feature-history#{source}");
             let applications = root
                 .children()
@@ -418,7 +458,7 @@ pub(crate) fn histories(
                         annotations,
                         crate::annotations::native_key(&id)?,
                         stream,
-                        cadmpeg_core::decode::u64_from_index(node.range().start),
+                        cadmpeg_core::decode::u64_from_index(doc.source_range(node.range()).start),
                         "Configuration",
                         Exactness::ByteExact,
                     )?;
@@ -485,7 +525,7 @@ pub(crate) fn histories(
                         annotations,
                         crate::annotations::native_key(&id)?,
                         stream,
-                        cadmpeg_core::decode::u64_from_index(node.range().start),
+                        cadmpeg_core::decode::u64_from_index(doc.source_range(node.range()).start),
                         node.tag_name().name(),
                         Exactness::ByteExact,
                     )?;
@@ -656,7 +696,7 @@ pub(crate) fn histories(
                 if crate::records::FeatureSource::try_from(raw).is_err() {
                     continue;
                 }
-                let range = node.range();
+                let range = doc.source_range(node.range());
                 let Some(len) = range.end.checked_sub(range.start) else {
                     return Err(CodecError::malformed(
                         "SLDPRT history feature range ends before it starts",

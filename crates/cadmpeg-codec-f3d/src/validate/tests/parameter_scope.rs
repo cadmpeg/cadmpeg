@@ -466,6 +466,7 @@ fn operand_list_combine_requires_its_own_offsets() {
                     first: DesignCombineBodySelection {
                         record_index: 302,
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: Vec::new(),

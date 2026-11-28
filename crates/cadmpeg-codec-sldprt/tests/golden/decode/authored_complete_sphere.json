@@ -2,7 +2,23 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#374:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#374:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "position": 0,
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [],
       "evaluations": [],
       "features": [],
@@ -10,7 +26,19 @@
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#374:0",
+          "current": [],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [],
+          "unproduced": [
+            "sldprt:brep:body#900"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -437,6 +465,7 @@
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
           "instance_bodies": [],
+          "kind": "part",
           "occurrences": [],
           "representations": [],
           "storage": {
@@ -560,8 +589,8 @@
       }
     },
     "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
+      "angular": 1e-11,
+      "linear": 0.00001
     },
     "units": {
       "angle": "radian",
@@ -846,6 +875,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "d1c8a7c328e4cacadd71fd3cac8b5ff4aaf3aaa1e04336bc2dcf82f8332a2287",
       "sldprt_native_history_sha256": "7d2e7e81baf5f7fd96f95e193ed8d32a998b3b717e7232db643f16d7136ac801",
       "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

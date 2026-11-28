@@ -139,7 +139,7 @@ impl RhinoArchiveVersion {
 }
 
 impl CodecBackend for RhinoCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,
@@ -174,6 +174,7 @@ impl EncoderBackend for RhinoCodec {
     /// Writes B-rep, meshes and placements only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 
@@ -181,10 +182,11 @@ impl EncoderBackend for RhinoCodec {
     /// off-catalog Rhino source is written as the catalog default.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

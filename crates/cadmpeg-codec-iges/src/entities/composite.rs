@@ -27,6 +27,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,8 +35,11 @@ use std::fmt;
 
 const EPS_COMPOSITE_DEGENERATE: f64 = 1.0e-10;
 
+// resource-cap: MAX_COMPOSITE_CHILDREN = 2
 const MAX_COMPOSITE_CHILDREN: usize = 100_000;
+// resource-cap: MAX_COMPOSITE_DEGREE = 1
 const MAX_COMPOSITE_DEGREE: usize = 1024;
+// resource-cap: MAX_COMPOSITE_DEPTH = 4
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
 fn composite_minimum_child_count(global_table: GlobalTable) -> usize {
@@ -200,6 +204,17 @@ pub(super) fn curve_carrier_id(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<CurveId> {
+    curve_carrier_sequence(sequence, entries, records)
+        .map(|carrier| crate::ids::curve(&crate::ids::Stem::directory(carrier)))
+}
+
+/// The Directory sequence of the entity whose curve record is the
+/// model-space carrier of the curve entity `sequence`.
+pub(super) fn curve_carrier_sequence(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<u32> {
     let entry = entries.get(&sequence).copied()?;
     let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
         // Type 142 is a relationship entity. In a Type 102 constituent its
@@ -217,9 +232,7 @@ pub(super) fn curve_carrier_id(
     } else {
         sequence
     };
-    Some(crate::ids::curve(&crate::ids::Stem::directory(
-        carrier_sequence,
-    )))
+    Some(carrier_sequence)
 }
 
 #[derive(Clone)]
@@ -1727,6 +1740,8 @@ struct CompositeCarrier<'a> {
     entry: &'a DirectoryEntry,
     child_curves: &'a [CurveId],
     join_tolerance: f64,
+    /// The child whose curve has no projected record.
+    missing_child: Option<u32>,
 }
 
 enum CompositeRefusal {
@@ -1787,9 +1802,11 @@ fn project_degraded_composite(
             ),
         );
     } else {
-        super::push_geometry_loss(
+        super::push_geometry_loss_needing(
             losses,
             carrier.entry,
+            carrier.missing_child,
+            Cause::Undecoded,
             format_args!("{reason}, and no ordered native composite carrier can be constructed"),
         );
     }
@@ -1892,6 +1909,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Type 102 Entity Use Flag must be 00 in IGES 4.0"),
             );
             continue;
@@ -1908,12 +1926,18 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            super::push_geometry_loss(&mut losses, entry, format_args!("child count is invalid"));
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("child count is invalid"),
+            );
             continue;
         };
         let minimum_child_count = composite_minimum_child_count(global.global_table());
@@ -1924,6 +1948,13 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                if usize::try_from(raw_child_count)
+                    .is_ok_and(|count| count > MAX_COMPOSITE_CHILDREN)
+                {
+                    Cause::Undecoded
+                } else {
+                    Cause::Unreadable
+                },
                 format_args!(
                     "child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"
                 ),
@@ -1946,6 +1977,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("child pointer list is invalid"),
             );
             continue;
@@ -1964,6 +1996,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!(
                     "Type 102 logical connectors made of exactly two Type 132 Connect Points \
                      require Entity Use Flag 04 in IGES 5.0 and later"
@@ -1975,21 +2008,24 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "placed composite curves require transformed child-carrier projection"
                 ),
             );
             continue;
         }
-        if child_sequences.iter().any(|sequence| {
+        if let Some(child) = child_sequences.iter().find(|sequence| {
             entries.get(sequence).is_none_or(|child| {
                 !composite_child_type_allowed(child.entity_type, child.form, global.global_table())
                     || !child.status.is_physically_dependent()
             })
         }) {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                (!entries.contains_key(child)).then_some(*child),
+                Cause::Unreadable,
                 format_args!(
                     "composite child is missing, outside the effective specification family, \
                      or is not physically dependent"
@@ -2026,6 +2062,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("point or connect-point adjacency is invalid"),
             );
             continue;
@@ -2039,6 +2076,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("composite has no parameterized curve constituent"),
             );
             continue;
@@ -2056,22 +2094,28 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("a Type 142 constituent has no valid model-space curve pointer"),
             );
             continue;
         }
-        let carrier = CompositeCarrier {
+        let mut carrier = CompositeCarrier {
             entry,
             child_curves: &curve_ids,
             join_tolerance,
+            missing_child: None,
         };
 
         let mut children = Vec::new();
         let mut child_refusal = None;
-        for curve_id in &curve_ids {
+        for (curve_id, sequence) in curve_ids.iter().zip(&curve_sequences) {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
                 Ok(Some((curve, range))) => children.push((curve, range, curve_id.clone())),
                 Ok(None) => {
+                    if index.curve_by_id(ir, curve_id).is_none() {
+                        carrier.missing_child =
+                            curve_carrier_sequence(*sequence, &entries, &records);
+                    }
                     child_refusal = Some(CompositeRefusal::NoChildCarrier);
                     break;
                 }

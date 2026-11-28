@@ -397,7 +397,7 @@ fn placed_reference_edit(
     prepare(&mut ir, &mut parents);
     own(&mut ir.model, &parents);
     let first_native = ir.model.occurrences[5].native_ref.clone().unwrap();
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![
             local_carrier(OWNER, 9222),
             local_carrier(OUTER, 9300),
@@ -1192,7 +1192,7 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
     ]);
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![local_carrier(PART, 496)];
         native.xref_references = vec![reference];
     });
@@ -1426,7 +1426,7 @@ fn placements_of_one_shared_member_each_take_their_own_contained_pose() {
     }
     ir.model.occurrences.extend(parts);
     ir.model.product_definitions = vec![root, owner_definition, member];
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = carriers;
         native.xref_references = references.clone();
     });
@@ -1569,7 +1569,7 @@ fn nested_member_placed_several_times(
         ));
     }
     ir.model.product_definitions = vec![root, holder, nested];
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![local_carrier(PART, 496)];
         native.xref_references = vec![reference];
     });

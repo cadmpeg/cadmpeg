@@ -46,10 +46,16 @@ fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
 /// The shared CFB fixture with a second regular stream, `Config-0-Partition`,
 /// in sectors 10 to 17: a ZLB-wrapped Parasolid partition holding one body.
 fn compound_with_partition() -> Vec<u8> {
-    let mut file = cadmpeg_test_support::compound::compound_fixture();
     let partition = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    compound_with_wrapped(PARTITION, &partition)
+}
+
+/// The shared CFB fixture with a second regular stream `name` in sectors 10
+/// to 17: `partition` in one ZLB-wrapped member.
+fn compound_with_wrapped(name: &str, partition: &[u8]) -> Vec<u8> {
+    let mut file = cadmpeg_test_support::compound::compound_fixture();
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    std::io::Write::write_all(&mut encoder, &partition).unwrap();
+    std::io::Write::write_all(&mut encoder, partition).unwrap();
     let member = encoder.finish().unwrap();
     let mut wrapper = crate::layout::zlb_wrapper_header::MAGIC_VALUE.to_vec();
     wrapper.extend(u32::try_from(partition.len()).unwrap().to_le_bytes());
@@ -67,7 +73,7 @@ fn compound_with_partition() -> Vec<u8> {
     let directory = sector_mut(&mut file, 0);
     put_u32(directory, 128 + 72, 2);
     let entry = &mut directory[2 * 128..3 * 128];
-    let units = PARTITION.encode_utf16().collect::<Vec<_>>();
+    let units = name.encode_utf16().collect::<Vec<_>>();
     for (index, unit) in units.iter().enumerate() {
         put_u16(entry, index * 2, *unit);
     }
@@ -147,7 +153,7 @@ fn an_unread_partition_stream_is_not_reported_as_absent() {
 fn an_unterminated_cfb_stream_chain_is_read_and_reported() {
     let mut file = compound_with_partition();
     put_u32(sector_mut(&mut file, 9), 17 * 4, 0xdead_beef);
-    let decoded = decode(file);
+    let decoded = decode(file.clone());
     assert_eq!(
         decoded.ir().geometry,
         decode(compound_with_partition()).ir().geometry
@@ -164,6 +170,13 @@ fn an_unterminated_cfb_stream_chain_is_read_and_reported() {
         panic!("one loss names the stream");
     };
     assert!(loss.message.starts_with(PARTITION));
+    let Err(cadmpeg_ir::DecodeFailure::StrictRejected { rejection }) = SldprtCodec.decode(
+        &mut Cursor::new(file),
+        &crate::test_support::ir::strict_options(),
+    ) else {
+        panic!("a pinned decode refuses the compound deviation");
+    };
+    assert_eq!(rejection.loss().code, noncanonical);
 }
 
 #[test]
@@ -212,4 +225,63 @@ fn a_native_block_that_fails_its_crc_costs_that_block() {
         .contains("part native-block \"Contents/Config-1-Partition\""));
     assert!(loss.message.contains(&format!("offset={offset} ")));
     assert!(names_a_stub(&decoded, loss));
+}
+
+/// The offset of the zlib member of the last ZLB wrapper of `file`.
+fn last_member(file: &[u8]) -> usize {
+    let magic = crate::layout::zlb_wrapper_header::MAGIC_VALUE;
+    file.windows(magic.len())
+        .rposition(|window| window == magic)
+        .expect("the wrapper")
+        + crate::layout::zlb_wrapper_header::LEN
+}
+
+/// A Keywords history in a wrapped member that does not inflate is lost
+/// once: the give-up of the member states it.
+#[test]
+fn a_history_in_a_wrapped_member_that_does_not_inflate_is_given_up_once() {
+    let name = "KeyWords__ZLB";
+    let mut file = compound_with_wrapped(name, b"<Keywords><Application/></Keywords>");
+    let member = last_member(&file);
+    file[member + 2..member + 20].fill(0xff);
+    let decoded = decode(file);
+    let [loss] = unreadable(&decoded)[..] else {
+        panic!(
+            "one loss names the wrapped member: {:#?}",
+            decoded.report().losses
+        );
+    };
+    assert!(
+        loss.message
+            .contains(&format!("part wrapped-member \"{name}\"")),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn a_wrapped_member_that_does_not_inflate_is_given_up_as_a_part() {
+    let mut file = compound_with_partition();
+    let magic = crate::layout::zlb_wrapper_header::MAGIC_VALUE;
+    let member = file
+        .windows(magic.len())
+        .rposition(|window| window == magic)
+        .expect("the partition wrapper")
+        + crate::layout::zlb_wrapper_header::LEN;
+    file[member + 2..member + 34].fill(0xff);
+    let decoded = decode(file);
+    assert!(decoded.ir().geometry.faces.is_empty());
+    let [loss] = unreadable(&decoded)[..] else {
+        panic!("one loss names the wrapped member");
+    };
+    assert!(loss
+        .message
+        .contains(&format!("part wrapped-member \"{PARTITION}\"")));
+    assert!(names_a_stub(&decoded, loss));
+    let absent = crate::loss::SldprtLossCode::ContainerNoParasolidStream.kind();
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == absent));
 }

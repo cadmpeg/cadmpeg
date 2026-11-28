@@ -639,8 +639,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -736,6 +736,18 @@
             }
           },
           "message": "The Parasolid stream at stream@457 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s0:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
           "severity": "warning"
         }
       ],
@@ -848,6 +860,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "BODY"
           },
+          "nx:s0:chart-record#20-504": {
+            "offset": 504,
+            "stream": "nx:s0",
+            "tag": "CHART_s"
+          },
           "nx:s0:crv#0": {
             "offset": 322,
             "stream": "nx:parasolid#0:partition",
@@ -878,6 +895,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "INTERSECTION"
           },
+          "nx:s0:intersection-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
+            "tag": "INTERSECTION"
+          },
           "nx:s0:loop#5": {
             "offset": 160,
             "stream": "nx:parasolid#0:partition",
@@ -898,6 +920,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
+          "nx:s0:support-uv-record#23": {
+            "offset": 680,
+            "stream": "nx:s0",
+            "tag": "values"
+          },
           "nx:s0:surf#0": {
             "offset": 231,
             "stream": "nx:parasolid#0:partition",
@@ -908,10 +935,25 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
+          "nx:s0:term-use-record#21-612": {
+            "offset": 612,
+            "stream": "nx:s0",
+            "tag": "term_use"
+          },
+          "nx:s0:term-use-record#22-646": {
+            "offset": 646,
+            "stream": "nx:s0",
+            "tag": "term_use"
+          },
           "nx:s0:vertex#10": {
             "offset": 389,
             "stream": "nx:parasolid#0:partition",
             "tag": "VERTEX"
+          },
+          "nx:s1:deltas-residual#0": {
+            "offset": 0,
+            "stream": "nx:s1",
+            "tag": "DELTAS_RESIDUAL"
           }
         }
       },

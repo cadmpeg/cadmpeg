@@ -31,7 +31,7 @@ fn mesh_record_identity_native_retained_limit_refuses_before_record_clone() {
         id: "f3d:native:mesh-record#0",
         identity: &identity,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_mesh_features",
         || super::MESH_RECORD_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
@@ -256,7 +256,7 @@ fn mesh_feature_borrowed_wire_matches_owned_wire_bytes() {
 fn mesh_feature_native_retained_limit_refuses_before_clone() {
     let feature: super::DesignMeshFeature =
         json::from_value(mesh_feature_wire_for_borrowed(2, true)).unwrap();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &feature,
         "design_mesh_features",
         || super::MESH_FEATURE_CLONE_COUNT.with(|count| count.set(0)),
@@ -1005,11 +1005,30 @@ fn mesh_collection_constructs_only_complete_nested_body_runs() {
         )
         .is_err());
     }
-    for length in [72, 74, 73 + 11 * (u64::from(u32::MAX) + 1)] {
+    for length in [72, 74, 77, 73 + 11 * (u64::from(u32::MAX) + 1)] {
         assert!(crate::records::mesh::DesignMeshCollection::new(
             identity(104, 100, length),
             identity(104, 138, length - 38),
             0,
+            None,
+        )
+        .is_err());
+    }
+    for count in [1, 2] {
+        let length = 77 + 11 * u64::from(count);
+        let collection = crate::records::mesh::DesignMeshCollection::new(
+            identity(104, 100, length),
+            identity(104, 138, length - 38),
+            count,
+            None,
+        )
+        .expect("collection with the zero word");
+        assert_eq!(collection.body_count(), u64::from(count));
+        assert_eq!(collection.owner_reference_offset(), 100 + length - 11);
+        assert!(crate::records::mesh::DesignMeshCollection::new(
+            identity(104, 100, length - 1),
+            identity(104, 138, length - 39),
+            count,
             None,
         )
         .is_err());

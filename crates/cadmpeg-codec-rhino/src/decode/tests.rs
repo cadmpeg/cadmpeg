@@ -27,11 +27,13 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::unknown::NativeUnknownRecord;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod candidate_annotations;
 mod carrier_copy;
+mod given_up;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -220,7 +222,7 @@ fn a_brep_staging_refusal_names_no_byte() {
     assert!(matches!(
         error,
         crate::curves::GeometryError::Malformed(
-            crate::chunks::FramingError::Unpositioned { ref message }
+            crate::chunks::FramingError::Unbound { ref message }
         ) if message == "scaled tolerance is invalid"
     ));
     assert_eq!(
@@ -1425,7 +1427,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         );
         assert!(context.mark_decoded(0));
         assert!(!context.mark_decoded(0));
-        assert!(!context.mark_failed(0));
+        assert!(!context.mark_failed(0, Cause::Unreadable, format_args!("test failure")));
         assert_eq!(context.ir_mut().geometry.bodies.len(), 0);
         context
             .unknown_links_mut(0)
@@ -1504,14 +1506,14 @@ fn expansion_undo_restores_touched_links_and_statuses_exactly() {
             .append_link(1, "rhino:curve#0")
             .expect("admitted link");
         assert!(context.mark_decoded(1));
-        assert!(!context.mark_failed(2));
+        assert!(!context.mark_failed(2, Cause::Unreadable, format_args!("test failure")));
         assert_ne!(links(&context), before);
         let undo = context.expansion_undo.take().expect("active undo log");
         assert_eq!(undo.links.len(), 3);
         context.undo_expansion(undo).expect("undo expansion");
 
         assert_eq!(links(&context), before);
-        assert!(context.mark_failed(1));
+        assert!(context.mark_failed(1, Cause::Unreadable, format_args!("test failure")));
         assert!(!context.mark_decoded(2));
     });
 }
@@ -1633,7 +1635,7 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
 }
 
 #[test]
-fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_deterministically() {
+fn scaled_coordinate_overflow_gives_up_the_object_undecoded_and_repeats_deterministically() {
     let archive = ArchiveVersion::V5;
     let object =
         object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([2.0, 0.0, 0.0]));
@@ -1644,11 +1646,51 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
     assert!(first.ir().geometry.points.is_empty());
     assert_eq!(first.ir(), second.ir());
     assert_eq!(first.report(), second.report());
-    assert!(first
-        .report()
-        .losses
+    // A finite coordinate whose millimetre product passes the f64 range
+    // breaks no format rule: the give-up is undecoded, and no loss is an
+    // error.
+    let losses = &first.report().losses;
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()),
+        "{losses:#?}"
+    );
+    assert!(
+        !losses.iter().any(|loss| loss.severity == Severity::Error),
+        "{losses:#?}"
+    );
+}
+
+/// A reference whose payload does not parse is given up once: the object
+/// family count and the expansion warnings do not restate it.
+#[test]
+fn an_unparsed_reference_is_one_give_up() {
+    let scan = scan_with_objects(&[object_record_with_payload(
+        ArchiveVersion::V5,
+        0x1000,
+        crate::test_support::test_dump::INSTANCE_REFERENCE_CLASS,
+        &[],
+    )]);
+    let result = crate::decode::decode_for_test(&scan);
+    let losses = &result.report().losses;
+    let charges = losses
         .iter()
-        .any(|loss| loss.severity == Severity::Error));
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .count();
+    assert_eq!(charges, 1, "{losses:#?}");
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind()),
+        "{losses:#?}"
+    );
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.message.contains("instance retained")),
+        "{losses:#?}"
+    );
 }
 
 /// The body-kind and B-rep domain charges reach the report as typed codes.
@@ -1735,19 +1777,31 @@ fn class_report_counts_terminal_outcomes_once() {
         assert!(context.mark_native_retained(1, RhinoLossCode::HatchFillNotTransferred));
         assert!(!context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
         assert!(context.mark_decoded(0));
-        assert!(context.mark_failed(2));
+        assert!(context.mark_failed(2, Cause::Unreadable, format_args!("test failure")));
         assert!(!context.mark_decoded(2));
         let result = seal_for_test(context.commit().expect("test decode commit"), false);
         for (code, message) in [
             (RhinoLossCode::ObjectRecordCensus, "decoded 1/5 Rhino object records".to_string()),
             (RhinoLossCode::HatchFillNotTransferred, format!("framed and read 2 object record(s) for class {class}; construction state is retained as native passthrough")),
             (RhinoLossCode::ObjectFamilyNotTransferred, format!("retained 1 object record(s) for class {class}; geometry is not decoded")),
-            (RhinoLossCode::ObjectFramingUndecodable, format!("1 framed object record(s) for class {class} could not be decoded")),
         ] {
             let losses = result.report().losses.iter().filter(|loss| loss.code == code.kind()).collect::<Vec<_>>();
             assert_eq!(losses.len(), 1);
             assert_eq!(losses[0].message, message);
         }
+        let unreadable = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(unreadable.len(), 1);
+        assert!(unreadable[0].starts_with("part object-record stream=\"\" offset="));
+        assert!(unreadable[0].contains(&format!("of class {class}: test failure")));
+        assert!(unreadable[0]
+            .split_whitespace()
+            .any(|token| token == "rhino:object:record#000002"));
     });
 }
 
@@ -1782,16 +1836,32 @@ fn class_report_preserves_nil_class_source_selection() {
         with_expand(&scan, |expand| {
             let context = DecodeContext::new(&scan, expand).expect("test transaction");
             let result = seal_for_test(context.commit().expect("test decode commit"), false);
-            let loss = result
+            let class_note = result
                 .report()
                 .losses
                 .iter()
-                .find(|loss| loss.code == RhinoLossCode::ObjectFramingUndecodable.kind())
-                .expect("framing loss");
-            assert_eq!(
-                loss.provenance.as_ref().expect("source location").offset,
-                cadmpeg_core::decode::u64_from_index(scan.objects[expected_source].range().start)
-            );
+                .find(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind());
+            let given_up = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+                .count();
+            if expected_source == 1 {
+                assert_eq!(
+                    class_note
+                        .expect("class note")
+                        .provenance
+                        .as_ref()
+                        .expect("source location")
+                        .offset,
+                    cadmpeg_core::decode::u64_from_index(scan.objects[1].range().start)
+                );
+                assert_eq!(given_up, 2);
+            } else {
+                assert!(class_note.is_none());
+                assert_eq!(given_up, 3);
+            }
         });
     }
 }

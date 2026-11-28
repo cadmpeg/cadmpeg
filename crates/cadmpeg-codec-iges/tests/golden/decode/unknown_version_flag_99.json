@@ -334,8 +334,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -445,8 +443,7 @@
           "value": {
             "code": "source.dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Global version flag 99 names effective specification version 5.3 after the clamp to 11 that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions 4.0, 5.0, 5.1, 5.2, 5.3",

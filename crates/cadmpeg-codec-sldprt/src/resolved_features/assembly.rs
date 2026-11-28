@@ -376,25 +376,21 @@ fn legacy_sketch_object_stream(payload: &[u8]) -> Result<bool, cadmpeg_core::Cod
 #[cfg(test)]
 mod assembly_tests;
 
-/// The profile bodies a decode of the source image `image` binds, for each
-/// lane of `lanes` whose bytes the image holds unchanged.
+/// The profile bodies a decode of the source image `scan` binds in `ctx`, for
+/// each lane of `lanes` whose bytes the image holds unchanged.
 ///
 /// # Errors
 ///
 /// Propagates a decode refusal of the image.
 pub(crate) fn source_image_profiles(
-    image: &[u8],
+    ctx: &DecodeContext<'_>,
+    scan: &crate::container::ContainerScan<'_>,
     lanes: &[FeatureInputLane],
 ) -> Result<super::profiles::ExactProfiles, cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(
-        image,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
-    let scan = crate::container::scan(&ctx, root)?;
-    let (source_lanes, mut exact, _, _, _, _) =
-        self::lanes(&ctx, &scan, &mut Annotations::default(), &mut Vec::new())?;
+    let (source_lanes, mut exact, _, _, _, _) = ctx.with_arena(&arena, |ctx| {
+        self::lanes(ctx, scan, &mut Annotations::default(), &mut Vec::new())
+    })?;
     exact.retain(|id| {
         let payload = |of: &[FeatureInputLane]| {
             of.iter()

@@ -300,6 +300,72 @@ fn the_extrude_replaces_the_base_feature() {
     );
 }
 
+/// The decode of a written design holds native feature scopes, which hold
+/// no byte form without the source file: the rewrite takes the design from
+/// its neutral records and names that reason (cadir-v11.md §3.4, W2).
+#[test]
+fn a_decoded_design_is_rewritten_from_its_neutral_records() {
+    let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
+    assert!(!crate::test_support::native_fixture::f3d_native(&decoded)
+        .design_parameter_scopes
+        .is_empty());
+    decoded.source = None;
+    let (report, rewritten) = write(&decoded);
+    let omitted = loss(&report, "export/native.records-omitted").join("\n");
+    assert!(
+        omitted.contains(
+            "of the Design stream, which the generator writes from the design's neutral records"
+        ),
+        "{omitted}"
+    );
+    assert!(
+        !omitted.contains("cannot write them consistently"),
+        "{omitted}"
+    );
+    assert!(!kinds(&rewritten).is_empty(), "{:#?}", report.losses);
+}
+
+/// The regenerated Design stream names the result body and its faces, so
+/// the decoded names on them, which name records of the dropped Design
+/// stream, are dropped alone (cadir-v11.md §3.4, W1 and W2).
+#[test]
+fn a_rewritten_design_replaces_the_decoded_names_of_the_entities_it_names() {
+    let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
+    let tag = native
+        .persistent_subentity_tags
+        .first()
+        .expect("a decoded face name")
+        .id
+        .clone();
+    let link = native
+        .persistent_design_links
+        .first()
+        .expect("a decoded body name")
+        .id
+        .clone();
+    decoded.source = None;
+    let (report, rewritten) = write(&decoded);
+    let omitted = loss(&report, "export/native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains("cannot write the document with them")),
+        "{omitted:#?}"
+    );
+    for id in [&tag, &link] {
+        assert!(
+            omitted.iter().any(|message| message
+                .contains("on an entity that the regenerated Design stream names")
+                && message.contains(id.as_str())),
+            "{id}: {omitted:#?}"
+        );
+    }
+    let rewritten = crate::test_support::native_fixture::f3d_native(&rewritten);
+    assert!(!rewritten.persistent_subentity_tags.is_empty());
+    assert!(!rewritten.persistent_design_links.is_empty());
+}
+
 #[test]
 fn an_extrude_design_charges_a_hidden_body_and_every_fixed_clock_table() {
     let mut ir = sketch_and_extrude(blind(), false);
@@ -618,7 +684,7 @@ fn planes(decoded: &CadIr) -> Vec<(&cadmpeg_ir::ids::FaceId, [f64; 3], [f64; 3])
 #[test]
 fn caps_and_sides_are_named_by_the_walk() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     let planes = planes(&decoded);
     // Token, the axis the face is normal to, and its offset along it: the
     // walk starts on l4 (the line written last, at x = 0) and runs
@@ -714,7 +780,7 @@ fn a_cap_link_takes_the_traversal_flag_of_its_loop_entry() {
         "{:#?}",
         report.losses
     );
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     let mut senses = native
         .sketch_curve_links
         .iter()

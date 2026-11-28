@@ -226,7 +226,7 @@ fn a_retired_record_keeps_its_annotations_under_its_evaluation() {
         &mut Vec::new(),
     );
 
-    let key = AnnotationKey::in_delta(&evaluation, id.as_str());
+    let key = AnnotationKey::in_delta(&evaluation, &id);
     assert_eq!(
         key.target(),
         AnnotationTarget::Delta {

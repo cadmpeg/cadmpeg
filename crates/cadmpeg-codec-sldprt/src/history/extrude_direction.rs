@@ -27,7 +27,9 @@ const EPS_CAP_MESH_DISTANCE: f64 = 1.0e-4;
 const EPS_CAP_ALIGNMENT: f64 = 1.0e-8;
 const EPS_SOLID_SIDE: f64 = 1.0e-6;
 const MIN_TRIANGLE_DETERMINANT: f64 = 1.0e-24;
+const EPS_CAP_BOX_SCALE_MARGIN: f64 = 1.0e-6;
 const CURVE_SAMPLE_INTERVALS: u32 = 16;
+// resource-cap: MAX_WITNESS_WORK = 4
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
 /// The source property that the decoder sets to `false` where an extrusion
@@ -670,7 +672,7 @@ struct OneSided<'a> {
 /// that adds material against the profile normal, whatever its
 /// termination: the travel that the whole solid can contradict.
 fn reversed_join(feature: &Feature) -> Option<&PlanarProfileRef> {
-    if feature.suppressed != Some(false) {
+    if feature.suppressed == Some(true) {
         return None;
     }
     match feature.evaluation.definition().operation() {
@@ -687,7 +689,7 @@ fn reversed_join(feature: &Feature) -> Option<&PlanarProfileRef> {
 }
 
 fn candidate(feature: &Feature) -> Option<OneSided<'_>> {
-    if feature.suppressed != Some(false) {
+    if feature.suppressed == Some(true) {
         return None;
     }
     match feature.evaluation.definition().operation() {
@@ -735,7 +737,7 @@ struct TwoSided<'a> {
 }
 
 fn two_sided(feature: &Feature) -> Option<TwoSided<'_>> {
-    if feature.suppressed != Some(false)
+    if feature.suppressed == Some(true)
         || !reversal_flag(&feature.source_properties)
         || !reversal_unread(&feature.source_properties)
     {
@@ -1088,6 +1090,7 @@ struct Cap {
     sense: f64,
     vertices: Vec<Point3>,
     triangles: Vec<CapTriangle>,
+    triangle_bounds: Option<(Point3, Point3)>,
     polygons: Option<Vec<Vec<Point3>>>,
     transform: Transform,
 }
@@ -1261,6 +1264,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
             },
             vertices: Vec::new(),
             triangles: Vec::new(),
+            triangle_bounds: None,
             polygons: Some(Vec::new()),
             transform,
         };
@@ -1344,9 +1348,25 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
                     if [a, b, c].iter().all(|p| {
                         p.vector_from(cap.origin).dot(cap.normal).abs() <= EPS_CAP_MESH_DISTANCE
                     }) {
-                        cap.triangles.push(CapTriangle::new([a, b, c].map(|p| {
+                        let triangle = CapTriangle::new([a, b, c].map(|p| {
                             p.translated(cap.normal, -p.vector_from(cap.origin).dot(cap.normal))
-                        })));
+                        }));
+                        cap.triangle_bounds = Some(match cap.triangle_bounds {
+                            None => (triangle.bounds_min, triangle.bounds_max),
+                            Some((min, max)) => (
+                                Point3::new(
+                                    min.x.min(triangle.bounds_min.x),
+                                    min.y.min(triangle.bounds_min.y),
+                                    min.z.min(triangle.bounds_min.z),
+                                ),
+                                Point3::new(
+                                    max.x.max(triangle.bounds_max.x),
+                                    max.y.max(triangle.bounds_max.y),
+                                    max.z.max(triangle.bounds_max.z),
+                                ),
+                            ),
+                        });
+                        cap.triangles.push(triangle);
                     }
                 }
             }
@@ -1389,6 +1409,19 @@ impl Cap {
             return true;
         }
         if !self.triangles.is_empty() {
+            if self.triangle_bounds.is_some_and(|(min, max)| {
+                p.x < min.x
+                    || p.x > max.x
+                    || p.y < min.y
+                    || p.y > max.y
+                    || p.z < min.z
+                    || p.z > max.z
+            }) {
+                if !work.charge_by(self.triangles.len()) {
+                    return false;
+                }
+                return false;
+            }
             return self
                 .triangles
                 .iter()
@@ -1452,6 +1485,8 @@ struct CapTriangle {
     mixed: f64,
     determinant: f64,
     slack: f64,
+    bounds_min: Point3,
+    bounds_max: Point3,
 }
 
 impl CapTriangle {
@@ -1461,6 +1496,23 @@ impl CapTriangle {
         let first_squared = first_edge.dot(first_edge);
         let second_squared = second_edge.dot(second_edge);
         let mixed = first_edge.dot(second_edge);
+        let min_x = origin.x.min(first.x).min(second.x);
+        let min_y = origin.y.min(first.y).min(second.y);
+        let min_z = origin.z.min(first.z).min(second.z);
+        let max_x = origin.x.max(first.x).max(second.x);
+        let max_y = origin.y.max(first.y).max(second.y);
+        let max_z = origin.z.max(first.z).max(second.z);
+        let coord_scale = min_x
+            .abs()
+            .max(max_x.abs())
+            .max(min_y.abs())
+            .max(max_y.abs())
+            .max(min_z.abs())
+            .max(max_z.abs())
+            .max(1.0);
+        let margin = 4.0 * EPS_BOUNDARY_DISTANCE
+            + EPS_CARRIER_DISTANCE
+            + EPS_CAP_BOX_SCALE_MARGIN * coord_scale;
         Self {
             origin,
             first_edge,
@@ -1470,6 +1522,8 @@ impl CapTriangle {
             mixed,
             determinant: first_squared * second_squared - mixed * mixed,
             slack: EPS_BOUNDARY_DISTANCE / first_edge.norm().max(second_edge.norm()).max(1.0),
+            bounds_min: Point3::new(min_x - margin, min_y - margin, min_z - margin),
+            bounds_max: Point3::new(max_x + margin, max_y + margin, max_z + margin),
         }
     }
 
@@ -1477,6 +1531,15 @@ impl CapTriangle {
     /// within its slack of an edge. A degenerate triangle holds no point.
     fn contains(&self, point: Point3) -> bool {
         if self.determinant.abs() < MIN_TRIANGLE_DETERMINANT {
+            return false;
+        }
+        if point.x < self.bounds_min.x
+            || point.x > self.bounds_max.x
+            || point.y < self.bounds_min.y
+            || point.y > self.bounds_max.y
+            || point.z < self.bounds_min.z
+            || point.z > self.bounds_max.z
+        {
             return false;
         }
         let offset = point.vector_from(self.origin);

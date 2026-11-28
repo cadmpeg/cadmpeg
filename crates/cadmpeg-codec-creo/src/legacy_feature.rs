@@ -123,7 +123,7 @@ impl<'a> Index<'a> {
         let record = self.integers.get(&(parent, name)).copied().flatten()?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array(_) => None,
+            NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
         }
     }
 
@@ -131,7 +131,7 @@ impl<'a> Index<'a> {
         let record = self.reals.get(&(parent, name)).copied().flatten()?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array(_) => None,
+            NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
         }
     }
 }
@@ -386,11 +386,11 @@ mod tests {
         Persistence {
             real_values: crate::legacy::TypedValues {
                 rows: real_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             integer_values: crate::legacy::TypedValues {
                 rows: integer_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             objects,
             ..Persistence::default()

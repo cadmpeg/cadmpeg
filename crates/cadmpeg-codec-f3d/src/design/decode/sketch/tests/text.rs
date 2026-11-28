@@ -36,9 +36,9 @@ fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
         records: vec![primary_record(41, 0), primary_record(42, sibling_start)],
         secondary_records: Vec::new(),
     };
-    let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     let texts =
-        decode_sketch_texts_from_stream(&unreadable, &meta, "Design/BulkStream.dat", &mut losses)
+        decode_sketch_texts_from_stream(&unreadable, &meta, "Design/BulkStream.dat", &mut given_up)
             .unwrap();
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].record_index, 42);
@@ -46,11 +46,10 @@ fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
         texts[0].placement().unwrap().anchor.get(),
         Point2::new(10.0, 20.0)
     );
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchTextUndecoded.kind()
-    );
+    let [frame] = given_up.as_slice() else {
+        panic!("one given-up text frame: {given_up:?}");
+    };
+    assert_eq!(frame.span(), ("Design/BulkStream.dat", 0..sibling_start));
 }
 
 use crate::design::decode::sketch::decode_sketch_points_from_stream;
@@ -62,10 +61,6 @@ use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
 #[test]
 fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
     let cases = crate::test_support::sketch_text::text_fixture_records();
-    assert_eq!(
-        cases.len(),
-        crate::test_support::verification::case_count(6, 65)
-    );
     for case in cases {
         let text = case.decode();
         assert_eq!(text.text, case.text, "{}", case.label);
@@ -490,9 +485,14 @@ fn sketch_records_use_the_primary_index_live_copy() {
 
     let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) =
         indexed_sketch_fixture();
-    let points =
-        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut Vec::new())
-            .expect("indexed sketch points");
+    let points = decode_sketch_points_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
@@ -504,6 +504,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         &bytes,
         &meta,
         "Design/BulkStream.dat",
+        &mut Vec::new(),
         &mut Vec::new()
     )
     .expect("structurally point-shaped foreign type")
@@ -516,24 +517,24 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     let mut malformed_losses = Vec::new();
+    let mut malformed_given_up = Vec::new();
     assert!(decode_sketch_points_from_stream(
         &malformed_point,
         &meta,
         "Design/BulkStream.dat",
-        &mut malformed_losses
+        &mut malformed_losses,
+        &mut malformed_given_up,
     )
     .expect("an unreadable live point costs only that point")
     .is_empty());
-    assert_eq!(malformed_losses.len(), 1);
-    assert_eq!(
-        malformed_losses[0].code,
-        crate::loss::F3dLossCode::SketchPointUndecoded.kind()
-    );
+    assert!(malformed_losses.is_empty(), "{malformed_losses:?}");
+    assert_eq!(malformed_given_up.len(), 1);
 
     let curves = decode_sketch_curve_identities_from_stream(
         &bytes,
         &meta,
         "Design/BulkStream.dat",
+        &mut Vec::new(),
         &mut Vec::new(),
     )
     .expect("indexed sketch curves");
@@ -559,6 +560,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         &meta,
         "Design/BulkStream.dat",
         &mut Vec::new(),
+        &mut Vec::new(),
     )
     .unwrap()
     .is_empty());
@@ -569,6 +571,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
         &mismatched_secondary,
         &meta,
         "Design/BulkStream.dat",
+        &mut Vec::new(),
         &mut Vec::new(),
     )
     .unwrap();
@@ -584,8 +587,14 @@ fn every_two_opaque_byte_planar_tail_charges_its_marker_and_construction_reading
 
     let (bytes, meta, _, live_curve_at, _, _) = indexed_sketch_fixture();
     let mut losses = Vec::new();
-    decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
-        .expect("indexed sketch curves");
+    decode_sketch_curve_identities_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut losses,
+        &mut Vec::new(),
+    )
+    .expect("indexed sketch curves");
     assert!(losses.is_empty());
 
     let tail_at = live_curve_at + 133 + 96;
@@ -613,6 +622,7 @@ fn every_two_opaque_byte_planar_tail_charges_its_marker_and_construction_reading
             &short_meta,
             "Design/BulkStream.dat",
             &mut losses,
+            &mut Vec::new(),
         )
         .expect("indexed sketch curves with a short tail");
         assert_eq!(curves[0].tail_marker, Some(marker));

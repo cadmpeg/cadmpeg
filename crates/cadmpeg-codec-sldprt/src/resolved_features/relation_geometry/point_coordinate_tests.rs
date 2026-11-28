@@ -366,7 +366,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
     )
     .unwrap();
     let mut decoded = ir.clone();
-    let unprojected = project_configuration_design_states(
+    let projection = project_configuration_design_states(
         &ctx,
         &mut decoded,
         &native.feature_histories,
@@ -376,7 +376,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
         None,
     )
     .unwrap();
-    assert_eq!(unprojected, 0);
+    assert_eq!(projection.unprojected, 0);
     settle_projected_configurations(&mut decoded);
     align_configuration_parameter_kinds(&mut decoded);
     let (_, decode_points) = project_configuration_sketch_states(
@@ -403,7 +403,10 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
         &cadmpeg_ir::source_fidelity::CodecDigests::new(),
         &mut Some(native),
         &cadmpeg_ir::Annotations::default(),
-        &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+        &mut crate::history::write::edits::SourceEdits::without_source(
+            &ir,
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+        ),
         |_| Ok(None),
     )
     .expect("a relation point charge does not refuse the write");

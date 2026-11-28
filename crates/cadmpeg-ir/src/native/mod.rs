@@ -41,6 +41,7 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// document holds, so every such field is read back. A document holds a
 /// native record at its fifth level, and the decode wrapper gives up a record
 /// that passes the document's 128 levels (§2.5).
+// resource-cap: MAX_NATIVE_NESTING_DEPTH = 1
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
@@ -789,13 +790,30 @@ impl Serialize for NativeRecord {
 /// Canonical compact text of one record, with `id` first and fields by key.
 /// JSON values render into strings without a fallible serializer or writer.
 fn render(id: &crate::ids::Identity, fields: &Map<String, Value>) -> Box<str> {
-    let mut json = String::from("{\"id\":");
-    json.push_str(&Value::String(id.as_str().to_owned()).to_string());
+    let mut json = String::with_capacity(64 + fields.len() * 24);
+    json.push_str("{\"id\":");
+    push_json_str(&mut json, id.as_str());
+    let mut scratch = Vec::new();
     for (key, value) in fields {
         json.push(',');
-        json.push_str(&Value::String(key.clone()).to_string());
+        push_json_str(&mut json, key);
         json.push(':');
-        json.push_str(&value.to_string());
+        match value {
+            Value::Null => json.push_str("null"),
+            Value::Bool(true) => json.push_str("true"),
+            Value::Bool(false) => json.push_str("false"),
+            Value::String(text) => push_json_str(&mut json, text),
+            _ => {
+                scratch.clear();
+                if serde_json::to_writer(&mut scratch, value).is_ok() {
+                    if let Ok(text) = std::str::from_utf8(&scratch) {
+                        json.push_str(text);
+                        continue;
+                    }
+                }
+                json.push_str(&value.to_string());
+            }
+        }
     }
     json.push('}');
     json.into_boxed_str()
@@ -1075,6 +1093,13 @@ impl NativeNamespace {
     }
 }
 
+/// Source-format native records borrowed in canonical identity order.
+#[derive(Serialize)]
+#[serde(transparent)]
+pub(crate) struct SortedNative<'a>(
+    BTreeMap<&'a CodecId, BTreeMap<&'a NonBlankString, Vec<&'a NativeRecord>>>,
+);
+
 /// Native records grouped by the codec id of their namespace.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1103,6 +1128,29 @@ impl Native {
                 .values()
                 .all(|records| records.windows(2).all(|pair| pair[0].id() <= pair[1].id()))
         })
+    }
+
+    /// Borrow every namespace arena in canonical identity order.
+    pub(crate) fn sorted(&self) -> SortedNative<'_> {
+        SortedNative(
+            self.0
+                .iter()
+                .map(|(codec, namespace)| {
+                    let arenas = namespace
+                        .arenas
+                        .iter()
+                        .map(|(arena, records)| {
+                            let mut refs: Vec<&NativeRecord> = records.iter().collect();
+                            if !records.windows(2).all(|pair| pair[0].id() <= pair[1].id()) {
+                                refs.sort_by(|left, right| left.id().cmp(right.id()));
+                            }
+                            (arena, refs)
+                        })
+                        .collect();
+                    (codec, arenas)
+                })
+                .collect(),
+        )
     }
 
     /// The first arena, as `<codec>.<arena>`, whose records do not state

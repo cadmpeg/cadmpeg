@@ -119,6 +119,44 @@ fn same_feature_owner(
     }
 }
 
+/// Whether an occurrence body selection names a body that no definition at
+/// `depth` nested occurrence levels below the occurrence's prototype owns.
+/// An absent occurrence or prototype is a referential finding of its own.
+fn occurrence_selection_leaves_its_prototype(
+    ir: &CadIr,
+    occurrence: &crate::ids::OccurrenceId,
+    depth: usize,
+    bodies: &[crate::ids::BodyId],
+) -> bool {
+    let definition = |id: &crate::ids::ProductDefinitionId| {
+        ir.model
+            .product_definitions
+            .iter()
+            .find(|row| &row.id == id)
+    };
+    let prototype_of = |id: &crate::ids::OccurrenceId| {
+        ir.model
+            .occurrences
+            .iter()
+            .find(|row| &row.id == id)
+            .map(|row| &row.prototype)
+    };
+    let Some(prototype) = prototype_of(occurrence).and_then(definition) else {
+        return false;
+    };
+    let mut level = vec![prototype];
+    for _ in 0..depth {
+        level = level
+            .iter()
+            .flat_map(|owner| &owner.occurrences)
+            .filter_map(|child| prototype_of(child).and_then(definition))
+            .collect();
+    }
+    bodies
+        .iter()
+        .any(|body| !level.iter().any(|owner| owner.bodies.contains(body)))
+}
+
 fn ref_error(
     findings: &mut Vec<Finding>,
     owner: &str,
@@ -444,6 +482,17 @@ pub(super) fn check_references(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    let doc_records = std::cell::OnceCell::new();
+    check_references_with(ctx, ir, ids, &doc_records, findings)
+}
+
+pub(super) fn check_references_with<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+    ids: &ModelIndex<'_>,
+    doc_records: &std::cell::OnceCell<crate::document::design_records::DesignRecords<'ir>>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     for l in &ir.geometry.regions {
         if ids
             .bodies(l.body.as_str(), crate::index::StandardIndex)
@@ -659,12 +708,17 @@ pub(super) fn check_references(
     for binding in &ir.model.appearance_bindings {
         use crate::appearance::AppearanceTarget;
 
-        let owner = format!("appearance-binding:{}", binding.appearance.as_str());
+        let owner = || format!("appearance-binding:{}", binding.appearance.as_str());
         if ids
             .appearances(binding.appearance.as_str(), crate::index::StandardIndex)
             .is_none()
         {
-            ref_error(findings, &owner, "appearance", binding.appearance.as_str());
+            ref_error(
+                findings,
+                &owner(),
+                "appearance",
+                binding.appearance.as_str(),
+            );
         }
         match &binding.target.entity {
             AppearanceTarget::Body(body)
@@ -672,128 +726,131 @@ pub(super) fn check_references(
                     .bodies(body.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "body", body.as_str());
+                ref_error(findings, &owner(), "body", body.as_str());
             }
             AppearanceTarget::Face(face)
                 if ids
                     .faces(face.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "face", face.as_str());
+                ref_error(findings, &owner(), "face", face.as_str());
             }
             AppearanceTarget::Edge(edge)
                 if ids
                     .edges(edge.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "edge", edge.as_str());
+                ref_error(findings, &owner(), "edge", edge.as_str());
             }
             AppearanceTarget::Vertex(vertex)
                 if ids
                     .vertices(vertex.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "vertex", vertex.as_str());
+                ref_error(findings, &owner(), "vertex", vertex.as_str());
             }
             AppearanceTarget::Surface(surface)
                 if ids
                     .surfaces(surface.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "surface", surface.as_str());
+                ref_error(findings, &owner(), "surface", surface.as_str());
             }
             AppearanceTarget::Curve(curve)
                 if ids
                     .curves(curve.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "curve", curve.as_str());
+                ref_error(findings, &owner(), "curve", curve.as_str());
             }
             AppearanceTarget::Point(point)
                 if ids
                     .points(point.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "point", point.as_str());
+                ref_error(findings, &owner(), "point", point.as_str());
             }
             AppearanceTarget::Tessellation(tessellation)
                 if ids
-                    .tessellations(tessellation, crate::index::StandardIndex)
+                    .tessellations(tessellation.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "tessellation", tessellation);
+                ref_error(findings, &owner(), "tessellation", tessellation.as_str());
             }
             AppearanceTarget::TriangleGroup {
                 tessellation,
                 group,
-            } => match ids.tessellations(tessellation, crate::index::StandardIndex) {
-                None => ref_error(findings, &owner, "tessellation", tessellation),
+            } => match ids.tessellations(tessellation.as_str(), crate::index::StandardIndex) {
+                None => ref_error(findings, &owner(), "tessellation", tessellation.as_str()),
                 Some(mesh)
                     if !mesh
                         .triangle_groups()
                         .iter()
                         .any(|candidate| candidate.source_id.as_deref() == Some(group)) =>
                 {
-                    ref_error(findings, &owner, "triangle group", group);
+                    ref_error(findings, &owner(), "triangle group", group);
                 }
                 Some(_) => {}
             },
             _ => {}
         }
     }
-    let records = crate::document::design_records::DesignRecords::of(ir);
-    for attribute in &ir.model.attributes {
-        use crate::attributes::{AttributeTarget, AttributeValue};
+    if !ir.model.attributes.is_empty() {
+        let records =
+            doc_records.get_or_init(|| crate::document::design_records::DesignRecords::of(ir));
+        for attribute in &ir.model.attributes {
+            use crate::attributes::{AttributeTarget, AttributeValue};
 
-        let owner = attribute.id.as_str();
-        for value in attribute.values.iter().flatten() {
-            if let AttributeValue::Parameter(id) = value {
-                if !records.holds_parameter(id) {
-                    ref_error(findings, owner, "parameter", id.as_str());
+            let owner = attribute.id.as_str();
+            for value in attribute.values.iter().flatten() {
+                if let AttributeValue::Parameter(id) = value {
+                    if !records.holds_parameter(id) {
+                        ref_error(findings, owner, "parameter", id.as_str());
+                    }
                 }
             }
-        }
-        match &attribute.target.entity {
-            AttributeTarget::Document => {}
-            AttributeTarget::Configuration(id) if !records.holds_configuration(id) => {
-                ref_error(findings, owner, "configuration", id.as_str());
+            match &attribute.target.entity {
+                AttributeTarget::Document => {}
+                AttributeTarget::Configuration(id) if !records.holds_configuration(id) => {
+                    ref_error(findings, owner, "configuration", id.as_str());
+                }
+                AttributeTarget::Body(id)
+                    if ids
+                        .bodies(id.as_str(), crate::index::StandardIndex)
+                        .is_none() =>
+                {
+                    ref_error(findings, owner, "body", id.as_str());
+                }
+                AttributeTarget::Face(id)
+                    if ids
+                        .faces(id.as_str(), crate::index::StandardIndex)
+                        .is_none() =>
+                {
+                    ref_error(findings, owner, "face", id.as_str());
+                }
+                AttributeTarget::Coedge(id)
+                    if ids
+                        .coedges(id.as_str(), crate::index::StandardIndex)
+                        .is_none() =>
+                {
+                    ref_error(findings, owner, "coedge", id.as_str());
+                }
+                AttributeTarget::Edge(id)
+                    if ids
+                        .edges(id.as_str(), crate::index::StandardIndex)
+                        .is_none() =>
+                {
+                    ref_error(findings, owner, "edge", id.as_str());
+                }
+                AttributeTarget::Vertex(id)
+                    if ids
+                        .vertices(id.as_str(), crate::index::StandardIndex)
+                        .is_none() =>
+                {
+                    ref_error(findings, owner, "vertex", id.as_str());
+                }
+                _ => {}
             }
-            AttributeTarget::Body(id)
-                if ids
-                    .bodies(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "body", id.as_str());
-            }
-            AttributeTarget::Face(id)
-                if ids
-                    .faces(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "face", id.as_str());
-            }
-            AttributeTarget::Coedge(id)
-                if ids
-                    .coedges(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "coedge", id.as_str());
-            }
-            AttributeTarget::Edge(id)
-                if ids
-                    .edges(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "edge", id.as_str());
-            }
-            AttributeTarget::Vertex(id)
-                if ids
-                    .vertices(id.as_str(), crate::index::StandardIndex)
-                    .is_none() =>
-            {
-                ref_error(findings, owner, "vertex", id.as_str());
-            }
-            _ => {}
         }
     }
     for s in &ir.geometry.surfaces {
@@ -4972,6 +5029,43 @@ fn check_feature_references(
                             crate::rule!(
                                 "topology.generated-body-selection-invalid",
                                 "generated body selection is invalid"
+                            ),
+                        );
+                    }
+                }
+                BodySelection::Occurrence {
+                    occurrence,
+                    occurrence_path,
+                    bodies,
+                    ..
+                } => {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "body-selection occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                    check_ids(
+                        findings,
+                        feature.id.as_str(),
+                        "selected body",
+                        bodies.iter().map(super::super::ids::BodyId::as_str),
+                        |identity| ids.bodies(identity, crate::index::StandardIndex).is_some(),
+                    );
+                    if occurrence_selection_leaves_its_prototype(
+                        ir,
+                        occurrence,
+                        occurrence_path.len(),
+                        bodies,
+                    ) {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            crate::rule!(
+                                "topology.occurrence-body-selection-outside-prototype",
+                                "occurrence body selection names a body outside its prototype"
                             ),
                         );
                     }

@@ -497,6 +497,141 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
 }
 
+#[test]
+fn rigid_group_operand_in_the_root_component_takes_its_current_pose() {
+    use crate::design::components::{project_local_components, LocalComponentSources};
+    use crate::design::decode::components::{ComponentDefinition, StreamComponents};
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::xref::XrefCurrentPose;
+
+    let bytes = rigid_as_built_stream();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let class_tag = crate::records::references::DesignClassTag::try_from("405".to_owned()).unwrap();
+    let mut scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &bytes, &records, 10, &class_tag, 0,
+    )
+    .unwrap()
+    .unwrap();
+    scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+    let locator = "2E3AC990-483D-4A55-8662-C064B976A957";
+    let types = std::collections::HashMap::from([
+        (64, (locator, 5)),
+        (65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+        (67, (locator, 5)),
+        (68, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+    ]);
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .unwrap();
+    let DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut() else {
+        panic!("As-built alignment slot");
+    };
+    *slot = Some(alignment.clone());
+    let paths = alignment.operand_path_refs().unwrap();
+    // The second carrier is in the root component (entity 1). `first_owner`
+    // is the entity that contains the first carrier, and `posed` states
+    // whether a component path stores its current pose.
+    let project = |first_owner: u64, posed: bool| {
+        let mut occurrences =
+            [(100, paths[0], first_owner), (101, paths[1], 1)].map(|(index, path, owner)| {
+                DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+                    id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{index}"),
+                    class_tag: "271".to_owned().try_into().unwrap(),
+                    record_index: index,
+                    byte_offset: 3000 + u64::from(index) * 300,
+                    component_record_index: u64::from(index) + 3,
+                    component_guid: path.identity_guids()[0].value.clone(),
+                    occurrence_guid: path.occurrence_guids()[0].value.clone(),
+                    placement: DesignComponentOccurrencePlacement::Base,
+                    owner_entity: owner,
+                })
+                .unwrap()
+            });
+        if posed {
+            let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+            rows[0][3] = 4.0;
+            occurrences[0].current_pose = Some(XrefCurrentPose {
+                carrier_record_index: 400,
+                frame_bytes: Vec::new().into(),
+                transform: Some(rows.try_into().unwrap()),
+            });
+        }
+        let root = ComponentDefinition {
+            root_entity: 1,
+            context_uuid: "77777777-7777-7777-7777-777777777777"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            name: None,
+        };
+        let roots = std::iter::once((1, root))
+            .chain(occurrences.iter().map(|carrier| {
+                (
+                    carrier.component_record_index,
+                    ComponentDefinition {
+                        root_entity: carrier.component_record_index,
+                        context_uuid: carrier.component_guid.clone(),
+                        name: None,
+                    },
+                )
+            }))
+            .collect();
+        let components = [(
+            "f3d:Design/BulkStream.dat".into(),
+            StreamComponents {
+                roots,
+                root_component: Some(1),
+                ..Default::default()
+            },
+        )]
+        .into();
+        let model = project_local_components(&LocalComponentSources {
+            scopes: std::slice::from_ref(&scope),
+            occurrences: &occurrences,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&Default::default()),
+            hidden_bodies: None,
+            limits: Default::default(),
+        })
+        .unwrap();
+        let x = model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.as_ref() == Some(&occurrences[0].id))
+            .unwrap()
+            .transform
+            .unwrap()
+            .rows()[0][3];
+        let codes = crate::test_support::loss_codes(&model.losses);
+        let applied = codes.contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPose.kind());
+        let native =
+            codes.contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseNative.kind());
+        assert_eq!(applied, posed && !native);
+        (x, applied)
+    };
+    let (x, applied) = project(1, true);
+    assert!((x - 40.0).abs() < f64::EPSILON);
+    assert!(applied);
+    // The first carrier inside the second carrier's component keeps its
+    // stored placement.
+    let (x, applied) = project(104, true);
+    assert!(x.abs() < f64::EPSILON);
+    assert!(!applied);
+    let (x, applied) = project(1, false);
+    assert!(x.abs() < f64::EPSILON);
+    assert!(!applied);
+}
+
 /// A 268-byte rigid group of three members (record 10, class tags 328/264)
 /// whose locators are records 64, 67, and 73.
 fn three_member_rigid_group_stream() -> Vec<u8> {
@@ -709,8 +844,110 @@ fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
 }
 
 #[test]
+fn typed_rigid_group_takes_the_alternate_prologue() {
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::layout::assembly_alternate_rigid_group_prefix as prefix;
+    use crate::layout::assembly_rigid_as_built_scope as canonical;
+    use crate::layout::assembly_typed_alternate_rigid_group_prefix as typed_alternate;
+    use crate::layout::assembly_typed_rigid_group_scope as typed;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    let mut bytes = typed_rigid_group_stream();
+    let mut prologue = vec![0; prefix::PATHLESS_LOCATOR_REFERENCE - prefix::ZERO_RUN_8];
+    prologue[prefix::PROPERTY_BLOCK_PRESENCE - prefix::ZERO_RUN_8] =
+        prefix::PROPERTY_BLOCK_PRESENCE_VALUE;
+    bytes.splice(
+        prefix::ZERO_RUN_8..canonical::PATHLESS_LOCATOR_REFERENCE,
+        prologue,
+    );
+    let shift = prefix::PATHLESS_LOCATOR_REFERENCE - canonical::PATHLESS_LOCATOR_REFERENCE;
+    let class = "328".to_owned().try_into().unwrap();
+    let parse = |bytes: &[u8]| {
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+        crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            bytes, &records, 10, &class, 0,
+        )
+        .unwrap()
+    };
+    let mut scope = parse(&bytes).unwrap();
+    scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+    assert_eq!(scope.frame_length(), 439 + 51 * 3);
+    assert!(scope.reference_members().is_empty());
+    let layout = crate::design::assembly::RigidGroupLayout::for_scope(&scope).unwrap();
+    assert_eq!(
+        (
+            layout.members,
+            layout.pathless_reference,
+            layout.count_at,
+            layout.first_reference,
+            layout.stride,
+            layout.empty_table,
+        ),
+        (
+            3,
+            typed_alternate::PATHLESS_LOCATOR_REFERENCE,
+            typed_alternate::LOCATOR_COUNT,
+            typed_alternate::FIRST_LOCATOR_REFERENCE,
+            51,
+            typed::REFERENCE_COUNT + shift + 51,
+        )
+    );
+    let types = [64, 67, 73]
+        .into_iter()
+        .flat_map(|index| {
+            [
+                (index, ("2E3AC990-483D-4A55-8662-C064B976A957", 5)),
+                (index + 1, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+            ]
+        })
+        .collect();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        alignment
+            .operand_path_refs()
+            .unwrap()
+            .map(|path| path.link().locator_record_index),
+        [64, 67]
+    );
+    assert_eq!(alignment.additional_members.len(), 1);
+    for at in [
+        prefix::LEADING_BLOCK_PRESENCE,
+        prefix::PROPERTY_BLOCK_PRESENCE,
+        prefix::PROPERTY_COUNT,
+        prefix::ZERO_SEPARATOR,
+        typed_alternate::ZERO_RUN_8,
+        typed_alternate::PATHLESS_LOCATOR_REFERENCE,
+        typed_alternate::ZERO_RUN_77,
+        typed_alternate::LOCATOR_COUNT,
+        typed_alternate::FIRST_LOCATOR_REFERENCE,
+        typed_alternate::SECOND_LOCATOR_REFERENCE,
+    ] {
+        let mut bad = bytes.clone();
+        bad[at] ^= 2;
+        assert!(parse(&bad).is_none(), "mutation at {at}");
+    }
+    let end = 439 + 51 * 3;
+    let mut short = bytes.clone();
+    short.remove(end - 1);
+    assert!(parse(&short).is_none());
+    let mut long = bytes.clone();
+    long.insert(end, 0);
+    assert!(parse(&long).is_none());
+}
+
+#[test]
 fn rigid_group_tail_selects_between_equal_frame_lengths() {
     use crate::design::assembly::RigidGroupLayout;
+    for (frame, members) in [(541, 2), (1051, 12)] {
+        let layout = RigidGroupLayout::new(frame, 196).unwrap();
+        assert_eq!((layout.members, layout.first_reference), (members, 85));
+    }
+    assert_eq!(RigidGroupLayout::new(537, 196).unwrap().first_reference, 81);
+    assert!(RigidGroupLayout::new(540, 196).is_none());
     assert_eq!(RigidGroupLayout::new(741, 76).unwrap().members, 46);
     assert_eq!(RigidGroupLayout::new(741, 196).unwrap().members, 6);
     assert_eq!(RigidGroupLayout::new(537, 88).unwrap().members, 26);
@@ -993,12 +1230,12 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             frame - 181 - if alternate { 4 } else { 0 } - property_width,
             tail
         );
-        let archive = crate::test_support::zip_test::f3d_with_configuration(
+        let archive = crate::test_support::zip_fixture::f3d_with_configuration(
             &[],
             "FusionAssetName[Active]/Design1/BulkStream.dat",
             &bytes,
         );
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             let decoded = decode_parameter_scopes(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
@@ -1006,10 +1243,27 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             )
             .unwrap();
             assert!(decoded.scopes.is_empty());
-            assert_eq!(decoded.losses.len(), 1);
+            assert!(decoded.losses.is_empty(), "{:?}", decoded.losses);
+            // §3.3: the record header through the paired header is the frame
+            // the decoder gives up as a part.
+            let [part] = decoded.given_up.as_slice() else {
+                panic!("one given-up part: {:?}", decoded.given_up);
+            };
             assert_eq!(
-                decoded.losses[0].code,
-                crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()
+                part.kind(),
+                crate::design::decode::record::DESIGN_RECORD_PART
+            );
+            assert!(
+                part.loss().message.starts_with(&format!(
+                    "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=0 length={frame} record={}: ",
+                    part.id()
+                )),
+                "{}",
+                part.loss().message
+            );
+            assert_eq!(
+                part.loss().code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
             );
         });
     }

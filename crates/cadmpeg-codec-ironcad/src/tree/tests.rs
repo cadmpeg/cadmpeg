@@ -3,14 +3,14 @@
 
 use cadmpeg_core::decode::View;
 
-use super::{read, Kernel};
+use super::{read, Assembly, Kernel};
 use crate::test_support::{node, record, record_with};
 
 const ACIS: u32 = 0x8000_0001;
 const PARASOLID: u32 = 0x8000_0002;
 
 #[test]
-fn records_are_read_in_stored_order_at_their_depth() {
+fn records_are_read_in_stored_order() {
     let payload = node(&[
         node(&[node(&[node(&[])]), record(PARASOLID, b"feature")]),
         record(PARASOLID, b"result"),
@@ -18,26 +18,61 @@ fn records_are_read_in_stored_order_at_their_depth() {
         node(&[]),
         node(&[]),
     ]);
-    let records = read(View::over_retained(&payload)).unwrap();
+    let records = read(View::over_retained(&payload)).unwrap().records;
     let summary: Vec<_> = records
         .iter()
-        .map(|record| (record.kernel, record.depth, record.bytes.window()))
+        .map(|record| (record.kernel, record.bytes.window()))
         .collect();
     assert_eq!(
         summary,
         [
-            (Kernel::Parasolid, 2, b"feature".as_slice()),
-            (Kernel::Parasolid, 1, b"result".as_slice()),
-            (Kernel::Acis, 2, b"acis".as_slice()),
+            (Kernel::Parasolid, b"feature".as_slice()),
+            (Kernel::Parasolid, b"result".as_slice()),
+            (Kernel::Acis, b"acis".as_slice()),
         ]
     );
     assert!(records.iter().all(|record| record.canonical_header));
 }
 
 #[test]
+fn a_record_after_a_node_that_holds_records_follows_a_node() {
+    let payload = node(&[
+        node(&[
+            node(&[node(&[])]),
+            record(PARASOLID, b"first"),
+            node(&[node(&[])]),
+            record(PARASOLID, b"second"),
+        ]),
+        record(PARASOLID, b"result"),
+        node(&[]),
+        record(ACIS, b"after empty node"),
+        node(&[
+            node(&[node(&[]), record(ACIS, b"nested")]),
+            record(ACIS, b"inner"),
+        ]),
+    ]);
+    let records = read(View::over_retained(&payload)).unwrap().records;
+    let follows: Vec<_> = records
+        .iter()
+        .map(|record| (record.bytes.window(), record.follows_node))
+        .collect();
+    assert_eq!(
+        follows,
+        [
+            (b"first".as_slice(), false),
+            (b"second".as_slice(), false),
+            (b"result".as_slice(), true),
+            (b"after empty node".as_slice(), false),
+            (b"nested".as_slice(), false),
+            (b"inner".as_slice(), true),
+        ]
+    );
+}
+
+#[test]
 fn another_kernel_tag_and_header_words_are_kept() {
     let payload = node(&[record(7, b""), record_with(PARASOLID, [1, 2, 1, 0], b"x")]);
-    let records = read(View::over_retained(&payload)).unwrap();
+    let records = read(View::over_retained(&payload)).unwrap().records;
     assert_eq!(records[0].kernel, Kernel::Other(7));
     assert!(records[0].canonical_header);
     assert!(!records[1].canonical_header);
@@ -72,4 +107,64 @@ fn trailing_bytes_shorter_than_an_item_are_rejected() {
     let mut payload = node(&[]);
     payload.extend_from_slice(&[0; 4]);
     assert!(read(View::over_retained(&payload)).is_err());
+}
+
+/// A part pair: a child node that holds a feature record, then the result
+/// record.
+fn pair(result: &[u8]) -> [Vec<u8>; 2] {
+    [
+        node(&[node(&[node(&[])]), record(ACIS, b"feature")]),
+        record(ACIS, result),
+    ]
+}
+
+#[test]
+fn nodes_that_hold_pairs_are_assemblies_numbered_in_closing_order() {
+    let inner = node(&[pair(b"c"), pair(b"d")].concat());
+    let outer = node(&[pair(b"b").to_vec(), vec![inner]].concat());
+    let payload = node(&[pair(b"a").to_vec(), vec![outer]].concat());
+    let tree = read(View::over_retained(&payload)).unwrap();
+    let results: Vec<_> = tree
+        .records
+        .iter()
+        .filter(|record| record.follows_node)
+        .map(|record| (record.bytes.window(), record.assembly))
+        .collect();
+    assert_eq!(
+        results,
+        [
+            (b"a".as_slice(), None),
+            (b"b".as_slice(), Some(1)),
+            (b"c".as_slice(), Some(0)),
+            (b"d".as_slice(), Some(0)),
+        ]
+    );
+    assert_eq!(
+        tree.assemblies,
+        [Assembly { parent: Some(1) }, Assembly { parent: None }]
+    );
+}
+
+#[test]
+fn a_record_is_selected_by_a_nonzero_marker_of_any_value() {
+    let mut older = record(PARASOLID, b"older");
+    older[4..8].copy_from_slice(&0x0008_6801_u32.to_le_bytes());
+    let payload = node(&[
+        node(&[node(&[node(&[])]), older]),
+        record(PARASOLID, b"result"),
+    ]);
+    let records = read(View::over_retained(&payload)).unwrap().records;
+    let bodies: Vec<_> = records.iter().map(|record| record.bytes.window()).collect();
+    assert_eq!(bodies, [b"older".as_slice(), b"result".as_slice()]);
+    assert!(records.iter().all(|record| record.canonical_header));
+}
+
+#[test]
+fn a_marker_with_another_low_byte_is_read_and_marked_noncanonical() {
+    let mut odd = record(PARASOLID, b"odd");
+    odd[4..8].copy_from_slice(&0x0009_b402_u32.to_le_bytes());
+    let payload = node(&[odd]);
+    let records = read(View::over_retained(&payload)).unwrap().records;
+    assert_eq!(records[0].bytes.window(), b"odd");
+    assert!(!records[0].canonical_header);
 }

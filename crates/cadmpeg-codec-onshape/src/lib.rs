@@ -3,7 +3,7 @@
 //! Decode offline Onshape bundles into CADIR.
 //!
 //! <!-- generated: capability onshape -->
-//! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
+//! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
 //! <!-- /generated: capability onshape -->
 mod archive;
 mod detect;
@@ -31,7 +31,7 @@ impl OnshapeCodec {
     }
 }
 impl CodecBackend for OnshapeCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
     fn detect_impl(
         &self,
         ctx: &DecodeContext<'_>,

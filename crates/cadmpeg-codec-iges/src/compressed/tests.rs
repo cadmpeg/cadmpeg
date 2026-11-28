@@ -162,6 +162,50 @@ fn compressed_points_file_with_global(global: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn a_compressed_quarantine_part_lies_in_the_fixed_card_image() {
+    let source = compressed_points_file();
+    let second = source
+        .windows(16)
+        .position(|window| window == b"116,4.0,5.0,6.0;")
+        .unwrap();
+    let mut source = source;
+    source[second..second + 3].copy_from_slice(b"110");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    let bytes = crate::test_support::given_up_part_bytes(&result, ("parameter-data", 3));
+    assert_eq!(bytes.len(), 80);
+    assert!(bytes.starts_with(b"110,4.0,5.0,6.0;"));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.message.starts_with("part parameter-data \"D3\" "))
+        .unwrap();
+    assert!(
+        loss.message.contains(" stream=\"fixed-card-image\" "),
+        "{}",
+        loss.message
+    );
+    let stub = loss
+        .message
+        .split(" record=")
+        .nth(1)
+        .and_then(|rest| rest.split(": ").next())
+        .unwrap();
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(stub)
+            .unwrap()
+            .stream(),
+        "fixed-card-image"
+    );
+}
+
+#[test]
 fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     let source = compressed_points_file();
     let normalized = normalize(&source).unwrap();
@@ -217,8 +261,9 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     // compressed bytes while the plan claimed Fixed ASCII.
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())).with_target(
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            ),
         )
         .unwrap();
     assert!(matches!(
@@ -264,10 +309,10 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
             .unwrap(),
     );
     let plan = IgesCodec
-        .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            result.ir(),
+            Some(result.source_fidelity()),
+        ))
         .unwrap();
 
     assert!(matches!(
@@ -522,19 +567,41 @@ fn a_repeated_directory_sequence_keeps_its_first_record() {
         .decode(&mut Cursor::new(repeated), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().geometry.points.len(), 2);
-    let losses = result
+    // The copy breaks the format, so its one loss is the part's
+    // `record.unreadable`, whose text names the restated sequence and span.
+    let given_up = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == IgesLossCode::DirectoryRecordRepeated.kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
-    let [loss] = losses.as_slice() else {
-        panic!("one loss for the one copy: {losses:?}");
+    let [given_up] = given_up.as_slice() else {
+        panic!("one give-up for the one copy: {given_up:?}");
     };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    let part = format!(
+        "part compressed-data-record stream=\"\" offset={second_end} length={} ",
+        copy.len() - 2
+    );
+    assert!(given_up.message.starts_with(&part), "{}", given_up.message);
     let span = format!("bytes {second_end}..{}", second_end + copy.len() - 2);
     assert!(
-        loss.message.contains("D3") && loss.message.contains(&span),
+        given_up.message.contains("D3") && given_up.message.contains(&span),
         "{}",
-        loss.message
+        given_up.message
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains("restates the Directory sequence"))
+            .count(),
+        1,
+        "{:#?}",
+        result.report().losses
     );
 }

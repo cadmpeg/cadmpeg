@@ -101,7 +101,7 @@ mod unstitch;
 mod work_axes;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
-pub(super) const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
+pub(crate) const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
@@ -146,7 +146,7 @@ fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
 /// operand records and the sketch placements and body bindings each feature
 /// scope resolves against.
-#[cfg_attr(test, derive(Default))]
+#[derive(Default)]
 pub(crate) struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) source_parameters: &'a [DesignParameter],
@@ -1288,28 +1288,34 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 matches!(operation.support, crate::records::feature::surface_ops::DesignSurfaceOffsetSupport::BodyCarrier { .. })
             });
             let outputs = inserted_bodies;
+            let name = match scope
+                .display_name
+                .as_deref()
+                .or_else(|| scope.label.as_ref().map(|l| l.value.as_str()))
+            {
+                Some(name) => name.to_owned(),
+                None => paste_copy::timeline_name(scope).unwrap_or_else(|| {
+                    let name = format!("{}{}", scope.source_kind_name(), scope.feature_ordinal);
+                    if matches!(
+                        scope.kind(),
+                        crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                            | crate::records::feature::scope::DesignFeatureKind::WorkAxis
+                            | crate::records::feature::scope::DesignFeatureKind::WorkPoint
+                    ) {
+                        projection_losses.push(crate::loss::F3dLossCode::FeatureConstructionNameComposed.note(format!(
+                            "{} scope {} takes the name {name:?} composed from its stored kind spelling and feature ordinal; Fusion shows a construction family name in the language of the reading session.",
+                            scope.kind_name(),
+                            scope.id
+                        )));
+                    }
+                    name
+                }),
+            };
             Ok(Feature {
                 product_definition: None,
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
-                name: Some(
-                    scope
-                        .display_name
-                        .as_deref()
-                        .or_else(|| scope.label.as_ref().map(|l| l.value.as_str()))
-                        .map_or_else(
-                            || {
-                                paste_copy::timeline_name(scope).unwrap_or_else(|| {
-                                    format!(
-                                        "{} {}",
-                                        scope.source_kind_name(),
-                                        scope.feature_ordinal
-                                    )
-                                })
-                            },
-                            str::to_owned,
-                        ),
-                ),
+                name: Some(name),
                 suppressed: Some(match (scope.tail_flags, scope.companion_suppressed) {
                     (Some(flags), _) => {
                         projection_losses

@@ -340,8 +340,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -513,6 +513,31 @@
             "offset": 0,
             "stream": "nx:container",
             "tag": "derived_point_topology"
+          },
+          "nx:display-jt:document#0-row-0": {
+            "offset": 369,
+            "stream": "nx:container",
+            "tag": "DISPLAY_JT_DOCUMENT"
+          },
+          "nx:display-jt:index#0": {
+            "offset": 341,
+            "stream": "nx:container",
+            "tag": "DISPLAY_JT_INDEX"
+          },
+          "nx:display-jt:segment#0-row-0-0": {
+            "offset": 506,
+            "stream": "nx:container",
+            "tag": "DISPLAY_JT_SEGMENT"
+          },
+          "nx:display-jt:segment#0-row-0-0-inflated-element-0": {
+            "offset": 530,
+            "stream": "nx:container",
+            "tag": "DISPLAY_JT_COMPRESSED_ELEMENT"
+          },
+          "nx:display-jt:segment#0-row-0-0-inflated-sequence": {
+            "offset": 530,
+            "stream": "nx:container",
+            "tag": "DISPLAY_JT_COMPRESSED_ELEMENT_SEQUENCE"
           },
           "nx:s0:crv#0": {
             "offset": 319,

@@ -80,19 +80,146 @@ fn invalid_entity_parameters_report_projection_losses() {
         let result = crate::IgesCodec
             .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
-        let expected = if matches!(entity_type, 308 | 212) {
+        let code = if matches!(entity_type, 308 | 212) {
             IgesLossCode::EntityNotProjected.kind()
         } else {
             IgesLossCode::GeometryNotProjected.kind()
         };
-        assert!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == expected && loss.message.contains(reason)),
-            "{entity_type}: {:#?}",
-            result.report().losses
-        );
+        let named = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains(reason))
+            .collect::<Vec<_>>();
+        let [loss] = named.as_slice() else {
+            panic!("{entity_type}: one loss names the reason: {named:#?}");
+        };
+        // The projection keeps the native record of a CSG primitive and of
+        // an annotation; it gives up the others, and the one give-up carries
+        // the codec loss's text.
+        if matches!(entity_type, 150 | 212) {
+            assert_eq!(loss.code, code, "{entity_type}");
+        } else {
+            assert!(
+                cadmpeg_ir::unknown::part::gives_up(&loss.code),
+                "{entity_type}: {loss:#?}"
+            );
+            assert!(loss.message.contains(&code.to_string()), "{}", loss.message);
+        }
     }
+}
+
+fn curve_entry(sequence: u32) -> crate::directory::DirectoryEntry {
+    crate::directory::DirectoryEntry {
+        source_offset: u64::from(sequence) * 80,
+        source_length: Some(160),
+        sequence,
+        entity_type: 100,
+        parameter_start: 1,
+        structure: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
+        transform: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
+        status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
+        line_weight: Some(0),
+        color: Some(0),
+        parameter_line_count: 1,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: *b"CURVE   ",
+        subscript: Some(0),
+    }
+}
+
+#[test]
+fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_their_charge() {
+    use cadmpeg_ir::unknown::part::{dropped_with, gives_up, Cause};
+
+    let image = super::CardImage::new(&[], crate::representation::Representation::FixedAscii);
+    let ids = super::GivenUpIds::new(&image, &[], &[]).unwrap();
+    let mut entries = (1..=21).step_by(2).map(curve_entry).collect::<Vec<_>>();
+    // D15 is a loop, which the projection names by no record of its own.
+    entries[7].entity_type = 508;
+    let entry = |sequence: u32| &entries[usize::try_from(sequence / 2).unwrap()];
+    let note = |sequence| super::geometry_note(entry(sequence), format_args!("D{sequence}"));
+    let needing = |losses: &mut Vec<_>, sequence, needs, cause| {
+        super::give_up_needing(
+            losses,
+            entry(sequence),
+            super::projected_record(entry(sequence)),
+            Some(needs),
+            cause,
+            note(sequence),
+        );
+    };
+    let mut losses = Vec::new();
+    // D1 is unreadable. D3 needs D1, and D5 needs D3.
+    super::give_up(&mut losses, entry(1), Cause::Unreadable, note(1));
+    needing(&mut losses, 3, 1, Cause::Unreadable);
+    needing(&mut losses, 5, 3, Cause::Undecoded);
+    // D7 needs D17, which has no give-up.
+    needing(&mut losses, 7, 17, Cause::Unreadable);
+    // D9 and D11 need each other.
+    needing(&mut losses, 9, 11, Cause::Undecoded);
+    needing(&mut losses, 11, 9, Cause::Undecoded);
+    // D13 is unreadable and also needs D1.
+    needing(&mut losses, 13, 1, Cause::Undecoded);
+    super::give_up(&mut losses, entry(13), Cause::Unreadable, note(13));
+    // D15 needs D1, and D19 needs D15.
+    needing(&mut losses, 15, 1, Cause::Undecoded);
+    needing(&mut losses, 19, 15, Cause::Undecoded);
+    // D21 needs D23, which has no Directory Entry: the pointer is dangling.
+    needing(&mut losses, 21, 23, Cause::Undecoded);
+    let by_sequence = entries
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+
+    super::settle_needs(&mut losses, &by_sequence, &ids).unwrap();
+
+    // An entity given up on its own keeps the cause of its marker, except
+    // that a dangling pointer is unreadable whatever the marker says.
+    let charged = losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code))
+        .map(|loss| (super::entity_tag(loss).unwrap(), loss.code.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        charged,
+        [
+            (1, Cause::Unreadable.kind()),
+            (7, Cause::Unreadable.kind()),
+            (9, Cause::Undecoded.kind()),
+            (13, Cause::Unreadable.kind()),
+            (21, Cause::Unreadable.kind()),
+        ]
+    );
+    // Each give-up keeps the `why` that `give_up_entities` folds into it.
+    // The `why` of a dropped entity goes, also of D15, which has no projected
+    // record to drop: the give-up of D1 is the one entry for the lost fact.
+    let whys = losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::IgesLossCode::GeometryNotProjected.kind())
+        .map(|loss| super::entity_tag(loss).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(whys, [1, 7, 9, 13, 21]);
+    let part = |sequence| ids.entity(entry(sequence)).unwrap();
+    let curve = |sequence: u32| crate::ids::curve(&crate::ids::Stem::directory(sequence));
+    let notes = losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some())
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        notes,
+        [
+            dropped_with(curve(3), part(1)).message,
+            dropped_with(curve(5), curve(3)).message,
+            dropped_with(curve(11), part(9)).message,
+            dropped_with(curve(19), part(1)).message,
+        ]
+    );
 }

@@ -220,23 +220,13 @@ pub(in crate::history) fn sync_neutral_features(
         .map(|feature| (feature.id.clone(), feature.parameters.clone()))
         .collect::<HashMap<_, _>>();
     let mut resolved_histories = native.feature_histories.clone();
-    let lane_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane_bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
+    let ctx = edits.ctx();
     // The end specs whose reversal flag an edit clears, read from the stored
     // records as the decoder read them; `None` where the context refuses the
     // scan.
     let reversed_end_specs = if features.iter().any(cleared_reversal) {
         crate::resolved_features::terminations::reversed_end_specs(
-            &ctx,
+            ctx,
             &native.feature_histories,
             &native.feature_input_lanes,
         )
@@ -256,7 +246,7 @@ pub(in crate::history) fn sync_neutral_features(
             )
         })
         .collect::<HashMap<_, _>>();
-    apply_evaluated_parameters(&ctx, &mut resolved_histories)?;
+    apply_evaluated_parameters(ctx, &mut resolved_histories)?;
     let evaluated_parameters = resolved_histories
         .iter()
         .flat_map(|history| &history.features)
@@ -442,15 +432,12 @@ pub(in crate::history) fn sync_neutral_features(
                 .map(|edit| edit.applied(original, feature))
                 .collect::<Vec<_>>()
         });
+        // A feature whose source does not state suppression is not
+        // suppressed (§5.10).
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
-            .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT writing requires resolved suppression for feature {}",
-                    feature.id
-                ))
-            })?;
+            .unwrap_or(false);
         let encoder = |feature, contradicted_travel: bool| NeutralFeatureEncoder {
             contradicted_travel,
             feature,
@@ -768,7 +755,7 @@ pub(in crate::history) fn sync_neutral_features(
             &mut record.parameters,
         );
     }
-    let projected_features = project_features_with_native_inputs(native)?;
+    let projected_features = project_features_with_native_inputs(native, edits.ctx())?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -1326,7 +1313,10 @@ mod tests {
             &[],
             &[],
             &mut Some(native),
-            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+            &mut crate::history::write::edits::SourceEdits::without_source(
+                &ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            ),
         )
         .expect_err("two lanes state the same object name");
         assert_eq!(
@@ -1351,7 +1341,10 @@ mod tests {
             &[],
             &[],
             &mut Some(sldprt_native(decoded.ir())),
-            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+            &mut crate::history::write::edits::SourceEdits::without_source(
+                &ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            ),
         )
         .expect_err("a blank object name is not writable");
         assert_eq!(
@@ -1381,7 +1374,10 @@ mod tests {
                 &ir.model.parameters,
                 &ir.geometry.bodies,
                 &mut native,
-                &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+                &mut crate::history::write::edits::SourceEdits::without_source(
+                    &ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                ),
             )
             .expect("the history is written");
             let mut native = native.expect("native history");

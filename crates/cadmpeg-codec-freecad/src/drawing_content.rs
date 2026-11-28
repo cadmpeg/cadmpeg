@@ -128,14 +128,14 @@ pub(super) fn transfer(
         }
         if let Some(height) = scalar(
             properties,
-            &annotation.object,
+            annotation.object.as_str(),
             "TextSize",
             "App::PropertyLength",
         )?
         .and_then(PositiveLength::new)
         {
             annotation.text_style.height = Some(height);
-            if let Some(font) = property(properties, &annotation.object, "Font")?
+            if let Some(font) = property(properties, annotation.object.as_str(), "Font")?
                 .filter(|property| property.type_name == "App::PropertyFont")
             {
                 annotation.text_style.font_family = font_family(font);
@@ -181,7 +181,7 @@ fn template(
         .iter()
         .map(|field| (field.name.as_str(), field.value.as_str()))
         .collect();
-    svg::parse(&xml, size, &editable, owner, losses).map(Some)
+    svg::parse(xml.tree(), size, &editable, owner, losses).map(Some)
 }
 
 fn font_family(property: &PropertyRecord) -> Option<String> {

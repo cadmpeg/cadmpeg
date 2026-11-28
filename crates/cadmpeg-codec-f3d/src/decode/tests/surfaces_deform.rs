@@ -12,16 +12,15 @@
 
 use cadmpeg_core::convert::f64_from_index;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_blends_test::synthetic_g2_blend_spl_sur_smbh;
-use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_blends_fixture::synthetic_g2_blend_spl_sur_smbh;
+use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_helix_curve_smbh;
+use crate::test_support::smbh_surfaces_fixture::{
     expected_revision_surface_tail_parameterization,
     synthetic_cacheless_revision_text_law_sweep_smbh, synthetic_comp_spl_sur_smbh,
     synthetic_cyl_spl_sur_smbh, synthetic_explicit_formula_sweep_smbh,
@@ -36,8 +35,8 @@ use crate::test_support::smbh_surfaces_test::{
     synthetic_sum_spl_sur_smbh, synthetic_surface_curve_deformable_smbh,
     synthetic_taper_spl_sur_smbh, synthetic_text_law_driven_sweep_smbh,
 };
-use crate::test_support::tokens_test::renamed_generated_subtype;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::tokens_fixture::renamed_generated_subtype;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
@@ -210,7 +209,7 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let round_trip = F3dCodec
@@ -278,7 +277,7 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -343,7 +342,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("revision deformable source-less encode");
     let round_trip = F3dCodec
@@ -432,7 +431,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let round = F3dCodec
@@ -517,7 +516,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round = F3dCodec
@@ -581,7 +580,7 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less referenced T-spline encode");
     let round_trip = F3dCodec
@@ -681,7 +680,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit formula sweep encode");
     let round_trip = F3dCodec
@@ -860,7 +859,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit guide sweep encode");
     let round_trip = F3dCodec
@@ -965,7 +964,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less explicit surface sweep encode");
     let round_trip = F3dCodec
@@ -1075,7 +1074,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less law-driven sweep encode");
     let round_trip = F3dCodec
@@ -1152,7 +1151,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("text-law sweep encode");
     let round_trip = F3dCodec
@@ -1252,7 +1251,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("revision text-law sweep encode");
     let round_trip = F3dCodec
@@ -1345,7 +1344,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("cacheless revision text-law sweep encode");
     let round_trip = F3dCodec
@@ -1514,7 +1513,7 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less surface without optional tolerance");
         let round_trip = F3dCodec
@@ -1551,7 +1550,7 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less loft without optional tolerance");
     let round_trip = F3dCodec

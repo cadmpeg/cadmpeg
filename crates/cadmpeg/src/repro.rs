@@ -15,6 +15,7 @@ use clap::Args;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+// resource-cap: MAX_REPRO_INPUT_BYTES = N
 const MAX_REPRO_INPUT_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Select a finding from a persisted command report.

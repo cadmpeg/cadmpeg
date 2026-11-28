@@ -15,16 +15,13 @@ pub(crate) fn codec() -> OnshapeCodec {
 }
 fn encode_step(ir: &cadmpeg_ir::CadIr) -> Vec<u8> {
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit("step:ap214"),
-        )
+        .plan(EncodeInput::new(ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     bytes
 }
-fn step() -> &'static [u8] {
+pub(crate) fn step() -> &'static [u8] {
     static STEP: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     STEP.get_or_init(|| encode_step(&cadmpeg_ir::examples::unit_cube().unwrap()))
 }
@@ -62,10 +59,41 @@ pub(crate) fn fixture(name: &str) -> Vec<u8> {
     }
     zip.finish().unwrap().into_inner()
 }
+/// How a report states a codec code.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Charge {
+    /// A note of the code.
+    Note,
+    /// A give-up of this cause whose text carries the code.
+    GivenUp(cadmpeg_ir::unknown::part::Cause),
+    /// A note or a give-up of either cause: for an assertion that no loss
+    /// states the code.
+    Any,
+}
+/// Whether a loss of kind `kind` and text `message` states the code `code`
+/// as `charge`.
+pub(crate) fn states(code: &str, charge: Charge, kind: &str, message: &str) -> bool {
+    use cadmpeg_ir::unknown::part::Cause;
+    let given_up =
+        |cause: Cause| cause.kind().to_string() == kind && message.contains(&format!("{code}: "));
+    match charge {
+        Charge::Note => kind == code,
+        Charge::GivenUp(cause) => given_up(cause),
+        Charge::Any => kind == code || given_up(Cause::Unreadable) || given_up(Cause::Undecoded),
+    }
+}
 #[derive(Debug)]
 pub(crate) struct Loss {
     pub(crate) code: Option<String>,
     pub(crate) detail: String,
+}
+impl Loss {
+    /// Whether the loss states `code` as `charge`.
+    pub(crate) fn states(&self, code: &str, charge: Charge) -> bool {
+        self.code
+            .as_deref()
+            .is_some_and(|kind| states(code, charge, kind, &self.detail))
+    }
 }
 #[derive(Debug, Default)]
 pub(crate) struct Report {

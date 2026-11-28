@@ -15,9 +15,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::ExportPlan;
+use cadmpeg_ir::codec::write::{ExportPlan, PlannedOutput};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::report::export::{EntityCensus, ExportReport};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::source_fidelity::sidecar_stale_kind;
@@ -263,6 +263,50 @@ fn absolute_output_path(output: &Path) -> Result<PathBuf> {
     }
 }
 
+/// The path of each output of `outputs`: an output the caller named is
+/// written beside `destination` under that name, and the output the
+/// destination names to `destination`.
+pub(crate) fn output_paths(destination: &Path, outputs: &[PlannedOutput]) -> Vec<PathBuf> {
+    outputs
+        .iter()
+        .map(|output| output_path(destination, output))
+        .collect()
+}
+
+fn output_path(destination: &Path, output: &PlannedOutput) -> PathBuf {
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    output
+        .name
+        .as_ref()
+        .map_or_else(|| destination.to_owned(), |name| parent.join(name.as_str()))
+}
+
+/// Refuse the outputs of a plan before any of them is written: an output at
+/// the input path, an existing output without `--force`, two outputs at one
+/// path, or an output at the path of the command report.
+pub(crate) fn check_plan_outputs(
+    input: &Path,
+    destination: &FileDestination,
+    report: Option<&FileDestination>,
+    paths: &[PathBuf],
+) -> Result<()> {
+    for (index, path) in paths.iter().enumerate() {
+        if path != &destination.path {
+            check_output_path(input, path, destination.overwrite)?;
+        }
+        for earlier in &paths[..index] {
+            check_distinct_output_paths(earlier, "CAD output", path, "CAD output")?;
+        }
+        if let Some(report) = report {
+            check_distinct_output_paths(path, "CAD output", &report.path, "command report")?;
+        }
+    }
+    Ok(())
+}
+
 /// Stage bytes then atomically replace `output`.
 fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     let parent = output
@@ -281,11 +325,48 @@ fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Stage an export plan and hash the emitted bytes.
+/// One file an export wrote: its path, the census of the output it holds,
+/// and the SHA-256 of its bytes.
+pub(crate) struct WrittenFile {
+    pub(crate) path: PathBuf,
+    pub(crate) entities: usize,
+    pub(crate) sha256: Sha256Digest,
+}
+
+/// Stage each output of an export plan at its path ([`output_paths`]) and
+/// return the report with each file written, in the plan's output order.
+/// The files are not written as one transaction: where a write fails, the
+/// error names the files written before it.
 pub(super) fn write_plan_atomic(
     output: &Path,
     plan: ExportPlan,
-) -> Result<(ExportReport, Sha256Digest)> {
+) -> Result<(ExportReport, Vec<WrittenFile>)> {
+    let entities: Vec<usize> = plan.censuses().iter().map(EntityCensus::total).collect();
+    if output_paths(output, plan.outputs()) != [output] {
+        let mut written = Vec::new();
+        let result = plan.write_each(|planned, bytes| {
+            let path = output_path(output, planned);
+            write_bytes_atomic(&path, bytes).map_err(io::Error::other)?;
+            written.push(WrittenFile {
+                path,
+                entities: entities.get(written.len()).copied().unwrap_or_default(),
+                sha256: Sha256Digest::from_bytes(Sha256::digest(bytes).into()),
+            });
+            Ok(())
+        });
+        let report = result.with_context(|| {
+            let paths: Vec<String> = written
+                .iter()
+                .map(|file| file.path.display().to_string())
+                .collect();
+            format!(
+                "writing the outputs of {}; written before the failure: [{}]",
+                output.display(),
+                paths.join(", ")
+            )
+        })?;
+        return Ok((report, written));
+    }
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -304,12 +385,17 @@ pub(super) fn write_plan_atomic(
         .flush()
         .with_context(|| format!("flushing temporary output for {}", output.display()))?;
     drop(writer);
-    let digest = sink.finish();
+    let sha256 = sink.finish();
     temporary
         .persist(output)
         .map_err(|error| error.error)
         .with_context(|| format!("persisting temporary output to {}", output.display()))?;
-    Ok((report, digest))
+    let written = WrittenFile {
+        path: output.to_owned(),
+        entities: entities.first().copied().unwrap_or_default(),
+        sha256,
+    };
+    Ok((report, vec![written]))
 }
 
 /// Persist or remove the decode-fidelity sidecar beside a CADIR file.
@@ -318,7 +404,8 @@ pub(super) fn write_plan_atomic(
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
 /// The sidecar holds `annotations`, the plan's annotations of the written
-/// document, and the origin's where the plan states none.
+/// document, which a CADIR plan states for every document with a decode
+/// origin.
 pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
@@ -337,10 +424,14 @@ pub(super) fn persist_decode_sidecar(
         }
         | LoadOrigin::Restored { report, fidelity }
         | LoadOrigin::Read { report, fidelity } => {
+            let Some(annotations) = annotations else {
+                return Err(anyhow!(
+                    "the CADIR plan for {} states no annotations of the written document",
+                    cadir_path.display()
+                ));
+            };
             let mut fidelity = fidelity.as_ref().clone();
-            if let Some(annotations) = annotations {
-                fidelity.annotations = annotations;
-            }
+            fidelity.annotations = annotations;
             let sidecar =
                 DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity);
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
@@ -403,8 +494,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        check_output_path, load_matching_sidecar, read_bounded_text, FileDestination,
-        OptionalFileDestination, OutputDestinations, SidecarLoad,
+        check_output_path, check_plan_outputs, load_matching_sidecar, read_bounded_text,
+        FileDestination, OptionalFileDestination, OutputDestinations, SidecarLoad,
     };
     #[cfg(feature = "nx")]
     use cadmpeg_core::decode::InspectOptions;
@@ -435,6 +526,76 @@ mod tests {
             cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, prefix_len);
         ctx.finish_session()?;
         result
+    }
+
+    /// A plan of `input.cadir.json` that writes `assembly.sldprt`, the
+    /// destination, and the further outputs `others` beside it.
+    fn plan_paths(dir: &Path, others: &[&str]) -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+        let input = dir.join("input.cadir.json");
+        std::fs::write(&input, b"{}").unwrap();
+        let mut paths = vec![dir.join("assembly.sldprt")];
+        paths.extend(others.iter().map(|name| dir.join(name)));
+        (input, paths)
+    }
+
+    fn destination(dir: &Path, overwrite: bool) -> FileDestination {
+        FileDestination {
+            path: dir.join("assembly.sldprt"),
+            overwrite,
+        }
+    }
+
+    #[test]
+    fn an_existing_further_output_is_refused_without_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["part.sldprt"]);
+        std::fs::write(&paths[1], b"kept").unwrap();
+        let error =
+            check_plan_outputs(&input, &destination(dir.path(), false), None, &paths).unwrap_err();
+        assert!(error.to_string().contains("pass --force"), "{error}");
+        check_plan_outputs(&input, &destination(dir.path(), true), None, &paths).unwrap();
+    }
+
+    #[test]
+    fn a_further_output_at_the_input_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["input.cadir.json"]);
+        let error =
+            check_plan_outputs(&input, &destination(dir.path(), true), None, &paths).unwrap_err();
+        assert!(
+            error.to_string().contains("refusing to overwrite input"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn two_outputs_at_one_path_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["part.sldprt", "part.sldprt"]);
+        let error =
+            check_plan_outputs(&input, &destination(dir.path(), false), None, &paths).unwrap_err();
+        assert!(
+            error.to_string().contains("resolve to the same path"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_further_output_at_the_report_path_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (input, paths) = plan_paths(dir.path(), &["part.sldprt"]);
+        let report = FileDestination {
+            path: dir.path().join("part.sldprt"),
+            overwrite: false,
+        };
+        let error = check_plan_outputs(
+            &input,
+            &destination(dir.path(), false),
+            Some(&report),
+            &paths,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("command report"), "{error}");
     }
 
     #[test]

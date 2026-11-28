@@ -2372,7 +2372,7 @@ pub(crate) mod reference_plane_data_head {
 /// Spec §2. Record length 121 B.
 ///
 /// ```text
-/// Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c` class name.
+/// Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c`, `moConstraintCoincLinePerpPlaneRefplaneData_c`, or `moPerLinePtRefPlnData_c` class name.
 /// ```
 pub(crate) mod constructed_reference_plane_matrix_frame {
     /// Record length in bytes. Spec §2.
@@ -2385,6 +2385,28 @@ pub(crate) mod constructed_reference_plane_matrix_frame {
     pub(crate) const FRAME_MARKER: usize = 48;
     /// Offset of `basis_matrix` (`f64[9]`, little-endian). Spec §2.
     pub(crate) const BASIS_MATRIX: usize = 49;
+}
+
+/// Byte offsets for the `constructed_reference_plane_minimal_frame` record.
+///
+/// Spec §2. Record length 81 B.
+///
+/// ```text
+/// Offsets begin immediately after the `moDefaultRefPlnData_c`, `moConstraintPrllPlnTanOneCylinderRefplaneData_c`, `moFaceRefPlnData_c`, or `moPerLinePtRefPlnData_c` class name.
+/// ```
+pub(crate) mod constructed_reference_plane_minimal_frame {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 81;
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const ORIGIN: usize = 0;
+    /// Offset of `normal` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const NORMAL: usize = 24;
+    /// Offset of `frame_marker` (`u8`). Spec §2.
+    pub(crate) const FRAME_MARKER: usize = 48;
+    /// Offset of `translation` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const TRANSLATION: usize = 49;
+    /// Offset of `scale` (`f64`, little-endian). Spec §2.
+    pub(crate) const SCALE: usize = 73;
 }
 
 /// Byte offsets for the `component_face_nested_reference_prefix` record.
@@ -2492,6 +2514,43 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const CLASS_MARKER_VALUE: [u8; 4] = [0xff, 0xff, 0x01, 0x00];
     /// Offset of `name_length` (`u16`, little-endian). Spec §2.
     pub(crate) const NAME_LENGTH: usize = 5;
+}
+
+/// Byte offsets for the `cut_list_folder_tail` record.
+///
+/// Spec §Extrusion feature objects. Record length 43 B.
+///
+/// ```text
+/// The bytes a cut-list folder writes after its last item.
+/// ```
+pub(crate) mod cut_list_folder_tail {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 43;
+    /// Offset of `one` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const ONE: usize = 0;
+    /// Stated value of `one` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `minus_one` (`i32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const MINUS_ONE: usize = 4;
+    /// Stated value of `minus_one` (`i32`). Spec §Extrusion feature objects.
+    pub(crate) const MINUS_ONE_VALUE: i32 = -1;
+    /// Offset of `word` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const WORD: usize = 8;
+    /// Offset of `zeros` (`bytes[23]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS: usize = 12;
+    /// Stated value of `zeros` (`bytes[23]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS_VALUE: [u8; 23] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `one_after_zeros` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const ONE_AFTER_ZEROS: usize = 35;
+    /// Stated value of `one_after_zeros` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const ONE_AFTER_ZEROS_VALUE: u32 = 0x0000_0001;
+    /// Offset of `one_last` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const ONE_LAST: usize = 39;
+    /// Stated value of `one_last` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const ONE_LAST_VALUE: u32 = 0x0000_0001;
 }
 
 /// Byte offsets for the `revolution_turn_block` record.
@@ -3045,6 +3104,18 @@ pub(crate) mod identity_reference_header {
     pub(crate) const ZERO_TAIL: usize = 36;
     /// Stated value of `zero_tail` (`u16`). Spec §2.3.
     pub(crate) const ZERO_TAIL_VALUE: u16 = 0x0000;
+}
+
+/// Byte offsets for the `three_int_identity_own` record.
+///
+/// Spec §2.3. Record length 12 B.
+///
+/// ```text
+/// Own bytes of a three-integer identity representation; they follow its `moFR_c` object.
+/// ```
+pub(crate) mod three_int_identity_own {
+    /// Record length in bytes. Spec §2.3.
+    pub(crate) const LEN: usize = 12;
 }
 
 /// Byte offsets for the `named_object_header` record.

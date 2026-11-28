@@ -74,7 +74,9 @@ use crate::kernel::{ActiveCarrierState, KernelFamily};
 use crate::loss::InventorLossCode;
 use crate::rse::{DatabaseDescriptor, DatabaseState, MetaStreamDeclaration};
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{INVENTOR_CFB3_RSE31_META8, INVENTOR_UNKNOWN};
 
 /// Key of the CFB major version in [`DialectMatch::declared`].
 ///
@@ -385,7 +387,9 @@ fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch
             Ok(header) => Some(kernel_layer(carrier.family, header)),
             Err(_) => Some(unknown_kernel_layer()),
         },
-        ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
+        ActiveCarrierState::NotApplicable
+        | ActiveCarrierState::Unavailable(_)
+        | ActiveCarrierState::Unreadable { .. } => None,
     }
 }
 
@@ -412,7 +416,7 @@ pub(crate) fn layers(
 pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         cadmpeg_core::dialect::Admission::Refused
-            if matched.format() == cadmpeg_asm::dialect::FORMAT =>
+            if matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT =>
         {
             Some(InventorLossCode::KernelCarrierUnparseable.note(
                 "the selected kernel carrier did not expose a parseable ACIS or ASM header; its native records remain retained",
@@ -420,7 +424,7 @@ pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
         }
         cadmpeg_core::dialect::Admission::Unverified { .. }
         | cadmpeg_core::dialect::Admission::Residual
-            if matched.format() == cadmpeg_asm::dialect::FORMAT =>
+            if matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT =>
         {
             let declared = match (
                 matched.declared().get("save_format_major"),

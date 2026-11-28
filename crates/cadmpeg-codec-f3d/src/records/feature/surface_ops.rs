@@ -166,7 +166,7 @@ pub(crate) enum DesignSurfaceUntrimLoops {
 }
 
 /// Source selection form named by a `SurfaceOffset` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum DesignSurfaceOffsetSupport {
     /// A boundary carrier followed by edge recipes.
@@ -502,7 +502,7 @@ impl DesignPatchContinuity {
 }
 
 /// Versioned whole-surface normal state, independent of boundary-side ordinals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignSurfacePatchNormalState {
     Explicit {
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn surface_trim_operation_native_retained_limit_refuses_before_clone() {
         let operation = record(2);
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &operation,
             "design_surface_trim_operations",
             || SURFACE_TRIM_OPERATION_CLONE_COUNT.with(|count| count.set(0)),

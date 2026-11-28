@@ -305,12 +305,12 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
     use std::io::{Cursor, Write};
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&[]).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+    crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
         assert!(super::decode_settings(scan, &mut Vec::new())
             .unwrap()
             .is_empty());
@@ -396,7 +396,7 @@ fn decode_two_frames(
     extra: &[u64],
 ) -> (
     Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
-    Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<crate::design::decode::record::GivenUpFrame>,
 ) {
     use std::io::{Cursor, Write};
     let (mut first, first_frame) = first;
@@ -413,7 +413,7 @@ fn decode_two_frames(
         first.extend_from_slice(b"258");
         first.extend_from_slice(&u32::try_from(entity).unwrap().to_le_bytes());
     }
-    let mut meta = crate::test_support::streams_test::design_metastream_with_records(
+    let mut meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (SETTINGS_GUID, "", version, "Fusion", &[50, 150]),
             (PAIRED_GUID, "", 0, "Fusion", &[]),
@@ -434,7 +434,7 @@ fn decode_two_frames(
     meta.splice(secondary_at..secondary_at + 4, secondary);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&first).unwrap();
@@ -442,10 +442,10 @@ fn decode_two_frames(
         .unwrap();
     zip.write_all(&meta).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&bytes, |scan| {
-        let mut losses = Vec::new();
-        let settings = super::decode_settings(scan, &mut losses).unwrap();
-        (settings, losses)
+    crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
+        let mut given_up = Vec::new();
+        let settings = super::decode_settings(scan, &mut given_up).unwrap();
+        (settings, given_up)
     })
 }
 
@@ -453,8 +453,8 @@ fn decode_two_frames(
 fn leading_reference_frames_decode_without_loss() {
     for tail in [&[0, 0][..], &[1, 0, 0][..]] {
         let first = leading_reference_fixture(tail);
-        let (settings, losses) = decode_two_frames(3, tail, first, &[55]);
-        assert!(losses.is_empty());
+        let (settings, given_up) = decode_two_frames(3, tail, first, &[55]);
+        assert!(given_up.is_empty());
         let records: Vec<_> = settings
             .iter()
             .map(|record| (record.record_index, record.mask))
@@ -495,13 +495,20 @@ fn unreadable_settings_keep_the_sibling_settings() {
             first[11] = 2;
         }
         let extra: &[u64] = if reference_prefix { &[55] } else { &[] };
-        let (settings, losses) = decode_two_frames(version, tail, (first, first_frame), extra);
+        let first_span = first_frame.start..first_frame.end;
+        let (settings, given_up) = decode_two_frames(version, tail, (first, first_frame), extra);
         assert_eq!(settings.len(), 1);
         assert_eq!(settings[0].record_index, 150);
-        assert_eq!(losses.len(), 1);
+        let [frame] = given_up.as_slice() else {
+            panic!("one given-up settings frame: {given_up:?}");
+        };
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::BendSettingsUndecoded.kind()
+            frame.reason().0,
+            cadmpeg_ir::unknown::part::Cause::Undecoded
+        );
+        assert_eq!(
+            frame.span(),
+            ("FusionAssetName[Active]/Design1/BulkStream.dat", first_span)
         );
     }
 }

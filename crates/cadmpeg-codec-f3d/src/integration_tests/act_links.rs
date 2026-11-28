@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::WritePath;
 
 use crate::test_support::act_links::f3d_with_act_component_links;
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 use crate::F3dCodec;
 
 #[test]
@@ -39,20 +39,14 @@ fn component_link_root_counts_are_findings_after_a_complete_decode() {
         assert_eq!(root_findings, usize::from(roots != 1));
         let (ir, _, fidelity) = decoded.into_parts();
         let plan = F3dCodec
-            .plan(
-                EncodeInput::new(&ir, Some(&fidelity)),
-                TargetRequest::Unnamed,
-            )
+            .plan(EncodeInput::new(&ir, Some(&fidelity)))
             .unwrap();
         let mut replay = Vec::new();
         plan.write_to(&mut replay).unwrap();
         assert_eq!(replay, source);
         let mut step = Vec::new();
         cadmpeg_codec_step::StepCodec::default()
-            .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit("step:ap242-e3"),
-            )
+            .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap242-e3")))
             .unwrap()
             .write_to(&mut step)
             .unwrap();
@@ -79,10 +73,7 @@ fn non_root_component_link_references_patch_and_decode_without_coercion() {
     });
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap()
         .write_to(&mut bytes)
         .unwrap();

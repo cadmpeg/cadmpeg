@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::test_support::archive_session::{assert_equal, decode};
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult, FormatId};
@@ -46,12 +46,7 @@ fn traversal_decode(bytes: &[u8], options: &DecodeOptions) -> Result<DecodeResul
         .compose_in_traversal_for_test(&ctx)
         .map_err(DecodeFailure::from)
         .and_then(|decoded| {
-            DecodeResult::from_decoded(
-                &ctx,
-                decoded,
-                FormatId::new("f3d"),
-                &cadmpeg_ir::report::strictness::Strictness::default(),
-            )
+            DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"), &options.strictness)
         });
     ctx.finish_session()?;
     result

@@ -112,7 +112,7 @@ impl MemberKeys {
     /// placement scope that qualifies it. A member's `File` definition takes
     /// the member's key, and the key of the member that places it as its
     /// qualifier.
-    fn map(&self, id: &str) -> Option<String> {
+    pub(super) fn map(&self, id: &str) -> Option<String> {
         if let Some(read_at) = member_definition_key(id) {
             let key = self.keys.get(read_at)?;
             let placer = self.placers.get(read_at)?;
@@ -194,6 +194,9 @@ impl MemberKeys {
             if let Some(message) = self.rekey_text(&loss.message) {
                 loss.message = message;
             }
+            cadmpeg_ir::unknown::part::map_give_up(loss, |id| {
+                Ok(self.rekey_text(id).unwrap_or_else(|| id.to_owned()))
+            })?;
         }
         let mut taken = HashSet::new();
         let mut mapped = Vec::new();

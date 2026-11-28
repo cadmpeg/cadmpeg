@@ -8,8 +8,8 @@ use super::super::decode_parameters;
 use super::compact_null_owner::compact_null_owner_parameter_record;
 use super::typed_parameter_record;
 use crate::design::test_support::parameter_record;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::zip_test::with_scan;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::zip_fixture::with_scan;
 
 #[test]
 fn compact_owned_parameter_keeps_offset_with_opaque_trailer_flag() {
@@ -51,7 +51,7 @@ fn compact_owned_parameter_keeps_offset_with_opaque_trailer_flag() {
         panic!("expected one stream with unparsed compact parameter frames");
     };
     assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 2);
+    assert_eq!(unparsed.frames.len(), 2);
     let [flagged] = decoded.trailer_flags.as_slice() else {
         panic!("one compact trailer flag report");
     };
@@ -80,7 +80,7 @@ fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
         panic!("expected one stream with unparsed typed parameter frames");
     };
     assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 1);
+    assert_eq!(unparsed.frames.len(), 1);
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn decode_reports_untyped_parameter_frames_that_match_no_grammar() {
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "B0556F58-EE09-46A7-B18F-E296F48E5B13",
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
@@ -130,7 +130,7 @@ fn decode_reports_untyped_parameter_frames_that_match_no_grammar() {
         panic!("expected one stream with unparsed untyped parameter frames");
     };
     assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 1);
+    assert_eq!(unparsed.frames.len(), 1);
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn decode_reads_compact_null_owner_frames_and_reports_those_that_do_not_close() 
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "B0556F58-EE09-46A7-B18F-E296F48E5B13",
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
@@ -168,7 +168,7 @@ fn decode_reads_compact_null_owner_frames_and_reports_those_that_do_not_close() 
     let [unparsed] = decoded.unparsed.as_slice() else {
         panic!("expected one stream with an unparsed parameter frame");
     };
-    assert_eq!(unparsed.count, 1);
+    assert_eq!(unparsed.frames.len(), 1);
     let [flagged] = decoded.trailer_flags.as_slice() else {
         panic!("expected one stream with a set trailer flag");
     };
@@ -188,7 +188,7 @@ fn decode_reports_a_compact_null_owner_frame_whose_tail_names_another_type() {
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (
                 "B0556F58-EE09-46A7-B18F-E296F48E5B13",
@@ -218,7 +218,7 @@ fn decode_reports_a_compact_null_owner_frame_whose_tail_names_another_type() {
     let [unparsed] = decoded.unparsed.as_slice() else {
         panic!("expected one stream with an unparsed parameter frame");
     };
-    assert_eq!(unparsed.count, 1);
+    assert_eq!(unparsed.frames.len(), 1);
 }
 
 #[test]

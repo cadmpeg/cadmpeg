@@ -236,8 +236,8 @@ fn face_with_an_unprojectable_loop(order: &[usize]) -> crate::brep::graph::Brep 
         Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Point,
         Sense, Vertex,
     };
-    let id = |kind: &str, n: u32| format!("test:profile:{kind}#{n}");
-    let surface = SurfaceId::mint(id("surface", 1)).unwrap();
+    let id = |kind: &str, n: u32| format!("sldprt:brep:{kind}#{n}");
+    let surface = SurfaceId::mint(id("surf", 1)).unwrap();
     let face = FaceId::mint(id("face", 1)).unwrap();
     let loops = [1, 2].map(|n| LoopId::mint(id("loop", n)).unwrap());
     let coedges = [1, 2].map(|n| CoedgeId::mint(id("coedge", n)).unwrap());
@@ -448,81 +448,111 @@ fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
     let [entity] = projected.entities.as_slice() else {
         panic!("the line edge states the one entity");
     };
-    assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
+    assert_eq!(entity.native_ref.as_deref(), Some("0:sldprt:brep:edge#1"));
+    assert_eq!(entity.id().as_str(), "sldprt:model:sketch-entity#0:0:0:1");
     assert!(sketch.profiles.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge");
+    let [given_up] = losses.as_slice() else {
+        panic!("the entity of the refused edge is given up: {losses:?}");
     };
-    assert!(loss.message.contains("test:profile:edge#2"));
-    assert!(loss.message.contains(&format!(
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(given_up
+        .message
+        .starts_with("record sldprt:model:sketch-entity#0:0:0:0 given up: "));
+    assert!(
+        given_up.message.ends_with("; dropped=[]"),
+        "{}",
+        given_up.message
+    );
+    assert!(given_up.message.contains("sldprt:brep:edge#2"));
+    assert!(given_up.message.contains(&format!(
         "sketch {} states no entity for the edge and no profile for loop \
-         test:profile:loop#2 or a later loop of face test:profile:face#1",
+         sldprt:brep:loop#2 or a later loop of face sldprt:brep:face#1",
         sketch.id
     )));
 }
 
 #[test]
-fn a_face_whose_only_loop_is_refused_states_no_sketch_and_the_loss_names_none() {
+fn a_face_whose_only_loop_is_refused_gives_up_its_sketch() {
     let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1]));
     assert!(projected.sketches.is_empty());
     assert!(projected.entities.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge");
+    let [given_up] = losses.as_slice() else {
+        panic!("the sketch is given up with the entity of the refused edge: {losses:?}");
     };
     assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
-    assert!(loss.message.contains("test:profile:edge#2"));
-    assert!(loss
+    assert!(given_up.message.starts_with(
+        "record sldprt:model:sketch#0:0:0 stream=\"Contents/Config-0-ResolvedFeatures\" \
+         offset=0 given up: no edge of its face projects to a sketch entity"
+    ));
+    assert!(!given_up.message.contains("sldprt:brep:"));
+    assert!(given_up
         .message
-        .ends_with("; face test:profile:face#1 of the feature-input stream states no sketch"));
-    assert!(!loss.message.contains("sldprt:model:sketch#"));
+        .ends_with("; dropped=[sldprt:model:sketch-entity#0:0:0:0]"));
 }
 
 #[test]
 fn an_unprojectable_edge_costs_its_loop_profile_and_keeps_the_sketch() {
-    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let brep = face_with_an_unprojectable_loop(&[0, 1]);
-    let stream = cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures");
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let mut losses = Vec::new();
-    let mut projected = super::ProjectedSketches::default();
-    super::project_brep(
-        &ctx,
-        &brep,
-        &super::BrepSketchSource {
-            block_offset: 0,
-            stream_ordinal: 0,
-            stream_offset: 0,
-            source_stream: &stream,
-            sketch_name: "profile",
-            configuration: None,
-            native_ref: "sldprt:feature-input:resolved-features#0",
-        },
-        &mut annotations,
-        &mut losses,
-        &mut projected,
-    )
-    .expect("one unprojectable edge does not fail the projection");
+    let (projected, losses) = project(&face_with_an_unprojectable_loop(&[0, 1]));
     let [sketch] = projected.sketches.as_slice() else {
         panic!("the face states one sketch");
     };
     let [entity] = projected.entities.as_slice() else {
         panic!("the line edge states the one entity");
     };
-    assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
+    assert_eq!(entity.native_ref.as_deref(), Some("0:sldprt:brep:edge#1"));
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 1);
     assert_eq!(sketch.profiles[0][0].entity, *entity.id());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge");
+    let [given_up] = losses.as_slice() else {
+        panic!("the entity of the refused edge is given up: {losses:?}");
     };
     assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
-    assert!(loss.message.contains("test:profile:edge#2"));
-    assert!(loss.message.contains("test:profile:loop#2"));
-    assert!(loss.message.contains(sketch.id.as_str()));
+    assert!(given_up
+        .message
+        .starts_with("record sldprt:model:sketch-entity#0:0:0:1 given up: "));
+    assert!(
+        given_up.message.ends_with("; dropped=[]"),
+        "{}",
+        given_up.message
+    );
+    assert!(given_up.message.contains("sldprt:brep:edge#2"));
+    assert!(given_up.message.contains("sldprt:brep:loop#2"));
+    assert!(given_up.message.contains(sketch.id.as_str()));
+}
+
+#[test]
+fn an_unprojectable_edge_used_twice_in_a_face_is_charged_once() {
+    use cadmpeg_ir::ids::CoedgeId;
+    use cadmpeg_ir::topology::{Coedge, LoopBoundary, LoopRing, Sense};
+    let mut brep = face_with_an_unprojectable_loop(&[0, 1]);
+    let refused = brep.coedges[1].clone();
+    let second = Coedge {
+        id: CoedgeId::mint("sldprt:brep:coedge#3").unwrap(),
+        sense: Sense::Reversed,
+        ..refused.clone()
+    };
+    brep.loops[1].boundary = LoopBoundary::Ring(
+        LoopRing::new(vec![refused.id.clone(), second.id.clone()], Vec::new()).unwrap(),
+    );
+    brep.coedges.push(second);
+    let (projected, losses) = project(&brep);
+    let [sketch] = projected.sketches.as_slice() else {
+        panic!("the face states one sketch");
+    };
+    assert_eq!(sketch.profiles.len(), 1);
+    let [given_up] = losses.as_slice() else {
+        panic!("the entity of the refused edge is given up once: {losses:?}");
+    };
+    assert!(given_up
+        .message
+        .starts_with("record sldprt:model:sketch-entity#0:0:0:1 given up: "));
 }

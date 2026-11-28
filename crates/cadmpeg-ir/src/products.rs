@@ -232,6 +232,24 @@ pub fn stated_definitions(
         .filter(|definition| !definition.is_document_root())
 }
 
+/// The definitions other than the root that no occurrence of `model`
+/// places and that the document stores: each is a top-level definition of
+/// its output (§3.4, Encode sets).
+pub fn unplaced_definitions(
+    model: &crate::document::Model,
+) -> impl Iterator<Item = &ProductDefinition> {
+    let placed: std::collections::BTreeSet<&ProductDefinitionId> = model
+        .occurrences
+        .iter()
+        .map(|occurrence| &occurrence.prototype)
+        .collect();
+    model.product_definitions.iter().filter(move |definition| {
+        !definition.is_root()
+            && !matches!(definition.storage, Storage::External(_))
+            && !placed.contains(&definition.id)
+    })
+}
+
 /// The configuration of another definition that a definition was generated
 /// from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

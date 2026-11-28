@@ -121,7 +121,7 @@ fn unreadable_surface_keeps_its_sibling_surface() {
     sibling[7..11].copy_from_slice(&42u32.to_le_bytes());
     let sibling_start = unreadable.len();
     unreadable.extend_from_slice(&sibling);
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "00000000-0000-0000-0000-000000000001",
             "",
@@ -133,7 +133,7 @@ fn unreadable_surface_keeps_its_sibling_surface() {
     );
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     for (name, bytes) in [
         ("FusionAssetName[Active]/Design1/BulkStream.dat", unreadable),
         ("FusionAssetName[Active]/Design1/MetaStream.dat", meta),
@@ -142,7 +142,7 @@ fn unreadable_surface_keeps_its_sibling_surface() {
         archive.write_all(&bytes).unwrap();
     }
     let archive = archive.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut losses = Vec::new();
         let surfaces = super::super::decode_sketch_surfaces(scan, &mut losses).unwrap();
         assert_eq!(surfaces.len(), 1);
@@ -152,10 +152,9 @@ fn unreadable_surface_keeps_its_sibling_surface() {
             surfaces[0].geometry.control_points[1][1].get(),
             Point3::new(30.0, 20.0, 10.0)
         );
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::SketchSurfaceUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
     });
 }

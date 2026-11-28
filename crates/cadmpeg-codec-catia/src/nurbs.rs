@@ -48,26 +48,148 @@ fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
 #[derive(Debug, Default)]
 pub(crate) struct LaneRefusals {
     notes: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Refused source records not yet given up.
+    given_up: Vec<RefusedFrame>,
+    /// Refusals recorded since the notes were last taken. A refusal's
+    /// give-up is the one entry for the record, so it adds no note.
+    refused: usize,
+    /// The kind and offset of every frame the sink has given up or holds, so
+    /// a record two routes or the native decode read and refuse is given up
+    /// once.
+    charged: std::collections::BTreeSet<(&'static str, usize)>,
+}
+
+/// The frame of a source carrier record a reader framed, which a refusal of
+/// the record gives up as a part (`catia.md`, Partial decode).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SourceFrame<'a> {
+    /// The part kind the frame is given up as.
+    pub(crate) kind: &'static str,
+    /// The frame's offset in the `CATPart` image.
+    pub(crate) offset: usize,
+    /// The frame's bytes.
+    pub(crate) bytes: &'a [u8],
+}
+
+#[derive(Debug)]
+struct RefusedFrame {
+    kind: &'static str,
+    offset: usize,
+    bytes: Vec<u8>,
+    cause: cadmpeg_ir::unknown::part::Cause,
+    why: cadmpeg_ir::report::loss::LossNote,
+    /// The records the decode drops because they need this record.
+    dropped: Vec<cadmpeg_ir::ids::Identity>,
 }
 
 impl LaneRefusals {
     /// An empty sink.
     pub(crate) fn new() -> Self {
-        Self { notes: Vec::new() }
+        Self::default()
     }
 
     /// Take every refusal recorded so far, in the order the readers stated
     /// them, and leave the sink empty.
     pub(crate) fn take_notes(&mut self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+        self.refused = 0;
         std::mem::take(&mut self.notes)
     }
 
-    /// How many refusals the sink holds.
+    /// How many refusals the sink holds, with each refusal of a record
+    /// given up.
     ///
     /// The router reads this before and after a route, so it can state how
     /// many records a route refused before it transferred no model.
     pub(crate) fn note_count(&self) -> usize {
-        self.notes.len()
+        self.notes.len() + self.refused
+    }
+
+    /// Give up the frame of every refused source record recorded so far, and
+    /// leave the sink without them. `image` is the kept record that holds the
+    /// whole file image, when the decode keeps one: each part then keeps only
+    /// the digest of its frame and links to that record.
+    ///
+    /// # Errors
+    ///
+    /// The refusal of a part a decode cannot give up (`DecodeParts`).
+    pub(crate) fn take_given_up(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        image: Option<&cadmpeg_ir::ids::Identity>,
+    ) -> Result<Vec<cadmpeg_ir::unknown::part::GivenUpPart>, cadmpeg_core::CodecError> {
+        use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+        std::mem::take(&mut self.given_up)
+            .into_iter()
+            .map(|frame| {
+                let part = Part::at(
+                    "catia",
+                    frame.kind,
+                    cadmpeg_core::decode::u64_from_index(frame.offset),
+                    &frame.bytes,
+                    [cadmpeg_core::decode::ArenaClass::Model],
+                )
+                .dropping(frame.dropped);
+                ctx.give_up_part(
+                    match image {
+                        Some(image) => part.contained_in(image.clone()).digest_only(),
+                        None => part,
+                    },
+                    frame.cause,
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "{}: {}",
+                        frame.why.code, frame.why.message
+                    )),
+                )
+            })
+            .collect()
+    }
+
+    /// Give up the source record framed by `frame`, whose carrier the
+    /// document then holds nowhere, for `cause` as `why` states: the IR
+    /// carrier refuses lanes that the record states. The give-up is the one
+    /// entry for the record, so a further refusal of it adds nothing.
+    fn give_up(
+        &mut self,
+        frame: SourceFrame<'_>,
+        cause: cadmpeg_ir::unknown::part::Cause,
+        why: cadmpeg_ir::report::loss::LossNote,
+    ) {
+        self.refused += 1;
+        if self.charged.insert((frame.kind, frame.offset)) {
+            self.given_up.push(RefusedFrame {
+                kind: frame.kind,
+                offset: frame.offset,
+                bytes: frame.bytes.to_vec(),
+                cause,
+                why,
+                dropped: Vec::new(),
+            });
+        }
+    }
+
+    /// Whether the sink holds the frame of `kind` at `offset` and has not
+    /// given it up yet.
+    pub(crate) fn holds(&self, kind: &str, offset: usize) -> bool {
+        self.given_up
+            .iter()
+            .any(|frame| frame.kind == kind && frame.offset == offset)
+    }
+
+    /// Names `records` as dropped because they need the frame of `kind` at
+    /// `offset` that the sink holds.
+    pub(crate) fn drop_with(
+        &mut self,
+        kind: &str,
+        offset: usize,
+        records: impl IntoIterator<Item = cadmpeg_ir::ids::Identity>,
+    ) {
+        if let Some(frame) = self
+            .given_up
+            .iter_mut()
+            .find(|frame| frame.kind == kind && frame.offset == offset)
+        {
+            frame.dropped.extend(records);
+        }
     }
 
     pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
@@ -373,11 +495,7 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) {
-        self.notes.push(
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
-            "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
-        )),
-        );
+        self.notes.push(lane_refusal_note(record, error));
     }
 
     /// Record one refusal a lane solver stated, against the record that stated
@@ -405,6 +523,15 @@ impl LaneRefusals {
             )),
         );
     }
+}
+
+fn lane_refusal_note(
+    record: impl std::fmt::Display,
+    error: &cadmpeg_ir::geometry::nurbs::NurbsError,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+        "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
+    ))
 }
 
 /// Whether a source-stated parameter range is readable, and a named refusal in
@@ -444,6 +571,69 @@ pub(crate) fn note_refusal<T>(
             None
         }
     }
+}
+
+/// Record a carrier refusal against the source record that stated it, give
+/// up that record's frame, and answer `None`.
+///
+/// This is [`note_refusal`] for a reader of a source carrier record, whose
+/// refused lanes leave the document without that carrier; a carrier the
+/// decoder derives from records it keeps, or a record the caller keeps in
+/// another form, goes through [`note_refusal`].
+pub(crate) fn give_up_refused<T>(
+    result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
+    refusal: &mut LaneRefusals,
+    record: impl std::fmt::Display,
+    frame: SourceFrame<'_>,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            let cause = match error {
+                NurbsError::NonFinitePole { .. } | NurbsError::UnusableWeight { .. } => {
+                    cadmpeg_ir::unknown::part::Cause::Unreadable
+                }
+                _ => cadmpeg_ir::unknown::part::Cause::Undecoded,
+            };
+            refusal.give_up(frame, cause, lane_refusal_note(record, &error));
+            None
+        }
+    }
+}
+
+/// The poles a record states, refused at the first one that is not finite.
+pub(crate) fn finite_poles(
+    field: &str,
+    poles: Vec<Point3>,
+) -> Result<Vec<FinitePoint3>, NurbsError> {
+    poles
+        .into_iter()
+        .enumerate()
+        .map(|(index, pole)| {
+            FinitePoint3::new(pole).ok_or_else(|| NurbsError::NonFinitePole {
+                field: field.to_owned(),
+                index,
+            })
+        })
+        .collect()
+}
+
+/// The weights a record states, refused at the first one no pole can carry.
+pub(crate) fn usable_weights(
+    field: &str,
+    weights: Vec<f64>,
+) -> Result<Vec<cadmpeg_ir::scalar::NonZeroReal>, NurbsError> {
+    weights
+        .into_iter()
+        .enumerate()
+        .map(|(index, weight)| {
+            cadmpeg_ir::scalar::NonZeroReal::new(weight).ok_or_else(|| NurbsError::UnusableWeight {
+                field: field.to_owned(),
+                index,
+                weight,
+            })
+        })
+        .collect()
 }
 
 /// Reverse a supported pcurve over an increasing source-stated range.
@@ -1723,6 +1913,78 @@ mod tests {
         assert!(
             refusal.take_notes().is_empty(),
             "the sink is empty once its notes are taken"
+        );
+    }
+
+    #[test]
+    fn a_refused_source_record_gives_up_its_frame_once() {
+        let mut refusal = LaneRefusals::new();
+        let short_weight_lane = || {
+            PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                Some(vec![1.0]),
+                false,
+            )
+        };
+        let frame_bytes = [0xa5, 0x03, 0x34, 0x07, 0x11];
+        let frame = super::SourceFrame {
+            kind: "a5-nurbs-surface",
+            offset: 64,
+            bytes: &frame_bytes,
+        };
+        for _ in 0..2 {
+            assert!(super::give_up_refused(
+                short_weight_lane(),
+                &mut refusal,
+                "a5 NURBS surface record at byte 64",
+                frame,
+            )
+            .is_none());
+        }
+        assert_eq!(refusal.note_count(), 2, "two refusals of one record");
+        // The give-up is the one entry for the record's lost carrier.
+        assert!(refusal.take_notes().is_empty());
+        assert_eq!(refusal.note_count(), 0);
+
+        let parts =
+            crate::test_support::with_service_context(|ctx| refusal.take_given_up(ctx, None))
+                .expect("give up the refused frame");
+        let [part] = parts.as_slice() else {
+            panic!("one given-up frame: {parts:?}");
+        };
+        let expected = cadmpeg_ir::unknown::part::Part::at(
+            "catia",
+            "a5-nurbs-surface",
+            64,
+            &frame_bytes,
+            [cadmpeg_core::decode::ArenaClass::Model],
+        )
+        .id()
+        .expect("part id");
+        assert_eq!(part.id(), &expected);
+        let loss = part.loss();
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
+        assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+        assert!(
+            loss.message.contains("lanes the IR carrier refuses"),
+            "{}",
+            loss.message
+        );
+        assert!(
+            loss.message.contains(&format!(" record={expected}: ")),
+            "{}",
+            loss.message
+        );
+        assert!(loss.message.ends_with("dropped=[]"), "{}", loss.message);
+        assert!(
+            crate::test_support::with_service_context(|ctx| refusal.take_given_up(ctx, None))
+                .expect("an empty sink")
+                .is_empty()
         );
     }
 

@@ -107,6 +107,15 @@ pub(crate) fn enrich_history_parameters<'a>(
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
 ) {
+    enrich_parameters(histories, lanes, replace_existing, |_, _| {});
+}
+
+pub(crate) fn enrich_parameters<'a>(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
+    replace_existing: bool,
+    mut observed: impl FnMut(&str, &str),
+) {
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
         let names_by_id = lane
@@ -283,6 +292,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         };
         if replace_existing {
+            observed(&feature.id, name.as_str());
             feature.parameters.insert(name, expression);
         } else {
             feature.parameters.entry(name).or_insert(expression);

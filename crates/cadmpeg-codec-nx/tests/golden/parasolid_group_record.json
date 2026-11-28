@@ -270,8 +270,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -448,6 +448,11 @@
             "offset": 301,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
+          },
+          "nx:s0:parasolid-group#368-10": {
+            "offset": 368,
+            "stream": "nx:s0",
+            "tag": "PARASOLID_GROUP_RECORD"
           },
           "nx:s0:pt#0": {
             "offset": 71,

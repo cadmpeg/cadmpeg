@@ -114,6 +114,23 @@ impl Removed {
         )
     }
 
+    /// What the CADIR text of `ir` leaves out of `ir` itself: each record
+    /// of an arena the wire omits whose id no written record has (§3.4).
+    pub(crate) fn omitted_by_the_wire(ir: &CadIr) -> Self {
+        let mut omitted = ir.arenas().wire_omitted_ids();
+        if omitted.is_empty() {
+            return Self::default();
+        }
+        let written = ir.arenas().written_among(&omitted);
+        omitted.retain(|id| !written.contains(id));
+        for namespace in ir.native.0.values() {
+            for record in namespace.arenas().values().flatten() {
+                omitted.remove(record.id());
+            }
+        }
+        Self::of_records(omitted.into_iter().map(str::to_owned), [])
+    }
+
     /// The records `entities` and the delta records `deltas`, each a
     /// `(qualifier, record)` pair, as a removal that took them out.
     pub(crate) fn of_records(
@@ -183,5 +200,14 @@ impl Annotations {
     pub(crate) fn remove(&mut self, removed: &Removed) {
         self.provenance.retain(|key, _| !removed.names(key));
         self.exactness.retain(|key, _| !removed.names(key));
+    }
+
+    /// Retains each key whose [`AnnotationKey::owner`] is a record of `ir`
+    /// (a record of an arena or a native record) or a record `retained`
+    /// keeps. The annotations of each record a decoder dropped leave with it
+    /// (§3.3).
+    pub fn retain_records_of(&mut self, ir: &CadIr, mut retained: impl FnMut(&str) -> bool) {
+        let named = entities(ir, false);
+        self.retain_entities(|owner| named.contains(owner) || retained(owner));
     }
 }

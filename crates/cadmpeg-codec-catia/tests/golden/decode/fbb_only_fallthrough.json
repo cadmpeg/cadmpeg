@@ -189,6 +189,7 @@
         "e5_nurbs_limit_programs": [],
         "entity_records": [],
         "external_references": [],
+        "feature_containers": [],
         "finjpl_segments": [],
         "inline_fields": [],
         "legacy_entity_runs": [],
@@ -719,6 +720,30 @@
           }
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.undecoded",
+            "kind": "decode_diagnostic",
+            "namespace": "decode"
+          }
+        },
+        "message": "record catia:standard:face#0 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.undecoded",
+            "kind": "decode_diagnostic",
+            "namespace": "decode"
+          }
+        },
+        "message": "record catia:standard:face#1 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
         "severity": "warning"
       }
     ],

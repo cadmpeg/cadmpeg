@@ -62,6 +62,7 @@ fn frames_on_tolerance(buf: &[u8], at: usize, stored: bool) -> bool {
         })
 }
 
+// resource-cap: MAX_SHORT_POINTER_INDEX = 1
 const MAX_SHORT_POINTER_INDEX: u32 = 0x7fff;
 
 /// The lowest count whose high u16 is non-zero, which is how the null pointer
@@ -1100,6 +1101,17 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
 /// ends at `sense_end` (spec §4).
 fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize> {
     let p = body_start(buf, off, 0x0e)?;
+    face_front_tail(buf, p, sense_end).map(|(end, _)| end)
+}
+
+pub(super) fn face_front_refs(buf: &[u8], p: usize, sense_end: usize) -> Option<[u32; 3]> {
+    let (end, [_, _, next, previous, shell]) = face_front_tail(buf, p, sense_end)?;
+    buf.get(end)
+        .is_none_or(|next| *next == 0)
+        .then_some([next, previous, shell])
+}
+
+fn face_front_tail(buf: &[u8], p: usize, sense_end: usize) -> Option<(usize, [u32; 5])> {
     let (len, refs) = if sense_end == p + face_body::SURFACE_FRONT_REFS {
         (face_body::LEN, refs_be::<5>(buf, sense_end)?)
     } else if sense_end == p + face_delta::SURFACE_FRONT_REFS {
@@ -1109,11 +1121,12 @@ fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize
     };
     refs.iter()
         .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
-        .then_some(p + len)
+        .then_some((p + len, refs))
 }
 
 /// Framing window for the stated text length of a string node in the scope
 /// pass.
+// resource-cap: MAX_STRING_NODE_BYTES = 1
 const MAX_STRING_NODE_BYTES: usize = 4096;
 
 fn string_node_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {
@@ -1162,6 +1175,26 @@ fn edited_intersection_composite_end(
 pub(super) struct TopologyScopes {
     pub(super) payloads: Vec<std::ops::Range<usize>>,
     pub(super) excluded_starts: Vec<std::ops::Range<usize>>,
+}
+
+/// An entity stream body with its topology scopes, read once for every
+/// scan of the stream.
+pub(super) struct ScopedBody<'a> {
+    pub(super) body: &'a [u8],
+    /// Whether the stream is a Deltas stream, whose records carry prefixed
+    /// pointers.
+    pub(super) prefixed: bool,
+    pub(super) scopes: TopologyScopes,
+}
+
+impl<'a> ScopedBody<'a> {
+    pub(super) fn new(body: &'a [u8], prefixed: bool) -> Self {
+        Self {
+            body,
+            prefixed,
+            scopes: topology_scopes(body, prefixed),
+        }
+    }
 }
 
 pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
@@ -1269,8 +1302,8 @@ pub(super) fn topology_payload_ranges(buf: &[u8], prefixed: bool) -> Vec<std::op
     topology_scopes(buf, prefixed).payloads
 }
 
-pub(super) fn point_class_attrs(body: &[u8], prefixed: bool) -> HashSet<u32> {
-    let scopes = topology_scopes(body, prefixed);
+pub(super) fn point_class_attrs(stream: &ScopedBody<'_>) -> HashSet<u32> {
+    let (body, prefixed, scopes) = (stream.body, stream.prefixed, &stream.scopes);
     let ranges = &scopes.excluded_starts;
     let mut payload_index = 0;
     let mut out = HashSet::new();
@@ -2039,8 +2072,9 @@ pub(crate) fn scan_plain(body: &[u8]) -> Tables {
 /// Scan stream-local topology records; `plain` reads a plain stream
 /// (spec §3.3).
 fn scan_stream(body: &[u8], plain: bool) -> Tables {
-    let owner_facts = super::typed::scan(body);
-    let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
+    let stream = ScopedBody::new(body, false);
+    let owner_facts = super::typed::scan_with_payload_exclusions(&stream);
+    let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, &stream)]);
     let face_attrs = owner_facts.valid_ownership_face_attrs();
     let typed_face_offsets = owner_facts.selected_face_offsets(face_attrs.as_ref());
     scan_records(
@@ -2243,8 +2277,9 @@ fn scan_with_curve_attrs_excluding(
     curves: &HashSet<u32>,
     excluded: &HashSet<usize>,
 ) -> Tables {
-    let owner_facts = super::typed::scan(body);
-    let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, false)]);
+    let stream = ScopedBody::new(body, false);
+    let owner_facts = super::typed::scan_with_payload_exclusions(&stream);
+    let owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, &stream)]);
     scan_with_owner_attrs(body, curves, excluded, &owners)
 }
 
@@ -2255,14 +2290,15 @@ fn scan_deltas_with_curve_attrs_excluding(
     excluded: &HashSet<usize>,
     base: &Tables,
 ) -> Tables {
-    let owner_facts = super::typed::scan_with_payload_exclusions(body, true);
-    let mut owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, true)]);
+    let stream = ScopedBody::new(body, true);
+    let owner_facts = super::typed::scan_with_payload_exclusions(&stream);
+    let mut owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, &stream)]);
     owners.extend(base.owner_classes.iter().copied());
     scan_deltas_with_owner_attrs(body, curves, excluded, base, &owners)
 }
 
-pub(super) fn framed_looped_bridge_attrs(body: &[u8], deltas: bool, plain: bool) -> HashSet<u32> {
-    let scopes = topology_scopes(body, deltas);
+pub(super) fn framed_looped_bridge_attrs(stream: &ScopedBody<'_>, plain: bool) -> HashSet<u32> {
+    let (body, scopes) = (stream.body, &stream.scopes);
     let mut payload_index = 0;
     let mut attrs = HashSet::new();
     let mut offset = 0;
@@ -4533,7 +4569,13 @@ mod tests {
         assert_eq!(decoded.ir().geometry.faces.len(), 1);
         assert_eq!(decoded.ir().geometry.loops.len(), 1);
         assert_eq!(decoded.ir().geometry.coedges.len(), 3);
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);
         let edge = original

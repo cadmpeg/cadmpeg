@@ -24,6 +24,13 @@ right sibling identifiers, child identifier, first sector, and u64 stream size.
 The sibling trees and storage children form slash-qualified stream paths such
 as `Contents/Config-0-Partition`.
 
+The decoder reads a compound document whose last DIFAT sector links to
+FREESECT, and a stream whose chain has no ENDOFCHAIN terminator. Each such
+deviation is the loss `sldprt/container.noncanonical`. This code carries
+strict floor Warning (CADIR §3.2), so a pinned decode refuses the document. A
+stream whose chain is broken is given up as a `compound-stream` part (§1.5).
+No other SolidWorks code carries a strict floor.
+
 A directory slot whose object-type byte is zero is unallocated. Its name,
 links, color, sector, and size fields are not interpreted, even when those
 fields contain nonzero stale bytes. The slot remains in the directory index so
@@ -42,7 +49,9 @@ wrapper. The wrapper is the 16-byte magic
 `23 1d d5 71 da 81 48 a2 a8 58 98 b2 1b 89 ef 99`, followed by the
 uncompressed byte count as u32 LE, the complete zlib-member byte count as u32
 LE, that zlib member, and an 8-byte trailer. The zlib member expands to exactly
-the declared uncompressed byte count. Decoders retain the wrapper bytes and
+the declared uncompressed byte count. A wrapper whose uncompressed byte count
+or zlib-member byte count is zero holds an empty stream, as does such a frame
+of the chained-section form. Decoders retain the wrapper bytes and
 apply semantic parsers to the inflated bytes.
 
 Native block payloads that carry wrapped Parasolid streams use a chained-section
@@ -61,10 +70,19 @@ field, or the end of the payload. It includes the magic, every frame, and the
 section's zero padding. Each frame inflates to exactly `uncompressed_size`;
 the declared member extent is the complete zlib member. Concatenating the
 inflated frames of one section in payload order produces one complete
-Parasolid stream. The concatenation occurs before stream-header parsing and
+Parasolid stream. A frame whose uncompressed byte count or zlib-member byte
+count is zero adds no bytes to the concatenation, and the next frame starts
+after its declared member. The concatenation occurs before stream-header parsing and
 record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
+
+A frame whose member does not inflate to `uncompressed_size`, a frame whose
+member runs past the section, or bytes after the frames that are neither a
+frame nor zero padding cut the section at that frame. The frames before the
+cut concatenate to the section's stream, which then ends early; the bytes from
+the cut to the section end are given up. A section cut at its first frame holds
+no stream and is given up whole.
 
 ### 1.1 Outer header and block frame
 
@@ -354,7 +372,10 @@ directory membership.
 ### 1.5 Parts
 
 Each part below has its own framing, and its end follows from that framing.
-The part kind names the part in a `record.unreadable` loss.
+The part kind names the part in its give-up loss. The loss is
+`record.unreadable` when the bytes break a rule of the format, and
+`record.undecoded` when the bytes obey the format and the decoder has no
+reading for them. A part that a resource limit stops is `record.undecoded`.
 
 | Part kind | Unit | Framing |
 | --- | --- | --- |
@@ -363,6 +384,11 @@ The part kind names the part in a `record.unreadable` loss.
 | `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) |
 | `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) |
 | `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
+| `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
+| `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
+| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
+| `wrapped-member` | One ZLB wrapper or chained section whose frames do not read: a zlib member whose inflated size is not its declared size or whose declared size passes the frame ceiling, or a frame that runs past its section | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
+| `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
 sectors its size requires. Two streams whose chains reach one sector are
@@ -371,6 +397,63 @@ compound structure; every other stream is read. A given-up stream keeps the
 bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
+
+A `history-member` part is `record.unreadable` when the member holds no XML
+payload, when its bytes are not text, and when its XML is not well formed. It
+is `record.undecoded` when the XML parser stops at one of its bounds, and when
+the root element is not `Keywords`.
+
+A Parasolid site whose streams frame entity records that build no face,
+surface, point or body is given up as an undecoded `parasolid-site` part. A site
+that states a body whose faces are all lost keeps that body. A component tree
+gives no occurrence when its XML does not parse, when it repeats a model or
+file id, when it
+names no active configuration or more than one, when its active model has no
+valid identity or no definition, and when the document holds two different
+trees. Each tree section is then given up as a `component-tree` part. The
+loss is `record.unreadable` when the tree text has no UTF-16 byte-order mark
+and is not UTF-8, when its XML is not well formed, when it repeats a model or file id, and when its
+active model has no valid identity or no definition. A valid identity is a
+decimal `id` (§11.1). The loss is `record.undecoded` when the
+document holds two different trees, when the root element is not
+`swSolidWorks`, when the tree names no active configuration or more than one,
+and when the tree passes a bound of the XML reader: more than 256 attributes
+on one element, more than 256 namespace prefixes, or more nodes than the
+reader holds. The give-up is the one loss of the tree. The loss
+`assembly.structure-not-transferred` records an assembly document that holds
+no component tree section. The
+section that the decoder reads is also kept whole, so the part keeps only
+the length and digest of its bytes.
+
+A property carrier that stores its properties in a form
+that the decoder does not read is kept with the loss
+`metadata.default-carrier-unsupported` or
+`metadata.configuration-property-carrier-unsupported`.
+
+A record that the decoder parses and then drops is given up without a part.
+Its `record.undecoded` loss names the record by its id, and gives its stream
+and offset where the decoder holds them. Such records are a B-rep face that
+names no loop and does not cover a whole closed surface, a B-rep loop whose
+ring or vertex does not decode, a B-rep edge that the topology walk
+withholds, a component instance that has a valid identity and no proper
+rigid placement or no model, a PMI
+dimension map that does not parse, a feature-input sketch whose face
+projects no edge to a sketch entity, and a sketch entity whose edge projects
+to no entity and no profile. The loss text tells why the decoder dropped the
+record. A component instance that names a model the component tree does not
+define, a model that contains the instance, or a model with no valid
+identity is given up with the loss `record.unreadable`. A record of an alternate configuration is named by its id with the
+`@<site>` suffix of that configuration.
+
+A record that the decoder drops only because it needs a given-up record is
+not given up by itself. The loss of the given-up record lists it as dropped.
+A withheld face drops its surface, its loops, and the coedges, surface-parameter
+curves, edges, curves, vertices, and points that only its loops use. A loop
+that uses a withheld edge drops with the edge. A given-up loop drops its
+coedges, and the edges that only those coedges use. A face that names a loop
+is kept: where a loop of the face is given up, drops, or is not found, the
+face states the loops that decode in the partial form (CADIR §5.6). A shell
+that holds such a face is not split into components on its edges.
 
 ---
 
@@ -711,7 +794,7 @@ In the legacy repeated-class form, a non-direct feature name carries a u16 class
 
 A generated Hole Wizard profile with two diameter-displayed dimensions, two length dimensions, and one angle dimension is threaded when its ordered dimension roles are diameter, length, diameter, length, angle. These fields are the drill diameter, drill depth, nominal thread major diameter, thread depth, and drill-point included angle. The profile is counterbored when the same dimension multiset terminates with a diameter-displayed dimension: the smaller and larger diameters are the drill and counterbore diameters, the smaller and larger lengths are the counterbore and drill depths, and the angle is the drill-point included angle. A profile with two diameter-displayed dimensions, two lengths, and two angles carries a tapered threaded hole. The smaller and larger diameters are the drill and thread-major diameters, the smaller and larger lengths are the thread and drill depths, and the smaller and larger angles are the included thread taper and drill-point angles. Ordered roles length, diameter, angle, length, diameter, diameter carry a counterbored through hole with a countersunk exit. The three increasing diameters are the bore, exit-countersink, and counterbore diameters; the two increasing lengths are the counterbore depth and current through-body span; and the angle is the exit-countersink included angle. The through-body span locates the generated far-side profile and does not change the through-all termination. A generated axial profile with two diameter-displayed dimensions, two lengths, and no angle carries a counterbored through hole when at least two of its entry-wall, radial-step, and bore-wall segments are nonconstruction lines and the remaining segment has both endpoint markers. The smaller and larger diameters are the bore and counterbore diameters, and the smaller and larger lengths are the counterbore depth and current through-body span. The bore wall terminates at that span, 0.000025 mm beyond it, 0.00005 mm beyond it, or 0.001 mm beyond it. A 180° drill angle changes this construction to a blind flat-bottom counterbore and makes the larger length its depth. A generated axial profile with two diameter-displayed dimensions, one length, and one angle carries a countersunk through hole when its nonconstruction lines contain the countersink wall and the adjoining bore wall. The two walls can occupy the same radial half or opposite radial halves of the axial profile. The smaller and larger diameters are the bore and countersink diameters, the angle is the countersink included angle, and the length is the current through-body span. The bore wall terminates at that span, 0.000025 mm beyond it, 0.00005 mm beyond it, or 0.001 mm beyond it. A generated axial profile with two diameter-displayed dimensions, one length, and two angles carries a drilled countersink when at least two of its countersink, bore-wall, and drill-tip segments are nonconstruction lines and the remaining segment has both endpoint markers. The smaller and larger diameters are the bore and countersink diameters, the smaller and larger angles are the countersink and drill-point included angles, and the length is the blind drill depth. A profile with three diameter-displayed dimensions, two lengths, and two angles carries a counterdrilled blind hole. The three increasing diameters are the bore, cylindrical recess, and surface-entry diameters; the two increasing lengths are the recess and drill depths; and the two increasing angles are the entry-transition and drill-point included angles. A profile with one diameter and one length carries a flat-bottomed simple hole with bore diameter and blind depth. Adding one angle changes the bottom to the conical drill point with that included angle. A closed four-line axial profile with one axis segment, entry and terminal radial segments, and one full-depth sloping wall carries a tapered flat-bottomed hole. Its entry diameter is the radial span at axial zero, its blind depth is the axis length, and its included taper angle is twice the arctangent of the absolute radial-span difference divided by the depth.
 
-Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order. A sweep depends on the one sketch feature that owns a section of it, including a section that the sweep record encloses. In a history containing a classless `Extrusion` element with one distinct Keywords dimension, positive source identifiers order otherwise unrelated features before dependency ordering.
+Keywords elements follow serialization order. Parent and dependency references order the features that the active partition's PMARK main line does not order (§3.4). Unrelated features retain their serialization order. A sweep depends on the one sketch feature that owns a section of it, including a section that the sweep record encloses. In a history containing a classless `Extrusion` element with one distinct Keywords dimension, positive source identifiers order otherwise unrelated features before dependency ordering.
 
 Feature-tree node roles are invariant across configurations. A configuration snapshot changes a tree node's suppression and graph state without changing its role.
 
@@ -963,7 +1046,7 @@ An `moCompFace_c` body starts with its class token and `02 00 00 00`. A followin
 
 A zero-flag face-supported reference-plane body may contain a nested `moFaceRef_c` class declaration before its component path. When that declaration is present, the component-path marker begins 84 bytes after the `moCompFace_c` body start. The nested declaration occupies the interval before that marker. Relative to the `moCompFace_c` body, this fixed prefix has the class token at `+0`, u32 `2` at `+2`, zero flags at `+6`, the nested declaration region at `+8..+83`, the component marker at `+84`, and a zero marker tail at `+100..+101`; the variable path follows. The marker uses the same counted component-path grammar and identifies the supporting face.
 
-The legacy face-alias body used by an offset reference plane begins with a non-null class token and `02 00 00 00`. Bytes `+6..+41` are zero, bytes `+42..+44` are zero, bytes `+45..+60` are `ff`, and bytes `+61..+68` are zero. The u32 at `+69` is `2`; `+73` holds a nonzero four-byte type identity; bytes `+77..+90` are `00 00 03 00 00 00 01 00 00 00 00 00 00 00`. The u32 at `+91` identifies the native object that owns the selected face. Bytes `+95..+98` are zero, the u32 at `+99` is `3`, bytes `+103..+106` are zero, and two `c7 cf ff ff` handles terminate the record. When the owner is a projected feature, its component-face selection is the support face.
+The legacy face-alias body used by an offset reference plane begins with a non-null class token and `02 00 00 00`. Bytes `+6..+41` are zero, bytes `+42..+44` are zero, bytes `+45..+60` are `ff`, and bytes `+61..+68` are zero. The u32 at `+69` is `2`; `+73` holds a nonzero four-byte type identity; bytes `+77..+90` are `00 00 03 00 00 00 01 00 00 00 00 00 00 00`. The u32 at `+91` identifies the native object that owns the selected face. Bytes `+95..+98` are zero, the u32 at `+99` is `3`, bytes `+103..+106` are zero, and two `c7 cf ff ff` handles terminate the record. When the owner is a projected feature, its component-face selection is the support face. The CADIR native name (v11 §5.9) of the alias reference is the integer name `[identity, owner]`: the u32 type identity at `+73` and the u32 owner identifier at `+91`.
 
 The sketch-surface component-path variant stores u32 count `5`, a component-vector selector whose byte 1 is `03`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero, four opaque bytes, the component-path marker, and two zero bytes. The count includes two implicit root slots; three 20-byte heterogeneous component entries follow. A two-byte zero alignment word may precede the third entry. A selector whose byte 1 is `02` uses a nonzero selector in the four bytes before the marker and terminates the entries with an ownership trailer. The trailer contains u32 `1`, one zero u32, one nonzero owner u32, and three zero u32 words. It is preceded by 8 or 20 zero bytes, or by one nonzero u32 and 8 zero bytes.
 
@@ -1349,11 +1432,11 @@ A complete native-class roster selects one feature-manager allocation layout. Th
 
 Within the current layout, classless `Feature` source ID `6` is the lights-and-cameras container, `12` is an ambient light, and `13`, `14`, and `15` are directional lights. Within the legacy and origin-at-six layouts, source ID `2` is the lights-and-cameras container, `7` is an ambient light, and `8` is a directional light. Within the default-frame light layout, source IDs `6`, `7`, and `8` have those roles. Within the folders-at-seven layout, source ID `6` is the lights-and-cameras container, `10` is an ambient light, and `11` and `12` are directional lights. Another classless or scene-class light with the same nonempty native kind as the layout's unique ambient-light or first directional-light node has that node's role. A classless payload-free `Feature` at source ID `-1` is the sheet-metal node. A classless `Feature` with an empty name and no payload is the exploded-views container.
 
-`moConstraintCoincLineParallelPlaneRefplaneData_c`, `moConstraintPerpPlnTanOneCylinderRefplaneData_c`, and `moFacePtRefPlnData_c` store a 97-byte constructed reference-plane frame immediately after the class name. `moFixedRefPlnData_c` uses the same 97-byte extent and either the pairwise-orthogonal form or the repeated-normal form. `moDefaultRefPlnData_c` and `moConstraintPrllPlnTanOneCylinderRefplaneData_c` store the 81-byte minimal frame at the same position. `moFaceRefPlnData_c` stores either 97-byte form or the 81-byte form. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1` in the 97-byte frame. In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`; the three basis vectors are pairwise orthogonal. In the repeated-normal form, exactly one of those two triples is a unit vector orthogonal to the normal and the other is codirectional or antiparallel to the normal; the orthogonal triple is the plane u-axis. The 81-byte frame has zero bytes at `+48` through `+55`, byte `+56` equal to `0x80`, an f64 `-0.0` at `+57`, the negated origin z at `+65`, and f64 `1` at `+73`. The frame belongs to the immediately preceding feature object and precedes the next feature object.
+`moConstraintCoincLineParallelPlaneRefplaneData_c`, `moConstraintPerpPlnTanOneCylinderRefplaneData_c`, and `moFacePtRefPlnData_c` store a 97-byte constructed reference-plane frame immediately after the class name. `moFixedRefPlnData_c` uses the same 97-byte extent and either the pairwise-orthogonal form or the repeated-normal form. `moDefaultRefPlnData_c` and `moConstraintPrllPlnTanOneCylinderRefplaneData_c` store the 81-byte minimal frame at the same position. `moFaceRefPlnData_c` stores either 97-byte form or the 81-byte form. `moPerLinePtRefPlnData_c` stores either the 121-byte matrix frame below or the 81-byte frame. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1` in the 97-byte frame. In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`; the three basis vectors are pairwise orthogonal. In the repeated-normal form, exactly one of those two triples is a unit vector orthogonal to the normal and the other is codirectional or antiparallel to the normal; the orthogonal triple is the plane u-axis. The 81-byte frame has byte `0` at `+48`, the negated origin as three f64 at `+49`, `+57`, and `+65`, and f64 `1` at `+73`; its normal is `(0, 0, 1)` and its plane u-axis is `(1, 0, 0)`. The frame belongs to the immediately preceding feature object and precedes the next feature object.
 
 An `moFaceRefPlnData_c` record may carry the supporting face after its frame as one counted component-path vector. The vector has the duplicated 16-byte component marker, a positive little-endian u32 slot count at marker −12, a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero at marker −8, and two zero bytes at marker +16. Its tagged and identifier-less entries use the compact mixed component-path grammar. The slot count equals the entry count or includes one serialized root slot. Exactly one complete vector in the reference-plane object identifies the supporting face. The final component identifier is the feature-local face identifier, and the final component source is the producing feature.
 
-`moConstraintCoincLineAtAnglePlaneRefplaneData_c` stores a 121-byte matrix reference-plane frame immediately after the class name. Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame. A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order. The first matrix column is the plane u-axis, and the third column is codirectional with the stored normal.
+`moConstraintCoincLineAtAnglePlaneRefplaneData_c` and `moConstraintCoincLinePerpPlaneRefplaneData_c` store a 121-byte matrix reference-plane frame immediately after the class name. Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame. A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order. The first matrix column is the plane u-axis, and the third column is codirectional with the stored normal.
 
 When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding in the feature interval participates in one uniqueness check. A valid 121-byte matrix frame owns the 97-byte prefix at the same byte offset; the prefix is not a separate fixed frame. A valid 97-byte pairwise-orthogonal or repeated-normal fixed frame is one candidate at its byte offset. A compact candidate whose byte range overlaps a valid matrix or fixed candidate is nested in that frame and is not an independent candidate. Distinct non-nested frames at different offsets leave the reference plane unresolved.
 
@@ -1363,7 +1446,7 @@ An offset reference-plane object may store two ordered frame records using the s
 
 The `moConstraintMidPlaneRefplaneData_c` class declaration is followed by an eight-byte body prefix, an f64 geometric tolerance, an f64 signed plane distance in metres, and an xyz unit normal as three f64 values. The body prefix is opaque to plane construction and may be zero or nonzero. The resulting plane satisfies `normal · position = distance`. The record does not store an independent in-plane axis. A coordinate frame chosen to represent this plane is not the profile orientation; an attached profile uses the in-plane basis and origin from its component reference-plane placement.
 
-A reference-axis data class stores an 88-byte axis frame immediately after its class name. `moPlaneInterAxisData_c`, `moSurfaceAxisData_c`, and `moTwoPtsAxisData_c` use this layout. Two endpoint xyz triples occupy offsets `+0` through `+40` as little-endian f64 values in metres. Two finite f64 scalar fields occupy `+48` and `+56`. A unit direction xyz triple occupies `+64` through `+80`; it is codirectional with the endpoint delta. The frame belongs to the reference-axis feature interval containing the data-class declaration. The canonical axis origin is the closest point on the endpoint line to the model origin, expressed in millimetres.
+A reference-axis data class stores an 88-byte axis frame immediately after its class name. `moLineAxisData_c`, `moPlaneInterAxisData_c`, `moSurfaceAxisData_c`, and `moTwoPtsAxisData_c` use this layout. Two endpoint xyz triples occupy offsets `+0` through `+40` as little-endian f64 values in metres. Two finite f64 scalar fields occupy `+48` and `+56`. A unit direction xyz triple occupies `+64` through `+80`; it is codirectional with the endpoint delta. The frame belongs to the reference-axis feature interval containing the data-class declaration. The canonical axis origin is the closest point on the endpoint line to the model origin, expressed in millimetres.
 
 A zero-origin angular reference-plane frame stores redundant normal z and y components as two f64 values, followed by byte `1`, an unaligned xyz unit u-axis, an xyz unit normal, and an xyz unit v-axis. The three vectors begin 17, 41, and 65 bytes after the first redundant component and are pairwise orthogonal. Normal x is zero; the redundant components equal normal z and y. Twenty-four zero bytes and f64 value `1` terminate the 121-byte frame.
 
@@ -1806,7 +1889,7 @@ After the feature-object block, a `moRefPlane_c` reference plane writes these by
 | +136 | little-endian u32 |
 | +140 | ten zero bytes, or six in a file whose `swVersion` is below 13000 |
 
-The plane's plane-data object follows these bytes, as a class token or a class declaration and the object's fields.
+The plane's plane-data object follows these bytes, as a class token or a class declaration and the object's fields. A plane-data object written as a class token behind six zero bytes stores its frame immediately after the token, in the 121-byte matrix form, the 97-byte fixed form or the 81-byte form (open item DI-96).
 
 A `moRefAxis_c` reference axis writes the same bytes as a reference plane.
 
@@ -1879,7 +1962,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
 | `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
-| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
+| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c`, `moSideFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
 | `moMirPatternSurfIdRep_c` | an object pointer to the hop it mirrors |
@@ -2044,6 +2127,8 @@ A handle object (`sgPointHandle`, `sgLineHandle`, `sgArcHandle`, `sgEllipseHandl
 
 A handle's slot is the position of the record it names among the `sgSketch` object's records of the handle's kind: an `sgPointHandle` counts the point records, an `sgLineHandle` the line records, and an `sgArcHandle` the arc and circle records. Each run of records of one kind holds its count in the little-endian u32 that ends ten bytes before its first record: *N* in the `sgSketch` head; for the lines after the points, the u32 before the last point record's u16 and identifier; for a run after a 12-byte list header, the u32 that ends with the header's first two bytes. The ten bytes before a record are a little-endian u16 external flag, a little-endian u32 and a little-endian u32 identifier. Before a curve record that u32 is the curve's chain identifier, by which a `moSketchChain_c` names the curve. A relation-group entry's operand handles name records the same way.
 
+A CADIR native sketch relation keeps the handle order. For each operand, `sldprt:operand.<i>.kind` identifies its decoded class or marker role, `sldprt:operand.<i>.index` holds its slot when read, and `sldprt:operand.<i>.class-tag` preserves the relation-table class tag. The row flag is `sldprt:native_flags`. These are native options under Rule N(a). An unresolved handle is a model operand with a native pick, by marker identity where available and by slot otherwise. Its typed home is the entity or model pick the handle identifies.
+
 The parameter of a sketch dimension writes, after its tolerance pointer, a 32-byte trailer: the parameter's object identifier as a little-endian u32 at trailer +0, sixteen bytes, the relation code of the dimension's measure as a little-endian u32 at trailer +20 (`1` a distance, `3` a radius, `15` a diameter), the operand count as a little-endian u16 at trailer +24, a little-endian u32 at trailer +26 and two bytes. In an `sgCircleDim` the 34 bytes after the parameter hold f64 `1` or `0` at +10 and zero bytes elsewhere. In an `sgPntPntDist`, `sgPntLineDist`, `sgLLDist` or `sgPntPntHorDist` they open with a little-endian u16 *a*, *a* again (`1` or `2`) and u16 `1`, and the other 28 bytes are zero.
 
 An `sgExtEnt_c` object writes an object pointer to a `moSketchExtRef_w` object, which writes an object pointer to a `moCompSketchEntHandle_c` object. That object writes a component (a `moUnitComponent_c` or `moContextChainComponent_c` object), a little-endian u32 feature number, a little-endian u32 time stamp, a handle object, a little-endian u32, u16 `0` and an object pointer. When that pointer is null, 58 bytes follow (holding a little-endian u32 at +4, three i32 `-12345` at +20 and a version number at +36, and ending with twelve zero bytes, i32 `-1` and u16 `0`, or with eighteen zero bytes after the version), or 54 in older files and in some of `swVersion` 14000, which end with fourteen zero bytes after the version; when it is a second context component, twelve zero bytes, i32 `-1` and u16 `0` follow (fourteen zero bytes in older files). Then come an object pointer to a `moPointBackedUpData_c` object, and, when six zero bytes and a string marker follow, those six bytes and a Unicode `CString` naming the external entity (for example `Point1@Origin`). A `moPointBackedUpData_c` object writes three little-endian f64.
@@ -2124,7 +2209,7 @@ Sheet metal (`swVersion` 15000 to 17000). A `moTemplateSheetMetal_c` feature wri
 
 Sheet-metal dimensions (`swVersion` 19000). The Keywords history of a `moTemplateSheetMetal_c` feature (tag `Sheet-Metal`) holds `D1`, the bend radius (displayed `R<number>`), `D2`, the K-factor, and `Thickness`; the feature's scalar records give `D1`, `D2`, `D3` and `D6`, and have no record for `Thickness`. `D1` and `D2` are the sheet-metal feature's own bend radius and K-factor; `Thickness` is its thickness. The `PMISemanticDataDB` records `D1@Sheet-Metal` (`Radial`), `D2@Sheet-Metal` (empty subtype), `D3@Sheet-Metal` (`Linear`), `D6@Sheet-Metal` (empty subtype) and `Thickness@Sheet-Metal` (`Linear`) state them, the lengths as f64 metres and the ratios as themselves. The Keywords text of `Thickness` is a bare number in the document's length unit rounded to the document's length precision, so a part of 2 mm in a document of inches and two places shows `0.08`; the `Thickness@Sheet-Metal` record states `0.002`, and the parameter's length is 2 mm (§5, the rule for a record and a bare Keywords number). A `moSheetMetal_c` feature after the template (`Sheet-Metal3`) holds copies of `D1`, `D2`, `D3` and `D6` as scalar records and `PMISemanticDataDB` records, with no Keywords parameter. A base flange (`moSMBaseFlange_c`, tag `Base-Flange`) holds one scalar record `D1`, its bend radius. An edge flange (`moEdgeFlange_c`, tag `Edge-Flange`) writes its feature object and a `moOneBend_c` child (tag `EdgeBend`), then a `moMultiEdgeFlangeDataPerEdge_c`. The child's dimensions are `D1`, its bend radius (`Radial`), `D4`, its angle (`Angle`), `D5`, `D8` and `D9`. The edge flange's own dimensions follow the child: `D1`, its own radius (`Radial`), `D2`, its own K-factor (empty subtype), `D3` and `D6`, lengths (`Linear`), and `D7`, its flange length (`Linear`); its Keywords parameters are `D4` and `D7` only. The child's `D1` is the inner radius of the bend's cylindrical face. An edge flange's own `D1` and `D2` are stored whatever radius and K-factor the bend has (open item DI-93).
 
-A cut-list folder (`moCutListFolder_c`, a child of `moSolidBodyFolder_c`) writes the feature, twelve zero bytes, a `suObList` of the bodies in the list, then items (u32 values with an i32 `-1` among them and zero bytes, 38 bytes, and a component: `moCompSolidBody_c` or `moCompFeature_c`), and u32 `1`, i32 `-1`, u32 `2`, 23 zero bytes, u32 `1`, u32 `1`. Its body folder then writes u32 `1`, six zero bytes and a `moCutListSortOptions_c` (a little-endian u32 and three u16) in place of its twelve zero bytes.
+A cut-list folder (`moCutListFolder_c`, a child of `moSolidBodyFolder_c`) writes the feature, twelve zero bytes, a `suObList` of the bodies in the list, then items (u32 values with an i32 `-1` among them and zero bytes, 38 bytes, and a component: `moCompSolidBody_c` or `moCompFeature_c`), and u32 `1`, i32 `-1`, u32 `2` or `3`, 23 zero bytes, u32 `1`, u32 `1`. Its body folder then writes u32 `1`, six zero bytes and a `moCutListSortOptions_c` (a little-endian u32 and three u16) in place of its twelve zero bytes.
 
 A `moSurfaceAxisData_c` (a reference axis through a cylindrical face) writes fourteen f64 (points, the axis direction and the radius), a `moCylinderRef_w` with its handle block and the cylinder's geometry. In a feature body head with *g* `1`, bodies after the first can be preceded by a little-endian u32 count *n*, *n* little-endian u32 identifiers, a u32 (`-1`, or a value) and eight zero bytes (a cut's feature scope); a mark record's flag *g* can be `2`, writing two pairs of a u32 identifier and a GUID `CString`.
 
@@ -2158,7 +2243,7 @@ A `moInkMarkupView_c` (in a `moInkMarkupFolder_c`) is a feature whose block hold
 
 Files of `swVersion` 11000 differ further: a unit component has eight bytes after its sixteen `ff` bytes, plane data six bytes after its u32 `1`, a dimension handle's prefix is 91 bytes, a favourite handle with bit 7 writes twelve zero bytes after its last `CString`, a plane trailer can end after its u32 and two zero counts, and a `moCompSketchEntHandle_c` tail holds two i32 `-12345`, the version, eighteen zero bytes and the entity's name. The sketch settings of these files are open item EV-16.
 
-A `moScale_c` feature writes the feature, its body head, units and `moPMarkRecord_c` as an extrusion does, then little-endian u32 `1`, three little-endian f64 scale factors (`25.4` each), u32 `0`, u16 `0`, u16 `1`, the scaled body (a `moCompSolidBody_c`, its face reference inside), a little-endian u32 count and that many identifiers, i32 `-1` and twelve zero bytes.
+A `moScale_c` feature writes the feature, its body head, units and `moPMarkRecord_c` as an extrusion does, then little-endian u32 `1`, three little-endian f64 scale factors (`25.4` each), u32 `0`, u16 `0`, a little-endian u16 count *b* of scaled bodies (`0` or `1`), *b* object pointers to the scaled bodies (a `moCompSolidBody_c`, its face reference inside), a little-endian u32 count and that many identifiers, i32 `-1` and twelve zero bytes. A `moScale_c` that ends the stream ends after its identifier list.
 
 A `moSweepThread_c` thread feature (in files of `swVersion` 16000) writes a feature whose inputs are a reference plane, followed by its `moAbsoluteRefPlnData_c`, and the thread-profile `moProfileFeature_c`; the plane's feature-object block has eight zero bytes and little-endian u32 `2` where other blocks have twelve zero bytes. The body head has *g* `1`, and the extrusion's fields follow it (u32 count, identifiers, five u32, u16 *x*). Then come the `moPMarkRecord_c`; `CString`, i32 `-2`, `CString`, i32 `-2`, two `CString` values, 36 zero bytes and little-endian u32 `1`; the pitch as a little-endian f64; the size (`M6x1.0`) and the thread-profile library path as Unicode `CString` values; a `moCircleRef_w` to the edge the thread starts at; zero bytes, u32 `1`, u32 `0`, a u32 identifier, twelve zero bytes, three i32 `-12345`, u32 `0`, the version, twelve zero bytes and i32 `-1`; two f64, a zero byte, eight `ff` bytes and six zero bytes; a point and an axis (six f64) and a length (f64); u32 `1`, u32 `0`; an optional `moSingleFaceRef_w`, which is followed by ten zero bytes, a u32 identifier, u32 `0`, i32 `-1`, u32 `0`, the `-12345` block with the version, four f64, u32 `0` and two u32; then 40 bytes, u32 `1`, u32 `1` and 26 zero bytes (in files of `swVersion` 17000 the same 74 bytes hold eight zero bytes, u32 `1`, u32 `0`, u32 `1` and 54 zero bytes). A sequence of objects ends the feature: display dimensions (each with its `moFeatureDimHandle_c` and favourite), and `moCylinderRef_w` and `moSurfaceRef_w` references. Each reference is followed by a handle block of the edge form or the face form above, then its geometry: a cylinder's eleven f64 and u16 `0`, a surface's four f64, a little-endian u32 (`0` or `1`) and nine f64. The fields this paragraph leaves unnamed are open item EV-21.
 
@@ -2507,13 +2592,23 @@ A `Contents/Config-<N>-Partition` section holds two Parasolid transmits in order
 
 The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head: the mark, a little-endian u32 at +0; the form, a little-endian u32 at +4; and the form word, a little-endian u32 at +8. The form is `0` or `1`, or a feature identifier in the id-range form, whose form word is `1`. The mark is the `id` of the PMARK set after the feature that holds the record. `Contents/Config-<N>` declares `moPMarkRecord_c`, so each record in `Config-<N>-ResolvedFeatures` opens with that class's token: u16 `8000|index`, or `7fff` and u32 `80000000|index` for an index of `7fff` and above.
 
-The records follow the order of their features. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
+The records follow the order of their features. The persistent PMARK identifiers join these features to the main line in regeneration order. The main line orders the recorded features independently of their element order in Keywords. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
 
 - The current mark is the mark of the last record: the bar stands after the feature of that record.
 - The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
 - Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
 
+Compatible main lines from other configurations supplement the active main line when they order features that it does not. A configuration whose order conflicts with the shared CADIR timeline still supplies its own states in its stored mark order. Where the shared position cannot express the dependency of a structured name, the evaluation keeps the native name attached to its entity.
+
 A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
+
+The deltas transmit also stores the states before the current mark. The deltas of the main line, applied from the current mark back, give the node set of the state at each earlier mark of the main line (`parasolid.md`). The state at the mark of a record is the state after one feature of the record:
+
+- The features of a record are the named objects with an object id before the record, from the nearest back to the first feature that changes the state, its holder. A named object whose history record is no feature of the timeline is a part of the holder. A feature that does not change the state, such as a sketch or a datum, and a cosmetic thread come inside the feature that they belong to.
+- The state at the mark is the state after the last feature of the record, in the timeline, that changes the state.
+- An imported body (`moBaseBody_c`) has no state of its own: its bodies merge into the delta of the next feature.
+
+A later record names the same mark as an earlier record or a mark nearer the current mark.
 
 ## 4. Typed topology records
 
@@ -2627,10 +2722,11 @@ record fields determine the framing. Complete analytic carriers, bounded-curve r
 
 The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
-A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
-A vertex loop decodes to a vertex boundary on its vertex-use. A FACE with a vertex loop whose vertex-use does not resolve is the loss `topology.vertex-loop-withheld`.
-A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
+A vertex loop decodes to a vertex boundary on its vertex-use. A framed FACE record with no decoded loop gives up with `record.undecoded` (§1.5). A vertex loop whose vertex-use does not resolve and a loop whose FIN is ambiguous each give up with the same code. Their FACE keeps its other loops in the partial form.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. One loss note gives the count for each kind.
+A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut` when the cut has no separate loop give-up.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with all its faces withheld stays in its REGION as a partial shell. A SHELL whose stated faces fall into pieces that share no edge is stated as one shell per piece. A retained shell keeps its role when the stored face chains establish it. Unresolved shell roles keep the REGION shell-chain order. Where the region holds both proven and unresolved roles, `topology.shell-role-unstated` records the proven roles.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body and one region, with one shell per piece of faces that share edges (`topology.body-hierarchy-derived`). A derived region of more than one shell leaves its shells unclassified, since no node says which bounds the outside. The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where merged streams or sites derive bodies whose kinds come from different sources, one note names each source. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 
@@ -2687,9 +2783,37 @@ from the embedded schema. The ownership field sequence contains the shell,
 boundary-surface, boundary-curve, boundary-point, region, edge, and vertex
 references plus the index-map fields. The region head is selected by a unique
 FACE → SHELL → REGION → BODY closure; a fixed ordinal or numeric chain is not
-an ownership selector. A BODY is valid only when exactly one schema field
-interpretation satisfies the complete field grammar, the resolution values
-are finite, and `body_type` is one of the four defined values.
+an ownership selector. A header reference count reads a BODY when the
+complete field grammar holds at that count: `resolution_size` is in
+`[1, 1e6]`, `resolution_linear` is finite and nonzero, `state` is `1`, and
+`body_type` is one of the four defined values. A count that is too high reads
+reference bytes as `resolution_size`, which gives a value near `1e-302`
+outside its range. A count one reference too low can also read a BODY: where
+the last header reference has the bytes of the high word of an f64 in
+`[1, 1e6]`, `resolution_size` reads in range and `resolution_linear` reads a
+subnormal value. When one count reads a BODY, that count is the layout. When
+more than one count reads a BODY, the layout is the one count whose
+`resolution_linear` magnitude is in `[1e-15, 1e-2]` m. A BODY with no count,
+or with several counts and no such single count, is not valid. A `00 0c` tag
+offset that no edited schema header frames has two readings: the node after
+an `ff` byte that follows the tag, and the node directly after the tag. A
+two-word index pointer starts with `ff`, so both readings can hold a BODY.
+The BODY of the tag is the reading whose `resolution_linear` magnitude is in
+`[1e-15, 1e-2]` m; where both or neither are in that range, it is the reading
+after `ff`. A tagged BODY with a `resolution_linear` magnitude outside
+`[1e-15, 1e-2]` m is valid only when a SHELL or REGION names its index in the
+`body` field and no other BODY holds the same index: neither a BODY that an
+edited schema header frames, whatever its magnitude, nor a tagged BODY with a
+magnitude in that range.
+
+`resolution_size` and `resolution_linear` are the BODY fields `res_size` and
+`res_linear` in metres. `resolution_linear` takes every finite nonzero value.
+The part's linear tolerance comes from `resolution_linear` of its bodies, and
+its angular tolerance is the Parasolid angular precision
+([`parasolid.md`](parasolid.md) §4). A `resolution_linear` that states no
+linear precision leaves its body valid and is charged
+`body.resolution-invalid`. A body that the decode derives without a BODY
+node that reads is charged `body.resolution-unread`.
 
 A SHELL has eight references:
 
@@ -2779,8 +2903,10 @@ absent identity is retained only when its FACE transmit index is
 named by the validated typed FACE set. Without valid typed ownership, no
 deltas bridge is added to a nonempty partition bridge table.
 
-An empty partition bridge table adopts all deltas bridges when valid typed
-ownership is absent. With valid typed ownership, it adopts only deltas bridges
+A terminated partition with zero nodes is empty at the current mark when its
+first backward delta contains only restored nodes or has no content. Those
+nodes belong to the preceding state. For other partitions, an empty bridge
+table adopts all deltas bridges when valid typed ownership is absent. With valid typed ownership, it adopts only deltas bridges
 selected by FACE transmit index. This adoption fills an empty
 table; it does not replace a partition face. In every branch, missing loop,
 edge-use, coedge, vertex-use, and point identities are filled from deltas.
@@ -3096,14 +3222,16 @@ A face belongs to a body only when this closure is complete:
 FACE.refs[3] → SHELL.refs[6] → REGION.refs[1] → BODY
 ```
 
-The BODY region-chain head is the first REGION attribute or a null-like
-predecessor sentinel. In the sentinel form, exactly one REGION has
-`previous_region` equal to the stored head. Follow `next_region` and require
-the following REGION's `previous_region` to equal the current REGION. The
+The BODY region-chain head is the attribute of its first REGION, whose
+`previous_region` is null-like; a null-like head names no REGION. Follow
+`next_region` and require the following REGION's `previous_region` to equal
+the current REGION. The
 chain ends at a null-like value and may not repeat an attribute. A SHELL's
 region and body links must agree with the REGION closure. A shell with a
 non-null-like body reference must name that same BODY; a null-like shell body
 reference is valid for a void-region shell.
+
+The first REGION of a BODY is the infinite void. A manifold solid boundary FACE names its solid shell in the back-side links and its void shell in the front-side links. Reciprocal face chains pair the shells on the two sides of each boundary. If the FACE has a null front-shell cell, a unique complete front chain supplies its owner when the corresponding back chain names the same faces. A boundary paired to the infinite void is the exterior of its solid REGION. In a tree rooted at the infinite void, the shell toward the root bounds the exterior and the shells toward finite void regions bound cavities. The same rule applies to a general BODY with a complete manifold region graph.
 
 The BODY `body_type` byte is the body kind: `1` solid, `2` wire, `3` sheet,
 and `6` general. The kind is not inferred from an ATTRIBUTE list, a chain
@@ -3567,6 +3695,8 @@ The `id` values of `swModel` and `swReference` elements are decimal numbers, dis
 
 The placement is relative to the assembly model that contains the `swReference`. The world placement of an occurrence is the product of the placements on its path from the root model.
 
+An instance with a valid, unrepeated identity is given up by its occurrence id. The loss is `record.undecoded` when it names no model or when its `swTransform` is not a proper rigid motion. The loss is `record.unreadable` when its model is not defined, when its model contains the instance, or when its model has no valid identity. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
+
 ### 11.3 Mate lists
 
 `Contents/Config-N-MatesList` holds the mates of configuration `N` as `SWObjects` records (§2). Mate classes have the prefix `moMate` (`moMateCoincident`, `moMateConcentric`, `moMateDistanceDim_c`). A mate operand names its component instance as `<instance name>@<assembly name>` and its face by a `SurfIdRep` string, the form of a part-feature face reference. A section without an `moMate` class token holds no mate.
@@ -3588,6 +3718,7 @@ The `SourceFidelity.codec_digests` of a SLDPRT decode (CADIR §3.1, Rule B) hold
 | `brep_local_sha256` | The B-rep: geometry, topology, and face appearances, without names, colors, tessellations, history, and native records. |
 | `sldprt_configuration_feature_states_local_sha256` | The feature states of each configuration. |
 | `sldprt_configuration_parameter_values_local_sha256` | The parameter values of each configuration. |
+| `sldprt_linear_tolerance_local_sha256` | The linear tolerance. |
 | `sldprt_native_configuration_sha256` | The configurations of the native feature histories. |
 | `sldprt_native_history_sha256` | The native feature histories. |
 | `sldprt_native_parameter_sha256` | The parameters of the native feature histories. |

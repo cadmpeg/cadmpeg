@@ -14,26 +14,25 @@ use cadmpeg_test_support::edit;
 
 use cadmpeg_ir::geometry::CurveGeometry;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, TestEncode};
-use crate::test_support::smbh_blends_test::synthetic_rb_blend_spl_sur_smbh;
-use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut, TestEncode};
+use crate::test_support::smbh_blends_fixture::synthetic_rb_blend_spl_sur_smbh;
+use crate::test_support::smbh_geometry_fixture::{synthetic_geometry_smbh, synthetic_mixed_smbh};
+use crate::test_support::smbh_pcurves_fixture::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     expected_revision_surface_tail_discontinuities,
     expected_revision_surface_tail_parameterization, synthetic_cacheless_cyl_spl_sur_smbh,
     synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
     synthetic_versioned_cyl_spl_sur_with_tail_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
@@ -68,7 +67,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less torus encode");
     let round_trip = F3dCodec
@@ -126,7 +125,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less NURBS surface encode");
     let round_trip = F3dCodec
@@ -184,7 +183,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational NURBS surface encode");
     let round_trip = F3dCodec
@@ -250,7 +249,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational NURBS curve encode");
     let round_trip = F3dCodec
@@ -290,7 +289,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less inline pcurve encode");
     let round_trip = F3dCodec
@@ -391,7 +390,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less line pcurve encode");
     let round_trip = F3dCodec
@@ -403,7 +402,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.0, 3.0])
     );
-    crate::test_support::smbh_pcurves_test::assert_pcurve_geometry_close(
+    crate::test_support::smbh_pcurves_fixture::assert_pcurve_geometry_close(
         &round_trip.ir().geometry.pcurves[0].geometry,
         &PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -442,7 +441,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rational pcurve encode");
     let round_trip = F3dCodec
@@ -508,7 +507,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less shared-edge encode");
     let round_trip = F3dCodec
@@ -659,7 +658,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multiple-loop encode");
     let round_trip = F3dCodec
@@ -766,7 +765,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face NURBS encode");
     let round_trip = F3dCodec
@@ -819,7 +818,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
         }];
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less unit cube encode");
     {
@@ -969,7 +968,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face torus encode");
     let round_trip = F3dCodec
@@ -1058,7 +1057,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-face analytic encode");
     let round_trip = F3dCodec
@@ -1118,7 +1117,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less extrusion encode");
     let round_trip = F3dCodec
@@ -1433,7 +1432,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-less extrusion encode");
     let round_trip = F3dCodec
@@ -1542,7 +1541,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle extrusion encode");
     let round_trip = F3dCodec
@@ -1674,7 +1673,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rolling-ball encode");
     let round_trip = F3dCodec
@@ -1767,7 +1766,7 @@ fn subset_state(
 
 #[test]
 fn generated_source_less_subset_curve_restates_its_stored_subset_int_cur() {
-    use crate::test_support::smbh_curves_test::synthetic_geometry_with_subset_curve_smbh;
+    use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_subset_curve_smbh;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh());
     let decoded = F3dCodec
@@ -1795,7 +1794,7 @@ fn generated_source_less_subset_curve_restates_its_stored_subset_int_cur() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less subset curve encode");
     let round_trip = F3dCodec

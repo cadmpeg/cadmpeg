@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_redirections_json, f3d_with_reference_table_and_identity_xrefs,
     f3z_archive_with_design_description, redirections_json,
 };
@@ -70,8 +69,12 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
                 .as_str()
                 .starts_with("f3d:child.f3d@"));
         }
+        assert!(!merged
+            .report()
+            .losses
+            .iter()
+            .any(crate::test_support::xref_table_given_up));
         for code in [
-            crate::loss::F3dLossCode::XrefTableUndecoded,
             crate::loss::F3dLossCode::XrefMemberUndecoded,
             crate::loss::F3dLossCode::XrefMemberMissing,
         ] {
@@ -142,7 +145,7 @@ fn unknown_reference_type_reports_one_table_loss() {
                     .report()
                     .losses
                     .iter()
-                    .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                    .filter(|loss| crate::test_support::xref_table_given_up(loss))
                     .count(),
                 1
             );
@@ -176,7 +179,7 @@ fn derived_rows_decode_without_table_loss_and_survive_native_reload() {
                 .report()
                 .losses
                 .iter()
-                .any(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind()));
+                .any(crate::test_support::xref_table_given_up));
             if container_only {
                 assert!(decoded.ir().native.namespace("f3d").is_none());
                 continue;

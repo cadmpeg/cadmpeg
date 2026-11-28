@@ -19,13 +19,13 @@ use super::{
 
 #[test]
 fn planar_pair_budget_refuses_an_item_without_spending_its_pairs() {
-    let budget = PlanarPairBudget::new();
+    let budget = PlanarPairBudget::new(super::ProjectionLimits::DEFAULT);
     assert!(!budget.admit(32_769));
     assert!(budget.admit(32_768));
     assert!(!budget.admit(1));
     assert!(!budget.admit(usize::MAX));
 
-    let budget = PlanarPairBudget::new();
+    let budget = PlanarPairBudget::new(super::ProjectionLimits::DEFAULT);
     for _ in 0..1024 {
         assert!(budget.admit(1024));
     }
@@ -142,6 +142,7 @@ fn plane_normal_match_uses_direction_on_both_sides() {
 fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
     crate::directory::DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence,
         entity_type: 124,
         parameter_start: 0,
@@ -213,7 +214,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
         .unwrap();
     assert!(v4.ir().geometry.points.is_empty());
     assert!(v4.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("Entity Use Flag 06 is outside")
     }));
 
@@ -222,7 +223,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
         .unwrap();
     assert_eq!(v5.ir().geometry.points.len(), 1);
     assert!(!v5.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("Entity Use Flag 06 is outside")
     }));
 }
@@ -348,7 +349,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
 
     assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains(
                 "Entity Use Flag 03 is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
             )
@@ -372,7 +373,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
         .unwrap();
     assert_eq!(later.ir().geometry.curves.len(), 1);
     assert!(!later.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("base geometry values")
     }));
 }
@@ -1123,21 +1124,27 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
 }
 
 #[test]
-fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
+fn decode_gives_up_transform_roundoff_beyond_its_declared_precision_as_undecoded() {
+    // IGES states no receiver tolerance for orthonormality, so the decoder's
+    // interval admission is its own bound: a pinned decode accepts the file.
+    let mut pinned = DecodeOptions::default();
+    pinned.strictness.pinned = true;
     let result = IgesCodec
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
                 b"124,1.0000051,0,0,0,0,1,0,0,0,0,1,0;",
                 b"100,0,0,0,1,0,0,1;",
             )),
-            &DecodeOptions::default(),
+            &pinned,
         )
         .unwrap();
 
     assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("not orthonormal within its declared numeric precision")
+        loss.code == cadmpeg_ir::unknown::part::Cause::Undecoded.kind()
+            && loss
+                .message
+                .contains("not orthonormal within its declared numeric precision")
     }));
 }
 

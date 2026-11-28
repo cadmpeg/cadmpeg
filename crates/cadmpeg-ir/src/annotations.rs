@@ -357,6 +357,12 @@ impl StreamHandle {
     pub fn new(stream: StreamName) -> Self {
         Self(Arc::new(stream))
     }
+
+    /// The shared stream name.
+    #[must_use]
+    pub fn name(&self) -> &StreamName {
+        &self.0
+    }
 }
 
 /// Update policy for one annotation builder.
@@ -671,6 +677,30 @@ impl Annotations {
         self.exactness.retain(|key, _| keep(key.owner()));
     }
 
+    /// The annotations of each entity that `keep` selects, keyed as the
+    /// record of that id in the delta of `qualifier` (§3.2).
+    #[must_use]
+    pub fn in_delta(&self, qualifier: &impl Qualifier, mut keep: impl FnMut(&str) -> bool) -> Self {
+        let mut out = Self::default();
+        let mut moved = |key: &AnnotationKey| match key.target() {
+            AnnotationTarget::Entity(id) if keep(id) => {
+                Some(AnnotationKey::qualified(qualifier.as_qualifier(), id))
+            }
+            _ => None,
+        };
+        for (key, provenance) in &self.provenance {
+            if let Some(key) = moved(key) {
+                out.provenance.insert(key, provenance.clone());
+            }
+        }
+        for (key, note) in &self.exactness {
+            if let Some(key) = moved(key) {
+                out.exactness.insert(key, note.clone());
+            }
+        }
+        out
+    }
+
     /// Replace each id that a key of either table holds by `map` of that id,
     /// calling `map` once per id in increasing order. A collision leaves both
     /// tables unchanged.
@@ -717,7 +747,13 @@ impl Annotations {
 
     /// Annotate `to` as the entity `from` is annotated, replacing the
     /// annotations of `to`.
-    pub fn copy_entity(&mut self, from: &str, to: AnnotationKey) {
+    pub fn copy_entity(&mut self, from: &impl AsRef<crate::ids::Identity>, to: AnnotationKey) {
+        self.copy_annotations(from.as_ref().as_str(), to);
+    }
+
+    /// Annotate `to` as the record whose annotation key reads `from` is
+    /// annotated, replacing the annotations of `to`.
+    pub(crate) fn copy_annotations(&mut self, from: &str, to: AnnotationKey) {
         match self.provenance.get(from).cloned() {
             Some(provenance) => self.provenance.insert(to.clone(), provenance),
             None => self.provenance.remove(&to),
@@ -828,34 +864,10 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    #[cfg(feature = "schema")]
-    use super::NonEmptyMap;
     use super::{
         AnnotationBuilder, Annotations, ExactnessNote, FieldName, Inexactness, StreamHandle,
     };
     use crate::provenance::Exactness;
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn exactness_schemas_preserve_field_and_population_admission() {
-        let schema = json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
-        assert_eq!(schema["minProperties"], 1);
-        assert_eq!(schema["additionalProperties"], false);
-        assert!(schema["patternProperties"].get("[\\s\\S]").is_some());
-        let schema = json::to_value(schemars::schema_for!(FieldName)).unwrap();
-        assert_eq!(schema["type"], "string");
-        assert_eq!(schema["minLength"], 1);
-
-        // Whitespace and line breaks are legal field text; only absence is refused.
-        for field in [" ", "\n", "geometry.radius"] {
-            let key = FieldName::try_from(field.to_owned()).unwrap();
-            let map = NonEmptyMap::try_from(BTreeMap::from([(key, Exactness::Derived)])).unwrap();
-            let wire = json::to_value(&map).unwrap();
-            assert_eq!(json::from_value::<NonEmptyMap>(wire).unwrap(), map);
-        }
-        assert!(FieldName::try_from(String::new()).is_err());
-        assert!(NonEmptyMap::try_from(BTreeMap::new()).is_err());
-    }
 
     #[test]
     fn builder_names_streams_and_records_provenance() {

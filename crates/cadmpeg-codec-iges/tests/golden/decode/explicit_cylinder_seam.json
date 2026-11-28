@@ -1834,18 +1834,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3132362c312c312c312c302c312c302c302c302c312c312c312c312c362e3238333138353330373137393538362c312c302c362e323833313835333037313739202020202020313550202020202020383538362c302c302c302c312c302c302c313b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031355020202020202039",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#15",
-            "section": "parameter-data",
-            "sequence": 15,
-            "source_offset": 2592
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -1857,6 +1845,12 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7",
+            "links": []
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -1949,110 +1943,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "geometry.not-projected",
-            "kind": "geometry_not_transferred",
-            "namespace": "iges"
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
           }
         },
-        "message": "IGES entity type 508 form 1 geometry was not projected: loop edge-use tuple is invalid",
+        "message": "part parameter-data \"D15\" stream=\"\" offset=2592 length=161 record=iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[iges:model:shell#D21]",
         "provenance": {
           "format": "iges",
-          "offset": 1539,
-          "stream": "iges",
-          "tag": "directory_entry:D17"
+          "offset": 2592,
+          "tag": "parameter-data"
         },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "geometry.not-projected",
-            "kind": "geometry_not_transferred",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
-        "provenance": {
-          "format": "iges",
-          "offset": 1701,
-          "stream": "iges",
-          "tag": "directory_entry:D19"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "geometry.not-projected",
-            "kind": "geometry_not_transferred",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid",
-        "provenance": {
-          "format": "iges",
-          "offset": 1863,
-          "stream": "iges",
-          "tag": "directory_entry:D21"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "parameter.data-quarantined",
-            "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
-          }
-        },
-        "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
-        "provenance": {
-          "format": "iges",
-          "offset": 2642,
-          "stream": "iges",
-          "tag": "D15:parameter"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "entity.retained-unprojected",
-            "kind": "record_not_typed",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 502 form 1 retained without neutral projection",
-        "provenance": {
-          "format": "iges",
-          "offset": 891,
-          "stream": "iges",
-          "tag": "directory_entry:D9"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "entity.retained-unprojected",
-            "kind": "record_not_typed",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 504 form 1 retained without neutral projection",
-        "provenance": {
-          "format": "iges",
-          "offset": 1053,
-          "stream": "iges",
-          "tag": "directory_entry:D11"
-        },
-        "severity": "warning"
+        "severity": "error"
       }
     ],
     "notes": [
@@ -2168,8 +2071,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#15"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7"
           },
           "source": "D15:parameter"
         }
@@ -2193,6 +2096,17 @@
         },
         "offset": 0,
         "stream": "iges",
+        "untyped": [
+          "model"
+        ]
+      },
+      "iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7": {
+        "bytes": {
+          "data": "MTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDYuMjgzMTg1MzA3MTc5NTg2LDEsMCw2LjI4MzE4NTMwNzE3OSAgICAgIDE1UCAgICAgIDgKNTg2LDAsMCwwLDEsMCwwLDE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDk=",
+          "kind": "inline"
+        },
+        "offset": 2592,
+        "stream": "",
         "untyped": [
           "model"
         ]

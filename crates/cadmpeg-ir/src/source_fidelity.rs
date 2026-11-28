@@ -184,7 +184,7 @@ pub struct RetainedSourceRecord {
     /// Content classes the bytes can hold where the decoder keeps the record
     /// without decoding it.
     #[serde(serialize_with = "cadmpeg_core::distinct_keys::set::serialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<String>"))]
     untyped: BTreeSet<ArenaClass>,
 }
 
@@ -202,7 +202,7 @@ struct RetainedSourceRecordWire {
     /// Content classes the bytes can hold where the decoder keeps the record
     /// without decoding it.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<String>"))]
     untyped: BTreeSet<ArenaClass>,
 }
 
@@ -411,7 +411,7 @@ struct SourceFidelityWire {
     codec_digests: CodecDigests,
     /// Union of the retained records' untyped classes.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<String>"))]
     unrepresented: BTreeSet<ArenaClass>,
     /// Sparse source locations and conversion exactness.
     annotations: Annotations,
@@ -576,15 +576,12 @@ impl SourceFidelity {
     ///
     /// # Errors
     ///
-    /// The digest's session could not be opened.
-    pub fn edited(&self, ir: &CadIr) -> Result<bool, CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    /// A session ceiling of `ctx` ran out.
+    pub fn edited(&self, ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<bool, CodecError> {
         let same = self.content_digest.as_ref().is_some_and(|stored| {
-            crate::hash::content_digest(&ctx, ir).is_ok_and(|digest| digest == *stored)
+            crate::hash::content_digest(ctx, ir).is_ok_and(|digest| digest == *stored)
         });
-        Ok(!same || crate::hash::omitted_arenas_edited(&ctx, ir).unwrap_or(true))
+        Ok(!same || crate::hash::omitted_arenas_edited(ctx, ir).unwrap_or(true))
     }
 
     /// Append source metadata after checking every table for collisions.
@@ -1082,7 +1079,10 @@ mod tests {
     fn the_sidecar_reader_round_trips_a_key_qualified_by_an_evaluation() {
         let evaluation =
             crate::design::ids::EvaluationId::mint("synthetic:design:evaluation#1").unwrap();
-        let key = crate::annotations::AnnotationKey::in_delta(&evaluation, "synthetic:face#2");
+        let key = crate::annotations::AnnotationKey::in_delta(
+            &evaluation,
+            &crate::ids::FaceId::mint("synthetic:brep:face#2").unwrap(),
+        );
         let mut builder = crate::AnnotationBuilder::new();
         let stream = crate::annotations::StreamHandle::new(crate::stream_name!("source"));
         builder.note(&key, &stream, 5, None);
@@ -1097,7 +1097,7 @@ mod tests {
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(
-            json.contains(r#""synthetic:design:evaluation#1 synthetic:face#2""#),
+            json.contains(r#""synthetic:design:evaluation#1 synthetic:brep:face#2""#),
             "{json}"
         );
         let parsed = DecodeSidecar::from_json(&json).expect("parse sidecar");
@@ -1108,7 +1108,7 @@ mod tests {
             read.target(),
             crate::annotations::AnnotationTarget::Delta {
                 qualifier: "synthetic:design:evaluation#1",
-                record: "synthetic:face#2",
+                record: "synthetic:brep:face#2",
             }
         );
         assert_eq!(

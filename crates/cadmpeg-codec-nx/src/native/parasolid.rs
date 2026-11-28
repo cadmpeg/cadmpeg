@@ -37,7 +37,7 @@ pub(super) mod named_fields;
 use named_fields::NamedField;
 pub(super) mod body_id;
 pub(super) mod deltas_instance;
-pub(super) mod deltas_metadata;
+pub(crate) mod deltas_metadata;
 pub(super) mod deltas_source;
 use deltas_instance::{ParasolidDeltasInstance, ParasolidDeltasSchema};
 use deltas_metadata::ParasolidDeltasMetadata;
@@ -155,8 +155,18 @@ impl Clone for ParasolidGroupMember {
 /// Deltas records use partition pairing only for source namespace attribution.
 /// A record in an unpaired deltas stream remains exact native
 /// evidence but has no partition-local namespace assignment.
+#[cfg(test)]
 pub(super) fn parasolid_groups(
     streams: &[Stream],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+    deltas: &ParasolidDeltasEvents,
+) -> Result<(Vec<ParasolidGroupRecord>, Vec<ParasolidGroupMember>), CodecError> {
+    parasolid_groups_with_parsed(streams, None, delta_pairs, deltas)
+}
+
+pub(super) fn parasolid_groups_with_parsed(
+    streams: &[Stream],
+    parsed: Option<&ParsedStreams<'_>>,
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     deltas: &ParasolidDeltasEvents,
 ) -> Result<(Vec<ParasolidGroupRecord>, Vec<ParasolidGroupMember>), CodecError> {
@@ -181,8 +191,15 @@ pub(super) fn parasolid_groups(
             continue;
         };
 
-        let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(&stream.inflated)?
-        else {
+        let owned_primary;
+        let primary = match parsed {
+            Some(parsed) => parsed.primary(stream_ordinal),
+            None => {
+                owned_primary = cadmpeg_parasolid::records::PrimaryRecords::read(&stream.inflated)?;
+                owned_primary.as_ref()
+            }
+        };
+        let Some(primary) = primary else {
             continue;
         };
         for record in primary.groups() {
@@ -1100,6 +1117,7 @@ mod term_use_identity_tests {
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
 pub(super) fn parasolid_term_use_records(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
     let mut records = Vec::new();
     for (ordinal, stream) in streams.iter().enumerate() {
@@ -1112,7 +1130,11 @@ pub(super) fn parasolid_term_use_records(
         let Some(point_layout) = subtype.chart_point_layout() else {
             continue;
         };
-        let rows = crate::intersection::stream_term_use_records(&stream.inflated, point_layout)?;
+        let rows = crate::intersection::stream_term_use_records_in(
+            &stream.inflated,
+            point_layout,
+            parsed.primary(ordinal),
+        );
         if rows.is_empty() {
             continue;
         }
@@ -2174,6 +2196,7 @@ impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClas
 /// Retain named attribute-class declarations from all Parasolid streams.
 pub(super) fn parasolid_attribute_definitions(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2182,7 +2205,10 @@ pub(super) fn parasolid_attribute_definitions(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
+        for definition in crate::parasolid::attribute_definitions_in(
+            &stream.inflated,
+            parsed.primary(stream_ordinal),
+        ) {
             let name = definition.name.as_str().to_owned();
             let name = cadmpeg_core::printable::PrintableString::new(name)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
@@ -2216,6 +2242,7 @@ pub(super) fn parasolid_attribute_definitions(
 /// Decode every counted type-99 attribute field-name record.
 pub(super) fn parasolid_field_names_records(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidFieldNamesRecord>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2224,7 +2251,10 @@ pub(super) fn parasolid_field_names_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::field_names_records(&stream.inflated);
+        let scanned = crate::parasolid::field_names_records_in(
+            &stream.inflated,
+            parsed.primary(stream_ordinal),
+        );
         for record in scanned {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -2429,6 +2459,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
 /// and the decoder omits.
 pub(super) fn parasolid_omitted_entity_51_xmts(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<BTreeSet<(u32, u32)>, CodecError> {
     let mut omitted = BTreeSet::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2438,9 +2469,12 @@ pub(super) fn parasolid_omitted_entity_51_xmts(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
         omitted.extend(
-            crate::parasolid::omitted_entity_51_xmts(&stream.inflated)
-                .into_iter()
-                .map(|xmt| (ordinal, xmt)),
+            crate::parasolid::omitted_entity_51_xmts_in(
+                &stream.inflated,
+                parsed.primary(stream_ordinal),
+            )
+            .into_iter()
+            .map(|xmt| (ordinal, xmt)),
         );
     }
     Ok(omitted)
@@ -2449,6 +2483,7 @@ pub(super) fn parasolid_omitted_entity_51_xmts(
 /// Decode every framed type-81 entity/attribute-list record.
 pub(super) fn parasolid_entity_51_records(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidEntity51Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2457,7 +2492,10 @@ pub(super) fn parasolid_entity_51_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::entity_51_records(&stream.inflated);
+        let scanned = crate::parasolid::entity_51_records_in(
+            &stream.inflated,
+            parsed.primary(stream_ordinal),
+        );
         for record in scanned {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -2482,8 +2520,16 @@ pub(super) fn parasolid_entity_51_records(
     Ok(records)
 }
 
+#[cfg(test)]
 pub(super) fn parasolid_entity_value_records(
     streams: &[Stream],
+) -> Result<ParasolidEntityValueRecords, CodecError> {
+    parasolid_entity_value_records_with_parsed(streams, None)
+}
+
+pub(super) fn parasolid_entity_value_records_with_parsed(
+    streams: &[Stream],
+    parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<ParasolidEntityValueRecords, CodecError> {
     let mut records = ParasolidEntityValueRecords {
         integers: Vec::new(),
@@ -2500,7 +2546,13 @@ pub(super) fn parasolid_entity_value_records(
         if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
             continue;
         }
-        let values = crate::parasolid::referenced_value_records(&stream.inflated)?;
+        let values = match parsed {
+            Some(parsed) => crate::parasolid::referenced_value_records_in(
+                &stream.inflated,
+                parsed.primary(stream_ordinal),
+            )?,
+            None => crate::parasolid::referenced_value_records(&stream.inflated)?,
+        };
         for record in values.integers {
             let id = parasolid_offset_record_id(
                 stream_ordinal,

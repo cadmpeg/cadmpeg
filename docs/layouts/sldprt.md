@@ -2673,7 +2673,7 @@ Parsed by:
 
 Spec §2 · layout: byte offsets · size: 121 B
 
-Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c` class name.
+Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c`, `moConstraintCoincLinePerpPlaneRefplaneData_c`, or `moPerLinePtRefPlnData_c` class name.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2681,6 +2681,23 @@ Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneDa
 | 24 | 24 | `normal` | `f64[3]` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 48 | 1 | `frame_marker` | `u8` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 49 | 72 | `basis_matrix` | `f64[9]` | little | spec | A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order |
+
+## `constructed_reference_plane_minimal_frame`
+
+Spec §2 · layout: byte offsets · size: 81 B
+
+Offsets begin immediately after the `moDefaultRefPlnData_c`, `moConstraintPrllPlnTanOneCylinderRefplaneData_c`, `moFaceRefPlnData_c`, or `moPerLinePtRefPlnData_c` class name.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `origin` | `f64[3]` | little | spec | Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres |
+| 24 | 24 | `normal` | `f64[3]` | little | spec | Three f64 values at `+24`, `+32`, and `+40` store the unit normal |
+| 48 | 1 | `frame_marker` | `u8` | little | spec | The 81-byte frame has byte `0` at `+48` |
+| 49 | 24 | `translation` | `f64[3]` | little | spec | the negated origin as three f64 at `+49`, `+57`, and `+65` |
+| 73 | 8 | `scale` | `f64` | little | spec | and f64 `1` at `+73` |
 
 ## `component_face_nested_reference_prefix`
 
@@ -2792,6 +2809,24 @@ Parsed by:
 | 0 | 1 | `zero` | `bytes[1]` | little | spec | zero at `+0` · value `[0]` |
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
+
+## `cut_list_folder_tail`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 43 B
+
+The bytes a cut-list folder writes after its last item.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one` | `u32` | little | spec | u32 `1`, i32 `-1`, u32 `2` or `3` · value `1` |
+| 4 | 4 | `minus_one` | `i32` | little | spec | i32 `-1`, u32 `2` or `3` · value `-1` |
+| 8 | 4 | `word` | `u32` | little | spec | u32 `2` or `3` |
+| 12 | 23 | `zeros` | `bytes[23]` | little | spec | 23 zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 35 | 4 | `one_after_zeros` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
+| 39 | 4 | `one_last` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
 
 ## `revolution_turn_block`
 
@@ -3285,6 +3320,21 @@ Parsed by:
 | 16 | 4 | `record_id` | `u32` | little | spec | a little-endian u32 record identifier |
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
+
+## `three_int_identity_own`
+
+Spec §2.3 · layout: byte offsets · size: 12 B
+
+Own bytes of a three-integer identity representation; they follow its `moFR_c` object.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_0` | `u32` | little | spec | three little-endian u32 |
+| 4 | 4 | `word_4` | `u32` | little | spec | three little-endian u32 |
+| 8 | 4 | `word_8` | `u32` | little | spec | three little-endian u32 |
 
 ## `view_bytes`
 

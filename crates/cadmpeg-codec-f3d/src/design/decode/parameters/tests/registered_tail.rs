@@ -4,9 +4,9 @@ use std::io::{Cursor, Write};
 
 use super::super::decode_parameters;
 use crate::design::test_support::parameter_record;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::streams_test::design_metastream_with_records;
-use crate::test_support::zip_test::with_scan;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::streams_fixture::design_metastream_with_records;
+use crate::test_support::zip_fixture::with_scan;
 
 const TAIL_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 
@@ -57,7 +57,11 @@ fn parameter_registered_tail_resolves_full_record_identity_and_refuses_wrong_typ
             let decoded = with_scan(&archive, decode_parameters).unwrap();
             assert_eq!(decoded.parameters.len(), usize::from(admitted));
             assert_eq!(
-                decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
+                decoded
+                    .unparsed
+                    .iter()
+                    .map(|row| row.frames.len())
+                    .sum::<usize>(),
                 unparsed
             );
             if admitted {
@@ -144,7 +148,11 @@ fn parameter_tail_names_a_registered_collection() {
     let decoded = with_scan(&archive, decode_parameters).unwrap();
     assert!(decoded.parameters.is_empty());
     assert_eq!(
-        decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
+        decoded
+            .unparsed
+            .iter()
+            .map(|row| row.frames.len())
+            .sum::<usize>(),
         1
     );
 }

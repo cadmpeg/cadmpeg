@@ -417,8 +417,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -590,6 +590,26 @@
             "offset": 0,
             "stream": "nx:container",
             "tag": "derived_point_topology"
+          },
+          "nx:external-reference:/Root/ExternalReferences#0": {
+            "offset": 445,
+            "stream": "nx:container",
+            "tag": "EXTREFSTREAM_STRING"
+          },
+          "nx:external-reference:/Root/ExternalReferences#1": {
+            "offset": 456,
+            "stream": "nx:container",
+            "tag": "EXTREFSTREAM_STRING"
+          },
+          "nx:external-reference:/Root/ExternalReferences#2": {
+            "offset": 462,
+            "stream": "nx:container",
+            "tag": "EXTREFSTREAM_STRING"
+          },
+          "nx:external-reference:/Root/ExternalReferences#3": {
+            "offset": 468,
+            "stream": "nx:container",
+            "tag": "EXTREFSTREAM_STRING"
           },
           "nx:s0:crv#0": {
             "offset": 319,

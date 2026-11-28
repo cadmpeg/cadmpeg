@@ -14,9 +14,9 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use crate::test_support::lp_ascii;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::streams_test::design_metastream_with_records;
-use crate::test_support::zip_test::with_scan;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::streams_fixture::design_metastream_with_records;
+use crate::test_support::zip_fixture::with_scan;
 
 #[test]
 fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
@@ -267,18 +267,28 @@ fn unreadable_primary_headers_keep_their_indexed_sibling() {
             ],
             secondary_records: Vec::new(),
         };
-        let mut losses = Vec::new();
-        let frames = super::collect_design_primary_frames(
+        let mut given_up = Vec::new();
+        let (frames, _) = super::collect_design_primary_frames_with_cache(
             &bytes,
             &meta,
             "Design/BulkStream.dat",
-            &mut losses,
+            &mut given_up,
         )
         .unwrap();
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].entity_id, 42);
         assert_eq!(frames[0].start, sibling_start);
-        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            given_up
+                .iter()
+                .map(super::super::record::GivenUpFrame::span)
+                .collect::<Vec<_>>(),
+            [("Design/BulkStream.dat", 0..sibling_start)]
+        );
+        assert_eq!(
+            given_up[0].reason().0,
+            cadmpeg_ir::unknown::part::Cause::Unreadable
+        );
         let typed = super::typed_primary_frames(&bytes, &meta, GUID, "synthetic").unwrap();
         assert_eq!(typed.len(), 1);
         assert_eq!(typed[0].entity_id, 42);
@@ -306,21 +316,27 @@ fn unreadable_nested_header_keeps_its_primary_sibling() {
         ],
         secondary_records: vec![crate::design::test_support::primary_record(41, 11)],
     };
-    let mut losses = Vec::new();
-    let frames =
-        super::collect_design_primary_frames(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
-            .unwrap();
+    let mut given_up = Vec::new();
+    let (frames, _) = super::collect_design_primary_frames_with_cache(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut given_up,
+    )
+    .unwrap();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].entity_id, 42);
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
+        given_up
+            .iter()
+            .map(super::super::record::GivenUpFrame::span)
+            .collect::<Vec<_>>(),
+        [("Design/BulkStream.dat", 0..22)]
     );
 }
 
 #[test]
-fn primary_header_losses_are_reported_once_for_the_design_stream() {
+fn unread_primary_headers_are_given_up_once_for_the_design_stream() {
     const GUID: &str = "00000000-0000-0000-0000-000000000001";
     let mut bulk = Vec::new();
     lp_ascii(&mut bulk, "bad");
@@ -343,13 +359,20 @@ fn primary_header_losses_are_reported_once_for_the_design_stream() {
     zip.write_all(&meta).unwrap();
     let source = zip.finish().unwrap().into_inner();
     with_scan(&source, |scan| {
-        let losses = super::decode_primary_frame_losses(scan).unwrap();
-        assert_eq!(losses.len(), 1);
+        let given_up = super::primary_frames_given_up(scan).unwrap();
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
+            given_up
+                .iter()
+                .map(super::super::record::GivenUpFrame::span)
+                .collect::<Vec<_>>(),
+            [(
+                "FusionAssetName[Active]/Design1/BulkStream.dat",
+                0..sibling_start
+            )]
         );
-        assert!(losses[0].message.contains("record 41"));
+        let (cause, text) = given_up[0].reason();
+        assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Unreadable);
+        assert!(text.contains("record 41"), "{text}");
     });
 }
 
@@ -542,10 +565,9 @@ fn feature_timeline_null_slot_assumption_is_reported_only_for_a_complete_frame()
         })
         .unwrap();
         assert!(decoded.is_empty());
-        assert_eq!(invalid_losses.len(), 1);
         assert_eq!(
-            invalid_losses[0].code,
-            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+            crate::test_support::loss_codes(&invalid_losses),
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
     }
 }
@@ -1080,10 +1102,9 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         })
         .unwrap();
         assert!(decoded.is_empty());
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
 
         let mut sibling = bulk.clone();
@@ -1119,10 +1140,9 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
                 .collect::<Vec<_>>(),
             [101, 102]
         );
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
 
         let mut mismatched_inline_type = bulk.clone();
@@ -1137,10 +1157,9 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         })
         .unwrap();
         assert!(decoded.is_empty());
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
     }
 
@@ -1160,10 +1179,9 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
     })
     .unwrap();
     assert!(decoded.is_empty());
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+        crate::test_support::loss_codes(&losses),
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
     );
 
     for (base_type_guid, module) in [
@@ -1189,10 +1207,9 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         })
         .unwrap();
         assert!(decoded.is_empty());
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
     }
 }

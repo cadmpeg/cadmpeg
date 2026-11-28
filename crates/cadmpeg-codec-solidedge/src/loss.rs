@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable Solid Edge transfer-loss vocabulary.
 
-use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+use cadmpeg_ir::report::loss::{LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind};
+use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("solidedge");
 
+cadmpeg_ir::loss_codes! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SolidEdgeLossCode {
     ContainerNoncanonical,
     BodiesPending,
-    PartitionUnreadable,
     PartitionIncomplete,
     PrimaryStateAssumed,
     SurfaceUnsupported,
@@ -25,20 +26,20 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionFrameFromSupportsAssumed,
     TopologyToleranceInvalid,
     BodyResolutionInvalid,
+    BodyResolutionUnread,
     IntersectionPlanarSupportAssumed,
     IntersectionNurbsBoundaryAssumed,
     IntersectionNurbsIsolineAssumed,
     EdgeToleranceWidened,
     SurfaceUnresolved,
     CurveUnresolved,
-    LoopUnreadable,
     TopologyFaceBoundaryUnstated,
-    FaceSenseUnresolved,
     ChainTruncated,
     VertexUnresolved,
     CurveConstructionDropped,
     RegionFacesUntransferred,
     BodyPlacementUnread,
+}
 }
 
 impl SolidEdgeLossCode {
@@ -48,9 +49,6 @@ impl SolidEdgeLossCode {
                 "container.noncanonical",
                 LossTaxonomy::NoncanonicalSourceSyntax,
             ),
-            Self::PartitionUnreadable => {
-                ("partition.unreadable", LossTaxonomy::GeometryNotTransferred)
-            }
             Self::PrimaryStateAssumed => (
                 "partition.primary-state-assumed",
                 LossTaxonomy::DecodeDiagnostic,
@@ -86,6 +84,9 @@ impl SolidEdgeLossCode {
                 "body.resolution-invalid",
                 LossTaxonomy::SourceTopologyInvalid,
             ),
+            Self::BodyResolutionUnread => {
+                ("body.resolution-unread", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::TopologyToleranceInvalid => (
                 "topology.tolerance-invalid",
                 LossTaxonomy::SourceTopologyInvalid,
@@ -117,14 +118,10 @@ impl SolidEdgeLossCode {
             ),
             Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),
-            Self::LoopUnreadable => ("loop.unreadable", LossTaxonomy::TopologyNotTransferred),
             Self::TopologyFaceBoundaryUnstated => (
                 "topology.face-boundary-unstated",
                 LossTaxonomy::TopologyNotTransferred,
             ),
-            Self::FaceSenseUnresolved => {
-                ("face.sense-unresolved", LossTaxonomy::SourceTopologyInvalid)
-            }
             Self::ChainTruncated => (
                 "topology.chain-truncated",
                 LossTaxonomy::TopologyNotTransferred,
@@ -144,6 +141,44 @@ impl SolidEdgeLossCode {
             ),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::MissingGeometryStream),
         };
-        LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
+        LossNote::new(
+            NamespacedLossKind::new(NAMESPACE, code, taxonomy)
+                .with_strict_floor(self.strict_floor()),
+            message,
+        )
+    }
+
+    /// The strict floor `solidedge.md` §1 states: a compound-file deviation
+    /// that the reader recovers from pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ContainerNoncanonical => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SolidEdgeLossCode;
+    use cadmpeg_ir::report::Severity;
+
+    #[test]
+    fn the_compound_deviation_alone_pins_a_strict_floor() {
+        assert_eq!(
+            SolidEdgeLossCode::ContainerNoncanonical
+                .note("")
+                .code
+                .strict_floor(),
+            Some(Severity::Warning)
+        );
+        for code in [
+            SolidEdgeLossCode::BodiesPending,
+            SolidEdgeLossCode::PartitionIncomplete,
+            SolidEdgeLossCode::ChainTruncated,
+            SolidEdgeLossCode::CurveUnsupported,
+        ] {
+            assert_eq!(code.note("").code.strict_floor(), None, "{code:?}");
+        }
     }
 }

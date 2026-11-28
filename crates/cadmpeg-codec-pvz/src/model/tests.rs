@@ -193,7 +193,7 @@ fn cycles_and_extra_roots_are_reported() {
         losses,
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
-            PvzLossCode::StructureOccurrenceCycle.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 }
@@ -225,8 +225,112 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
     assert_eq!(ir.model.occurrences.len(), LIMIT);
     assert_eq!(
         codes(&losses),
-        [PvzLossCode::StructureOccurrenceTruncated.kind()]
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
     );
+    // The walk stops at the last child of B, the occurrence that would hold
+    // id `LIMIT`; the later children of A would hold the ids after it.
+    assert_given_up(&losses[0], LIMIT, LIMIT + 1..2 * LIMIT);
+}
+
+/// The occurrence ids `indices` name, sorted as the charge lists them.
+fn occurrence_ids(indices: impl IntoIterator<Item = usize>) -> Vec<String> {
+    let mut ids = indices
+        .into_iter()
+        .map(|index| crate::ids::occurrence(index).to_string())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids
+}
+
+/// Asserts that `loss` gives up the occurrence at expansion index `head` and
+/// lists the occurrences at `dropped` as dropped.
+fn assert_given_up(loss: &LossNote, head: usize, dropped: std::ops::Range<usize>) {
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message.starts_with(&format!(
+            "record {} given up: ",
+            crate::ids::occurrence(head)
+        )),
+        "{}",
+        loss.message
+    );
+    let listed = loss
+        .message
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").map(str::to_owned).collect::<Vec<_>>())
+        .unwrap_or_default();
+    assert_eq!(listed, occurrence_ids(dropped));
+}
+
+/// Asserts that no occurrence of `ir` carries an id at `indices`.
+fn assert_not_kept(ir: &CadIr, indices: std::ops::Range<usize>) {
+    let given_up = occurrence_ids(indices);
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(|occurrence| !given_up.contains(&occurrence.id.to_string())));
+}
+
+/// Root placements count toward the limit: the placements past it, and the
+/// child occurrences the walk then reaches, are given up by the occurrence ids
+/// the expansion would give them.
+#[test]
+fn root_placements_past_the_limit_are_given_up() {
+    let (ir, losses) = expand_within(
+        &structure(vec![
+            definition("R0", &[3]),
+            definition("R1", &[3]),
+            definition("R2", &[3]),
+            definition("C", &[]),
+        ]),
+        2,
+    );
+    assert_eq!(ir.model.occurrences.len(), 2);
+    assert_eq!(
+        codes(&losses),
+        [
+            PvzLossCode::StructureRootAmbiguous.kind(),
+            cadmpeg_ir::unknown::part::record_undecoded_kind(),
+        ]
+    );
+    assert_given_up(&losses[1], 2, 3..6);
+    assert_not_kept(&ir, 2..6);
+}
+
+/// A child occurrence that closes a cycle is left out as a cycle even when the
+/// walk reaches it at the limit; the next child the walk would place is the
+/// occurrence at which decoding stops.
+#[test]
+fn a_cycle_closing_child_at_the_limit_is_not_the_stopped_occurrence() {
+    let (ir, losses) = expand_within(
+        &structure(vec![
+            definition("ROOT", &[1, 2]),
+            definition("LOOP", &[1, 2]),
+            definition("LEAF", &[]),
+        ]),
+        1,
+    );
+    assert_eq!(ir.model.occurrences.len(), 1);
+    assert_eq!(
+        codes(&losses),
+        [
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+            cadmpeg_ir::unknown::part::record_undecoded_kind(),
+        ]
+    );
+    assert!(
+        losses[0]
+            .message
+            .starts_with("record pvz:model:child-occurrence#1-0 given up: "),
+        "{}",
+        losses[0].message
+    );
+    assert_given_up(&losses[1], 1, 2..3);
 }
 
 /// Each definition's children are walked once (§8.1), so the walk is linear
@@ -244,12 +348,11 @@ fn cycle_closing_children_are_left_out_without_truncating_the_rest() {
     assert_eq!(ir.model.occurrences.len(), LIMIT / 2);
     assert_eq!(
         codes(&losses),
-        [PvzLossCode::StructureOccurrenceCycle.kind()]
+        vec![cadmpeg_ir::unknown::part::record_unreadable_kind(); LIMIT]
     );
-    assert_eq!(
-        losses[0].message,
-        format!("{LIMIT} child occurrences close a definition cycle and were left out")
-    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.message.contains("closes a definition cycle")));
 }
 
 /// Bound on the expansion time of [`MANY_ROOTS`] root definitions.
@@ -269,9 +372,10 @@ fn roots_count_toward_the_occurrence_limit() {
         codes(&losses),
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
-            PvzLossCode::StructureOccurrenceTruncated.kind(),
+            cadmpeg_ir::unknown::part::record_undecoded_kind(),
         ]
     );
+    assert_given_up(&losses[1], LIMIT, LIMIT + 1..MANY_ROOTS);
 }
 
 #[test]
@@ -404,6 +508,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         ],
         has_exact: false,
         residue: crate::ol::MemberResidue::default(),
+        given_up: Vec::new(),
     };
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
@@ -431,7 +536,7 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
         [
             PvzLossCode::TessellationRecordsUndecoded.kind(),
-            PvzLossCode::TessellationMeshRejected.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
 
@@ -496,7 +601,7 @@ fn placement_defects_and_deep_chains_are_reported() {
     // Each definition above the depth limit places the next; the root
     // definition, at the top, is placed by no occurrence (§8.1).
     assert_eq!(ir.model.occurrences.len(), depth - 1);
-    assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
+    assert_eq!(losses, [cadmpeg_ir::unknown::part::record_undecoded_kind()]);
 }
 
 #[test]
@@ -527,8 +632,12 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
         ],
     );
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let geometry =
-        crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+    let geometry = crate::ol::decode(
+        &ctx,
+        "hot.ol",
+        cadmpeg_core::decode::View::over_retained(&bytes),
+    )
+    .unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     display_geometry(&ctx, "hot.ol", &geometry, None, None, &mut ir, &mut losses).unwrap();

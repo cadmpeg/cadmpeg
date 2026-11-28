@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Optional archive recovery and required-member admission boundaries.
 
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::{F3dCodec, F3dLossCode};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::CodecBackend;
@@ -99,11 +99,22 @@ fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
     .unwrap();
     assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
-    assert!(decoded
-        .report()
-        .losses
+    // §3.3: the given-up member entry is the one loss of the member.
+    let member = format!("part {} \"unused.f3d\" ", crate::container::ENTRY_PART);
+    let losses = &decoded.report().losses;
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| {
+                cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&member)
+            })
+            .count(),
+        1,
+        "{losses:?}"
+    );
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code));
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
 }
 
 #[test]
@@ -157,22 +168,29 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
     .unwrap();
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(decoded.ir().geometry.surfaces.is_empty());
-    assert!(decoded
-        .report()
-        .losses
+    // §3.3: the given-up member entry is the one loss of the member.
+    let member = format!("part {} \"component.f3d\" ", crate::container::ENTRY_PART);
+    let losses = &decoded.report().losses;
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.message.starts_with(&member)
+            })
+            .count(),
+        1,
+        "{losses:?}"
+    );
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code));
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "decode/record.unreadable"));
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
 }
 
 #[test]
 fn a_merged_member_part_loss_names_the_stub_in_the_document() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
-    let mut component = crate::test_support::zip_test::f3d_with_configuration(
+    let mut component = crate::test_support::zip_fixture::f3d_with_configuration(
         &synthetic_geometry_smbh(),
         preview,
         b"preview",
@@ -230,7 +248,7 @@ fn a_merged_member_part_loss_names_the_stub_in_the_document() {
 fn each_member_part_links_to_its_own_member_definition() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
     let member = || {
-        let mut member = crate::test_support::zip_test::f3d_with_configuration(
+        let mut member = crate::test_support::zip_fixture::f3d_with_configuration(
             &synthetic_geometry_smbh(),
             preview,
             b"preview",
@@ -331,7 +349,7 @@ fn each_member_part_links_to_its_own_member_definition() {
 #[test]
 fn a_model_root_part_keeps_its_bytes_when_the_root_source_image_is_replaced() {
     let preview = "FusionAssetName[Active]/Previews/thumbnail.png";
-    let mut root = crate::test_support::zip_test::f3d_with_configuration(
+    let mut root = crate::test_support::zip_fixture::f3d_with_configuration(
         &synthetic_geometry_smbh(),
         preview,
         b"preview",
@@ -361,7 +379,7 @@ fn a_model_root_part_keeps_its_bytes_when_the_root_source_image_is_replaced() {
 }
 
 #[test]
-fn failed_member_placed_by_two_parents_reports_each_reference() {
+fn failed_member_placed_by_two_parents_is_given_up_once() {
     // An invalid text BREP stream passes the archive scan and fails inside
     // member decode.
     let component = f3d_with_text_brep_stream(
@@ -387,18 +405,24 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
         .unwrap();
-    let failures = decoded
+    // §3.3: one lost fact makes one report entry. The member's give-up
+    // states the failure for both references.
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
+    let unreadable = decoded
         .report()
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == F3dLossCode::XrefMemberUndecoded.note("").code
-                && loss
-                    .message
-                    .contains("member component.f3d failed to decode")
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&format!(
+                    "part {} \"component.f3d\" ",
+                    crate::container::ENTRY_PART
+                ))
         })
-        .map(|loss| loss.message.split(": member ").nth(1).unwrap_or_default())
-        .collect::<Vec<_>>();
-    assert_eq!(failures.len(), 2, "{failures:?}");
-    assert_eq!(failures[0], failures[1]);
+        .count();
+    assert_eq!(unreadable, 1);
 }

@@ -30,19 +30,19 @@ use zip::CompressionMethod;
 
 use crate::container;
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
-use crate::test_support::smbh_bf4_test::{
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
+use crate::test_support::smbh_bf4_fixture::{
     synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh,
     synthetic_geometry_bf4_smbh_with_arc_sense,
 };
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
-use crate::test_support::smbh_header_test::{
+use crate::test_support::smbh_header_fixture::{
     bf4_header_prefix, smbh_header_prefix, synthetic_smbh,
 };
-use crate::test_support::tokens_test::{push_u8_string, t_end, t_ident};
-use crate::test_support::zip_test::{
+use crate::test_support::tokens_fixture::{push_u8_string, t_end, t_ident};
+use crate::test_support::zip_fixture::{
     f3d_with_smbh, synthetic_f3d, synthetic_multi_asset_f3d, with_scan,
 };
 use crate::F3dCodec;
@@ -640,9 +640,18 @@ fn decode_yields_metadata_and_honest_report() {
         cadmpeg_ir::report::loss::LossCategory::Geometry
     )));
 
+    // The fixture's history partition stores zero bytes where the first
+    // `delta_state` header integer belongs, so the history is given up as a
+    // part: its stub joins the unknowns and keeps a retained record.
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(result.source_fidelity().retained_records().len(), 2);
+    assert_eq!(unknowns.len(), 3);
+    assert_eq!(result.source_fidelity().retained_records().len(), 4);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(
+                "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" ",
+            )
+    }));
     assert!(result
         .source_fidelity()
         .retained_records()
@@ -755,7 +764,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
 
 #[test]
 fn decode_selects_the_board_asset_of_a_document_without_an_empty_subtype_asset() {
-    let f3d = crate::test_support::zip_test::synthetic_board_asset_f3d();
+    let f3d = crate::test_support::zip_fixture::synthetic_board_asset_f3d();
     with_scan(&f3d, |scan| {
         assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
         let design_breps = container::design_breps(scan).collect::<Vec<_>>();
@@ -855,7 +864,7 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
         let contributing_name = "FusionAssetName[Active]/Breps.BlobParts/BREP.second.smbh";
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
         zip.start_file(
             "FusionAssetName[Active]/Breps.BlobParts/BREP.first.smbh",
             stored,

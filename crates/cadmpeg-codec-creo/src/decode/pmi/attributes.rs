@@ -4,6 +4,7 @@
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Value<'a> {
@@ -36,50 +37,83 @@ pub(super) struct Attribute<'a> {
     pub(super) owner_type: Option<u32>,
     pub(super) unit: &'a [u8],
     pub(super) offset: usize,
+    /// Byte offset after the row's last byte.
+    pub(super) end: usize,
 }
 
+/// Why the `attributes` field of a neutral section forms no rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TableUnread {
+    pub(super) cause: Cause,
+    pub(super) why: &'static str,
+}
+
+impl TableUnread {
+    const fn undecoded(why: &'static str) -> Self {
+        Self {
+            cause: Cause::Undecoded,
+            why,
+        }
+    }
+}
+
+/// The rows of the unique `attributes` object array in `section`.
+///
+/// A declared row count past the end of the section breaks the array
+/// framing. A field that is absent or repeated, a header of another form,
+/// and a row that the prototype or positional grammar does not match are
+/// forms the reader has no reading for.
 pub(super) fn attributes<'a>(
     ctx: &DecodeContext<'_>,
     mut section: View<'a>,
-) -> Result<Option<Vec<Option<Attribute<'a>>>>, CodecError> {
+) -> Result<Result<Vec<Option<Attribute<'a>>>, TableUnread>, CodecError> {
     const LABEL: &[u8] = b"\xe0\x00attributes\0";
     let mut hits = find_iter(section.window(), LABEL);
     let (Some(offset), None) = (hits.next(), hits.next()) else {
-        return Ok(None);
+        return Ok(Err(TableUnread::undecoded(
+            "the neutral section holds no single attributes field",
+        )));
     };
+    let header = TableUnread::undecoded("the attributes field holds no object-array header");
     let Some(position) = section.start().checked_add(offset + LABEL.len()) else {
-        return Ok(None);
+        return Ok(Err(header));
     };
     if section.seek(position).is_none() || expect(&mut section, b"\xf4\x05\xf8").is_none() {
-        return Ok(None);
+        return Ok(Err(header));
     }
     let Some(count) = integer(&mut section).and_then(Integer::value) else {
-        return Ok(None);
+        return Ok(Err(header));
     };
     let Some(count) = section.counted(u64::from(count), 1) else {
-        return Ok(None);
+        return Ok(Err(TableUnread {
+            cause: Cause::Unreadable,
+            why: "the attributes array declares more rows than its section holds bytes",
+        }));
     };
     if expect(&mut section, b"\xf7").is_none()
         || integer(&mut section).and_then(Integer::value).is_none()
         || expect(&mut section, b"\xfb").is_none()
     {
-        return Ok(None);
+        return Ok(Err(header));
     }
     let mut rows = ctx.alloc_filled(count.get(), None, "Creo neutral attribute rows")?;
     if rows.is_empty() {
-        return Ok(Some(rows));
+        return Ok(Ok(rows));
     }
+    let row = TableUnread::undecoded(
+        "an attribute row does not match the prototype or positional row grammar",
+    );
     let Some(first) = prototype(&mut section) else {
-        return Ok(None);
+        return Ok(Err(row));
     };
     rows[0] = Some(first);
-    for row in rows.iter_mut().skip(1) {
+    for slot in rows.iter_mut().skip(1) {
         let Some(value) = positional(&mut section) else {
-            return Ok(None);
+            return Ok(Err(row));
         };
-        *row = Some(value);
+        *slot = Some(value);
     }
-    Ok(Some(rows))
+    Ok(Ok(rows))
 }
 
 fn prototype<'a>(view: &mut View<'a>) -> Option<Attribute<'a>> {
@@ -109,6 +143,7 @@ fn prototype<'a>(view: &mut View<'a>) -> Option<Attribute<'a>> {
         owner_type,
         unit,
         offset,
+        end: view.position(),
     })
 }
 
@@ -138,6 +173,7 @@ fn positional<'a>(view: &mut View<'a>) -> Option<Attribute<'a>> {
         owner_type,
         unit,
         offset,
+        end: view.position(),
     })
 }
 

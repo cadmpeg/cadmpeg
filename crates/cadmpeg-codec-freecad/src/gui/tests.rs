@@ -326,7 +326,9 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
     assert_eq!(presentation.states()[1].assets.len(), 1);
-    assert!(presentation.states()[1].assets[0].ends_with("section.bin"));
+    assert!(presentation.states()[1].assets[0]
+        .as_str()
+        .ends_with("section.bin"));
     assert!(result.ir().model.view_presentations.is_empty());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -1894,6 +1896,12 @@ fn assert_material_shininess_remains_source_only(shininess: &str, expected: &str
     assert!(assert_gui_metadata_recovery(&recovered)
         .message
         .contains(expected));
+    assert!(recovered.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(
+                "part archive-entry \"GuiDocument.xml\" stream=\"GuiDocument.xml\" offset=0 ",
+            )
+    }));
     assert!(recovered.ir().model.appearances.is_empty());
 }
 
@@ -1915,19 +1923,47 @@ fn an_unparsable_material_value_keeps_the_gui_source_only() {
     );
 }
 
+/// The one loss that states the GUI recovery: the give-up of
+/// `GuiDocument.xml`, with no codec note beside it, or a GUI metadata note
+/// where the decoder keeps the document.
 fn assert_gui_metadata_recovery(
     result: &cadmpeg_ir::codec::DecodeResult,
 ) -> &cadmpeg_ir::report::loss::LossNote {
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    let loss = result
-        .report()
-        .losses
+    let losses = &result.report().losses;
+    let notes = losses
         .iter()
-        .find(|loss| loss.code.local_code() == "source.gui-metadata-unresolved")
-        .expect("GUI recovery diagnostic");
+        .filter(|loss| loss.code.local_code() == "source.gui-metadata-unresolved");
+    if let Some(given_up) = gui_document_given_up(result) {
+        assert!(
+            !notes
+                .clone()
+                .any(|loss| loss.message.contains("GuiDocument.xml")),
+            "{losses:?}"
+        );
+        return given_up;
+    }
+    let loss = notes.into_iter().next().expect("GUI recovery diagnostic");
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     loss
 }
+
+/// The give-up loss of `GuiDocument.xml`, where the decode gave it up.
+fn gui_document_given_up(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> Option<&cadmpeg_ir::report::loss::LossNote> {
+    let mut given_up = result.report().losses.iter().filter(|loss| {
+        cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            && loss
+                .message
+                .starts_with("part archive-entry \"GuiDocument.xml\"")
+    });
+    let loss = given_up.next();
+    assert!(given_up.next().is_none(), "one GuiDocument.xml give-up");
+    loss
+}
+
+mod give_up_cause;
 
 mod metadata_recovery;
 

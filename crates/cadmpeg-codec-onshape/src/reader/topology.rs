@@ -65,6 +65,8 @@ pub(crate) enum OperandKind {
 pub(crate) struct State {
     pub row: Value,
     faces: BTreeMap<String, Value>,
+    /// Faces of bodies that no composite consumes.
+    live_faces: BTreeSet<String>,
     edges: BTreeMap<String, Value>,
     complete_vertices: bool,
 }
@@ -78,6 +80,7 @@ pub(crate) struct Inputs<'a> {
     body_features: Vec<usize>,
     provenance: std::cell::RefCell<Provenance<'a>>,
     pub(super) regions: std::cell::RefCell<super::regions::Recovery>,
+    pub(super) profiles: std::cell::RefCell<BTreeMap<(String, String), Mapping<Value>>>,
     pub(super) sampling_report: std::cell::RefCell<super::Report>,
 }
 
@@ -172,6 +175,7 @@ impl<'a> Inputs<'a> {
                 .collect(),
             provenance: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
+            profiles: std::cell::RefCell::default(),
             sampling_report: std::cell::RefCell::default(),
         }
     }
@@ -577,6 +581,7 @@ fn load(
         })?;
     super::microversion(response, "microversionId", mid)?;
     let mut faces = BTreeMap::new();
+    let mut live_faces = BTreeSet::new();
     let mut edges = BTreeMap::new();
     let mut bodies = BTreeSet::new();
     let mut vertices = BTreeSet::new();
@@ -586,12 +591,14 @@ fn load(
         if !bodies.insert(text(body, "id")?.to_owned()) {
             return Err("bodydetails repeats a body id".into());
         }
+        let consumed = body.get("consumedByComposite").and_then(Value::as_bool) == Some(true);
         for face in optional_rows(body, "faces")? {
-            if faces
-                .insert(text(face, "id")?.to_owned(), face.clone())
-                .is_some()
-            {
+            let face_id = text(face, "id")?;
+            if faces.insert(face_id.to_owned(), face.clone()).is_some() {
                 return Err("bodydetails repeats a face id".into());
+            }
+            if !consumed {
+                live_faces.insert(face_id.to_owned());
             }
         }
         let mut body_vertices = BTreeSet::new();
@@ -668,6 +675,7 @@ fn load(
     Ok(State {
         row,
         faces,
+        live_faces,
         edges,
         complete_vertices,
     })
@@ -868,7 +876,9 @@ impl State {
         model: &cadmpeg_ir::document::Model,
     ) -> Mapping<Value> {
         next::prove(self, feature, profile, model).map_err(|reason| {
-            format!("UP_TO_NEXT needs exact coverage and first intersection: {reason}")
+            format!(
+                "UP_TO_NEXT needs exact coverage and first intersection over the complete profile: {reason}"
+            )
         })
     }
 
@@ -947,6 +957,7 @@ impl State {
         Self {
             row: Value::Null,
             faces: BTreeMap::new(),
+            live_faces: BTreeSet::new(),
             complete_vertices: true,
             edges: edges
                 .into_iter()

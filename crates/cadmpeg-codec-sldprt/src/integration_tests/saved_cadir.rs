@@ -26,7 +26,11 @@ use crate::SldprtCodec;
 
 /// A part whose history holds one extrusion with a 12 mm depth.
 fn part() -> Vec<u8> {
-    let mut bytes = sldprt_with_body(&triangle_body());
+    part_with_history(&triangle_body())
+}
+
+fn part_with_history(body: &[u8]) -> Vec<u8> {
+    let mut bytes = sldprt_with_body(body);
     bytes.extend(make_block(
         0x42,
         "Contents/Keywords",
@@ -63,7 +67,7 @@ fn held(decoded: &DecodeResult) -> CadIr {
 /// The bytes, losses and notes `ir` writes with `fidelity`.
 fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec<String>) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, Some(fidelity)))
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -73,10 +77,7 @@ fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec
 /// The bytes `ir` writes with the decode's sidecar, or why it refuses.
 fn written(ir: &CadIr, decoded: &DecodeResult) -> Result<Vec<u8>, String> {
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(ir, Some(decoded.source_fidelity())))
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
@@ -142,10 +143,138 @@ fn a_saved_part_writes_an_edited_dimension_as_its_decode_does() {
     let mut held = held(&decoded);
     held_depth(&mut held, &id);
 
-    let from_saved = written(&read, &decoded).expect("the edited part writes");
+    let image_len = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap()
+        .len();
+    let mut from_saved = Vec::new();
+    SldprtCodec
+        .plan(EncodeInput {
+            limits: cadmpeg_core::decode::ResourceLimits {
+                max_input_bytes: cadmpeg_core::decode::u64_from_index(image_len),
+                ..cadmpeg_core::decode::ResourceLimits::desktop()
+            },
+            ..EncodeInput::new(&read, Some(decoded.source_fidelity()))
+        })
+        .expect("the edited part writes within one image length")
+        .write_to(&mut from_saved)
+        .unwrap();
     assert_eq!(Ok(&from_saved), written(&held, &decoded).as_ref());
     let feature = &sldprt_native(decode(from_saved).ir()).feature_histories[0].features[0];
     assert_eq!(feature.parameters["Depth"], "20mm");
+}
+
+fn source_entities(source: &[u8]) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let root = ctx.open_input(source, "fixture input").unwrap();
+    crate::decode::decode(&ctx, root).unwrap();
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+        ctx.charge_entities(u64::MAX, "measure fixture entities")
+    else {
+        panic!("the entity ceiling refuses the measurement charge")
+    };
+    limit.used
+}
+
+#[test]
+fn the_native_patch_and_history_comparison_share_the_partition() {
+    use cadmpeg_core::decode::{u64_from_index, ResourceLimits};
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::report::export::WritePath;
+
+    let mut body = triangle_body();
+    body.extend(crate::test_support::parasolid::edge_use(40, 999));
+    let source = part_with_history(&body);
+    let decoded = decode(source.clone());
+    let mut ir = decoded.ir().clone();
+    let point = &mut ir.geometry.points[1];
+    let id = point.id.clone();
+    let at = point.position().get();
+    let moved = FinitePoint3::new(Point3::new(at.x + 500.0, at.y, at.z)).unwrap();
+    point.set_position(moved);
+    let limits = ResourceLimits {
+        max_input_bytes: u64_from_index(source.len()),
+        max_entities: source_entities(&source),
+        ..ResourceLimits::desktop()
+    };
+    let plan = SldprtCodec
+        .plan(EncodeInput {
+            limits,
+            ..EncodeInput::new(&ir, Some(decoded.source_fidelity()))
+        })
+        .expect("one partition decode fits");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Patched { .. }
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let regenerated = decode(bytes);
+    assert!(regenerated.ir().geometry.points.iter().any(|point| {
+        point.id == id && (point.position().get().x - moved.get().x).abs() < 1.0e-9
+    }));
+}
+
+#[test]
+fn the_restore_charges_its_source_before_semantic_planning() {
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension,
+        ResourceLimits,
+    };
+    use cadmpeg_ir::codec::write::{target::TargetDomain, EncoderBackend};
+
+    let image = part();
+    let limit = u64_from_index(image.len());
+    let decoded = decode(image);
+    let mut ir = saved(decoded.ir());
+    set_depth(&mut ir, &depth(decoded.ir()));
+
+    let input = EncodeInput::new(&ir, Some(decoded.source_fidelity()));
+    let target = SldprtCodec::TARGET
+        .resolve(&ir, input.target, <SldprtCodec as EncoderBackend>::FORMAT)
+        .unwrap();
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_input_bytes: limit,
+            ..ResourceLimits::desktop()
+        },
+    };
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let image = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap();
+    let source = crate::writer::SourceInput::new(image);
+    let restored = crate::writer::saved::restore(
+        &ctx,
+        input,
+        Some(&source),
+        &target,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .unwrap();
+    assert!(restored.is_some());
+    let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
+        ctx.charge_input(1, "an independent input")
+    else {
+        panic!("restoration must use the encode's available input bytes")
+    };
+    assert_eq!(
+        (refusal.dimension, refusal.used),
+        (ResourceDimension::InputBytes, limit)
+    );
 }
 
 #[test]
@@ -288,8 +417,8 @@ fn a_saved_part_synthesizes_as_its_decode_does() {
     let synthesized = |ir: &CadIr| {
         let plan = SldprtCodec
             .plan(
-                EncodeInput::new(ir, Some(decoded.source_fidelity())),
-                TargetRequest::Explicit("sldprt:unknown"),
+                EncodeInput::new(ir, Some(decoded.source_fidelity()))
+                    .with_target(TargetRequest::Explicit("sldprt:unknown")),
             )
             .expect("plan");
         let mut bytes = Vec::new();

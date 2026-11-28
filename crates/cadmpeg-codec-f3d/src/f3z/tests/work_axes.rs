@@ -1,6 +1,6 @@
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_work_axis;
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_work_axis;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::design::construction::InputReference;
 use cadmpeg_ir::design::names::{Base64Bytes, NativeNameValue};
@@ -94,8 +94,11 @@ fn work_axis_partial_evidence_and_literal_names_survive_real_f3z_merge() {
             unreachable!()
         };
         assert!(axis.geometry().is_some());
-        let native =
-            crate::native::F3dNative::load(merged.ir().native.namespace("f3d").unwrap()).unwrap();
+        let native = crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            merged.ir().native.namespace("f3d").unwrap(),
+        )
+        .unwrap();
         assert!(native
             .design_parameter_scopes
             .iter()
@@ -200,8 +203,11 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
         )
         .unwrap(),
     );
-    let native =
-        crate::native::F3dNative::load(merged.ir().native.namespace("f3d").unwrap()).unwrap();
+    let native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        merged.ir().native.namespace("f3d").unwrap(),
+    )
+    .unwrap();
     let axes = merged
         .ir()
         .model

@@ -18,6 +18,11 @@ cadmpeg_core::named_optional_field!(
     DesignCombineExternalBodyIdentity,
     "external_identity"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_legacy_external_identity,
+    DesignCombineLegacyExternalBodyIdentity,
+    "legacy_external_identity"
+);
 cadmpeg_core::named_optional_field!(deserialize_body_node, DesignCombineBodyNode, "body_node");
 cadmpeg_core::named_optional_field!(
     deserialize_external_property_key,
@@ -488,6 +493,38 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
     }
 }
 
+/// Cross-document body identity of a `Combine` tool selector whose body
+/// reference is a legacy target reference to a browser node of the
+/// referenced design.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignCombineLegacyExternalBodyIdentity {
+    /// Asset GUID of the enclosing body selector.
+    pub(crate) selector_asset_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_asset_id`.
+    pub(crate) selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing body selector.
+    pub(crate) selector_context_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_context_id`.
+    pub(crate) selector_context_id_offset: u64,
+    /// Same-segment occurrence reference preceding the external body reference.
+    pub(crate) occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    pub(crate) occurrence_reference_offset: u64,
+    /// Entity ID of the body-visibility browser node in the referenced design.
+    pub(crate) browser_node_entity: u64,
+    /// Byte offset of `browser_node_entity`.
+    pub(crate) browser_node_entity_offset: u64,
+    /// Source occurrence identity of the inserting occurrence placement.
+    pub(crate) source_occurrence_identity: u64,
+    /// Byte offset of `source_occurrence_identity`.
+    pub(crate) source_occurrence_identity_offset: u64,
+    /// Raw selection stamp and binary64 evaluation-scalar bits, separated by the epoch.
+    pub(crate) tail_values: [u64; 2],
+    /// Byte offsets of `tail_values` in source order.
+    pub(crate) tail_value_offsets: [u64; 2],
+}
+
 /// One target or tool body selector owned by a `Combine` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignCombineBodySelection {
@@ -500,6 +537,13 @@ pub(crate) struct DesignCombineBodySelection {
         deserialize_with = "deserialize_external_identity"
     )]
     pub(crate) external_identity: Option<DesignCombineExternalBodyIdentity>,
+    /// Complete external body identity of a legacy cross-document selector.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_legacy_external_identity"
+    )]
+    pub(crate) legacy_external_identity: Option<DesignCombineLegacyExternalBodyIdentity>,
     /// Browser node that the selector names in the operand-list form.
     #[serde(
         default,
@@ -520,7 +564,9 @@ pub(crate) struct DesignCombineBodyNode {
     pub(crate) creating_scope_record_index: u32,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignCombineDestination {
     #[default]
@@ -624,6 +670,7 @@ impl Serialize for DesignCombineOperation {
             target: DesignCombineBodySelection {
                 record_index: self.target_record_index,
                 external_identity: None,
+                legacy_external_identity: None,
                 body_node: self.target_body_node,
             },
             tools: DesignCombineToolsRef(&self.tools),
@@ -686,6 +733,9 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
         if wire.target.external_identity.is_some() {
             return Err("target.external_identity must be absent".into());
         }
+        if wire.target.legacy_external_identity.is_some() {
+            return Err("target.legacy_external_identity must be absent".into());
+        }
         let mut tools = wire.tools.into_iter();
         let first = tools
             .next()
@@ -722,6 +772,7 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             target: DesignCombineBodySelection {
                 record_index: operation.target_record_index,
                 external_identity: None,
+                legacy_external_identity: None,
                 body_node: operation.target_body_node,
             },
             tools: std::iter::once(operation.tools.first)
@@ -851,7 +902,7 @@ mod tests {
             id: "f3d:native:combine-external-identity#0",
             value: &identity,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
@@ -870,6 +921,7 @@ mod tests {
         let selection = DesignCombineBodySelection {
             record_index: 363,
             external_identity: None,
+            legacy_external_identity: None,
             body_node: Some(node),
         };
         let wire = json::to_value(&selection).unwrap();
@@ -932,7 +984,7 @@ mod tests {
             id: "f3d:native:combine-operation#0",
             value: &operation,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || COMBINE_OPERATION_CLONE_COUNT.with(|count| count.set(0)),

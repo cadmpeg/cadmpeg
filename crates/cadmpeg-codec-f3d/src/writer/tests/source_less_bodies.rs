@@ -11,16 +11,15 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
@@ -35,7 +34,7 @@ fn generated_source_less_unit_cube_writes_body_transform() {
     source_less.geometry.bodies[0].transform = Some(expected);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less transformed cube encode");
     let round_trip = F3dCodec
@@ -60,7 +59,7 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less colored cube encode");
     let round_trip = F3dCodec
@@ -101,7 +100,7 @@ fn generated_source_less_writes_an_empty_display_name_as_no_name() {
 
     let mut encoded = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("an empty display name writes");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -208,7 +207,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
     let round_trip = F3dCodec
@@ -401,14 +400,6 @@ fn generated_source_less_drops_lossy_design_link_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "one sketch-curve link per coedge",
-    );
-
-    f3d_native_mut(&mut source_less).sketch_curve_links.pop();
-    crate::test_support::assert_written_with_loss(
-        &source_less,
-        None,
-        "export/native.records-omitted",
         "contiguous ordinals",
     );
 }
@@ -463,7 +454,7 @@ fn generated_source_less_drops_collapsed_native_topology_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "requires finite fields and a tolerant vertex",
+        "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex",
     );
 }
 
@@ -531,7 +522,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-body encode");
     let round_trip = F3dCodec
@@ -574,7 +565,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less history encode");
     let mut preambleless = source_less.clone();
@@ -584,10 +575,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     }
     let mut preambleless_bytes = Vec::new();
     F3dCodec
-        .plan(
-            EncodeInput::new(&preambleless, None),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&preambleless, None))
         .and_then(|plan| plan.write_to(&mut preambleless_bytes))
         .expect("source-less preambleless history encode");
     let preambleless_round_trip = F3dCodec

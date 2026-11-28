@@ -6,8 +6,8 @@
 //! so hosts cannot disagree about the identity of the same declaration.
 //! [`records`] reads the neutral-binary node sequence through the base and
 //! embedded schema field lists, [`deltas`] owns the Deltas-stream grammar,
-//! [`topology`] classifies topology node fields, and [`xmt`] carries
-//! stream-local node identity.
+//! [`topology`] classifies topology node fields, [`precision`] states a part's
+//! modeller tolerances, and [`xmt`] carries stream-local node identity.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
@@ -18,10 +18,18 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, L
 /// Variable-width native node pointers.
 pub mod pointer;
 
-include!("registry_ids.rs");
+#[path = "registry_ids.rs"]
+/// Registry-owned kernel dialect identities.
+pub mod registry_ids;
+use self::registry_ids::{
+    FORMAT, PARASOLID_FORMAT_13006, PARASOLID_SCH_SW_32001, PARASOLID_SCH_SW_33103,
+    PARASOLID_UNKNOWN,
+};
 
 pub mod deltas;
 pub mod geometry;
+pub mod native;
+pub mod precision;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
@@ -366,11 +374,13 @@ mod tests {
 
     use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
 
+    use super::registry_ids::{
+        FORMAT, PARASOLID_FORMAT_13006, PARASOLID_SCH_SW_32001, PARASOLID_SCH_SW_33103,
+    };
     use super::{
         classify_layer, extra_layers, find_schema_token, find_u8_length_prefixed_schema_token,
         push_extras, unverified_message, Carrier, OwnedSchemaToken, DECLARED_CARRIER,
-        DECLARED_SCHEMA, FORMAT, PARASOLID_FORMAT_13006, PARASOLID_SCH_SW_32001,
-        PARASOLID_SCH_SW_33103,
+        DECLARED_SCHEMA,
     };
 
     const ALL_ROWS: [DialectId; 3] = [

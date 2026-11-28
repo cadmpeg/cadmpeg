@@ -257,8 +257,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -434,6 +434,11 @@
             "offset": 53,
             "stream": "nx:parasolid#0:partition",
             "tag": "B_SPLINE_SURFACE"
+          },
+          "nx:s1:deltas-residual#0": {
+            "offset": 0,
+            "stream": "nx:s1",
+            "tag": "DELTAS_RESIDUAL"
           }
         }
       },

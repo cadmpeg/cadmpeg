@@ -87,23 +87,31 @@ mod serialization;
 
 fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
     let tag = format!("directory_entry:D{sequence}");
+    let part = format!("part entity \"D{sequence}\" ");
     report
         .losses
         .iter()
-        .filter(|loss| {
-            loss.provenance
+        .filter_map(|loss| {
+            // The give-up of the entity's part carries the codec code of its
+            // cause in its text.
+            if cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&part) {
+                let (_, text) = loss.message.split_once(": iges/")?;
+                return text.split_once(':').map(|(code, _)| code.to_owned());
+            }
+            (loss
+                .provenance
                 .as_ref()
                 .and_then(|source| source.tag.as_deref())
-                == Some(&tag)
+                == Some(&tag))
+            .then(|| loss.code.local_code().to_owned())
         })
-        .map(|loss| loss.code.local_code().to_owned())
         .collect()
 }
 
 /// Run the overdeclared-count contract for one defective Directory Entry: the
 /// loss is charged once in both decode modes, it is the entry's only loss when
 /// no projection runs, a full decode also refuses that entry's projection, and
-/// a strict decode refuses the document on the count.
+/// a strict decode refuses the document on the count or on the entry given up.
 fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
     for depth in [
@@ -160,7 +168,13 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert!(
                 rejection.loss().code == overdeclared
-                    || rejection.loss().code == IgesLossCode::GeometryNotProjected.kind()
+                    || rejection.loss().code == cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "{:#?}",
+                rejection.loss()
+            );
+            assert_eq!(
+                code_count(rejection.report(), IgesLossCode::ParameterCountOverdeclared),
+                1
             );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
@@ -265,7 +279,9 @@ fn decode_preserves_native_entities_and_graph() {
     );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
-    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
+    assert!(!crate::test_support::with_service_context(&[], |ctx| {
+        result.source_fidelity().edited(ctx, result.ir()).unwrap()
+    }));
     assert_eq!(
         result
             .source_fidelity()

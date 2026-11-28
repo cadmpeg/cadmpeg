@@ -51,18 +51,58 @@ fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
     bytes
 }
 
+/// Whether `loss` is a `record.undecoded` give-up whose text states `code`.
+fn gives_up_for(
+    loss: &cadmpeg_ir::report::loss::LossNote,
+    code: &cadmpeg_ir::report::loss::LossKind,
+) -> bool {
+    loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+        && loss.message.contains(&code.to_string())
+}
+
+/// The `(offset, length)` of each part of stream 0 that `decoded` gives up.
+fn given_up_spans(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<(usize, usize)> {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+        .filter(|loss| {
+            loss.message.starts_with("part ") && loss.message.contains(" stream=\"nx:parasolid#0:")
+        })
+        .filter_map(|loss| {
+            let field = |name: &str| -> Option<usize> {
+                let (_, rest) = loss.message.split_once(&format!(" {name}="))?;
+                rest.split(|c: char| !c.is_ascii_digit())
+                    .next()?
+                    .parse()
+                    .ok()
+            };
+            Some((field("offset")?, field("length")?))
+        })
+        .collect()
+}
+
 /// A first-use base-schema BODY: `highest_node_id`, then pointers, reals,
 /// and bytes.
 fn body(xmt: u32, highest_node_id: u32) -> Vec<u8> {
+    stored_body(true, xmt, highest_node_id, 1.0e-8)
+}
+
+/// A base-schema BODY that stores `res_linear`; `first` writes the type's
+/// first-use declaration.
+fn stored_body(first: bool, xmt: u32, highest_node_id: u32, res_linear: f64) -> Vec<u8> {
     let mut bytes = u16::from(NodeKind::Body.code()).to_be_bytes().to_vec();
-    bytes.push(255);
+    if first {
+        bytes.push(255);
+    }
     bytes.extend(encoded_xmt(xmt));
     bytes.extend(highest_node_id.to_be_bytes());
     for _ in 0..6 {
         bytes.extend(encoded_xmt(1));
     }
     bytes.extend(1.0e3f64.to_be_bytes());
-    bytes.extend(1.0e-8f64.to_be_bytes());
+    bytes.extend(res_linear.to_be_bytes());
     for _ in 0..3 {
         bytes.extend(encoded_xmt(1));
     }
@@ -219,6 +259,7 @@ fn primary_edge_complete_prefix_survives_a_later_stop() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = header(13006, false);
     bytes.extend(edge(false, 11, 73, 0.0));
+    let stop = bytes.len();
     bytes.extend([0, 0]);
     bytes.extend(edge(false, 12, 74, 0.0));
     with_decode_context(|_ctx| {
@@ -237,10 +278,11 @@ fn primary_edge_complete_prefix_survives_a_later_stop() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == code)
+            .filter(|loss| gives_up_for(loss, &code))
             .count(),
         1
     );
+    assert_eq!(given_up_spans(&decoded), [(stop, bytes.len() - stop)]);
 }
 
 #[test]
@@ -278,7 +320,14 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
     bytes.extend(edge(false, 11, 74, f64::NAN));
     bytes.extend(END);
     with_decode_context(|_ctx| {
-        assert_eq!(parse(&bytes).primary_edge_refusals(), [first, second]);
+        assert_eq!(
+            parse(&bytes)
+                .primary_edge_refusals()
+                .iter()
+                .map(|(_, range)| range.start)
+                .collect::<Vec<_>>(),
+            [first, second]
+        );
     });
     let file = crate::test_support::test_prt::prt_with_partition(&bytes);
     let decoded = crate::NxCodec
@@ -290,9 +339,14 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == code)
+            .filter(|loss| gives_up_for(loss, &code))
             .count(),
         2
+    );
+    let end = bytes.len() - END.len();
+    assert_eq!(
+        given_up_spans(&decoded),
+        [(first, second - first), (second, end - second)]
     );
 }
 
@@ -402,7 +456,14 @@ fn terminated_edge_with_an_inserted_base_field_is_refused() {
         bytes.extend(END);
         let graph = parse(&bytes);
         assert_eq!(graph.kind_count(NodeKind::Edge), 0);
-        assert_eq!(graph.primary_edge_refusals(), [start]);
+        assert_eq!(
+            graph
+                .primary_edge_refusals()
+                .iter()
+                .map(|(_, range)| range.start)
+                .collect::<Vec<_>>(),
+            [start]
+        );
     });
 }
 
@@ -451,7 +512,14 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
         with_decode_context(|_ctx| {
             let graph = parse(&bytes);
             assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
-            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Vertex, start)]);
+            assert_eq!(
+                graph
+                    .primary_node_refusals()
+                    .iter()
+                    .map(|(kind, _, range)| (*kind, range.start))
+                    .collect::<Vec<_>>(),
+                [(NodeKind::Vertex, start)]
+            );
         });
         let file = crate::test_support::test_prt::prt_with_partition(&bytes);
         let decoded = crate::NxCodec
@@ -463,9 +531,13 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == code)
+                .filter(|loss| gives_up_for(loss, &code))
                 .count(),
             1
+        );
+        assert_eq!(
+            given_up_spans(&decoded),
+            [(start, bytes.len() - END.len() - start)]
         );
     }
 }
@@ -482,7 +554,11 @@ fn terminated_vertices_that_share_an_identity_are_both_refused() {
         let graph = parse(&bytes);
         assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
         assert_eq!(
-            graph.primary_node_refusals(),
+            graph
+                .primary_node_refusals()
+                .iter()
+                .map(|(kind, _, range)| (*kind, range.start))
+                .collect::<Vec<_>>(),
             [(NodeKind::Vertex, first), (NodeKind::Vertex, second)]
         );
     });
@@ -533,7 +609,14 @@ fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection(
         with_decode_context(|_ctx| {
             let graph = parse(&bytes);
             assert_eq!(graph.kind_count(NodeKind::Fin), 0, "{references:?}");
-            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Fin, start)]);
+            assert_eq!(
+                graph
+                    .primary_node_refusals()
+                    .iter()
+                    .map(|(kind, _, range)| (*kind, range.start))
+                    .collect::<Vec<_>>(),
+                [(NodeKind::Fin, start)]
+            );
         });
         let file = crate::test_support::test_prt::prt_with_partition(&bytes);
         let decoded = crate::NxCodec
@@ -545,9 +628,45 @@ fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection(
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == code)
+                .filter(|loss| gives_up_for(loss, &code))
                 .count(),
             1
         );
     }
+}
+
+#[test]
+fn each_framed_body_keeps_its_stored_linear_resolution() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        bytes.extend(stored_body(true, 3, 40, 1.0e-8));
+        bytes.extend(stored_body(false, 5, 50, 1.0e-6));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert_eq!(
+            graph
+                .body_linear_resolutions()
+                .iter()
+                .map(|(&xmt, &resolution)| (xmt, resolution))
+                .collect::<Vec<_>>(),
+            [(3, 1.0e-8), (5, 1.0e-6)]
+        );
+    });
+}
+
+#[test]
+fn a_body_past_the_primary_stop_keeps_its_stored_linear_resolution() {
+    with_decode_context(|_ctx| {
+        let stream = crate::test_support::test_streams::primary_stopped_topology_stream(1.0e-6);
+        let graph = parse(&stream);
+        assert!(graph.primary_unread_from().is_some());
+        assert_eq!(
+            graph
+                .body_linear_resolutions()
+                .iter()
+                .map(|(&xmt, &resolution)| (xmt, resolution))
+                .collect::<Vec<_>>(),
+            [(2, 1.0e-6)]
+        );
+    });
 }

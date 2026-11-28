@@ -4,16 +4,17 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::assembly::{Member, MemberTable};
+use crate::assembly::{Member, MemberTable, MemberTableStop, RowFault};
 use crate::container::ContainerScan;
 use crate::loss::CreoLossCode;
 
@@ -36,15 +37,15 @@ pub(super) fn transfer_assembly_members(
     source_carriers: &SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let Some(table) = scan.assembly.as_ref() else {
-        if declares_assembly(&scan.framing.version_line) {
-            transfer_losses.push(CreoLossCode::AssemblyMemberTableIncomplete.note(
-                "the header declares an assembly, but no NeuAsmSld component table was read; \
-                 no component occurrence transferred",
+        if declares_assembly(&scan.framing.version_line) && member_sections(scan).next().is_none() {
+            transfer_losses.push(CreoLossCode::AssemblyMemberTableUnread.note(
+                "the header declares an assembly, but no NeuAsmSld section holds a component \
+                 table; no component occurrence transferred",
             ));
         }
         return Ok(());
     };
-    record_table_stop(table, transfer_losses);
+    record_table_stop(scan, table, transfer_losses);
     let root = crate::identity::compose_checked::<ProductDefinitionId>(
         &crate::identity::MODEL_PRODUCT_DEFINITION,
         "root",
@@ -65,12 +66,16 @@ pub(super) fn transfer_assembly_members(
     let mut definitions = Vec::new();
     let mut owned = Vec::new();
     let mut external_occurrences = 0_usize;
-    let mut unresolved_placements = 0_usize;
+    let mut unresolved_placements = Vec::new();
     let mut unresolved_references = 0_usize;
     let mut transferred = 0_usize;
     for (row, member) in table.members.iter().enumerate() {
+        let id = crate::identity::compose_checked::<OccurrenceId>(
+            &crate::identity::MODEL_OCCURRENCE,
+            format_args!("member-{row}"),
+        )?;
         let Some(transform) = member_transform(&member.frame) else {
-            unresolved_placements += 1;
+            unresolved_placements.push(id);
             continue;
         };
         let document = member_document(member);
@@ -106,10 +111,6 @@ pub(super) fn transfer_assembly_members(
         } else {
             unresolved_references += 1;
         }
-        let id = crate::identity::compose_checked::<OccurrenceId>(
-            &crate::identity::MODEL_OCCURRENCE,
-            format_args!("member-{row}"),
-        )?;
         annotate(
             annotations,
             &id,
@@ -121,7 +122,7 @@ pub(super) fn transfer_assembly_members(
         ctx.charge_entities(1, "admit Creo assembly member occurrences")?;
         let mut occurrence = Occurrence::new(id.clone(), prototype, Some(transform));
         occurrence.name = Some(member.name.clone());
-        occurrence.native_ref = Some(format!("NeuAsmSld:members:{}", member.id));
+        occurrence.native_ref = Some(member_record(member));
         source_carriers.admit_occurrence(ir, occurrence)?;
         owned.push(id);
         transferred += 1;
@@ -142,12 +143,15 @@ pub(super) fn transfer_assembly_members(
             external_documents.len()
         )));
     }
-    if unresolved_placements > 0 {
-        transfer_losses.push(CreoLossCode::AssemblyPlacementUnresolved.note(format!(
-            "{unresolved_placements} component row(s) store a frame that is not a proper rigid \
-             placement; those occurrences did not transfer"
-        )));
-    }
+    transfer_losses.extend(unresolved_placements.iter().map(|occurrence| {
+        GivenUpRecord::new(
+            occurrence,
+            Cause::Unreadable,
+            "the component row stores a frame that is not a proper rigid placement; the \
+             occurrence does not transfer",
+        )
+        .loss()
+    }));
     if unresolved_references > 0 {
         transfer_losses.push(
             CreoLossCode::AssemblyMemberReferenceUnresolved.note(format!(
@@ -167,17 +171,130 @@ pub(super) fn transfer_assembly_members(
     Ok(())
 }
 
-fn record_table_stop(table: &MemberTable, transfer_losses: &mut Vec<LossNote>) {
-    if let Some(stop) = &table.stop {
-        transfer_losses.push(CreoLossCode::AssemblyMemberTableIncomplete.note(format!(
-            "component table at offset {} declares {} row(s); {} row(s) decoded before offset {}: {}",
-            table.offset,
-            table.declared,
-            table.members.len(),
-            stop.offset,
-            stop.reason
-        )));
+/// Charges a table stop that [`give_up_unread_tables`] does not give up: a
+/// row count other than the declared one, or a row that the section ends
+/// inside, breaks the table framing; a row of a form without a reading past
+/// the end of the table's `NeuAsmSld` section leaves the rows unread.
+fn record_table_stop(
+    scan: &ContainerScan,
+    table: &MemberTable,
+    transfer_losses: &mut Vec<LossNote>,
+) {
+    let Some(stop) = &table.stop else {
+        return;
+    };
+    let code = match stop.row {
+        _ if rows_given_up(scan, table, stop) => return,
+        None | Some(RowFault::Broken) => CreoLossCode::AssemblyMemberTableIncomplete,
+        Some(RowFault::Unread) => CreoLossCode::AssemblyMemberTableUnread,
+    };
+    transfer_losses.push(code.note(table_stop(table, stop)));
+}
+
+/// The statement of a component table that ends at `stop`.
+fn table_stop(table: &MemberTable, stop: &MemberTableStop) -> String {
+    format!(
+        "component table at offset {} declares {} row(s); {} row(s) decoded before offset {}: {}",
+        table.offset,
+        table.declared,
+        table.members.len(),
+        stop.offset,
+        stop.reason
+    )
+}
+
+/// The first `members` field of each `NeuAsmSld` section, as an offset in
+/// the framed data, with the section's region and end.
+fn member_sections<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> impl Iterator<Item = (usize, Vec<usize>, &'a [u8], usize)> + 'a {
+    scan.framing.sections.iter().filter_map(|section| {
+        if section.name() != "NeuAsmSld" {
+            return None;
+        }
+        let region = crate::container::section_region(&scan.framing.data, section)?;
+        let fields = crate::assembly::member_fields(region).collect::<Vec<_>>();
+        let first = section.offset() + *fields.first()?;
+        Some((first, fields, region, section.end()))
+    })
+}
+
+/// Whether [`give_up_unread_tables`] gives up the rows of the transferred
+/// `table` from its stop at a row: the stop lies inside the section that
+/// holds the table.
+fn rows_given_up(scan: &ContainerScan, table: &MemberTable, stop: &MemberTableStop) -> bool {
+    stop.row.is_some()
+        && member_sections(scan)
+            .any(|(field, _, _, end)| field == table.offset && stop.offset < end)
+}
+
+/// Gives up each component table of a `NeuAsmSld` section that the decode
+/// reads and does not transfer, from its `members` field to the end of the
+/// section, as a `component-table` part: the decode reads one table, so
+/// another one is undecoded. For the transferred table, gives up the rows
+/// from the first row the grammar does not admit to the end of the section,
+/// as a `component-rows` part: unreadable where the row breaks the grammar,
+/// undecoded where it holds a value form without a reading. The decode
+/// retains no other copy of those bytes.
+pub(super) fn give_up_unread_tables(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<GivenUpPart>, CodecError> {
+    let mut given_up = Vec::new();
+    for (field, fields, region, end) in member_sections(scan) {
+        let (kind, offset, cause, why) =
+            match scan.assembly.as_ref().filter(|table| table.offset == field) {
+                Some(table) => match table
+                    .stop
+                    .as_ref()
+                    .filter(|stop| rows_given_up(scan, table, stop))
+                {
+                    Some(stop) => (
+                        "component-rows",
+                        stop.offset,
+                        match stop.row {
+                            Some(RowFault::Unread) => Cause::Undecoded,
+                            _ => Cause::Unreadable,
+                        },
+                        table_stop(table, stop),
+                    ),
+                    None => continue,
+                },
+                None => (
+                    "component-table",
+                    field,
+                    Cause::Undecoded,
+                    format!(
+                        "{}: {}",
+                        CreoLossCode::AssemblyMemberTableUnread.kind(),
+                        if fields.len() > 1 {
+                            "the section holds more than one members field"
+                        } else if crate::assembly::member_table(region).is_some() {
+                            "another NeuAsmSld section also holds a component table"
+                        } else {
+                            "the members field header is not the table array form the reader reads"
+                        }
+                    ),
+                ),
+            };
+        let Some(bytes) = scan.framing.data.get(offset..end) else {
+            continue;
+        };
+        let part = Part::at(
+            "creo",
+            kind,
+            u64_from_index(offset),
+            bytes,
+            [ArenaClass::Model],
+        );
+        given_up.push(ctx.give_up_part(part, cause, super::give_up_error(cause, why))?);
     }
+    Ok(given_up)
+}
+
+/// The native address of a component row.
+fn member_record(member: &Member) -> String {
+    format!("NeuAsmSld:members:{}", member.id)
 }
 
 /// The child model file a row names: the model name with the extension its

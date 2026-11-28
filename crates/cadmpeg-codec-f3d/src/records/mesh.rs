@@ -1096,7 +1096,7 @@ impl DesignMeshPlacement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum DesignMeshBodyWords {
     Plain { body_word: u32 },
@@ -1953,6 +1953,7 @@ impl DesignMeshCollection {
             }
         } else {
             record.frame_length() == length
+                || (body_count != 0 && record.frame_length() == length + 4)
         };
         if !valid_length {
             return Err("bodies count must match collection record length and entries".into());

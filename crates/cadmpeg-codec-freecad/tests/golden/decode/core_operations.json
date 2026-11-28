@@ -74,6 +74,103 @@
               }
             }
           }
+        },
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#ChamferBase"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DatumAxis"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DatumCoordinateSystem"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DatumPlane"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DatumPoint"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DressupBase"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#ExtrusionProfile"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Loft"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#LoftSectionA"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#LoftSectionB"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Mirror"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#MirrorBase"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#PartChamfer"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#PartFillet"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Revolution"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#RevolutionProfile"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Sweep"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SweepSection"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SweepSpine"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SymmetricExtrusion"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Thickness"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#ThicknessBase"
+              }
+            ]
+          }
         }
       ],
       "evaluations": [
@@ -9284,6 +9381,77 @@
         {
           "definition": {
             "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#ChamferBase:Shape:ChamferBase.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#ChamferBase",
+          "name": "ChamferBase",
+          "native_ref": "fcstd:native:object#ChamferBase"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DatumAxis",
+          "name": "DatumAxis",
+          "native_ref": "fcstd:native:object#DatumAxis"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DatumCoordinateSystem",
+          "name": "DatumCoordinateSystem",
+          "native_ref": "fcstd:native:object#DatumCoordinateSystem"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DatumPlane",
+          "name": "DatumPlane",
+          "native_ref": "fcstd:native:object#DatumPlane"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DatumPoint",
+          "name": "DatumPoint",
+          "native_ref": "fcstd:native:object#DatumPoint"
+        },
+        {
+          "definition": {
+            "operation": {
               "kind": "unresolved",
               "value": {
                 "family": "draft"
@@ -9321,6 +9489,44 @@
             "kind": "literal",
             "value": false
           }
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#DressupBase:Shape:DressupBase.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DressupBase",
+          "name": "DressupBase",
+          "native_ref": "fcstd:native:object#DressupBase"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:9%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#ExtrusionProfile",
+          "name": "ExtrusionProfile",
+          "native_ref": "fcstd:native:object#ExtrusionProfile"
         },
         {
           "definition": {
@@ -9366,10 +9572,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#HoleProfile"
             }
           },
           "id": "fcstd:design:feature#HoleProfile",
@@ -9399,6 +9603,115 @@
             "operation": {
               "kind": "unresolved",
               "value": {
+                "family": "loft"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Loft",
+          "name": "Loft",
+          "native_ref": "fcstd:native:object#Loft"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#LoftSectionA:Shape:LoftSectionA.Shape.brp:3%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#LoftSectionA",
+          "name": "LoftSectionA",
+          "native_ref": "fcstd:native:object#LoftSectionA"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#LoftSectionB:Shape:LoftSectionB.Shape.brp:3%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#LoftSectionB",
+          "name": "LoftSectionB",
+          "native_ref": "fcstd:native:object#LoftSectionB"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "pattern"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Mirror",
+          "name": "Mirror",
+          "native_ref": "fcstd:native:object#Mirror"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#MirrorBase:Shape:MirrorBase.Shape.brp:13%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#MirrorBase",
+          "name": "MirrorBase",
+          "native_ref": "fcstd:native:object#MirrorBase"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "chamfer"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#PartChamfer",
+          "name": "PartChamfer",
+          "native_ref": "fcstd:native:object#PartChamfer"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "fillet"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#PartFillet",
+          "name": "PartFillet",
+          "native_ref": "fcstd:native:object#PartFillet"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
                 "family": "primitive"
               }
             },
@@ -9411,10 +9724,204 @@
             "kind": "literal",
             "value": false
           }
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "revolve"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Revolution",
+          "name": "Revolution",
+          "native_ref": "fcstd:native:object#Revolution"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#RevolutionProfile"
+            }
+          },
+          "id": "fcstd:design:feature#RevolutionProfile",
+          "name": "RevolutionProfile",
+          "native_ref": "fcstd:native:object#RevolutionProfile"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sweep"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Sweep",
+          "name": "Sweep",
+          "native_ref": "fcstd:native:object#Sweep"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#SweepSection:Shape:SweepSection.Shape.brp:3%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#SweepSection",
+          "name": "SweepSection",
+          "native_ref": "fcstd:native:object#SweepSection"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#SweepSpine:Shape:SweepSpine.Shape.brp:6%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#SweepSpine",
+          "name": "SweepSpine",
+          "native_ref": "fcstd:native:object#SweepSpine"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "extrude"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#SymmetricExtrusion",
+          "name": "SymmetricExtrusion",
+          "native_ref": "fcstd:native:object#SymmetricExtrusion"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "shell"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Thickness",
+          "name": "Thickness",
+          "native_ref": "fcstd:native:object#Thickness"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#ThicknessBase:Shape:ThicknessBase.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#ThicknessBase",
+          "name": "ThicknessBase",
+          "native_ref": "fcstd:native:object#ThicknessBase"
         }
       ],
       "names": [],
       "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DatumAxis:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DatumAxis:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DatumAxis"
+          },
+          "position": 7,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DatumPlane:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DatumPlane:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DatumPlane"
+          },
+          "position": 7,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
         {
           "definition": {
             "kind": "expression",
@@ -9444,6 +9951,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Draft"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9480,6 +9988,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 4,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9516,6 +10025,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 5,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9552,6 +10062,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9588,6 +10099,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9624,6 +10136,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 12,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9660,6 +10173,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 14,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9696,6 +10210,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 15,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9732,6 +10247,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 30,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9768,6 +10284,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 32,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9804,6 +10321,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 34,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9840,6 +10358,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#LinearPattern"
           },
+          "position": 6,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9876,6 +10395,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#LinearPattern"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9912,11 +10432,86 @@
             "kind": "feature",
             "value": "fcstd:design:feature#PatternBase"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
             "kind": "number",
             "value": 4.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "225[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Revolution:Angle",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Angle",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Revolution:Angle",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Revolution"
+          },
+          "position": 0,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 225.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "1.25[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Thickness:Value",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Value",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Thickness:Value",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Thickness"
+          },
+          "position": 11,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.25
           }
         }
       ],
@@ -9970,6 +10565,261 @@
               "native_ref": "fcstd:native:object#PatternBody",
               "poses": [],
               "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#ChamferBase"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#ChamferBase:Shape:ChamferBase.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#ChamferBase",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#DressupBase"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#DressupBase:Shape:DressupBase.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#DressupBase",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#ExtrusionProfile"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:9%40location1"
+              ],
+              "native_ref": "fcstd:native:object#ExtrusionProfile",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Loft"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Loft:Shape:Loft.Shape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Loft",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#LoftSectionA"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#LoftSectionA:Shape:LoftSectionA.Shape.brp:3%40location1"
+              ],
+              "native_ref": "fcstd:native:object#LoftSectionA",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#LoftSectionB"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#LoftSectionB:Shape:LoftSectionB.Shape.brp:3%40location1"
+              ],
+              "native_ref": "fcstd:native:object#LoftSectionB",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Mirror"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Mirror:Shape:Mirror.Shape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Mirror",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#MirrorBase"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#MirrorBase:Shape:MirrorBase.Shape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#MirrorBase",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#PartChamfer"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#PartChamfer:Shape:PartChamfer.Shape.brp:42%40location1"
+              ],
+              "native_ref": "fcstd:native:object#PartChamfer",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#PartFillet"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#PartFillet:Shape:PartFillet.Shape.brp:42%40location1"
+              ],
+              "native_ref": "fcstd:native:object#PartFillet",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Revolution"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Revolution:Shape:Revolution.Shape.brp:8%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Revolution",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Sweep"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Sweep:Shape:Sweep.Shape.brp:18%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Sweep",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#SweepSection"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#SweepSection:Shape:SweepSection.Shape.brp:3%40location1"
+              ],
+              "native_ref": "fcstd:native:object#SweepSection",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#SweepSpine"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#SweepSpine:Shape:SweepSpine.Shape.brp:6%40location1"
+              ],
+              "native_ref": "fcstd:native:object#SweepSpine",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#SymmetricExtrusion"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:46%40location1"
+              ],
+              "native_ref": "fcstd:native:object#SymmetricExtrusion",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Thickness"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Thickness:Shape:Thickness.Shape.brp:66"
+              ],
+              "native_ref": "fcstd:native:object#Thickness",
+              "poses": [],
+              "status": "stale"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#ThicknessBase"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#ThicknessBase:Shape:ThicknessBase.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#ThicknessBase",
+              "poses": [],
+              "status": "current"
             }
           ],
           "definition": "fcstd:model:product_definition#document:root",
@@ -9977,34 +10827,151 @@
           "roots": [
             "fcstd:design:container#DraftBody",
             "fcstd:design:container#HoleBody",
-            "fcstd:design:container#PatternBody"
+            "fcstd:design:container#PatternBody",
+            "fcstd:design:container#document:group"
           ],
           "unproduced": [
-            "fcstd:model:body#ChamferBase:Shape:ChamferBase.Shape.brp:34%40location1",
-            "fcstd:model:body#DressupBase:Shape:DressupBase.Shape.brp:34%40location1",
-            "fcstd:model:body#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:9%40location1",
-            "fcstd:model:body#Loft:Shape:Loft.Shape.brp:13%40location1",
-            "fcstd:model:body#LoftSectionA:Shape:LoftSectionA.Shape.brp:3%40location1",
-            "fcstd:model:body#LoftSectionB:Shape:LoftSectionB.Shape.brp:3%40location1",
-            "fcstd:model:body#Mirror:Shape:Mirror.Shape.brp:13%40location1",
-            "fcstd:model:body#MirrorBase:Shape:MirrorBase.Shape.brp:13%40location1",
-            "fcstd:model:body#PartChamfer:Shape:PartChamfer.Shape.brp:42%40location1",
-            "fcstd:model:body#PartFillet:Shape:PartFillet.Shape.brp:42%40location1",
-            "fcstd:model:body#Revolution:Shape:Revolution.Shape.brp:8%40location1",
-            "fcstd:model:body#RevolutionProfile:Shape:RevolutionProfile.Shape.brp:4%40location1",
-            "fcstd:model:body#Sweep:Shape:Sweep.Shape.brp:18%40location1",
-            "fcstd:model:body#SweepSection:Shape:SweepSection.Shape.brp:3%40location1",
-            "fcstd:model:body#SweepSpine:Shape:SweepSpine.Shape.brp:6%40location1",
-            "fcstd:model:body#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:46%40location1",
-            "fcstd:model:body#Thickness:Shape:Thickness.Shape.brp:66",
-            "fcstd:model:body#ThicknessBase:Shape:ThicknessBase.Shape.brp:34%40location1"
+            "fcstd:model:body#RevolutionProfile:Shape:RevolutionProfile.Shape.brp:4%40location1"
           ]
         }
       ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "circle",
+              "value": {
+                "center": {
+                  "u": 12.0,
+                  "v": 9.0
+                },
+                "radius": 3.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#HoleProfile:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#HoleProfile:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#HoleProfile",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 8.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 4.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#RevolutionProfile:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#RevolutionProfile:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#RevolutionProfile",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#HoleProfile",
+          "name": "HoleProfile",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#HoleProfile",
+          "owner": "fcstd:design:feature#HoleProfile",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        },
+        {
+          "id": "fcstd:design:sketch#RevolutionProfile",
+          "name": "RevolutionProfile",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#RevolutionProfile",
+          "owner": "fcstd:design:feature#RevolutionProfile",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],

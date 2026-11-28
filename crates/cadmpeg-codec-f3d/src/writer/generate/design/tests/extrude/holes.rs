@@ -569,7 +569,7 @@ pub(super) fn depth(decoded: &CadIr) -> f64 {
 
 /// The decoded face of each side token, with its surface.
 pub(super) fn named_faces(decoded: &CadIr) -> Vec<(String, SolvedSurfaceGeometry)> {
-    let native = crate::test_support::native_test::f3d_native(decoded);
+    let native = crate::test_support::native_fixture::f3d_native(decoded);
     native
         .persistent_subentity_tags
         .iter()
@@ -606,7 +606,7 @@ fn cylinder_radius(faces: &[(String, SolvedSurfaceGeometry)], token: &str) -> f6
 /// The token of the face that owns each sketch link's coedge, with the
 /// link's curve and sense.
 pub(super) fn links(decoded: &CadIr) -> Vec<(String, i64, Option<i64>)> {
-    let native = crate::test_support::native_test::f3d_native(decoded);
+    let native = crate::test_support::native_fixture::f3d_native(decoded);
     let mut links = native
         .sketch_curve_links
         .iter()

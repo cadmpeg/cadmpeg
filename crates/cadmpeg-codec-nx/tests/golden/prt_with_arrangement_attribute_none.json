@@ -2,7 +2,44 @@
   "decode": {
     "ir": {
       "design": {
-        "arrangements": [],
+        "arrangements": [
+          {
+            "appearances": [],
+            "id": "nx:arrangements:arrangement#0",
+            "kind": {
+              "kind": "positional"
+            },
+            "moves": [],
+            "name": "Model",
+            "native_ref": "nx:arrangements-1:configuration#0",
+            "nested": [],
+            "overrides": {
+              "definitions": {},
+              "features": {},
+              "occurrences": {},
+              "parameters": {}
+            },
+            "scope": "nx:document:product-definition#root"
+          },
+          {
+            "appearances": [],
+            "id": "nx:arrangements:arrangement#1",
+            "kind": {
+              "kind": "positional"
+            },
+            "moves": [],
+            "name": "Exploded",
+            "native_ref": "nx:arrangements-1:configuration#1",
+            "nested": [],
+            "overrides": {
+              "definitions": {},
+              "features": {},
+              "occurrences": {},
+              "parameters": {}
+            },
+            "scope": "nx:document:product-definition#root"
+          }
+        ],
         "configurations": [],
         "containers": [],
         "evaluations": [],
@@ -11,7 +48,18 @@
         "parameters": [],
         "programs": [],
         "publications": [],
-        "scopes": [],
+        "scopes": [
+          {
+            "active_arrangements": [],
+            "current": [],
+            "definition": "nx:document:product-definition#root",
+            "occurrences": {},
+            "roots": [],
+            "unproduced": [
+              "nx:s0:body#2"
+            ]
+          }
+        ],
         "sheet_metal_rules": [],
         "sketch_constraints": [],
         "sketch_entities": [],
@@ -283,8 +331,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -357,6 +405,18 @@
           },
           "message": "The Parasolid stream at stream@155 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s0:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
+          "severity": "warning"
         }
       ],
       "notes": [
@@ -374,6 +434,20 @@
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:arrangements:arrangement#0": {
+            "fields": {
+              "name": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
+          "nx:arrangements:arrangement#1": {
+            "fields": {
+              "name": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
           "nx:container:parasolid#0": {
             "entity": "derived",
             "fields": {
@@ -430,6 +504,16 @@
           }
         },
         "provenance": {
+          "nx:arrangements:arrangement#0": {
+            "offset": 436,
+            "stream": "nx:container",
+            "tag": "Arrangement"
+          },
+          "nx:arrangements:arrangement#1": {
+            "offset": 477,
+            "stream": "nx:container",
+            "tag": "Arrangement"
+          },
           "nx:container:parasolid#0": {
             "offset": 155,
             "stream": "nx:container",

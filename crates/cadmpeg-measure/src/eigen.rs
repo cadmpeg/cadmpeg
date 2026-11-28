@@ -11,6 +11,7 @@
 use crate::tolerance::JACOBI_RELATIVE_RESIDUAL;
 
 /// Jacobi sweeps of one eigen-decomposition.
+// resource-cap: MAX_JACOBI_SWEEPS = 4
 const MAX_JACOBI_SWEEPS: usize = 32;
 
 /// The eigen-decomposition of a symmetric 3×3 matrix.

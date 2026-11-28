@@ -2,19 +2,24 @@
 //! Native drawing segment records.
 
 mod records;
-mod references;
+pub(crate) mod references;
 mod token_wire;
 mod validate;
 
-use cadmpeg_core::decode::DecodeContext;
+use std::collections::BTreeMap;
+
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::outcome::PartOutcome;
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, DecodeParts, GivenUpPart};
 use serde::{Deserialize, Serialize};
 
 use crate::container::InventorContainer;
 use crate::loss::InventorLossCode;
 use crate::native::StructuralIssueRecord;
+use crate::records::meta_section_part;
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind, SegmentMetaState};
 
 pub(crate) use records::Record;
@@ -88,16 +93,37 @@ impl MetadataReference {
 }
 
 #[derive(Default)]
-pub(crate) struct Inventory {
+pub(crate) struct Inventory<'a> {
     pub(crate) records: Vec<Record>,
     pub(crate) references: Vec<MetadataReference>,
     pub(crate) reference_tables: Vec<references::Tables>,
     pub(crate) issues: Vec<StructuralIssueRecord>,
+    /// The parts the inventory gave up, for the decode to commit.
+    pub(crate) given_up: Vec<GivenUpPart>,
+    sections: Vec<PartOutcome<'a>>,
+    /// The give-ups and dependent notes of the refused records.
+    refusals: Vec<LossNote>,
+    /// The id that names each refused record, by segment token and ordinal.
+    refused: BTreeMap<(String, u32), String>,
+    /// Given-up table parts by segment token and metadata section.
+    failed_sections: BTreeMap<(String, u8), String>,
     segment_count: usize,
     record_count: usize,
 }
 
-impl Inventory {
+impl Inventory<'_> {
+    pub(crate) fn section_give_ups(
+        &self,
+        ctx: &DecodeContext<'_>,
+        inspect: bool,
+    ) -> Result<Vec<GivenUpPart>, CodecError> {
+        let mut parts = Vec::new();
+        for outcome in &self.sections {
+            parts.extend(outcome.give_up(ctx, inspect)?);
+        }
+        Ok(parts)
+    }
+
     pub(crate) fn write(
         &self,
         ctx: &DecodeContext<'_>,
@@ -118,18 +144,60 @@ impl Inventory {
         Ok(())
     }
 
+    /// Refuses `record`, whose payload starts at `offset` of its expanded
+    /// bulk stream, for its references. A record that fails only for a link
+    /// to a given-up record is dropped with that record; any other record
+    /// gives up its payload as a part that drops the record.
     fn refuse_references(
         &mut self,
         ctx: &DecodeContext<'_>,
         record: &Record,
+        offset: u64,
+        links: bool,
     ) -> Result<(), CodecError> {
         ctx.charge_entities(1, "retain Inventor drawing reference refusal")?;
         let scope = format!("{}-{}", record.segment_token, record.ordinal);
+        let detail = "drawing record does not select the required unique reference targets";
         self.issues.push(StructuralIssueRecord {
             id: format!("inventor:drawing:record-issue#{scope}"),
             scope,
-            detail: "drawing record does not select the required unique reference targets".into(),
+            detail: detail.into(),
         });
+        let need = links
+            .then(|| {
+                references::refused_link(
+                    record,
+                    &self.refused,
+                    &self.reference_tables,
+                    &self.failed_sections,
+                )
+            })
+            .flatten();
+        let id = cadmpeg_ir::ids::Identity::new(&record.id)?;
+        if let Some(need) = need {
+            self.refusals
+                .push(dropped_with(id, cadmpeg_ir::ids::Identity::new(need)?));
+        } else {
+            let part = crate::rse::bulk_record_part(
+                "rse-record",
+                (&record.segment_token, record.ordinal),
+                offset,
+                &record.payload,
+                ArenaClass::Model,
+            )
+            .dropping([id]);
+            self.given_up.push(ctx.give_up_part(
+                part,
+                Cause::Undecoded,
+                CodecError::malformed(detail),
+            )?);
+        }
+        if !links {
+            self.refused.insert(
+                (record.segment_token.as_str().to_owned(), record.ordinal),
+                record.id.clone(),
+            );
+        }
         Ok(())
     }
 
@@ -141,54 +209,81 @@ impl Inventory {
                 self.segment_count, self.record_count
             )));
         }
-        if !self.issues.is_empty() {
-            losses.push(InventorLossCode::DrawingRecordMalformed.note(format!(
-                "{} drawing records retain untyped payloads after a typed-form refusal",
-                self.issues.len()
-            )));
-        }
+        losses.extend(self.refusals.iter().cloned());
         losses
     }
 }
 
-pub(crate) fn inventory(
+pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-    frames: &[crate::native::RseRecordRecord],
-) -> Result<Inventory, CodecError> {
+    container: &InventorContainer<'a>,
+    frames: Option<&[crate::native::RseRecordRecord]>,
+) -> Result<Inventory<'a>, CodecError> {
     let mut inventory = Inventory::default();
-    if !container
+    let mut offsets = BTreeMap::new();
+    let drawing_document = container
         .rse
         .segments
         .iter()
-        .any(|segment| segment.kind == SegmentKind::Drawing(Family::Document))
-    {
-        return Ok(inventory);
-    }
+        .any(|segment| segment.kind == SegmentKind::Drawing(Family::Document));
     for segment in &container.rse.segments {
-        let SegmentKind::Drawing(family) = segment.kind else {
-            continue;
+        let token = segment.pair.token.as_str();
+        let drawing = drawing_document && matches!(segment.kind, SegmentKind::Drawing(_));
+        if let SegmentMetaState::Parsed(meta) = &segment.meta {
+            for index in [1, 2, 4] {
+                let part = meta_section_part(Some(token), &meta.tables.sections[index])?;
+                inventory.sections.push(PartOutcome::inventory(part));
+            }
+            for index in [5, 8, 10]
+                .into_iter()
+                .filter(|&index| !drawing || index != 8)
+            {
+                let section = &meta.tables.sections[index];
+                let part = meta_section_part(Some(token), section)?;
+                let outcome = match crate::records::validate_auxiliary_section(section) {
+                    Ok(()) => PartOutcome::admitted(part),
+                    Err(error) => PartOutcome::refused(part, Cause::Unreadable, &error),
+                };
+                inventory.sections.push(outcome);
+            }
+        }
+        let family = match segment.kind {
+            SegmentKind::Drawing(family) if drawing_document => family,
+            _ => continue,
         };
         inventory.segment_count += 1;
         if let SegmentMetaState::Parsed(meta) = &segment.meta {
-            match references::Tables::read(ctx, segment.pair.token.key(), meta) {
-                Ok(table) => {
-                    ctx.charge_entities(1, "retain Inventor drawing reference tables")?;
-                    inventory.reference_tables.push(table);
-                }
-                Err(error) => {
-                    let detail = crate::issue_detail(error)?;
-                    ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
-                    let scope = format!("reference-tables-{}", segment.pair.token.as_str());
-                    inventory.issues.push(StructuralIssueRecord {
-                        id: format!("inventor:drawing:record-issue#{scope}"),
-                        scope,
-                        detail,
-                    });
-                }
+            let table = references::Tables::read(ctx, segment.pair.token.key(), meta)?;
+            for ((index, _), reference) in crate::records::REFERENCE_SECTIONS
+                .into_iter()
+                .zip(&meta.tables.references)
+            {
+                let Some((_, detail)) = reference.outcome.failure() else {
+                    continue;
+                };
+                let number = meta.tables.sections[index].number;
+                ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
+                inventory.failed_sections.insert(
+                    (token.to_owned(), u8::from(number)),
+                    reference.outcome.id()?.to_string(),
+                );
+                let scope = format!("reference-tables-{token}-{number}");
+                inventory.issues.push(StructuralIssueRecord {
+                    id: format!("inventor:drawing:record-issue#{scope}"),
+                    scope,
+                    detail: detail.to_owned(),
+                });
             }
+            ctx.charge_entities(1, "retain Inventor drawing reference tables")?;
+            inventory.reference_tables.push(table);
+            let section = &meta.tables.sections[8];
             let read = || -> Result<Vec<MetadataReference>, CodecError> {
-                let section = &meta.tables.sections[8];
+                if section.discriminator > crate::records::MAX_METADATA_SECTION_ENTRIES {
+                    return Err(CodecError::NotImplemented(format!(
+                        "RSe metadata section 9 count exceeds {}",
+                        crate::records::MAX_METADATA_SECTION_ENTRIES,
+                    )));
+                }
                 let mut view = section.payload;
                 let bounded = view
                     .counted(
@@ -235,6 +330,11 @@ pub(crate) fn inventory(
                         payload: payload.into(),
                     });
                 }
+                if !view.is_empty() {
+                    return Err(CodecError::malformed(
+                        "drawing metadata reference table has trailing bytes",
+                    ));
+                }
                 entries
                     .into_iter()
                     .map(|entry| {
@@ -244,19 +344,36 @@ pub(crate) fn inventory(
                     })
                     .collect()
             };
-            match read() {
-                Ok(references) => inventory.references.extend(references),
+            let part = meta_section_part(Some(token), section)?;
+            let outcome = match ctx.run_part(read)? {
+                Ok(references) => {
+                    inventory.references.extend(references);
+                    PartOutcome::admitted(part)
+                }
                 Err(error) => {
-                    let detail = crate::issue_detail(error)?;
+                    let detail = error.to_string();
                     ctx.charge_entities(1, "retain Inventor drawing metadata-reference refusal")?;
-                    let scope = format!("metadata-references-{}", segment.pair.token.as_str());
+                    let cause = if crate::records::references::is_fixed_entry_form(
+                        section.payload,
+                        section.discriminator,
+                    ) {
+                        Cause::Undecoded
+                    } else {
+                        Cause::Unreadable
+                    };
+                    let scope = format!("metadata-references-{token}");
                     inventory.issues.push(StructuralIssueRecord {
                         id: format!("inventor:drawing:record-issue#{scope}"),
                         scope,
                         detail,
                     });
+                    PartOutcome::refused(part, cause, &error)
                 }
-            }
+            };
+            inventory.sections.push(outcome);
+        }
+        if frames.is_none() {
+            continue;
         }
         let (Some(registry), SegmentBulkState::Framed(bulk)) = (segment.registry, &segment.bulk)
         else {
@@ -270,21 +387,46 @@ pub(crate) fn inventory(
             if !records::recognizes(family, frame.type_id) {
                 continue;
             }
-            match Record::read(
-                ctx,
-                segment.pair.token.key(),
-                family,
-                registry.version_major,
-                frame,
-            ) {
+            match ctx.run_part(|| {
+                Record::read(
+                    ctx,
+                    segment.pair.token.key(),
+                    family,
+                    registry.version_major,
+                    frame,
+                )
+            })? {
                 Ok(record) => {
                     ctx.charge_entities(1, "retain Inventor drawing record")?;
+                    offsets.insert(
+                        (record.segment_token.as_str().to_owned(), record.ordinal),
+                        frame.payload_offset,
+                    );
                     inventory.records.push(record);
                 }
                 Err(error) => {
-                    let detail = crate::issue_detail(error)?;
+                    let detail = error.to_string();
                     ctx.charge_entities(1, "retain Inventor drawing record refusal")?;
-                    let scope = format!("{}-{}", segment.pair.token.as_str(), frame.ordinal);
+                    let token = segment.pair.token.as_str();
+                    let part = crate::rse::bulk_record_part(
+                        "rse-record",
+                        (segment.pair.token.key(), frame.ordinal),
+                        frame.payload_offset,
+                        frame.payload.window(),
+                        ArenaClass::Model,
+                    );
+                    let part = ctx.give_up_part(
+                        part,
+                        Cause::Undecoded,
+                        CodecError::malformed(format_args!(
+                            "a typed drawing record does not parse: {detail}"
+                        )),
+                    )?;
+                    inventory
+                        .refused
+                        .insert((token.to_owned(), frame.ordinal), part.id().to_string());
+                    inventory.given_up.push(part);
+                    let scope = format!("{token}-{}", frame.ordinal);
                     inventory.issues.push(StructuralIssueRecord {
                         id: format!("inventor:drawing:record-issue#{scope}"),
                         scope,
@@ -294,13 +436,24 @@ pub(crate) fn inventory(
             }
         }
     }
-    if inventory.segment_count != 0 {
+    if let Some(frames) = frames.filter(|_| inventory.segment_count != 0) {
         let candidates = std::mem::take(&mut inventory.records);
         let source = cadmpeg_core::decode::unique_index(
             frames
                 .iter()
                 .map(|frame| ((frame.token.as_str(), frame.ordinal), frame)),
         );
+        let offset = |record: &Record| {
+            offsets
+                .get(&(record.segment_token.as_str().to_owned(), record.ordinal))
+                .copied()
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "Inventor drawing record {} names no framed RSe record",
+                        record.id
+                    ))
+                })
+        };
         let mut eligible = Vec::new();
         for record in candidates {
             if record.operands_are_valid(|ordinal| {
@@ -311,7 +464,7 @@ pub(crate) fn inventory(
             }) {
                 eligible.push(record);
             } else {
-                inventory.refuse_references(ctx, &record)?;
+                inventory.refuse_references(ctx, &record, offset(&record)?, false)?;
             }
         }
         let mut admitted =
@@ -324,7 +477,7 @@ pub(crate) fn inventory(
             if accepted {
                 inventory.records.push(record);
             } else {
-                inventory.refuse_references(ctx, &record)?;
+                inventory.refuse_references(ctx, &record, offset(&record)?, true)?;
             }
         }
     }

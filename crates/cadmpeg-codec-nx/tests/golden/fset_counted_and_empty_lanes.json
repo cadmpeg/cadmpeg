@@ -42,6 +42,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
+            "name": "FSET",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
           },
           {
@@ -56,6 +57,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000001",
+            "name": "FSET",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001"
           },
           {
@@ -70,6 +72,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000002",
+            "name": "FSET",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002"
           }
         ],
@@ -525,8 +528,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",

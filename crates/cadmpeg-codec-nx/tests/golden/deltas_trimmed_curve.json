@@ -325,8 +325,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -422,6 +422,18 @@
             }
           },
           "message": "The Parasolid stream at stream@360 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s0:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
           "severity": "warning"
         }
       ],
@@ -561,10 +573,20 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
+          "nx:s0:trimmed-curve-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
+            "tag": "TRIMMED_CURVE"
+          },
           "nx:s0:vertex#10": {
             "offset": 389,
             "stream": "nx:parasolid#0:partition",
             "tag": "VERTEX"
+          },
+          "nx:s1:deltas-residual#0": {
+            "offset": 0,
+            "stream": "nx:s1",
+            "tag": "DELTAS_RESIDUAL"
           }
         }
       },

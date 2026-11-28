@@ -133,7 +133,7 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
         );
         assert_eq!(losses.len(), expected, "{resolution:?}: {losses:#?}");
         assert_eq!(
-            code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+            code_count(&losses, IgesLossCode::GlobalSemanticContextInvalid),
             expected,
             "{resolution:?}"
         );
@@ -173,7 +173,7 @@ fn trailing_decimal_recovery_requires_an_exponent_prefix() {
     );
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
-        code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        code_count(&losses, IgesLossCode::GlobalSemanticContextInvalid),
         1
     );
     assert_eq!(

@@ -25,13 +25,16 @@ use crate::surface::Carrier;
 /// Seed segments of a curve of a kind with no seeding rule.
 const SEEDS: usize = 8;
 /// Largest seed segment count of one edge.
+// resource-cap: MAX_SEEDS = N
 const MAX_SEEDS: usize = 256;
 /// Ratio of a loop's parameter area to its squared extent below which the
 /// loop has no area.
 const ZERO_AREA_RATIO: f64 = 1e-9;
 /// Deepest bisection of one edge segment.
+// resource-cap: MAX_DEPTH = N
 const MAX_DEPTH: u32 = 18;
 /// Largest sample count of one edge.
+// resource-cap: MAX_EDGE_SAMPLES = N
 const MAX_EDGE_SAMPLES: usize = 1 << 17;
 /// Ternary-search steps of a curve-parameter projection.
 const NEAREST_STEPS: usize = 100;
@@ -81,6 +84,8 @@ pub(crate) struct EdgeCache {
 pub(crate) struct Sampler<'t, 'ir> {
     pub(crate) index: &'t ModelIndex<'ir>,
     pub(crate) work: &'t WorkBudget,
+    /// The admission each evaluation of a boundary runs under.
+    pub(crate) admission: EvaluationAdmission<'ir, 'ir>,
     pub(crate) chord: f64,
     pub(crate) angle: f64,
 }
@@ -115,11 +120,9 @@ pub(crate) fn natural_domain(geometry: &SolvedCurveGeometry) -> Option<([f64; 2]
 
 impl Sampler<'_, '_> {
     pub(crate) fn curve_point(&self, curve: &CurveId, t: f64) -> Result<Option<Point3>, Refusal> {
-        finite_or_refusal(
-            EvaluationAdmission::Standard.within_work_slice(self.work, |admission| {
-                model_curve_point_by_id(admission, self.index, curve, t)
-            }),
-        )
+        finite_or_refusal(self.admission.within_work_slice(self.work, |admission| {
+            model_curve_point_by_id(admission, self.index, curve, t)
+        }))
         .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)
     }
@@ -782,9 +785,11 @@ fn pcurve_trace(
         let fraction = if span == 0.0 { 0.0 } else { (t - first) / span };
         let s = range[0] + (range[1] - range[0]) * fraction;
         let uv = finite_or_refusal(
-            EvaluationAdmission::Standard.within_work_slice(sampler.work, |admission| {
-                pcurve_uv(admission, &pcurve.geometry, s)
-            }),
+            sampler
+                .admission
+                .within_work_slice(sampler.work, |admission| {
+                    pcurve_uv(admission, &pcurve.geometry, s)
+                }),
         )
         .map_err(resource)?;
         let Some(uv) = uv else {

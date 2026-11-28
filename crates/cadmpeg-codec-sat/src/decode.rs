@@ -3,6 +3,7 @@
 
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::given_up::WithheldRecord;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
@@ -15,12 +16,18 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use std::collections::BTreeMap;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::detect::{classify, header_attributes, StreamKind};
 use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEvidence, TextEvidence};
 use crate::loss::SatLossCode;
-use crate::FORMAT;
+use crate::registry_ids::FORMAT;
+
+/// The part kind of a text stream's bytes from the point where reading
+/// stops to the end of the source.
+pub(crate) const UNREAD_PART: &str = "stream-remainder";
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
@@ -50,8 +57,8 @@ fn decode_asm_binary(
             "ASM binary header has no record stream",
         ));
     };
-    let payload = if ctx.container_only() {
-        None
+    let (payload, face_children) = if ctx.container_only() {
+        (None, BTreeMap::new())
     } else {
         let start = stream.offset();
         // A history-bearing stream ends its solved partition at the delta-state
@@ -88,7 +95,7 @@ fn decode_asm_binary(
             cadmpeg_asm::asm_format!("sat"),
             DecodePurpose::Model,
         )?;
-        Some(brep)
+        (Some(brep), standalone_face_children(&records))
     };
     let mut attributes = BTreeMap::new();
     source_header_attributes(&header.metadata, Family::Asm, &mut attributes);
@@ -100,7 +107,15 @@ fn decode_asm_binary(
     let mut result = build_result(
         ctx,
         Sha256Digest::digest(bytes),
-        payload,
+        payload.map(|brep| {
+            (
+                brep,
+                Unprojected {
+                    whole_stream: false,
+                    face_children,
+                },
+            )
+        }),
         attributes,
         &header.metadata,
         None,
@@ -133,33 +148,29 @@ fn decode_acis_binary(
             "ACIS binary header has no record stream",
         ));
     };
-    let payload = if ctx.container_only() {
-        None
+    let mut extensions = false;
+    let (payload, face_children) = if ctx.container_only() {
+        (None, BTreeMap::new())
     } else {
         let start = stream.offset();
-        let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
-            Some(limit) => sab::frame(
-                ctx,
-                bytes,
-                start,
-                limit,
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-            None => sab::frame_history(
-                ctx,
-                bytes,
-                start,
-                bytes.len(),
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-        };
-        let records = framed.map_err(|failure| {
+        let limit = acis_header::solved_record_limit_with_header(bytes, header);
+        let framed = sab::frame_for_header(
+            ctx,
+            bytes,
+            start,
+            limit.unwrap_or(bytes.len()),
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+            &header.metadata,
+            limit.is_none(),
+        );
+        let mut records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
+        extensions =
+            !sab::normalize_extended_base(&mut records, header.metadata.save_format_version)
+                .is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -169,7 +180,7 @@ fn decode_acis_binary(
             cadmpeg_asm::asm_format!("sat"),
             DecodePurpose::Model,
         )?;
-        Some(brep)
+        (Some(brep), standalone_face_children(&records))
     };
     let mut attributes = BTreeMap::new();
     source_header_attributes(&header.metadata, Family::Acis, &mut attributes);
@@ -184,18 +195,37 @@ fn decode_acis_binary(
     let mut result = build_result(
         ctx,
         Sha256Digest::digest(bytes),
-        payload,
+        payload.map(|brep| {
+            (
+                brep,
+                Unprojected {
+                    whole_stream: false,
+                    face_children,
+                },
+            )
+        }),
         attributes,
         &header.metadata,
         None,
         layers(&evidence),
     )?;
-    if header.metadata.unreadable_product_fields().next().is_some() {
+    if extensions {
+        result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
+            "ACIS base extension integers have no neutral projection; shared entity fields decoded; complete stream retained"));
+    }
+    let header_span = header
+        .metadata
+        .unreadable_product_fields()
+        .next()
+        .is_some()
+        .then_some(("sat:source:header#0", 0..stream.offset()));
+    let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
+    if header_span.is_some() || extension_span.is_some() {
         retain_source(
             ctx,
             &mut result,
             bytes,
-            [("sat:source:header#0", 0..stream.offset())],
+            header_span.into_iter().chain(extension_span),
         )?;
     }
     Ok(result)
@@ -282,6 +312,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             });
         }
     }
+    let face_children = standalone_face_children(record_list);
     let payload = match records {
         Some(records) => Some(decode_with_header(
             ctx,
@@ -294,25 +325,38 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         )?),
         None => None,
     };
+    let extensions = !ctx.container_only()
+        && cadmpeg_asm::kernel_header::EXTENDED_ACIS_SAVE_FORMATS
+            .contains(&text_header.save_format_version);
+    // A record that holds the whole stream already keeps each part's bytes.
+    let whole_stream =
+        extensions || concatenated_streams || legacy_context || body_wire || standalone_faces;
     let mut result = build_result(
         ctx,
         Sha256Digest::digest(bytes),
-        payload,
+        payload.map(|brep| {
+            (
+                brep,
+                Unprojected {
+                    whole_stream,
+                    face_children,
+                },
+            )
+        }),
         attributes,
         &header,
         Some(branch),
         (matched, kernel),
     )?;
     crate::loss::text_stream_losses(
-        text_header.diagnostics.iter().chain(&framing),
-        unread
-            .as_ref()
-            .filter(|_| unread_stream_layout)
-            .map(|span| span.start),
+        text_header.diagnostics.iter().chain(
+            framing
+                .iter()
+                .filter(|diagnostic| diagnostic.kind != sat::StreamDiagnosticKind::Unread),
+        ),
+        None,
         &mut result.body.losses,
     );
-    let extensions =
-        !ctx.container_only() && (1100..10_000).contains(&text_header.save_format_version);
     if extensions {
         result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
             "ACIS base extension integers and class-specific tails have no neutral projection; shared entity fields decoded; complete stream retained"));
@@ -345,20 +389,49 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         .then_some(("sat:source:standalone-faces#0", 0..bytes.len()));
     let header_span = (!text_header.diagnostics.is_empty())
         .then_some(("sat:source:header#0", text_header.source_span));
-    let unread_span = unread.map(|span| ("sat:source:unread#0", span));
     retain_source(
         ctx,
         &mut result,
         bytes,
         header_span
             .into_iter()
-            .chain(unread_span)
             .chain(extension_span)
             .chain(legacy_span)
             .chain(wire_span)
             .chain(standalone_span)
             .chain(concatenated_span),
     )?;
+    if let Some(span) = unread {
+        let (cause, code) = if unread_stream_layout {
+            (Cause::Undecoded, SatLossCode::SourceStreamLayoutUnprojected)
+        } else {
+            (Cause::Unreadable, SatLossCode::FramingRecordsUnread)
+        };
+        let reason = framing
+            .iter()
+            .find(|diagnostic| diagnostic.kind == sat::StreamDiagnosticKind::Unread)
+            .map_or("the bytes are not read as records", |diagnostic| {
+                diagnostic.error.reason.as_str()
+            });
+        let mut part = Part::at(
+            FORMAT,
+            UNREAD_PART,
+            cadmpeg_core::decode::u64_from_index(span.start),
+            &bytes[span],
+            [ArenaClass::Model],
+        );
+        if whole_stream {
+            part = part.digest_only();
+        }
+        let loss = ctx
+            .give_up_part(
+                part,
+                cause,
+                CodecError::malformed(format_args!("{}: {reason}", code.kind())),
+            )?
+            .commit(ctx, &mut result.ir, &mut result.source_fidelity)?;
+        result.body.losses.push(loss);
+    }
     Ok(result)
 }
 
@@ -424,7 +497,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 fn build_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
-    payload: Option<AsmBrep>,
+    payload: Option<(AsmBrep, Unprojected)>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
@@ -461,7 +534,7 @@ fn build_result(
         }
     }
 
-    let Some(brep) = payload else {
+    let Some((mut brep, unprojected)) = payload else {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
@@ -472,29 +545,43 @@ fn build_result(
         });
     };
 
-    for record in &brep.unknowns {
-        let code = if record.id().as_str().contains(":brep:tvertex#") {
-            Some((SatLossCode::VertexToleranceUnresolved,
-                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained"))
-        } else if record.id().as_str().contains(":brep:tedge#") {
-            Some((SatLossCode::EdgeToleranceUnresolved,
-                "edge tolerance is not positive and finite; tolerance left unset; source record retained"))
-        } else if record.id().as_str().contains(":brep:shell#") {
-            Some((SatLossCode::TopologyShellUnprojected,
-                "shell has no admissible members or owner; shell omitted from region references; source record retained"))
-        } else if record.id().as_str().contains(":brep:face#") {
-            Some((SatLossCode::TopologyFaceOwnerUnprojected,
-                "standalone source face has no shell owner required by the IR; face omitted; source record retained"))
-        } else if record.id().as_str().contains(":brep:untyped-record#") {
-            Some((SatLossCode::SourceRecordNameUnresolved,
-                "record name has no leading component; identity uses its record-table index; source record retained"))
+    let mut given_up = Vec::new();
+    let mut kept = Vec::with_capacity(brep.unknowns.len());
+    for record in std::mem::take(&mut brep.unknowns) {
+        let id = record.id().as_str();
+        let (code, message) = if id.contains(":brep:tvertex#") {
+            (SatLossCode::VertexToleranceUnresolved,
+                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained")
+        } else if id.contains(":brep:tedge#") {
+            (SatLossCode::EdgeToleranceUnresolved,
+                "edge tolerance is not positive and finite; tolerance left unset; source record retained")
+        } else if id.contains(":brep:shell#") {
+            given_up.push(unprojected.give_up(
+                ctx,
+                &record,
+                "shell",
+                "shell has no admissible members or owner; shell omitted from region references",
+            )?);
+            continue;
+        } else if id.contains(":brep:face#") {
+            given_up.push(unprojected.give_up(
+                ctx,
+                &record,
+                "face",
+                "standalone source face has no shell owner required by the IR; face omitted",
+            )?);
+            continue;
+        } else if id.contains(":brep:untyped-record#") {
+            (SatLossCode::SourceRecordNameUnresolved,
+                "record name has no leading component; identity uses its record-table index; source record retained")
         } else {
-            None
+            kept.push(record);
+            continue;
         };
-        if let Some((code, message)) = code {
-            losses.push(code.note(message));
-        }
+        losses.push(code.note(message));
+        kept.push(record);
     }
+    brep.unknowns = kept;
 
     let (
         _,
@@ -503,8 +590,13 @@ fn build_result(
             stats,
             annotation_records,
             unbounded_faces,
+            withheld,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
+    let withheld = withheld
+        .iter()
+        .map(|record| unprojected.give_up_withheld(ctx, record))
+        .collect::<Result<Vec<_>, _>>()?;
     for face in &unbounded_faces {
         losses.push(SatLossCode::TopologyFaceBoundaryUnstated.note(format!(
             "face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
@@ -554,7 +646,7 @@ fn build_result(
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
     );
-    let body = DecodeBody {
+    let mut body = DecodeBody {
         coverage,
         losses,
         ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(
@@ -566,12 +658,15 @@ fn build_result(
     for record in annotation_records {
         let stream =
             StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
-        let key = cadmpeg_ir::ids::Identity::new(record.id)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotations.note(&key, &stream, record.offset, Some(record.tag.as_str()));
+        annotations.note(
+            &record.id,
+            &stream,
+            record.offset,
+            Some(record.tag.as_str()),
+        );
         for field in record.derived_fields {
             annotations
-                .derived(&key, field)
+                .derived(&record.id, field)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
@@ -589,11 +684,126 @@ fn build_result(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
+    for part in withheld {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     Ok(Decoded {
         ir,
         body,
         source_fidelity,
     })
+}
+
+/// How a decode gives up the source records that no neutral topology holds.
+struct Unprojected {
+    /// Whether a retained record holds the whole stream.
+    whole_stream: bool,
+    /// The loops and coedges of each standalone face, by the face's offset.
+    face_children: BTreeMap<u64, Vec<Identity>>,
+}
+
+impl Unprojected {
+    /// Gives up `record`, a source record of `kind` that no neutral topology
+    /// holds, as a part over its bytes. The record conforms to the format,
+    /// and the IR has no place for it.
+    fn give_up(
+        &self,
+        ctx: &DecodeContext<'_>,
+        record: &cadmpeg_ir::unknown::UnknownRecord,
+        kind: &'static str,
+        why: &str,
+    ) -> Result<GivenUpPart, CodecError> {
+        let mut part = Part::at(
+            FORMAT,
+            kind,
+            record.offset(),
+            record.data().unwrap_or_default(),
+            [ArenaClass::Model],
+        )
+        .dropping(
+            self.face_children
+                .get(&record.offset())
+                .into_iter()
+                .flatten()
+                .cloned(),
+        );
+        if self.whole_stream {
+            part = part.digest_only();
+        }
+        ctx.give_up_part(part, Cause::Undecoded, CodecError::malformed(why))
+    }
+
+    /// Gives up `record`, a topology record the shared decode read and left
+    /// out, as a part over its bytes.
+    fn give_up_withheld(
+        &self,
+        ctx: &DecodeContext<'_>,
+        record: &WithheldRecord,
+    ) -> Result<GivenUpPart, CodecError> {
+        let mut part = record.part(FORMAT);
+        if self.whole_stream {
+            part = part.digest_only();
+        }
+        ctx.give_up_part(part, record.cause, record.error())
+    }
+}
+
+/// The loops and coedges of each standalone face of `records`, by the
+/// face's offset. No neutral topology holds them once the face is dropped.
+fn standalone_face_children(records: &[sab::Record]) -> BTreeMap<u64, Vec<Identity>> {
+    let mut children = BTreeMap::new();
+    let standalone = |record: &&sab::Record| record.head() == "face" && record.ref_at(5).is_none();
+    if !records.iter().any(|record| standalone(&record)) {
+        return children;
+    }
+    let by_index = records
+        .iter()
+        .filter_map(|record| Some((i64::try_from(record.index).ok()?, record)))
+        .collect::<HashMap<_, _>>();
+    let owned = |index: i64, heads: &[&str], slot: usize, owner: i64| {
+        by_index
+            .get(&index)
+            .copied()
+            .filter(|record| heads.contains(&record.head()) && record.ref_at(slot) == Some(owner))
+    };
+    let id = |index| cadmpeg_asm::brep::id(cadmpeg_asm::asm_format!("sat"), index);
+    for face in records.iter().filter(standalone) {
+        let Ok(face_index) = i64::try_from(face.index) else {
+            continue;
+        };
+        let mut dropped = Vec::new();
+        let mut seen = HashSet::new();
+        let mut next_loop = face.ref_at(4);
+        while let Some(loop_index) = next_loop {
+            let Some(lp) = owned(loop_index, &["loop"], 5, face_index) else {
+                break;
+            };
+            if !seen.insert(loop_index) {
+                break;
+            }
+            dropped.push(id(loop_index));
+            let mut next_coedge = lp.ref_at(4);
+            while let Some(coedge_index) = next_coedge {
+                let Some(coedge) = owned(coedge_index, &["coedge", "tcoedge"], 8, loop_index)
+                else {
+                    break;
+                };
+                if !seen.insert(coedge_index) {
+                    break;
+                }
+                dropped.push(id(coedge_index));
+                next_coedge = coedge.ref_at(3);
+            }
+            next_loop = lp.ref_at(3);
+        }
+        children.insert(cadmpeg_core::decode::u64_from_index(face.offset), dropped);
+    }
+    children
 }
 
 fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {

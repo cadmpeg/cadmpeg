@@ -18,6 +18,8 @@ authored against `docs/formats/step.md`.
 | `ap242_conversion_units.p21` | conversion-based length unit chain and representation uncertainty |
 | `ap242_presentation_pmi.p21` | drafting model, annotation plane, placed text literal, and annotation occurrence |
 | `ap242_mapped_assembly.p21` | representation map and mapped-item occurrence placement |
+| `ap242_occurrence_mapped_assembly.p21` | occurrence placement through a mapped representation |
+| `noncanonical_solid_angle.p21` | solid-angle SI unit with noncanonical component order |
 | `ap242_external_documents.p21` | applied document reference and externally defined item dependency identities |
 | `ap242_geometric_set.p21` | geometrically bounded surface representation with a curve-bounded sheet carrier |
 | `ap242_degree_cone.p21` | apex-zero conical surface with a conversion-based degree context |

@@ -3,14 +3,75 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Box"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Box"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Box",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],

@@ -17,6 +17,7 @@ use super::{geometry::EdgeGeometry, PmDcFeaturePropertyKind};
 use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcReference};
 
 /// The largest generator array that a direct edge selector stores.
+// resource-cap: MAX_SELECTOR_GENERATORS = 1
 const MAX_SELECTOR_GENERATORS: usize = 4;
 
 pub(in crate::feature) struct StoredSelector {
@@ -272,6 +273,24 @@ pub(crate) fn selection_sources<'a>(
     collection: &crate::feature::PmDcFeatureProperty,
     property: impl Fn(PmDcReference) -> Option<&'a crate::feature::PmDcFeatureProperty>,
 ) -> Option<Vec<(u32, u32)>> {
+    sources(collection, property, false)
+}
+
+/// The selector source indexes of the listed items of an edge collection.
+/// An item that stores an empty index-reference list selects no edge and
+/// contributes no source.
+pub(crate) fn listed_sources<'a>(
+    collection: &crate::feature::PmDcFeatureProperty,
+    property: impl Fn(PmDcReference) -> Option<&'a crate::feature::PmDcFeatureProperty>,
+) -> Option<Vec<(u32, u32)>> {
+    sources(collection, property, true)
+}
+
+fn sources<'a>(
+    collection: &crate::feature::PmDcFeatureProperty,
+    property: impl Fn(PmDcReference) -> Option<&'a crate::feature::PmDcFeatureProperty>,
+    skip_empty: bool,
+) -> Option<Vec<(u32, u32)>> {
     let PmDcFeaturePropertyKind::References {
         family: crate::feature::PmDcFeatureReferenceFamily::EdgeCollection,
         items,
@@ -287,13 +306,19 @@ pub(crate) fn selection_sources<'a>(
         let item = property(*reference)?;
         let PmDcFeaturePropertyKind::EdgeItem {
             index_references,
-            index_reference_value: -1,
+            index_reference_value,
             value: 0,
         } = &item.kind
         else {
             return None;
         };
         if index_references.values().is_empty() {
+            if skip_empty {
+                continue;
+            }
+            return None;
+        }
+        if *index_reference_value != -1 {
             return None;
         }
         for source in index_references.values() {
@@ -303,7 +328,7 @@ pub(crate) fn selection_sources<'a>(
             sources.push((item.identity.record_ordinal, *source));
         }
     }
-    Some(sources)
+    (!sources.is_empty()).then_some(sources)
 }
 
 pub(crate) fn project(
@@ -377,7 +402,7 @@ pub(crate) fn project(
             let Some(Some(collection)) = properties.get(native.as_str()) else {
                 continue;
             };
-            let Some(selected) = selection_sources(collection, |r| {
+            let Some(selected) = listed_sources(collection, |r| {
                 by_ordinal
                     .get(&(token, r.record_ordinal()?))?
                     .as_ref()
@@ -540,7 +565,7 @@ pub(crate) fn valid<'a>(
         if collection.identity.segment_token != source.identity.segment_token {
             return false;
         }
-        let Some(sources) = selection_sources(collection, &property_at) else {
+        let Some(sources) = listed_sources(collection, &property_at) else {
             return false;
         };
         let Ok(expected_state) = state_id(source) else {

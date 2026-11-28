@@ -469,11 +469,11 @@ fn edit_and_write(
 fn write_editable(
     decoded: &cadmpeg_test_support::EditableDecodeResult,
 ) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    let plan = SldprtCodec.plan(
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Unnamed,
-    )?;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    let plan = SldprtCodec.plan(EncodeInput::new(
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+    ))?;
     let losses = plan
         .report()
         .losses
@@ -536,6 +536,8 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
 
 /// An edit that clears a reversal whose stored caps still show it is
 /// written, with the `0` word, and named by the general stale-solid loss.
+/// The written part reads the extrusion back off the profile normal, so the
+/// design extrude it restates is named as reshaped.
 #[test]
 fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     let (bytes, anchor) = lane_flagged(Some(-1.0), None);
@@ -551,7 +553,12 @@ fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     ));
 
     let (written, write_losses) = clear_and_write(decoded);
-    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
+    assert_eq!(write_losses.len(), 3, "{write_losses:?}");
+    let reshaped = messages(&write_losses, SldprtLossCode::WriterFeatureRecordReshaped);
+    assert!(
+        reshaped.len() == 1 && reshaped[0].contains(extrude.as_str()),
+        "{write_losses:?}"
+    );
     assert!(
         stale_evaluation(&write_losses, &extrude),
         "{write_losses:?}"

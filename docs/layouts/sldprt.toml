@@ -10534,10 +10534,10 @@ anchor = "With flag `1` the head continues as the 97-byte frame"
 name = "constructed_reference_plane_matrix_frame"
 kind = "byte"
 section = "2"
-anchor = "stores a 121-byte matrix reference-plane frame immediately after the class name"
+anchor = "store a 121-byte matrix reference-plane frame immediately after the class name"
 size = 121
 endianness = "little"
-note = "Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c` class name."
+note = "Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c`, `moConstraintCoincLinePerpPlaneRefplaneData_c`, or `moPerLinePtRefPlnData_c` class name."
 
 [[record.field]]
 name = "origin"
@@ -10566,6 +10566,51 @@ offset = 49
 type = "f64[9]"
 source = "spec"
 anchor = "A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order"
+
+[[record]]
+name = "constructed_reference_plane_minimal_frame"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+kind = "byte"
+section = "2"
+anchor = "The 81-byte frame has byte `0` at `+48`"
+size = 81
+endianness = "little"
+note = "Offsets begin immediately after the `moDefaultRefPlnData_c`, `moConstraintPrllPlnTanOneCylinderRefplaneData_c`, `moFaceRefPlnData_c`, or `moPerLinePtRefPlnData_c` class name."
+
+[[record.field]]
+name = "origin"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres"
+
+[[record.field]]
+name = "normal"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values at `+24`, `+32`, and `+40` store the unit normal"
+
+[[record.field]]
+name = "frame_marker"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "The 81-byte frame has byte `0` at `+48`"
+
+[[record.field]]
+name = "translation"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "the negated origin as three f64 at `+49`, `+57`, and `+65`"
+
+[[record.field]]
+name = "scale"
+offset = 73
+type = "f64"
+source = "spec"
+anchor = "and f64 `1` at `+73`"
 
 [[record]]
 name = "component_face_nested_reference_prefix"
@@ -10842,6 +10887,63 @@ offset = 5
 type = "u16"
 source = "spec"
 anchor = "name length at `+5`"
+
+[[record]]
+name = "cut_list_folder_tail"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs"
+kind = "byte"
+section = "Extrusion feature objects"
+anchor = "A cut-list folder (`moCutListFolder_c`"
+size = 43
+endianness = "little"
+note = "The bytes a cut-list folder writes after its last item."
+
+[[record.field]]
+name = "one"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 `1`, i32 `-1`, u32 `2` or `3`"
+value = 1
+
+[[record.field]]
+name = "minus_one"
+offset = 4
+type = "i32"
+source = "spec"
+anchor = "i32 `-1`, u32 `2` or `3`"
+value = -1
+
+[[record.field]]
+name = "word"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 `2` or `3`"
+
+[[record.field]]
+name = "zeros"
+offset = 12
+type = "bytes[23]"
+source = "spec"
+anchor = "23 zero bytes"
+value = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]
+
+[[record.field]]
+name = "one_after_zeros"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "23 zero bytes, u32 `1`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "one_last"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "23 zero bytes, u32 `1`, u32 `1`"
+value = 1
 
 [[record]]
 name = "revolution_turn_block"
@@ -12393,6 +12495,37 @@ type = "u16"
 source = "spec"
 anchor = "and u16 `0`"
 value = 0
+
+[[record]]
+name = "three_int_identity_own"
+kind = "byte"
+section = "2.3"
+anchor = "three little-endian u32"
+size = 12
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs"
+note = "Own bytes of a three-integer identity representation; they follow its `moFR_c` object."
+
+[[record.field]]
+name = "word_0"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record.field]]
+name = "word_4"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record.field]]
+name = "word_8"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
 
 [[record]]
 name = "view_bytes"

@@ -119,12 +119,13 @@ struct Held<'a> {
 /// construction rules, and the rules of the feature vocabulary.
 pub(super) fn check_design<'a>(
     ctx: &DecodeContext<'_>,
-    ir: &'a CadIr,
+    records: std::rc::Rc<records::DesignRecords<'a>>,
     ids: &ModelIndex<'_>,
     matchers: &Matchers<'a>,
     findings: &mut Vec<Finding>,
 ) -> Result<DesignIndex<'a>, CodecError> {
-    let mut index = DesignIndex::new(ir);
+    let ir = records.ir;
+    let mut index = DesignIndex::with_records(records);
     if ir.design.is_empty() {
         linkage::check_scope(ir, findings);
         linkage::check_identities(ir, findings);
@@ -149,10 +150,10 @@ pub(super) fn check_design<'a>(
     expressions::check_expressions(ctx, records, findings)?;
     dimensions::check_dimensions(records, findings);
     tolerances::check_tolerances(records, findings);
-    caches::check_caches(records, findings);
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
+    caches::check_caches(&index.records, &held, findings);
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = matchers.states();
@@ -194,18 +195,19 @@ fn collect<'a>(
         }
         Ok(())
     };
-    let owned_by_sketch = |sketch: &'a str, record: &'a str| match index.sketches.get(sketch) {
-        Some(sketch) => Holder::Owned {
-            feature: sketch.owner.as_str(),
-            record,
-        },
-        None => Holder::Record {
-            record,
-            scope: None,
-        },
-    };
+    let owned_by_sketch =
+        |sketch: &'a str, record: &'a str| match index.records.sketches.get(sketch) {
+            Some(sketch) => Holder::Owned {
+                feature: sketch.owner.as_str(),
+                record,
+            },
+            None => Holder::Record {
+                record,
+                scope: None,
+            },
+        };
     let owned_by_spatial =
-        |sketch: &'a str, record: &'a str| match index.spatial_sketches.get(sketch) {
+        |sketch: &'a str, record: &'a str| match index.records.spatial_sketches.get(sketch) {
             Some(sketch) => Holder::Owned {
                 feature: sketch.owner.as_str(),
                 record,

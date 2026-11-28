@@ -16,7 +16,6 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::Read;
 use std::io::Write;
 
 const EPS_SKETCH_WRITE_GEOMETRY: f64 = 1.0e-9;
@@ -40,6 +39,7 @@ pub(super) fn sketch_brep(
             ))
         })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.tolerances = source.tolerances;
     // The sketch identity is escaped into one key here, once, and every
     // generated id below is that key with a `:`-separated part appended.
     let prefix = cadmpeg_ir::ids::IdentityKey::try_new(
@@ -647,6 +647,8 @@ pub(super) fn same_sketch_point(left: Point2, right: Point2) -> bool {
 pub(super) fn patch_line_profiles(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: Option<&crate::container::ContainerScan<'_>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut requested = BTreeMap::<(String, usize, u32), Point3>::new();
     let mut streams = BTreeMap::<(String, usize), StreamPatches>::new();
@@ -752,7 +754,11 @@ pub(super) fn patch_line_profiles(
             .points
             .push((attr, [point.x * 0.001, point.y * 0.001, point.z * 0.001]));
     }
-    for ((lane_id, stream), patches) in streams {
+    let mut lanes = BTreeMap::<_, Vec<_>>::new();
+    for ((lane, ordinal), patches) in streams {
+        lanes.entry(lane).or_default().push((ordinal, patches));
+    }
+    for (lane_id, patches) in lanes {
         let lane = native
             .feature_input_lanes
             .iter_mut()
@@ -762,16 +768,36 @@ pub(super) fn patch_line_profiles(
                     "SLDPRT sketch lane {lane_id} is missing"
                 ))
             })?;
-        edit_stream(&mut lane.native_payload, stream, |ctx, body| {
-            crate::brep::topology::patch_points(body, &patches.points).map_err(|attr| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT sketch point {attr} is missing"
-                ))
-            })?;
-            patches
-                .curves
-                .iter()
-                .try_for_each(|request| patch_direct_curve_body(ctx, body, request))
+        let ordinal = lane_id
+            .rsplit_once('#')
+            .and_then(|(_, ordinal)| ordinal.parse().ok());
+        let existing = source.and_then(|source| {
+            source.sections().find(|member| {
+                Some(member.ordinal()) == ordinal
+                    && member.payload() == lane.native_payload.as_slice()
+            })
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        ctx.with_arena(&arena, |ctx| {
+            let extracted;
+            let streams = if let Some(member) = existing {
+                member.ps_streams()
+            } else {
+                ctx.charge_input(
+                    cadmpeg_core::decode::u64_from_index(lane.native_payload.len()),
+                    "SLDPRT sketch lane payload",
+                )?;
+                extracted =
+                    crate::parasolid::extract_streams_with_offsets(&lane.native_payload, ctx)?;
+                &extracted.streams
+            };
+            for (ordinal, patches) in patches.into_iter().rev() {
+                let stream = streams.get(ordinal).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("SLDPRT sketch stream is missing")
+                })?;
+                edit_stream(ctx, &mut lane.native_payload, stream, &patches)?;
+            }
+            Ok::<_, cadmpeg_core::CodecError>(())
         })?;
     }
     Ok(())
@@ -1001,82 +1027,83 @@ fn patch_direct_curve_body(
     Ok(())
 }
 
+/// Applies `edit` to the body of stream `stream_ordinal` of `payload`. The
+/// read of `payload` charges `ctx`.
 fn edit_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &mut Vec<u8>,
-    stream_ordinal: usize,
-    edit: impl FnOnce(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        &mut [u8],
-    ) -> Result<(), cadmpeg_core::CodecError>,
+    stream: &crate::parasolid::ExtractedStream,
+    patches: &StreamPatches,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::read_root(
-        &mut std::io::Cursor::new(payload.as_slice()),
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-        cadmpeg_core::decode::DecodeDepth::Full,
-    )?;
-    let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
-        .streams
-        .into_iter()
-        .nth(stream_ordinal)
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed("SLDPRT sketch stream is missing".into())
-        })?;
+    use crate::parasolid::StreamCarrier;
     let body_offset = stream.header.body_offset;
-    if let Some(start) = payload
-        .windows(stream.payload.len())
-        .position(|candidate| candidate == stream.payload.as_slice())
-    {
-        return edit(
-            &ctx,
-            &mut payload[start + body_offset..start + stream.payload.len()],
-        );
-    }
-    let (start, end) = compressed_member(payload, &stream.payload).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(
-            "compressed retained SLDPRT sketch stream is missing".into(),
-        )
-    })?;
-    let mut inflated = stream.payload;
-    edit(&ctx, &mut inflated[body_offset..])?;
+    let edit_body = |body: &mut [u8]| {
+        crate::brep::topology::patch_points(body, &patches.points).map_err(|attr| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "SLDPRT sketch point {attr} is missing"
+            ))
+        })?;
+        patches
+            .curves
+            .iter()
+            .try_for_each(|request| patch_direct_curve_body(ctx, body, request))
+    };
+
+    let span = match &stream.carrier {
+        StreamCarrier::Direct => {
+            let start = stream.offset + body_offset;
+            let end = stream.offset + stream.payload.len();
+            let body = payload.get_mut(start..end).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT direct sketch stream leaves its lane")
+            })?;
+            return edit_body(body);
+        }
+        StreamCarrier::Zlib(span) => span.clone(),
+        StreamCarrier::Wrapped { frame, .. } => {
+            frame.start + crate::layout::parasolid_chain_frame_header::LEN..frame.end
+        }
+        StreamCarrier::Unwritable => {
+            return Err(cadmpeg_core::CodecError::NotImplemented(
+                "SLDPRT sketch stream has no independently writable frame".into(),
+            ));
+        }
+    };
+    let mut inflated = stream.payload.clone();
+    edit_body(&mut inflated[body_offset..])?;
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(&inflated)?;
-    payload.splice(start..end, encoder.finish()?);
-    Ok(())
-}
+    let compressed = encoder.finish()?;
 
-fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
-    let last = payload.len().checked_sub(1)?;
-    for start in 0..last {
-        if payload[start] != 0x78 || !matches!(payload[start + 1], 0x01 | 0x9c | 0xda) {
-            continue;
-        }
-        // Cap inflation at `target.len() + 1` bytes: this scan only accepts a member
-        // whose inflated body equals `target`, so any stream that expands past the
-        // target length can never match and need not be materialized.
-        let ceiling = target.len().checked_add(1)?;
-        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..])
-            .take(cadmpeg_core::decode::u64_from_index(ceiling));
-        let mut inflated = Vec::with_capacity(ceiling);
-        let mut chunk = [0_u8; 8192];
-        let mut valid = true;
-        loop {
-            match decoder.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(read) => inflated.extend_from_slice(&chunk[..read]),
-                Err(_) => {
-                    valid = false;
-                    break;
-                }
-            }
-        }
-        if valid && inflated == target {
-            let consumed = cadmpeg_core::decode::index_from_u64(decoder.into_inner().total_in())?;
-            return Some((start, start + consumed));
+    if let StreamCarrier::Wrapped {
+        frame,
+        chain_len_at,
+    } = &stream.carrier
+    {
+        let size = u32::try_from(compressed.len()).map_err(|_| {
+            cadmpeg_core::CodecError::malformed(
+                "SLDPRT sketch compressed member exceeds its size field",
+            )
+        })?;
+        let at = frame.start + crate::layout::parasolid_chain_frame_header::ZLIB_MEMBER_SIZE;
+        payload[at..at + 4].copy_from_slice(&size.to_le_bytes());
+        if let Some(at) = *chain_len_at {
+            let old = cadmpeg_core::decode::View::u32_le_at(payload, at).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT sketch chain length is missing")
+            })?;
+            let length = u64::from(old)
+                .checked_sub(cadmpeg_core::decode::u64_from_index(span.len()))
+                .and_then(|len| len.checked_add(u64::from(size)))
+                .and_then(|len| u32::try_from(len).ok())
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "SLDPRT sketch chain exceeds its length field",
+                    )
+                })?;
+            payload[at..at + 4].copy_from_slice(&length.to_le_bytes());
         }
     }
-    None
+    payload.splice(span, compressed);
+    Ok(())
 }
 
 fn patch_direct_nurbs(

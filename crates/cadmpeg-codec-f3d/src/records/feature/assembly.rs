@@ -243,7 +243,7 @@ struct DesignAssemblyLegacyOperandWire {
 }
 
 /// Construction carrier family used by a legacy 421-byte `As-built` operand.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 enum DesignAssemblyLegacyConstruction {
     /// Point-only connector construction.
@@ -301,6 +301,9 @@ pub(crate) struct DesignAssemblyAlignment {
     pub(crate) frame_sense: Option<DesignJointFrameSense>,
     pub(crate) additional_owner_run: Option<DesignAssemblyOwnerRun>,
     pub(crate) additional_tail_reference: Option<Located<u32>>,
+    /// Counted references after the feature ordinal of a version-3 `Assemble`
+    /// scope, when the count is not zero.
+    pub(crate) tail_links: Option<DesignAssemblyOwnerRun>,
     /// Members of a rigid group after the two in `form`, in scope order.
     pub(crate) additional_members: Vec<DesignQualifiedAssemblyOperand>,
 }
@@ -397,6 +400,7 @@ impl DesignAssemblyAlignment {
             frame_sense: None,
             additional_owner_run: None,
             additional_tail_reference: None,
+            tail_links: None,
             additional_members: Vec::new(),
         })
     }
@@ -564,6 +568,12 @@ struct DesignAssemblyAlignmentSerde {
         deserialize_with = "deserialize_additional_tail_reference"
     )]
     additional_tail_reference: Option<Located<u32>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_links"
+    )]
+    tail_links: Option<DesignAssemblyOwnerRun>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_frames: Vec<DesignAssemblyOperandFrame>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -575,6 +585,8 @@ cadmpeg_core::named_optional_field!(
     Located<u32>,
     "additional_tail_reference"
 );
+
+cadmpeg_core::named_optional_field!(deserialize_tail_links, DesignAssemblyOwnerRun, "tail_links");
 
 cadmpeg_core::named_optional_field!(
     deserialize_additional_owner_run,
@@ -652,13 +664,14 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             .with_additional_members(additional_members)?;
         alignment.additional_owner_run = wire.additional_owner_run;
         alignment.additional_tail_reference = wire.additional_tail_reference;
+        alignment.tail_links = wire.tail_links;
         Ok(alignment)
     }
 }
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 15)?;
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 16)?;
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
@@ -744,6 +757,9 @@ impl Serialize for DesignAssemblyAlignment {
         if let Some(reference) = &self.additional_tail_reference {
             record.serialize_field("additional_tail_reference", reference)?;
         }
+        if let Some(links) = &self.tail_links {
+            record.serialize_field("tail_links", links)?;
+        }
         if let Some(sense) = &self.frame_sense {
             record.serialize_field("frame_sense", sense)?;
         }
@@ -805,7 +821,7 @@ enum LegacyConstructionOut<'a> {
     Point(&'a DesignWorkPointConstruction),
     Hole(&'a DesignHoleConstruction),
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignAssemblyAxialOperandTarget {
     /// Connector object selected inside a placed `Component Insert` occurrence.
@@ -1825,7 +1841,7 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
 }
 
 /// One exact native qualifier for an assembly operand construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignAssemblyOperandQualifier {
     /// Ordered occurrence path carried by a locator graph.

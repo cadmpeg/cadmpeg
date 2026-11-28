@@ -195,11 +195,14 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
             assert!(result.report().losses.is_empty(), "{point_name}");
         } else {
             assert_eq!(result.report().losses.len(), 1, "{point_name}");
-            assert_eq!(
-                result.report().losses[0].code,
-                IgesLossCode::GeometryNotProjected.kind(),
+            assert!(
+                crate::test_support::reports(
+                    &result.report().losses[0],
+                    IgesLossCode::GeometryNotProjected
+                ),
                 "{point_name}"
             );
+            crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 1));
         }
     }
 }
@@ -215,10 +218,56 @@ fn decode_rejects_a_conic_endpoint_at_exact_global_resolution() {
 
     assert!(result.ir().geometry.curves.is_empty());
     assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::GeometryNotProjected.kind()
+    assert!(crate::test_support::reports(
+        &result.report().losses[0],
+        IgesLossCode::GeometryNotProjected
+    ));
+    crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 1));
+}
+
+#[test]
+fn a_given_up_conic_is_the_part_of_its_directory_entry_pair() {
+    let bytes = conic_arc_file(3, b"104,1,0,0,0,4,0,0,0.001,1,-0.25;");
+    let directory = bytes
+        .chunks_exact(81)
+        .position(|line| line[72] == b'D')
+        .expect("Directory card")
+        * 81;
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let loss = &result.report().losses[0];
+    crate::test_support::assert_given_up(loss, ("entity", 1));
+    assert!(
+        loss.message
+            .contains(&format!(" stream=\"\" offset={directory} length=161 ")),
+        "{}",
+        loss.message
     );
+    assert!(loss.message.contains(&format!(
+        ": {}: ",
+        IgesLossCode::GeometryNotProjected.kind()
+    )));
+    let stub = loss
+        .message
+        .split(" record=")
+        .nth(1)
+        .and_then(|rest| rest.split(": ").next())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas()["unknowns"]
+        .iter()
+        .any(|record| record.id() == stub));
+    // The native entity record keeps the pair's fields, so the part keeps
+    // only the digest of its bytes.
+    assert!(native.arenas()["entities"]
+        .iter()
+        .any(|record| record.id() == "iges:entity:directory#1"));
+    let retained = result.source_fidelity().retained_record(stub).unwrap();
+    assert_eq!(retained.data(), None);
+    assert_eq!(retained.byte_len(), 161);
 }
 
 #[test]
@@ -297,13 +346,14 @@ fn decode_applies_the_scale_relative_standard_position_gate() {
             assert!(result.report().losses.is_empty());
         } else {
             assert_eq!(result.report().losses.len(), 1);
-            assert_eq!(
-                result.report().losses[0].code,
-                IgesLossCode::GeometryNotProjected.kind()
-            );
+            assert!(crate::test_support::reports(
+                &result.report().losses[0],
+                IgesLossCode::GeometryNotProjected
+            ));
             assert!(result.report().losses[0]
                 .message
                 .contains("standard position"));
+            crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 1));
         }
     }
 }

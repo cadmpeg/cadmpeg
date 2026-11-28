@@ -2,7 +2,6 @@
 //! NIST geometric-tolerance expectations from the CTC definitions workbook.
 
 use std::io::Cursor;
-use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
@@ -17,16 +16,10 @@ const MAGNITUDE_TOLERANCE: f64 = 1.0e-9;
 const POSITION_NOMINAL_TOLERANCE: f64 = 0.01;
 const PLANE_OFFSET_TOLERANCE: f64 = 1.0e-6;
 
-#[test]
-fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let bytes = std::fs::read(path).expect("read Creo specimen");
-    let result = CreoCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode Creo specimen");
-    let tolerances: Vec<_> = result
-        .ir()
+pub(super) fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes(
+    ir: &cadmpeg_ir::document::CadIr,
+) {
+    let tolerances: Vec<_> = ir
         .model
         .pmi
         .iter()
@@ -65,7 +58,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             "{kind:?}, {magnitude}"
         );
     }
-    for pmi in &result.ir().model.pmi {
+    for pmi in &ir.model.pmi {
         let PmiDefinition::GeometricTolerance {
             tolerance,
             magnitude,
@@ -99,7 +92,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         if *tolerance == GeometricToleranceKind::SurfaceProfile
             && (magnitude_mm - 1.25).abs() < MAGNITUDE_TOLERANCE
         {
-            assert!(result.ir().model.pmi.iter().any(|presentation| {
+            assert!(ir.model.pmi.iter().any(|presentation| {
                 matches!(&presentation.definition,
                     PmiDefinition::Presentation { text: Some(text), semantics, .. }
                     if text.contains("A↔B") && semantics.as_slice() == [pmi.id.clone()])
@@ -107,21 +100,21 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         }
         match (tolerance, pmi.targets.as_slice()) {
             (GeometricToleranceKind::Flatness, [face]) => {
-                let (axis, offset) = target_plane(&result, face);
+                let (axis, offset) = target_plane(ir, face);
                 assert_plane(axis, offset, [0.0, 0.0, 1.0], 0.0);
             }
             (GeometricToleranceKind::Perpendicularity, [face]) => {
-                let (axis, offset) = target_plane(&result, face);
+                let (axis, offset) = target_plane(ir, face);
                 assert_plane(axis, offset, [1.0, 0.0, 0.0], 400.0);
             }
             (GeometricToleranceKind::SurfaceProfile, [face])
                 if (magnitude_mm - 1.25).abs() < MAGNITUDE_TOLERANCE =>
             {
-                let (axis, offset) = target_plane(&result, face);
+                let (axis, offset) = target_plane(ir, face);
                 assert_plane(axis, offset, [0.0, 1.0, 0.0], -225.0);
             }
             (GeometricToleranceKind::SurfaceProfile, [face]) => {
-                let (axis, offset) = target_plane(&result, face);
+                let (axis, offset) = target_plane(ir, face);
                 assert!(
                     axis[2].abs() < MAGNITUDE_TOLERANCE,
                     "hex side axis {axis:?}"
@@ -129,7 +122,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
                 assert!((offset.abs() - 50.0).abs() < PLANE_OFFSET_TOLERANCE);
             }
             (GeometricToleranceKind::Position, targets) => {
-                assert_slot_walls(&result, targets);
+                assert_slot_walls(ir, targets);
             }
             (kind, targets) => panic!("unexpected targets for {kind:?}: {targets:?}"),
         }
@@ -137,8 +130,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             assert!(expected.is_empty());
             continue;
         };
-        let system = result
-            .ir()
+        let system = ir
             .model
             .pmi
             .iter()
@@ -156,8 +148,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
                     usize::try_from(reference.precedence.get()).expect("precedence"),
                     index + 1
                 );
-                let datum = result
-                    .ir()
+                let datum = ir
                     .model
                     .pmi
                     .iter()
@@ -172,9 +163,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         assert_eq!(actual, expected);
     }
     let datum = |label: &str| {
-        result
-            .ir()
-            .model
+        ir.model
             .pmi
             .iter()
             .find(|item| {
@@ -189,14 +178,13 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         let [target] = datum(label).targets.as_slice() else {
             panic!("one datum {label} target")
         };
-        let (origin, axis, radius) = target_cylinder(&result, target);
+        let (origin, axis, radius) = target_cylinder(ir, target);
         assert!((axis[2].abs() - 1.0).abs() < MAGNITUDE_TOLERANCE);
         assert!((origin[0] - center_x).abs() < PLANE_OFFSET_TOLERANCE);
         assert!((origin[1] + 175.0).abs() < PLANE_OFFSET_TOLERANCE);
         assert!((radius - 17.5).abs() < PLANE_OFFSET_TOLERANCE);
     }
-    let dimensions: Vec<_> = result
-        .ir()
+    let dimensions: Vec<_> = ir
         .model
         .pmi
         .iter()
@@ -262,7 +250,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         }));
     }
     let mut targeted = 0;
-    for item in &result.ir().model.pmi {
+    for item in &ir.model.pmi {
         let PmiDefinition::Dimension(dimension) = &item.definition else {
             continue;
         };
@@ -276,10 +264,10 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             .value
             .get();
         match &dimension.dimension {
-            DimensionKind::Location => assert_slot_walls(&result, &item.targets),
+            DimensionKind::Location => assert_slot_walls(ir, &item.targets),
             DimensionKind::Diameter => {
                 for target in &item.targets {
-                    let radius = target_cylinder_radius(&result, target);
+                    let radius = target_cylinder_radius(ir, target);
                     assert!((2.0 * radius - nominal).abs() < PLANE_OFFSET_TOLERANCE);
                 }
             }
@@ -287,8 +275,8 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
                 let [first, second] = item.targets.as_slice() else {
                     panic!("two angular targets")
                 };
-                let (first, _) = target_plane(&result, first);
-                let (second, _) = target_plane(&result, second);
+                let (first, _) = target_plane(ir, first);
+                let (second, _) = target_plane(ir, second);
                 let cosine: f64 = first.iter().zip(second).map(|(a, b)| a * b).sum();
                 assert!((cosine.abs() - nominal.cos()).abs() < MAGNITUDE_TOLERANCE);
             }
@@ -302,20 +290,19 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
 /// faces 805 and 801 at x = -192.5 and -107.5, or faces 852 and 848 at
 /// y = 25 and -25.
 fn assert_slot_walls(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    ir: &cadmpeg_ir::document::CadIr,
     targets: &[cadmpeg_ir::references::InstanceTarget<PmiTarget>],
 ) {
     let [first, second] = targets else {
         panic!("two slot walls: {targets:?}")
     };
-    let mut walls =
-        [target_plane(result, first), target_plane(result, second)].map(|(axis, offset)| {
-            let dominant = axis
-                .iter()
-                .position(|component| (component.abs() - 1.0).abs() < MAGNITUDE_TOLERANCE)
-                .expect("axis-aligned wall");
-            (dominant, offset * axis[dominant].signum())
-        });
+    let mut walls = [target_plane(ir, first), target_plane(ir, second)].map(|(axis, offset)| {
+        let dominant = axis
+            .iter()
+            .position(|component| (component.abs() - 1.0).abs() < MAGNITUDE_TOLERANCE)
+            .expect("axis-aligned wall");
+        (dominant, offset * axis[dominant].signum())
+    });
     walls.sort_by(|a, b| a.1.total_cmp(&b.1));
     let expected = match walls[0].0 {
         0 => [(0, -192.5), (0, -107.5)],
@@ -329,25 +316,25 @@ fn assert_slot_walls(
 }
 
 fn target_plane(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    ir: &cadmpeg_ir::document::CadIr,
     target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
 ) -> ([f64; 3], f64) {
     let PmiTarget::Face { face } = &target.entity else {
         panic!("face target")
     };
-    face_plane(result, face.as_str())
+    face_plane(ir, face.as_str())
 }
 
 fn target_cylinder_radius(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    ir: &cadmpeg_ir::document::CadIr,
     target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
 ) -> f64 {
-    target_cylinder(result, target).2
+    target_cylinder(ir, target).2
 }
 
 /// The origin, unit axis, and radius of a face target's cylindrical carrier.
 fn target_cylinder(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    ir: &cadmpeg_ir::document::CadIr,
     target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
 ) -> ([f64; 3], [f64; 3], f64) {
     let PmiTarget::Face { face } = &target.entity else {
@@ -355,7 +342,7 @@ fn target_cylinder(
     };
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder),
-    )) = face_surface(result, face.as_str())
+    )) = face_surface(ir, face.as_str())
     else {
         panic!("cylindrical target carrier")
     };
@@ -367,10 +354,10 @@ fn target_cylinder(
 }
 
 fn face_surface<'a>(
-    result: &'a cadmpeg_ir::codec::DecodeResult,
+    ir: &'a cadmpeg_ir::document::CadIr,
     face: &str,
 ) -> Option<&'a cadmpeg_ir::geometry::SurfaceGeometry> {
-    let geometry = &result.ir().geometry;
+    let geometry = &ir.geometry;
     let surface = &geometry
         .faces
         .iter()
@@ -384,10 +371,10 @@ fn face_surface<'a>(
 }
 
 /// The unit axis and signed origin offset of a face's planar carrier.
-fn face_plane(result: &cadmpeg_ir::codec::DecodeResult, face: &str) -> ([f64; 3], f64) {
+fn face_plane(ir: &cadmpeg_ir::document::CadIr, face: &str) -> ([f64; 3], f64) {
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
-    )) = face_surface(result, face)
+    )) = face_surface(ir, face)
     else {
         panic!("planar target carrier")
     };
@@ -583,4 +570,135 @@ fn synthetic_datum_tag_array_with_unread_duplicate() -> Vec<u8> {
     bytes.extend_from_slice(b"\xa0\x01\x0e\xe3\x80\xdb\xe3\x3e\x12B\0");
     bytes.extend_from_slice(b"\xe3\xa0\x01\x0f\xe3\x80\xdb\xe3\x3e\x12A\0\xe3\x3e\x12\0");
     bytes
+}
+
+/// The one give-up of `kind` in `result`, which `cause` charges, the stub it
+/// names, and the offset and end of the `NeuPrtSld` section of `bytes`.
+fn neutral_part_charge(
+    bytes: &[u8],
+    result: &cadmpeg_ir::codec::DecodeResult,
+    kind: &str,
+    cause: &cadmpeg_ir::report::loss::LossKind,
+) -> (String, cadmpeg_ir::NativeUnknownRecord, usize, usize) {
+    let scan = crate::container::scan_bytes_ok(bytes.to_vec());
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "NeuPrtSld")
+        .expect("the neutral section");
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.starts_with(&format!("part {kind} ")))
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_eq!(&charges[0].code, cause, "{charges:#?}");
+    let message = charges[0].message.clone();
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| message.contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert_eq!(
+        stub.links,
+        [cadmpeg_ir::ids::Identity::try_from(format!(
+            "creo:NeuPrtSld:section#{}",
+            section.offset()
+        ))
+        .expect("section id")]
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some_and(|record| record.data().is_none()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss
+            .message
+            .split_whitespace()
+            .any(|token| token.starts_with("NeuPrtSld@")
+                || token.starts_with("creo:NeuPrtSld:section#"))));
+    (message, stub, section.offset(), section.end())
+}
+
+fn decode_neutral(payload: Vec<u8>) -> (Vec<u8>, cadmpeg_ir::codec::DecodeResult) {
+    let bytes = crate::test_support::build_prt_raw("test", &[("NeuPrtSld", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode the neutral section");
+    (bytes, result)
+}
+
+#[test]
+fn an_unread_neutral_attribute_table_is_given_up_as_a_part_of_its_section() {
+    let (bytes, result) = decode_neutral(b"PTC_GTOL_TYPE\0".to_vec());
+    let (message, _, offset, end) = neutral_part_charge(
+        &bytes,
+        &result,
+        "neutral-section",
+        &cadmpeg_ir::unknown::part::record_undecoded_kind(),
+    );
+    assert!(
+        message.starts_with(&format!(
+            "part neutral-section stream=\"\" offset={offset} length={} record=",
+            end - offset
+        )),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_neutral_attribute_count_past_its_section_is_given_up_as_unreadable() {
+    let (bytes, result) =
+        decode_neutral(b"\xe0\x00attributes\0\xf4\x05\xf8\x7f\xf7\x1b\xfbPTC_GTOL_TYPE\0".to_vec());
+    let (message, _, _, _) = neutral_part_charge(
+        &bytes,
+        &result,
+        "neutral-section",
+        &cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    );
+    assert!(
+        message.contains("declares more rows than its section holds bytes"),
+        "{message}"
+    );
+}
+
+#[test]
+fn an_ownerless_tolerance_type_row_is_given_up_as_a_part_of_its_section() {
+    let prototype = b"\xe3\xe0\x0aname\0PART_NUMBER\0\xe0\x00value\0\xe2\xe0\x01type\0\x33\xe0\x0avalue(s_val)\0PART\0\xe0\x01ref_id\0\xf1\xf6\xe0\x01ref_type\0\x02\xe0\x0aref_name\0\xe1\xe0\x0aunit\0\xe1\xe0\x01designated\0\x01\xf1\xf7\x1b";
+    let ownerless = b"\xe3PTC_GTOL_TYPE\0\xe2\x33\xf7\x1fPOSITION\0\xf6\x03\xe1\xe1\x00";
+    let mut payload = b"\xe0\x00attributes\0\xf4\x05\xf8\x02\xf7\x1b\xfb".to_vec();
+    payload.extend_from_slice(prototype);
+    payload.extend_from_slice(ownerless);
+    let (bytes, result) = decode_neutral(payload);
+    let row = bytes
+        .windows(ownerless.len())
+        .position(|window| window == ownerless)
+        .expect("the ownerless row");
+    let (message, _, _, _) = neutral_part_charge(
+        &bytes,
+        &result,
+        "pmi-attribute-row",
+        &cadmpeg_ir::unknown::part::record_undecoded_kind(),
+    );
+    assert!(
+        message.starts_with(&format!(
+            "part pmi-attribute-row stream=\"\" offset={row} length={} record=",
+            ownerless.len()
+        )),
+        "{message}"
+    );
+    assert!(message.contains(": the geometric-tolerance type attribute row names no owner"));
+    // The give-up is the one entry for the row: no count note repeats it.
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::PmiRecordUnresolved.kind()));
 }

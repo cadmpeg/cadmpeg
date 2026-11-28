@@ -1634,6 +1634,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                     first: DesignCombineBodySelection {
                         record_index: 12,
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: Vec::new(),
@@ -1936,9 +1937,11 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
 
 mod deleted_bodies;
 mod edge_midpoints;
+mod pattern_copies;
 mod saved_edges;
 mod split_plane;
 mod stored_results;
+mod unbound_states;
 
 mod transition_geometry;
 

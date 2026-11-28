@@ -45,6 +45,7 @@ const EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E11: f64 = 1.0e-11;
 const EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8: f64 = 1.0e-8;
 const EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12: f64 = 1.0e-12;
 const OFFSET_NEWTON_ITERATIONS: usize = 32;
+// resource-cap: MAX_OFFSET_FIT_CACHE_ENTRIES = N
 const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
 pub(super) fn saved_offset_carriers(
@@ -1749,8 +1750,9 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                         0,
                         geometry_budget,
                     )?;
-
-                    blend_parameter_grids.insert(surface.as_str(), grid);
+                    if grid.is_some() || !geometry_budget.exhausted() {
+                        blend_parameter_grids.insert(surface.as_str(), grid);
+                    }
                 }
                 let grid = blend_parameter_grids
                     .get(surface.as_str())

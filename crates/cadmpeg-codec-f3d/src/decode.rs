@@ -26,6 +26,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::native::F3dNative;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
@@ -37,6 +38,7 @@ use cadmpeg_ir::report::{
     Severity,
 };
 use cadmpeg_ir::units::{Tolerances, UnitVector3};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
@@ -512,6 +514,7 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
         | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Occurrence { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
     }
 }
@@ -1786,6 +1789,7 @@ fn design_projection_gaps(
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::GeneratedSet { .. }
+        | BodySelection::Occurrence { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
@@ -2165,20 +2169,42 @@ fn push_loss_vec(
     losses.push(code.note(args.to_string()));
 }
 
-fn report_unparsed_parameter_records(
-    report: &mut DecodeBody,
+/// Part kind of a Design parameter frame that matches no parameter grammar.
+const PARAMETER_FRAME_PART: &str = "parameter-frame";
+
+fn give_up_unparsed_parameter_records(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    given_up: &mut Vec<GivenUpPart>,
     unparsed: &[crate::design::decode::parameters::UnparsedParameterRecords],
-) {
+) -> Result<(), CodecError> {
     for records in unparsed {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::ParameterRecordUnparsed,
-            format_args!(
-                "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
-                records.count, records.stream
-            ),
-        );
+        let bytes = scan.entry_bytes(&records.stream)?;
+        let stream = cadmpeg_ir::StreamName::try_from(records.stream.clone())
+            .map_err(CodecError::malformed)?;
+        for frame in &records.frames {
+            let window = bytes
+                .get(frame.clone())
+                .ok_or_else(|| CodecError::malformed("F3D parameter frame escapes its stream"))?;
+            let part = Part::at(
+                "f3d",
+                PARAMETER_FRAME_PART,
+                u64_from_index(frame.start),
+                window,
+                [ArenaClass::Design],
+            )
+            .in_stream(stream.clone());
+            given_up.push(ctx.give_up_part(
+                part,
+                Cause::Undecoded,
+                crate::design::decode::record::give_up_error(
+                    Cause::Undecoded,
+                    "F3D parameter frame matches no parameter grammar",
+                ),
+            )?);
+        }
     }
+    Ok(())
 }
 
 fn report_parameter_trailer_flags(
@@ -3118,6 +3144,7 @@ fn model_brep_candidates<'s>(
 fn try_decode_text_model(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<(BrepFacts, Brep)>, CodecError> {
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
     for name in container::text_brep_names(scan) {
@@ -3141,11 +3168,12 @@ fn try_decode_text_model(
                 )));
             }
         };
-        let decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
+        let mut decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
             && decoded.asm.faces.is_empty()
         {
+            given_up.extend(decoded.give_up_withheld(ctx, scan, name, None)?);
             continue;
         }
         // Facts for the report and source attributes. The header carries the
@@ -3173,8 +3201,9 @@ fn try_decode_text_model(
     let qualify = parts.len() > 1;
     let mut merged: Option<(BrepFacts, Brep)> = None;
     for (facts, mut part) in parts {
-        if qualify {
-            let namespace = facts.name.rsplit('/').next().unwrap_or(&facts.name);
+        let namespace = qualify.then(|| facts.name.rsplit('/').next().unwrap_or(&facts.name));
+        given_up.extend(part.give_up_withheld(ctx, scan, &facts.name, namespace)?);
+        if let Some(namespace) = namespace {
             part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
         }
         match &mut merged {
@@ -3228,6 +3257,8 @@ struct DecodeSessionState {
     admitted_entities: u64,
     report_scope: crate::report::ReportScope,
     model_selection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Archive entries the model selection gave up.
+    given_up: Vec<GivenUpPart>,
 }
 
 struct DeferredBodylessInputs {
@@ -3254,7 +3285,8 @@ enum SessionPath {
 
 /// Store a bodyless design's records and attach its owners. The body history
 /// tails collected for the design are reported here, as the geometry path
-/// reports them through the consumed-history fill.
+/// reports them through the consumed-history fill. Returns the ASM history
+/// of each parameter scope that binds one, by scope id.
 fn store_bodyless_design(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -3262,12 +3294,29 @@ fn store_bodyless_design(
     native: &mut F3dNative,
     ir: &mut CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<std::collections::HashMap<String, String>, CodecError> {
     let consumers = std::mem::take(&mut design.history_body_consumers);
     design.store(native);
+    attach_design(ctx, scan, native, ir, losses)?;
+    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)?;
+    Ok(consumers.bindings)
+}
+
+/// Bind the stored design's sketches and features to their product
+/// definitions, then project the configuration tables from the features as
+/// these passes leave them, and with the output bodies the body history
+/// bound.
+pub(crate) fn attach_design(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    native: &F3dNative,
+    ir: &mut CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let producers = crate::design::configurations::body_producers(&ir.model.features);
     crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
     crate::design::owners::attach(scan, native, ir, losses)?;
-    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
+    crate::design::configurations::attach(native, &mut ir.model, &producers, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -3347,6 +3396,11 @@ struct F3dDecodeSession<'a> {
     admitted_entities: u64,
     component_definitions_by_record:
         std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    scope_histories: std::collections::HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    history_owners: std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3363,6 +3417,7 @@ impl<'a> F3dDecodeSession<'a> {
             admitted_entities: _,
             report_scope,
             model_selection_losses,
+            mut given_up,
         } = session_state;
         let mut untyped = std::collections::BTreeSet::new();
         let stats = &brep.asm.stats;
@@ -3401,6 +3456,11 @@ impl<'a> F3dDecodeSession<'a> {
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
         let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        crate::design::decode::up_axis::apply(
+            crate::design::decode::up_axis::decode_document_up_axis(scan),
+            &mut ir.up_axis,
+            &mut report.losses,
+        );
         geometry_admission::admit(ctx, &mut ir, &mut report.losses)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
@@ -3410,8 +3470,11 @@ impl<'a> F3dDecodeSession<'a> {
             stats: _,
             annotation_records,
             unbounded_faces: _,
+            // Each BREP entry gave its withheld records up before the graphs
+            // merged.
+            withheld: _,
         } = asm_remainder;
-        let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
+        let (subds, subd_losses) = crate::tsm::decode(ctx, scan, &mut given_up)?;
         // No v11 form states a `cage` yet (its forms are unresolved), so each
         // cage lies outside every form's `cage` and belongs to a body of its
         // own (§5.6). Interim: the source states no display name, colour, or
@@ -3434,7 +3497,8 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let mesh_projection =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report, &mut given_up)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
@@ -3445,7 +3509,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         Ok((
             Self {
-                given_up: Vec::new(),
+                given_up,
                 ctx,
                 scan,
                 native,
@@ -3457,6 +3521,8 @@ impl<'a> F3dDecodeSession<'a> {
                 untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
+                scope_histories: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3479,6 +3545,7 @@ impl<'a> F3dDecodeSession<'a> {
             admitted_entities,
             report_scope,
             model_selection_losses,
+            mut given_up,
         } = session_state;
         let MetadataIr {
             mut ir,
@@ -3492,7 +3559,13 @@ impl<'a> F3dDecodeSession<'a> {
             container_losses(scan, brep_outcome),
         )?;
         report.losses.extend(model_selection_losses);
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        crate::design::decode::up_axis::apply(
+            crate::design::decode::up_axis::decode_document_up_axis(scan),
+            &mut ir.up_axis,
+            &mut report.losses,
+        );
+        let mesh_projection =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report, &mut given_up)?;
         let mut untyped = std::collections::BTreeSet::new();
         if container::design_breps(scan).next().is_some()
             || container::text_brep_names(scan).next().is_some()
@@ -3501,7 +3574,7 @@ impl<'a> F3dDecodeSession<'a> {
         }
         Ok((
             Self {
-                given_up: Vec::new(),
+                given_up,
                 ctx,
                 scan,
                 native,
@@ -3513,6 +3586,8 @@ impl<'a> F3dDecodeSession<'a> {
                 untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
+                scope_histories: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -3546,7 +3621,12 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(prereqs.design_record_losses.iter().cloned());
-        report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
+        give_up_unparsed_parameter_records(
+            self.ctx,
+            self.scan,
+            &mut self.given_up,
+            &prereqs.design_parameter_unparsed,
+        )?;
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_driven_flags(&mut self.report, &prereqs.design_parameter_driven_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
@@ -3609,7 +3689,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.transfer.geometry_transferred(),
             );
         }
-        let failure = match &prereqs.design_feature_timelines {
+        let charged = |error: &CodecError| (Cause::Unreadable.of(error), error.to_string());
+        let (failure_cause, failure) = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
                     return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
@@ -3620,20 +3701,21 @@ impl<'a> F3dDecodeSession<'a> {
                 {
                     return Err(error);
                 }
-                Err(error) => error.to_string(),
+                Err(error) => charged(&error),
             },
             Err(error) => match self.ctx.resource_refusal() {
                 Some(limit) => return Err(CodecError::ResourceLimit(limit)),
-                None => error.to_string(),
+                None => charged(error),
             },
         };
-        push_loss_vec(
-            &mut self.report.losses,
-            F3dLossCode::DesignIntentUndecoded,
-            format_args!(
-                "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
-            ),
-        );
+        let code = match failure_cause {
+            Cause::Unreadable => F3dLossCode::DesignIntentUnreadable,
+            Cause::Undecoded => F3dLossCode::DesignIntentUndecoded,
+        };
+        self.report.losses.push(code.note(format!(
+            "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
+        )));
+        self.give_up_design_sources(failure_cause, &failure)?;
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -3642,6 +3724,54 @@ impl<'a> F3dDecodeSession<'a> {
             });
         self.note_undecoded_design()?;
         Ok(DesignState::Absent)
+    }
+
+    /// Gives up for `cause` the sources phase 2 reads after it failed with
+    /// `failure`: each Design stream and Design configuration entry as an
+    /// archive entry, and the history partition of each history BREP that
+    /// stores one, from where the history decode starts, each holding Design
+    /// content.
+    fn give_up_design_sources(&mut self, cause: Cause, failure: &str) -> Result<(), CodecError> {
+        let error = || {
+            crate::design::decode::record::give_up_error(
+                cause,
+                format_args!("design intent was not decoded: {failure}"),
+            )
+        };
+        let scan = self.scan;
+        for entry in &scan.entries {
+            if scan.is_design_stream(entry, ContainerRole::Bulkstream)
+                || scan.is_design_asset_entry(entry, ContainerRole::DesignConfig)
+            {
+                self.given_up.extend(scan.give_up_entry_holding(
+                    self.ctx,
+                    &entry.name,
+                    &[ArenaClass::Design],
+                    cause,
+                    error(),
+                )?);
+            }
+        }
+        for brep in container::history_breps(scan) {
+            let bytes = scan.entry_bytes(&brep.name)?;
+            let empty = brep
+                .kernel
+                .as_ref()
+                .and_then(crate::container::KernelFraming::solved_record_limit)
+                .is_some_and(|limit| bytes.get(limit..) == Some(EMPTY_HISTORY_TAIL.as_slice()));
+            let Some(start) = crate::history::partition_start(bytes).filter(|_| !empty) else {
+                continue;
+            };
+            self.given_up.push(scan.give_up_entry_span(
+                self.ctx,
+                &brep.name,
+                design_intent::HISTORY_PART,
+                start..bytes.len(),
+                [ArenaClass::Design],
+                (cause, error()),
+            )?);
+        }
+        Ok(())
     }
 
     fn note_undecoded_design(&mut self) -> Result<(), CodecError> {
@@ -3781,8 +3911,10 @@ impl<'a> F3dDecodeSession<'a> {
             native,
             model,
             losses,
+            mut given_up,
         } = design;
         self.report.losses.extend(losses);
+        self.given_up.append(&mut given_up);
         model.store(&mut self.ir.model);
         native
     }
@@ -3824,7 +3956,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(materials.notes);
+                self.given_up.extend(materials.given_up);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
@@ -3854,7 +3986,7 @@ impl<'a> F3dDecodeSession<'a> {
                         report_xref_placement_overrides(&mut self.report, table);
                     }
                     Ok(None) => {}
-                    Err(error) => report_xref_parse_loss(&mut self.report, error),
+                    Err(failure) => self.given_up.extend(failure.give_up(self.ctx, self.scan)?),
                 }
                 FinalizePath::Geometry(index)
             }
@@ -3871,7 +4003,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(decoded_materials.notes);
+                self.given_up.extend(decoded_materials.given_up);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -3931,6 +4063,11 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
+        self.history_owners = crate::design::components::history_pair_owners(
+            &prereqs.design_body_bindings,
+            &local_components,
+            bodies.as_ref(),
+        );
         let external = match prereqs.xref_table() {
             Some(table) => Some(crate::xref::project_occurrences(
                 table,
@@ -3996,7 +4133,7 @@ impl<'a> F3dDecodeSession<'a> {
             .occurrences
             .extend(unresolved_component_inserts);
         self.report.losses.extend(component_inserts.losses());
-        let joints = crate::design::assembly::project_assembly_joints_with_paths(
+        let mut joints = crate::design::assembly::project_assembly_joints_with_paths(
             &prereqs.design_parameter_scopes,
             &prereqs.design_component_occurrences,
             &component_inserts,
@@ -4011,8 +4148,18 @@ impl<'a> F3dDecodeSession<'a> {
                 &prereqs.design_parameter_scopes,
             ),
         );
+        self.report
+            .losses
+            .extend(joints.take_losses(self.ctx.depth()));
         self.ir.model.assembly_joints = joints.joints;
-        self.report.losses.extend(joints.losses);
+        self.report
+            .losses
+            .extend(crate::design::decode::joint_motion::assumed_motion_loss(
+                &prereqs.design_parameter_scopes,
+                &prereqs.design_joint_motions,
+                &prereqs.design_unbound_motions,
+                &self.ir.model.assembly_joints,
+            ));
         let joint_placed = crate::design::assembly::joint_placed_identity_occurrences(
             &self.ir.model.occurrences,
             self.ir
@@ -4048,12 +4195,6 @@ impl<'a> F3dDecodeSession<'a> {
                             &self.ir,
                         ),
                     );
-                    report_unresolved_configuration_rules(
-                        &mut self.report,
-                        &design.design_configurations,
-                        design.configuration_roots_unbound,
-                        &self.ir,
-                    );
                 }
                 if let Ok(Some(table)) = prereqs.store(&mut self.native) {
                     self.native.derived_references = table.derived_references;
@@ -4062,20 +4203,21 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 if let DesignState::Projected(mut design) = design {
                     let consumers = std::mem::take(&mut design.history_body_consumers);
+                    let roots_unbound = design.configuration_roots_unbound;
                     design.store(&mut self.native);
-                    crate::design::decode::sketch_owners::attach(
+                    attach_design(
                         ctx,
-                        scan,
-                        &self.native,
-                        &mut self.ir.model,
-                        &mut self.report.losses,
-                    )?;
-                    crate::design::owners::attach(
                         scan,
                         &self.native,
                         &mut self.ir,
                         &mut self.report.losses,
                     )?;
+                    report_unresolved_configuration_rules(
+                        &mut self.report,
+                        &self.native.design_configurations,
+                        roots_unbound,
+                        &self.ir,
+                    );
                     crate::history::history_bodies::fill_consumed(
                         ctx,
                         scan,
@@ -4085,6 +4227,7 @@ impl<'a> F3dDecodeSession<'a> {
                         &consumers,
                         &mut self.report.losses,
                     )?;
+                    self.scope_histories = consumers.bindings;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -4100,13 +4243,8 @@ impl<'a> F3dDecodeSession<'a> {
                 let xref = prereqs.store(&mut self.native);
                 let projected = match design {
                     DesignState::Projected(design) => {
-                        report_unresolved_configuration_rules(
-                            &mut self.report,
-                            &design.design_configurations,
-                            design.configuration_roots_unbound,
-                            &self.ir,
-                        );
-                        store_bodyless_design(
+                        let roots_unbound = design.configuration_roots_unbound;
+                        self.scope_histories = store_bodyless_design(
                             ctx,
                             scan,
                             *design,
@@ -4114,6 +4252,12 @@ impl<'a> F3dDecodeSession<'a> {
                             &mut self.ir,
                             &mut self.report.losses,
                         )?;
+                        report_unresolved_configuration_rules(
+                            &mut self.report,
+                            &self.native.design_configurations,
+                            roots_unbound,
+                            &self.ir,
+                        );
                         true
                     }
                     DesignState::Absent => false,
@@ -4163,6 +4307,15 @@ impl<'a> F3dDecodeSession<'a> {
                         sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         reference_images: self.native.design_canvas_images.len(),
+                        design_records: self.native.geometry_record_count(),
+                        xref_unparsed: xref.is_err(),
+                        design_decoded: projected
+                            && scan.entries.iter().any(|entry| {
+                                scan.is_design_stream(
+                                    entry,
+                                    cadmpeg_core::container::ContainerRole::Metastream,
+                                )
+                            }),
                     },
                     assembly,
                 );
@@ -4174,7 +4327,7 @@ impl<'a> F3dDecodeSession<'a> {
                         self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
-                    Err(error) => report_xref_parse_loss(&mut self.report, &error),
+                    Err(failure) => self.given_up.extend(failure.give_up(self.ctx, self.scan)?),
                 }
                 self.note_uninterpreted_design();
                 self.native.store(
@@ -4198,6 +4351,8 @@ impl<'a> F3dDecodeSession<'a> {
                         source_image,
                         untyped: self.untyped,
                         source_attributes: self.source_attributes,
+                        scope_histories: self.scope_histories,
+                        history_owners: self.history_owners,
                     },
                     &mut admitted_entities,
                 );
@@ -4212,7 +4367,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.note_uninterpreted_design();
         let mut f3d_namespace =
             std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
-        let (store_res, annotations_res) = std::thread::scope(|scope| {
+        let (store_res, annotations_res) = crate::scoped::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
             let unknowns = &self.unknowns;
@@ -4255,6 +4410,8 @@ impl<'a> F3dDecodeSession<'a> {
                 source_image,
                 untyped: self.untyped,
                 source_attributes: self.source_attributes,
+                scope_histories: self.scope_histories,
+                history_owners: self.history_owners,
             },
             &mut admitted_entities,
         )
@@ -4285,18 +4442,25 @@ fn cuts_design_intent(
         })
 }
 
-fn brep_identity_namespace(entry: &str) -> Option<&str> {
+pub(crate) fn brep_identity_namespace(entry: &str) -> Option<&str> {
     entry.rsplit('/').next()?.strip_prefix("BREP.")
 }
 
 /// Decode an F3D or F3Z reader.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = crate::f3z::observer::scan(ctx, root)?;
+    decode_scanned(ctx, &scan)
+}
+
+pub(crate) fn decode_scanned(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Decoded, CodecError> {
     match &scan.kind {
-        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
+        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, scan),
         container::F3dContainerKind::Document { .. } => {
             let mut decoded =
-                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+                decode_scanned_document(ctx, scan, crate::report::ReportScope::Standalone)?;
             crate::f3z::merge::bind_standalone_joints(
                 ctx,
                 &mut decoded.ir,
@@ -4305,7 +4469,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
-                &scan,
+                scan,
                 &decoded.ir,
                 &mut decoded.body.losses,
             )?;
@@ -4317,9 +4481,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.body.losses,
             )?;
             let has_scene =
-                crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
+                crate::scene::collect(ctx, scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
-                let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
+                let sources = crate::scene::sources(ctx, scan, &decoded.ir)?;
                 crate::scene::bind(
                     ctx,
                     &mut decoded.ir,
@@ -4335,12 +4499,35 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             let root_identity = crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
             decoded.body.losses.extend(root_identity);
             let depth = decoded.body.transfer.depth();
+            let mut carried = Vec::new();
+            let sources = crate::design_v11::StoredStates {
+                scan,
+                scope_histories: &decoded.scope_histories,
+                history_owners: &decoded.history_owners,
+                fidelity: &decoded.source_fidelity,
+            };
             cadmpeg_ir::design::projection::project_layer(
                 ctx,
                 "f3d",
                 &mut decoded.ir,
                 &mut decoded.body.losses,
-                |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+                |ir, losses| {
+                    carried = crate::design_v11::project(
+                        ctx,
+                        ir,
+                        depth,
+                        &crate::design_v11::joint::RootOperands::new(),
+                        Some(&sources),
+                        losses,
+                    )?;
+                    Ok(())
+                },
+            )?;
+            decoded.source_fidelity.attach_native_unknown_records(
+                &mut decoded.ir,
+                "f3d",
+                carried,
+                ctx,
             )?;
             decoded.ir.finalize();
             Ok(decoded.into_decoded())
@@ -4399,15 +4586,23 @@ fn decode_scanned_document<'a>(
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             container_losses(scan, &ModelBrepOutcome::NotAttempted),
         )?;
-        match crate::xref::decode(ctx, scan) {
+        let mut given_up = Vec::new();
+        let mut unread = Vec::new();
+        match crate::xref::decode(ctx, scan, &mut unread) {
             Ok(Some(table)) => {
                 apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
             }
             Ok(None) => {}
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+            Err(crate::xref::XrefFailure {
+                error: error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_)),
+                ..
+            }) => {
                 return Err(error);
             }
-            Err(error) => report_xref_parse_loss(&mut report, &error),
+            Err(failure) => given_up.extend(failure.give_up(ctx, scan)?),
+        }
+        for failure in &unread {
+            given_up.extend(failure.give_up(ctx, scan)?);
         }
         return decode_result(
             ctx,
@@ -4416,12 +4611,14 @@ fn decode_scanned_document<'a>(
             ir,
             report,
             RetainedArtifacts {
-                given_up: Vec::new(),
+                given_up,
                 annotations,
                 unknowns,
                 source_image,
                 untyped,
                 source_attributes,
+                scope_histories: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             &mut admitted_entities,
         );
@@ -4444,6 +4641,7 @@ fn decode_scanned_document<'a>(
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
     // arbitrary `.smbh` entry.
+    let mut brep_given_up = Vec::new();
     if !model_breps.is_empty() {
         let mut primary_model_brep = None;
         let qualify_ids = model_selection.blob_names.len() > 1;
@@ -4470,6 +4668,30 @@ fn decode_scanned_document<'a>(
             // A stream that fails to frame is reported even when another
             // selected stream decoded with no geometry.
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
+                let (cause, reason) = match candidate.kernel {
+                    Some(crate::container::KernelFraming::Asm { .. }) => (
+                        Cause::Unreadable,
+                        "F3D BREP entry: its ASM record stream does not frame",
+                    ),
+                    Some(crate::container::KernelFraming::Acis(_)) => (
+                        Cause::Undecoded,
+                        "F3D BREP entry: the decoder reads no ACIS binary record stream",
+                    ),
+                    Some(crate::container::KernelFraming::Text { .. }) => (
+                        Cause::Undecoded,
+                        "F3D BREP entry: the decoder reads no text kernel stream",
+                    ),
+                    None => (
+                        Cause::Unreadable,
+                        "F3D BREP entry: it stores no kernel stream header",
+                    ),
+                };
+                brep_given_up.extend(scan.give_up_entry(
+                    ctx,
+                    &candidate.name,
+                    cause,
+                    crate::design::decode::record::give_up_error(cause, reason),
+                )?);
                 brep_outcome = ModelBrepOutcome::Failed {
                     stream: candidate.name.clone(),
                 };
@@ -4482,7 +4704,29 @@ fn decode_scanned_document<'a>(
                     .get(blob_name)
                     .map_or(0, std::collections::HashSet::len),
             )?;
-            if part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty() {
+            let no_bodies = part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty();
+            let holds_geometry = !part.asm.surfaces.is_empty()
+                || !part.asm.points.is_empty()
+                || !part.asm.faces.is_empty();
+            if let Some(keys) = selected_body_keys
+                .get(blob_name)
+                .filter(|_| !no_bodies && holds_geometry)
+            {
+                part.retain_body_keys(ctx, keys)?;
+            }
+            // The give-up follows the body selection, so that each shell it
+            // marks is a shell the document keeps.
+            brep_given_up.extend(
+                part.give_up_withheld(
+                    ctx,
+                    scan,
+                    &candidate.name,
+                    qualify_ids
+                        .then(|| brep_identity_namespace(&candidate.name))
+                        .flatten(),
+                )?,
+            );
+            if no_bodies {
                 if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
                     brep_outcome = ModelBrepOutcome::NoPhysicalModel;
                 }
@@ -4494,15 +4738,6 @@ fn decode_scanned_document<'a>(
                 brep_outcome = ModelBrepOutcome::Empty {
                     stream: candidate.name.clone(),
                 };
-            }
-            if part.asm.surfaces.is_empty()
-                && part.asm.points.is_empty()
-                && part.asm.faces.is_empty()
-            {
-                continue;
-            }
-            if let Some(keys) = selected_body_keys.get(blob_name) {
-                part.retain_body_keys(ctx, keys)?;
             }
             if part.asm.surfaces.is_empty()
                 && part.asm.points.is_empty()
@@ -4557,6 +4792,7 @@ fn decode_scanned_document<'a>(
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
                             entity_suffix: visibility.entity_suffix,
+                            browser_node_entity: visibility.browser_node_entity,
                             visible: visibility.visible,
                         },
                     )
@@ -4579,6 +4815,7 @@ fn decode_scanned_document<'a>(
                     admitted_entities,
                     report_scope,
                     model_selection_losses: model_selection.losses,
+                    given_up: brep_given_up,
                 },
             );
         }
@@ -4586,7 +4823,7 @@ fn decode_scanned_document<'a>(
 
     // No binary stream decoded: the model may be carried only in the text
     // encoding.
-    if let Some((text_facts, text_brep)) = try_decode_text_model(ctx, scan)? {
+    if let Some((text_facts, text_brep)) = try_decode_text_model(ctx, scan, &mut brep_given_up)? {
         return finish_model_decode(
             ctx,
             scan,
@@ -4598,6 +4835,7 @@ fn decode_scanned_document<'a>(
                 admitted_entities,
                 report_scope,
                 model_selection_losses: model_selection.losses,
+                given_up: brep_given_up,
             },
         );
     }
@@ -4610,6 +4848,7 @@ fn decode_scanned_document<'a>(
             admitted_entities,
             report_scope,
             model_selection_losses: model_selection.losses,
+            given_up: brep_given_up,
         },
         &brep_outcome,
     )?;
@@ -4645,9 +4884,12 @@ fn extend_unique_assets(
     Ok(())
 }
 
+/// Collects one mesh container outcome. A container that failed to decode
+/// goes to `failed` for the caller to give up as an archive entry.
 fn collect_mesh_outcome(
     bodies: &mut Vec<crate::design::decode::mesh::MeshBody>,
     report: &mut DecodeBody,
+    failed: &mut Vec<(String, CodecError)>,
     outcome: crate::design::decode::mesh::MeshContainerOutcome,
 ) -> Result<(), CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
@@ -4666,11 +4908,29 @@ fn collect_mesh_outcome(
             error: error @ CodecError::ResourceLimit(_),
             ..
         } => return Err(error),
-        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::MeshContainerUndecoded,
-            format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),
-        ),
+        MeshContainerOutcome::Failed { entry_name, error } => {
+            failed.push((entry_name, error));
+        }
+        MeshContainerOutcome::Unplaced {
+            error: error @ CodecError::ResourceLimit(_),
+            ..
+        } => return Err(error),
+        MeshContainerOutcome::Unplaced {
+            entry_name,
+            body_id,
+            error,
+        } => {
+            report.losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(&body_id)?,
+                    Cause::Unreadable.of(&error),
+                    format_args!(
+                        "mesh body {body_id} from container `{entry_name}` was not placed: {error}"
+                    ),
+                )
+                .loss(),
+            );
+        }
         MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
             &mut report.losses,
             F3dLossCode::MeshContainerMissing,
@@ -4776,16 +5036,32 @@ fn project_mesh_bodies(
     ir: &mut CadIr,
     native: &mut F3dNative,
     report: &mut DecodeBody,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<MeshProjection, CodecError> {
     let decoded = match crate::design::decode::mesh::decode_mesh_bodies(ctx, scan) {
         Ok(decoded) => decoded,
         Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
         Err(e) => {
-            push_loss_vec(
-                &mut report.losses,
-                F3dLossCode::MeshContainerUndecoded,
-                format_args!("mesh bodies could not be decoded: {e}"),
-            );
+            let before = given_up.len();
+            let cause = Cause::Undecoded.of(&e);
+            for entry in crate::container::paramesh_entries(scan) {
+                given_up.extend(scan.give_up_entry(
+                    ctx,
+                    &entry.name,
+                    cause,
+                    crate::design::decode::record::give_up_error(
+                        cause,
+                        format_args!("F3D mesh bodies could not be decoded: {e}"),
+                    ),
+                )?);
+            }
+            if given_up.len() == before {
+                push_loss_vec(
+                    &mut report.losses,
+                    F3dLossCode::MeshContainerUndecoded,
+                    format_args!("mesh bodies could not be decoded: {e}"),
+                );
+            }
             return Ok(MeshProjection {
                 count: 0,
                 unjoined: 0,
@@ -4892,8 +5168,13 @@ fn project_mesh_bodies(
             )
         })
         .count();
+    let mut failed = Vec::new();
     for outcome in decoded.outcomes {
-        collect_mesh_outcome(&mut bodies, report, outcome)?;
+        collect_mesh_outcome(&mut bodies, report, &mut failed, outcome)?;
+    }
+    for (entry_name, error) in failed {
+        let cause = Cause::Unreadable.of(&error);
+        given_up.extend(scan.give_up_entry(ctx, &entry_name, cause, error)?);
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
@@ -5180,14 +5461,6 @@ fn annotate_docstruct(
     Ok(())
 }
 
-fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
-    push_loss_vec(
-        &mut report.losses,
-        F3dLossCode::XrefTableUndecoded,
-        format_args!("external-reference table was not decoded: {error}"),
-    );
-}
-
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
@@ -5302,6 +5575,17 @@ pub(crate) struct DesignCarriers {
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
     pub(crate) reference_images: usize,
+    /// Design carriers that state geometry: feature timeline items, indexed
+    /// record headers outside the parameter machinery, sketch placements and
+    /// relations, component occurrences, mesh features and the other carriers
+    /// that name construction or selection. Parameters, parameter scopes,
+    /// owners and companions do not count.
+    pub(crate) design_records: usize,
+    /// A Design metastream entry exists and its design intent decoded and
+    /// projected, so `design_records` is a complete count.
+    pub(crate) design_decoded: bool,
+    /// The XREF table failed to parse, so the document may hold components.
+    pub(crate) xref_unparsed: bool,
 }
 
 /// Classify the geometry transfer of a design from the carriers it stores.
@@ -5328,6 +5612,17 @@ pub(crate) fn apply_carrier_classification(
                 ),
             );
         } else {
+            // One rule for every path: the design is empty when its Design
+            // stream was read, the model-body maps are explicitly empty, no
+            // mesh container went untransferred, the xref table parsed, and no
+            // Design record states geometry.
+            let empty = carriers.design_decoded
+                && !carriers.xref_unparsed
+                && carriers.model_body_maps_explicitly_empty
+                && carriers.design_records == 0
+                && carriers.sketch_entities == 0
+                && carriers.reference_images == 0
+                && untransferred_mesh_containers.is_none();
             apply_bodyless_design_classification(
                 report,
                 carriers.selected_brep_streams,
@@ -5335,9 +5630,18 @@ pub(crate) fn apply_carrier_classification(
                 carriers.declared_bodies,
                 carriers.sketch_entities,
                 carriers.reference_images,
-                carriers.model_body_maps_explicitly_empty
-                    && untransferred_mesh_containers.is_none(),
+                empty,
             );
+            if !report.transfer.geometry_transferred() && carriers.design_records > 0 {
+                push_loss_vec(
+                    &mut report.losses,
+                    F3dLossCode::DesignRecordsUntransferred,
+                    format_args!(
+                        "the Design stream holds {} carrier(s) that state geometry (features, sketches, components, or construction) and no geometry transferred",
+                        carriers.design_records
+                    ),
+                );
+            }
         }
     }
 }
@@ -5372,8 +5676,8 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, brep_streams: usize, 
 ///
 /// The Design segment selects no BREP stream and declares zero bodies.
 /// Sketch entities can supply the complete geometry. Reference-image timeline
-/// objects are presentation content and require no geometry carrier. Empty
-/// modern model-body maps with none of these carriers make an empty design.
+/// objects are presentation content and require no geometry carrier. A design
+/// that is `empty` (the caller's rule) holds neither.
 fn apply_bodyless_design_classification(
     report: &mut DecodeBody,
     brep_streams: usize,
@@ -5381,13 +5685,13 @@ fn apply_bodyless_design_classification(
     declared_bodies: usize,
     sketch_entities: usize,
     reference_images: usize,
-    model_body_maps_explicitly_empty: bool,
+    empty: bool,
 ) {
-    let empty_design = sketch_entities == 0 && reference_images == 0;
+    let empty_design = empty;
     if brep_streams != 0
         || text_brep_streams != 0
         || declared_bodies != 0
-        || (empty_design && !model_body_maps_explicitly_empty)
+        || (!empty_design && sketch_entities == 0 && reference_images == 0)
     {
         return;
     }
@@ -5402,7 +5706,7 @@ fn apply_bodyless_design_classification(
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
     if empty_design {
         report.losses.push(F3dLossCode::EmptyDesign.note(
-            "empty design: the modern model-body maps select no body, and the document declares no body, sketch entity, or reference image",
+            "empty design: the document selects no body and declares no body, sketch entity, reference image, or Design record",
         ));
         return;
     }
@@ -5494,6 +5798,12 @@ pub(crate) struct AuthoredDecoded {
     pub(crate) source: cadmpeg_ir::SourceMeta,
     pub(crate) body: DecodeBody,
     pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    pub(crate) scope_histories: std::collections::HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    pub(crate) history_owners:
+        std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 impl AuthoredDecoded {
@@ -5515,6 +5825,11 @@ struct RetainedArtifacts {
     /// Classes of the content the source image holds that no arena carries.
     untyped: std::collections::BTreeSet<cadmpeg_core::decode::ArenaClass>,
     source_attributes: std::collections::BTreeMap<String, String>,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    scope_histories: std::collections::HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    history_owners: std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 fn decode_result(
@@ -5540,12 +5855,19 @@ fn decode_result(
     );
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
-    commit_given_up_parts(ctx, scan, &mut ir, &mut source_fidelity)?;
-    for part in retained.given_up {
-        report
-            .losses
-            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
-    }
+    // `header_losses` reported the losses of the scan's parts.
+    commit_parts(
+        ctx,
+        scan.given_up.iter().cloned(),
+        &mut ir,
+        &mut source_fidelity,
+    )?;
+    report.losses.extend(commit_parts(
+        ctx,
+        retained.given_up,
+        &mut ir,
+        &mut source_fidelity,
+    )?);
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
     }
@@ -5569,27 +5891,35 @@ fn decode_result(
         source,
         body: report,
         source_fidelity,
+        scope_histories: retained.scope_histories,
+        history_owners: retained.history_owners,
     })
 }
 
-/// Commits each archive entry the scan gave up, its stub linked to the
-/// product definition of the file that holds the archive.
-/// `header_losses` already put each part's loss in the report.
-pub(crate) fn commit_given_up_parts(
+/// Commits each given-up part whose stub the document does not hold yet, and
+/// returns the loss of each part it commits. A part whose stub the document
+/// holds is a span already given up, as when two directory entries name one
+/// stored span: it adds no stub and no loss. The stub of an archive entry
+/// links to the product definition of the file that holds the archive.
+pub(crate) fn commit_parts(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
+    parts: impl IntoIterator<Item = GivenUpPart>,
     ir: &mut CadIr,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let owner = file_definition(&ir.model).map(cadmpeg_ir::ids::Identity::from);
-    for given_up in scan.given_up.iter().cloned() {
-        let given_up = match &owner {
-            Some(owner) => given_up.contained_in(owner.clone()),
-            None => given_up,
+    let mut losses = Vec::new();
+    for part in parts {
+        if fidelity.retained_record(part.id().as_str()).is_some() {
+            continue;
+        }
+        let part = match &owner {
+            Some(owner) if part.kind() == container::ENTRY_PART => part.contained_in(owner.clone()),
+            _ => part,
         };
-        given_up.commit(ctx, ir, fidelity)?;
+        losses.push(part.commit(ctx, ir, fidelity)?);
     }
-    Ok(())
+    Ok(losses)
 }
 
 /// The definition the decoded file holds at its top: the prototype of its
@@ -5667,19 +5997,20 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 
 /// The machine-local digest by which the F3D patch path compares two documents
 /// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
+    ctx.with_arena(&arena, |ctx| {
+        cadmpeg_ir::hash::document_local_sha256(
+            ctx,
+            ir,
+            ir.source.as_ref(),
+            "f3d",
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+        )
+    })
 }
 
 fn annotation_stream(entry_name: &str) -> Result<StreamHandle, CodecError> {
@@ -5699,6 +6030,16 @@ fn note_native_annotation(
     Ok(())
 }
 
+fn note_projected_annotation(
+    annotations: &mut AnnotationBuilder,
+    stream: &StreamHandle,
+    id: &impl AsRef<cadmpeg_ir::ids::Identity>,
+    tag: &str,
+) {
+    let id = id.as_ref();
+    annotations.note(id, stream, trailing_offset(id.as_str()), Some(tag));
+}
+
 fn populate_annotations(
     ir: &CadIr,
     scan: &ContainerScan,
@@ -5712,11 +6053,14 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(stream_name)?;
         for record in records {
-            let key = cadmpeg_ir::ids::Identity::new(record.id.as_str())
-                .map_err(CodecError::malformed)?;
-            annotations.note(&key, &stream, record.offset, Some(record.tag.as_str()));
+            annotations.note(
+                &record.id,
+                &stream,
+                record.offset,
+                Some(record.tag.as_str()),
+            );
             for field in &record.derived_fields {
-                annotations.derived(&key, field)?;
+                annotations.derived(&record.id, field)?;
             }
         }
     }
@@ -5725,7 +6069,7 @@ fn populate_annotations(
     for constraint in &ir.model.sketch_constraints {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
             if !constraints_by_native.contains_key(native_ref) {
-                constraints_by_native.insert(native_ref, constraint.id.as_str());
+                constraints_by_native.insert(native_ref, &constraint.id);
             }
         }
     }
@@ -5756,6 +6100,11 @@ fn populate_annotations(
             note_native_annotation(&mut annotations, &native_stream, $id, $tag)?;
         }};
     }
+    macro_rules! note_projected {
+        ($id:expr, $tag:expr $(,)?) => {{
+            note_projected_annotation(&mut annotations, &native_stream, $id, $tag);
+        }};
+    }
     {
         for entity in &native.construction_recipes {
             note!(&entity.id, "construction_recipe");
@@ -5778,13 +6127,13 @@ fn populate_annotations(
         for entity in &native.design_dimension_locus_pairs {
             note!(&entity.id, "design_dimension_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_annotation_frames {
             note!(&entity.id, "design_dimension_annotation_frame");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_presentation_frames {
@@ -5800,19 +6149,19 @@ fn populate_annotations(
                         .flatten()
                 });
             if let Some(projected) = projected {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_locus_groups {
             note!(&entity.id, "design_dimension_locus_group");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_null_locus_pairs {
             note!(&entity.id, "design_dimension_null_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_parameter_owners {
@@ -5834,11 +6183,11 @@ fn populate_annotations(
             note!(&entity.id, "design_sketch_placement");
             let planar = crate::ids::neutral_sketch_id(entity);
             if planar_sketches.contains(planar.as_str()) {
-                note!(planar.as_str(), "sketch");
+                note_projected!(&planar, "sketch");
             }
             let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if spatial_sketches.contains(spatial.as_str()) {
-                note!(spatial.as_str(), "spatial_sketch");
+                note_projected!(&spatial, "spatial_sketch");
             }
         }
         for entity in &native.design_entity_headers {
@@ -5858,19 +6207,19 @@ fn populate_annotations(
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 let constraint =
                     crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index);
-                note!(constraint.as_str(), "sketch_constraint");
+                note_projected!(&constraint, "sketch_constraint");
             }
         }
         for entity in &native.sketch_points {
             note!(&entity.id, "sketch_point");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note!(projected.as_str(), "sketch_entity");
+                note_projected!(*projected, "sketch_entity");
             }
         }
         for entity in &native.sketch_curve_identities {
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note!(projected.as_str(), "sketch_entity");
+                note_projected!(*projected, "sketch_entity");
                 // Admitted z noise is read as zero, so the projected
                 // endpoints are derived rather than byte-exact.
                 if entity.planar_z_noise.is_some() {
@@ -5970,6 +6319,9 @@ fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecErro
     }) || source_has_history_records(scan)?)
 }
 
+/// The bare EOF delta-state identifier: an empty history partition.
+const EMPTY_HISTORY_TAIL: &[u8; 13] = b"\x0d\x0bdelta_state";
+
 /// A bare EOF delta-state identifier is an empty partition boundary, not a
 /// historical record. Every other declared history tail remains conservative.
 fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
@@ -5982,7 +6334,7 @@ fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecErr
             return Ok(true);
         };
         let bytes = scan.entry_bytes(&brep.name)?;
-        if bytes.get(limit..) != Some(b"\x0d\x0bdelta_state".as_slice()) {
+        if bytes.get(limit..) != Some(EMPTY_HISTORY_TAIL.as_slice()) {
             return Ok(true);
         }
     }
@@ -6211,17 +6563,6 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
             format_args!(
                 "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
                 face.record_index, face.surface_kind, face.face.as_str()
-            ),
-        );
-    }
-    if s.missing_face_surfaces() > 0 {
-        push_loss_vec(
-            &mut losses,
-            F3dLossCode::FaceSurfaceReferenceDangling,
-            format_args!(
-                "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-                s.missing_face_surfaces(),
-                KindCounts(&s.missing_face_surface_kinds)
             ),
         );
     }
@@ -6791,8 +7132,12 @@ pub(crate) fn apply_body_presentation_names(
         else {
             continue;
         };
-        let presentations =
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?;
+        let presentations = crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )?;
         for presentation in presentations {
             let Some(name) = presentation.name.as_deref() else {
                 continue;
@@ -6887,7 +7232,7 @@ pub(crate) fn apply_body_presentation_names(
 }
 
 pub(crate) mod design_intent;
-mod geometry_admission;
+pub(crate) mod geometry_admission;
 mod mesh_import;
 mod mesh_operations;
 mod prereqs;

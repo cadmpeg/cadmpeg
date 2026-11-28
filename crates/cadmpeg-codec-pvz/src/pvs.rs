@@ -11,12 +11,13 @@ mod xml;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::layout::{pvs_header, pvs_stream_entry_head as stream_entry};
-use crate::loss::PvzLossCode;
+use crate::loss::{give_up_cause, PvzLossCode};
 use crate::read::{at, record};
 use atom::StringPool;
 use element::Element;
@@ -217,6 +218,8 @@ pub(crate) struct Structure {
     pub(crate) definitions: Vec<Definition>,
     /// Content the decoder read but did not transfer.
     pub(crate) residue: Residue,
+    /// The property streams that did not decode.
+    pub(crate) given_up: Vec<GivenUpPart>,
 }
 
 /// Structure content that the model does not carry, counted for loss notes.
@@ -236,8 +239,6 @@ pub(crate) struct Residue {
     typed_properties: usize,
     /// XML elements outside the mapped subset (§3.14), by name.
     xml_elements: BTreeMap<String, usize>,
-    /// Property streams whose grammar failed, with the reason.
-    failed_property_streams: Vec<String>,
     /// Directory streams the decoder does not read, with the reason.
     skipped_streams: Vec<String>,
 }
@@ -263,8 +264,6 @@ impl Residue {
         self.occurrences_undecoded += other.occurrences_undecoded;
         self.bounds += other.bounds;
         self.typed_properties += other.typed_properties;
-        self.failed_property_streams
-            .extend(other.failed_property_streams);
         self.skipped_streams.extend(other.skipped_streams);
     }
 
@@ -323,9 +322,6 @@ impl Residue {
                 self.typed_properties
             )));
         }
-        for reason in &self.failed_property_streams {
-            losses.push(PvzLossCode::StructurePropertyStreamMalformed.note(reason.clone()));
-        }
         for reason in &self.skipped_streams {
             losses.push(PvzLossCode::StructureStreamUndecoded.note(reason.clone()));
         }
@@ -341,11 +337,15 @@ struct Stream<'a> {
     payload: View<'a>,
 }
 
-/// Decodes a structure member in its binary (§3.1) or XML (§3.14) form.
-pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, CodecError> {
+/// Decodes structure member `name` in its binary (§3.1) or XML (§3.14) form.
+pub(crate) fn read(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    member: View<'_>,
+) -> Result<Structure, CodecError> {
     let window = member.window();
     if window.starts_with(BINARY_PREFIX) {
-        read_binary(ctx, member)
+        read_binary(ctx, name, member)
     } else if window.starts_with(XML_PREFIX) {
         xml::read(ctx, window)
     } else {
@@ -355,9 +355,14 @@ pub(crate) fn read(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structur
     }
 }
 
-fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, CodecError> {
+fn read_binary(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    member: View<'_>,
+) -> Result<Structure, CodecError> {
     let streams = directory(ctx, member)?;
     let mut residue = Residue::default();
+    let mut given_up = Vec::new();
     let mut pool = None;
     for stream in streams
         .iter()
@@ -415,10 +420,20 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
                 match applied {
                     Ok(()) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => residue.failed_property_streams.push(format!(
-                        "property stream {:?} was not transferred: {error}",
-                        stream.name
-                    )),
+                    Err(error) => {
+                        let mut part = Part::at(
+                            "pvz",
+                            "pvs-stream",
+                            u64_from_index(stream.payload.start().abs_diff(member.start())),
+                            stream.payload.window(),
+                            [ArenaClass::Model],
+                        )
+                        .in_stream(crate::ids::member_stream_name(name));
+                        if !stream.name.is_empty() {
+                            part = part.named(stream.name.as_str());
+                        }
+                        given_up.push(ctx.give_up_part(part, give_up_cause(&error), error)?);
+                    }
                 }
             }
             other => residue.skipped_streams.push(format!(
@@ -431,13 +446,14 @@ fn read_binary(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<Structure, C
     Ok(Structure {
         definitions,
         residue,
+        given_up,
     })
 }
 
 /// Expands one stream payload. Codec 1 is the only defined encoding.
 fn expand<'a>(ctx: &DecodeContext<'a>, stream: &Stream<'_>) -> Result<View<'a>, CodecError> {
     if stream.codec != stream_entry::CODEC_VALUE {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "stream {:?} of type {} uses undefined codec {}",
             stream.name, stream.kind, stream.codec
         )));
