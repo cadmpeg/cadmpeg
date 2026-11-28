@@ -2,6 +2,18 @@
 
 This document lists the parts of the F3D format that we do not know. The specification `f3d.md` gives the parts that we know.
 
+### DR-1095. Pose frame of typed local occurrence paths
+
+**Question.** Which occurrence instance and coordinate frame does a typed operation-table path select, and which saved pose has precedence over a typed local component path?
+
+**Known.** An operation table starts with a counted three-digit class tag, a u64 record identity, a counted ASCII name, a zero run, and counted dependency references. Its occurrence path stores counted references. A local reference stores presence byte `01`, a u64 target, an optional counted 36-byte ASCII type GUID, and two zero bytes. The entry run stores flag pairs, operation references, and identity flags or explicit 4-by-4 matrices. A local component path stores a counted element run with a u32 discriminator after each reference. Its component reference can carry type `E03784ED-5E19-4E14-B9F2-3B07017018CD`; its occurrence reference can carry type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`. A zero terminator precedes the placement and closing reference runs. The initial path, closing references, and occurrence envelope supply separate identity relations.
+
+**Need.** Build a second design with a local component below a translated and rotated parent, two sibling occurrences, and a nested occurrence. Save an initial state and a state after moving one occurrence. Save both reference spellings. Preserve the operation tables, component paths, occurrence envelopes, root-instance records, and scene override rows. Compare each table's final matrix with an independently bound pose of the same instance. Compare the component-path matrix with the complete parent composition and its closing occurrence chain. Vary the active operation separately from the occurrence position to determine pose precedence. Each typed path instance must have one independently bound pose before its form can select a placement.
+
+**Conflict.** The local component-path matrix and the occurrence-envelope parent composition can select different poses. The saved-state relation must identify the current pose.
+
+**Note.** DR-520 covers empty and multi-reference operation-table paths. DR-153 covers component-path discriminators.
+
 Each item has these parts:
 
 - **Question** — what we must find.

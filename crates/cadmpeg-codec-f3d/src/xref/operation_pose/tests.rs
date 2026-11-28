@@ -639,3 +639,27 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
         .iter()
         .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
 }
+
+#[test]
+fn inline_types_preserve_direct_table_fields() {
+    for prefix in [2, 6] {
+        for explicit in [false, true] {
+            let plain = frame(prefix, explicit);
+            let mut typed = plain.clone();
+            let path_at = header::LEN + 4 + prefix + 8;
+            let root_at = path_at + 11;
+            let operation_at = root_at + 11 + 8 + 2;
+            for (at, guid) in [
+                (operation_at, TYPE_GUID),
+                (root_at, ROOT_COMPONENT_TYPE_GUID),
+                (path_at, super::super::OCCURRENCE_PLACEMENT_TYPE_GUID),
+            ] {
+                let mut inline = 36_u32.to_le_bytes().to_vec();
+                inline.extend(guid.as_bytes());
+                typed.splice(at + 9..at + 9, inline);
+            }
+            assert_eq!(parse(&typed), parse(&plain));
+            assert!(parse(&typed).is_some());
+        }
+    }
+}
