@@ -8,7 +8,8 @@
 //! nodes of the run that no other node of the run holds. The other tree nodes
 //! (annotations, lights, body folders, the equations folder) have no design
 //! meaning, so neither they nor the nodes under them are members; the origin
-//! is a datum feature (§6.2).
+//! is a datum feature (§6.2). A feature node under such a node is listed, so
+//! that a loss names it.
 
 use std::collections::{HashMap, HashSet};
 
@@ -42,6 +43,13 @@ pub(super) struct Timeline {
     /// The native records of the equations folders, whose dimensions are the
     /// part's global variables.
     pub(super) equation_records: HashSet<String>,
+    /// The feature nodes under a tree node that is no member, by native
+    /// record, with the feature each would have become.
+    pub(super) skipped: Vec<(String, FeatureId)>,
+    /// The features outside the timeline that own a sketch no member
+    /// restates: members of the scope's root `Group`, which own their
+    /// dimensions.
+    pub(super) grouped: HashSet<FeatureId>,
 }
 
 impl Timeline {
@@ -161,11 +169,12 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
         while let Some(step) = stack.pop() {
             match step {
                 Step::Enter(feature) => {
-                    if metadata.contains(feature) {
-                        continue;
-                    }
                     let nested = children.get(feature.id.as_str());
                     let nested = nested.map(Vec::as_slice).unwrap_or_default();
+                    if metadata.contains(feature) {
+                        skip(nested, &children, &metadata, history, &mut timeline)?;
+                        continue;
+                    }
                     match feature_tree_node_role(feature, &history.features) {
                         Some(FeatureTreeNodeRole::FeatureFolder) => {
                             stack.push(Step::CloseFolder {
@@ -182,7 +191,10 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                             timeline.equation_records.insert(feature.id.clone());
                             continue;
                         }
-                        Some(_) => continue,
+                        Some(_) => {
+                            skip(nested, &children, &metadata, history, &mut timeline)?;
+                            continue;
+                        }
                         None => stack.push(Step::Emit(feature, false)),
                     }
                     stack.extend(nested.iter().rev().map(|child| Step::Enter(child)));
@@ -258,4 +270,29 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
         }
     }
     Ok(timeline)
+}
+
+/// Lists in `timeline.skipped` the feature nodes among `nested`, the nodes
+/// under a tree node that is no member, and the nodes under them.
+fn skip<'a>(
+    nested: &[&'a records::Feature],
+    children: &HashMap<&str, Vec<&'a records::Feature>>,
+    metadata: &HistoryMetadata<'_>,
+    history: &FeatureHistory,
+    timeline: &mut Timeline,
+) -> Result<(), CodecError> {
+    let mut stack = nested.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(feature) = stack.pop() {
+        if !metadata.contains(feature)
+            && feature_tree_node_role(feature, &history.features).is_none()
+        {
+            timeline
+                .skipped
+                .push((feature.id.clone(), neutral_feature_id(&feature.id)?));
+        }
+        if let Some(nested) = children.get(feature.id.as_str()) {
+            stack.extend(nested.iter().rev().copied());
+        }
+    }
+    Ok(())
 }

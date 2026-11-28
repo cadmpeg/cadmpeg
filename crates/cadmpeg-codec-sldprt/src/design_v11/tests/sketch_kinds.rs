@@ -2,10 +2,11 @@
 //! The sketches a timeline feature owns besides a placed planar sketch: a
 //! block definition, a spatial sketch, a sketch read from the records of one
 //! configuration's lane, a reference dimension whose parameter the tree
-//! does not list, a relation on a curve locus the sketch does not store, a
-//! curve point two point entities hold alike, the center record a circle
-//! names, the operands of a native relation, and a coincidence of one point
-//! entity with itself (§5.2, §6.1).
+//! does not list, a reference-dimension parameter no dimension binds, a
+//! relation on a curve locus the sketch does not store, a curve point two
+//! point entities hold alike, the center record a circle names, the operands
+//! of a native relation, and a coincidence of one point entity with itself
+//! (§5.2, §6.1).
 
 use cadmpeg_core::serde_erase::json;
 
@@ -307,6 +308,103 @@ fn a_reference_dimension_of_a_parameter_the_tree_omits_binds_a_driven_parameter(
         "{:?}",
         diameter.relation
     );
+}
+
+/// A reference-dimension parameter that no sketch dimension binds is a
+/// `Driven` parameter of its owner with its stored value and display; one
+/// whose owner is no design feature is named in a note.
+#[test]
+fn a_reference_dimension_parameter_no_sketch_dimension_binds_is_driven() {
+    const BOUND: &str = "sldprt:model:parameter#reference:1:2";
+    const UNBOUND: &str = "sldprt:model:parameter#reference:1:3";
+    const ORPHAN: &str = "sldprt:model:parameter#reference:1:4";
+    let (mut ir, native) = sketch_and_extrude();
+    let mut parameters = json::to_value(&ir.model.parameters).unwrap();
+    let template = parameters[0].clone();
+    let owner = template["owner"].as_str().unwrap().to_owned();
+    let absent = format!("{}#absent", owner.split_once('#').unwrap().0);
+    for (id, name, owner) in [
+        (BOUND, "D1@reference", owner.as_str()),
+        (UNBOUND, "D2@reference", owner.as_str()),
+        (ORPHAN, "D3@reference", absent.as_str()),
+    ] {
+        let mut reference = template.clone();
+        reference["id"] = cadmpeg_core::json!(id);
+        reference["owner"] = cadmpeg_core::json!(owner);
+        reference["name"] = cadmpeg_core::json!(name);
+        reference["value"] = cadmpeg_core::json!({"kind": "length", "value": 6.5});
+        reference["expression"] = cadmpeg_core::json!("<MOD-DIAM>6.5mm");
+        reference["display"] = cadmpeg_core::json!("diameter");
+        reference["properties"] =
+            cadmpeg_core::json!({"sldprt_relation_parameter_role": "reference"});
+        parameters.as_array_mut().unwrap().push(reference);
+    }
+    ir.model.parameters = json::from_value(parameters).unwrap();
+    let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
+    for constraint in constraints.as_array_mut().unwrap() {
+        if constraint["id"] == "sldprt:model:sketch-constraint#test:4" {
+            constraint["definition"]["parameter"] = cadmpeg_core::json!(BOUND);
+            constraint["driving"] = cadmpeg_core::json!(false);
+        }
+    }
+    ir.model.sketch_constraints = json::from_value(constraints).unwrap();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    let stated = |id: &str| {
+        ir.design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == id)
+    };
+    assert_eq!(
+        stated(BOUND).map(|parameter| &parameter.definition),
+        Some(&ParameterDefinition::Driven)
+    );
+    let unbound = stated(UNBOUND).expect("the unbound reference parameter is stated");
+    assert_eq!(unbound.definition, ParameterDefinition::Driven);
+    assert_eq!(
+        unbound.owner,
+        Some(cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+            json::from_value::<FeatureId>(cadmpeg_core::json!(owner)).unwrap()
+        ))
+    );
+    assert_eq!(
+        unbound
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("D2@reference")
+    );
+    assert_eq!(
+        unbound.kind,
+        cadmpeg_ir::design::units::ValueKind::Quantity(cadmpeg_ir::design::units::Quantity::LENGTH)
+    );
+    let Some(ParameterValue::Number(value)) = &unbound.value else {
+        panic!("a length: {unbound:#?}");
+    };
+    assert!((value.get() - 6.5).abs() < 1e-9, "{unbound:#?}");
+    assert_eq!(
+        unbound.display,
+        Some(cadmpeg_ir::design::parameter::DimensionDisplay::Diameter)
+    );
+    assert!(stated(ORPHAN).is_none());
+    let charged = losses
+        .iter()
+        .filter(|note| note.code == SldprtLossCode::DesignParameterReferenceUnbound.kind())
+        .collect::<Vec<_>>();
+    let [note] = charged.as_slice() else {
+        panic!("one unbound-reference note: {losses:#?}");
+    };
+    assert!(
+        note.message
+            .contains(&format!("{ORPHAN} = <MOD-DIAM>6.5mm")),
+        "{note:#?}"
+    );
+    assert!(!note.message.contains(UNBOUND), "{note:#?}");
 }
 
 #[test]

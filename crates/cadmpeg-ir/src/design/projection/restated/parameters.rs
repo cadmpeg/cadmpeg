@@ -354,6 +354,11 @@ pub(super) fn parameter_cut(
     leave(
         ModelParameterField::Name,
         model.name.trim().is_empty()
+            || (model
+                .properties
+                .get("generated_name")
+                .is_some_and(|value| value == "1")
+                && design.name.is_none())
             || design.name.as_ref().is_some_and(|name| {
                 name.as_str() == model.name || Some(name.as_str()) == source_name
             }),

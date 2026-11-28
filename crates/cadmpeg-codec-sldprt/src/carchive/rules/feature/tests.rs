@@ -1,4 +1,6 @@
-use super::{axistail, is_turn_block, scaled_bodies, turn_block_after_zeros, M12345};
+use super::{
+    at_cut_list_tail, axistail, is_turn_block, scaled_bodies, turn_block_after_zeros, M12345,
+};
 use crate::carchive::reader::Reader;
 use crate::carchive::reader::V;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -193,4 +195,42 @@ fn a_scale_with_two_bodies_is_refused() {
     let mut bytes = 2u16.to_le_bytes().to_vec();
     bytes.extend([0; 16]);
     assert!(read_scale_tail(&bytes).0.is_err());
+}
+
+/// A cut-list folder tail whose word at +8 is `word`.
+fn cut_list_tail(word: u32) -> Vec<u8> {
+    let mut bytes = 1u32.to_le_bytes().to_vec();
+    bytes.extend([0xff; 4]);
+    bytes.extend(word.to_le_bytes());
+    bytes.extend([0; 23]);
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend(1u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn a_cut_list_tail_holds_word_two_or_three() {
+    for word in [2, 3] {
+        assert!(
+            with_reader(&cut_list_tail(word), at_cut_list_tail),
+            "word {word}"
+        );
+    }
+}
+
+#[test]
+fn a_cut_list_tail_with_another_word_is_not_a_tail() {
+    for word in [0, 1, 4] {
+        assert!(
+            !with_reader(&cut_list_tail(word), at_cut_list_tail),
+            "word {word}"
+        );
+    }
+}
+
+#[test]
+fn a_cut_list_tail_cut_short_by_the_stream_end_is_not_a_tail() {
+    let mut bytes = cut_list_tail(3);
+    bytes.pop();
+    assert!(!with_reader(&bytes, at_cut_list_tail));
 }

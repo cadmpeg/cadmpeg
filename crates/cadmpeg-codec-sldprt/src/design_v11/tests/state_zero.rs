@@ -51,8 +51,12 @@ pub(super) fn project(
     .unwrap();
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
-    let entries =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let mut typed = super::super::typed::project(
         &ir.model,
         &native.feature_histories,

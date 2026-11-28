@@ -631,6 +631,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
 pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_constructions(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    mut observed: impl FnMut(&str, &str),
 ) -> Result<(), CodecError> {
     let mut projection = histories.to_vec();
     enrich_history_hole_constructions(&mut projection, lanes)?;
@@ -655,6 +656,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
             continue;
         };
         let value = String::clone(diameter);
+        observed(&feature.id, "D2");
         feature
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("D2"), value);
