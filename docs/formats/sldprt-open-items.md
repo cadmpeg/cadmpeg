@@ -1461,6 +1461,14 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.
 
+### DI-96. Frame form of a plane-data object written as a class token
+
+**Question.** Which frame form does a reference plane's plane-data object store where it is written as a class token, and its bytes read as both the 121-byte matrix form and the 97-byte fixed form with different u-axes?
+
+**Known.** The token is a u16 class token behind six zero bytes, and the frame begins immediately after it (`sldprt.md` §2). A declared plane-data class selects its frame form by name; the token names a class of the archive's class map. One stored frame has origin `(0.03, 0, 0)` m, unit normal `(1, 0, 0)`, byte `1`, and the nine f64 `0, 0, 1, 0, 1, -0, -1, 0, 0`. Read as a row-major matrix, its third column is the normal and its first column, the u-axis, is `(0, 0, -1)`. Read in the pairwise-orthogonal variant of the 97-byte fixed form, the u-axis is `(0, 0, 1)` and the v-axis `(0, 1, 0)`. The decoder reads the frame of a token-written plane-data object where every form that reads there gives one frame, and the repeated-normal variant where no other form reads. Where the forms differ, it reads no frame from the token, and the plane takes the frame of the interval scan.
+
+**Need.** The class the token names, from the class map of the configuration stream that the lane continues, for a part with a reference plane whose plane-data class is declared earlier in the stream, beside the same plane saved as the stream's first plane of that class.
+
 ### DI-97. The state after a feature whose records name two marks
 
 **Question.** Which state of the main line is the state after a feature whose `moPMarkRecord_c` records name two marks of the main line?

@@ -14,8 +14,11 @@ use cadmpeg_ir::design::evaluation::{
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::names::NameEntry;
+use cadmpeg_ir::design::ops::assembly::RigidGroup;
+use cadmpeg_ir::design::ops::shared::{Joint, JointConnector, JointKind};
 use cadmpeg_ir::design::refs::{EntityRef, Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
@@ -1159,6 +1162,31 @@ fn a_joint_origin_a_grounding_and_a_rigid_group_change_no_state() {
     assert_eq!(role(&operation("move")), Role::Move);
     assert!(Role::Move.moves(&Kind::NoState) && !Role::Move.moves(&bound(0, 1, None)));
     assert_eq!(role(&operation("extrude")), Role::Geometry);
+}
+
+#[test]
+fn a_stated_joint_and_a_stated_rigid_group_keep_the_roles_of_their_families() {
+    let pick = || {
+        JointConnector::Entity(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        })
+    };
+    let joint = FeatureOperation::Joint(Box::new(Joint {
+        connectors: [pick(), pick()],
+        kind: JointKind::Concentric,
+        alignment: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    let group = FeatureOperation::RigidGroup(Box::new(RigidGroup {
+        members: BTreeSet::new(),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    assert_eq!(role(&joint), role(&operation("joint")));
+    assert_eq!(role(&group), role(&operation("group")));
 }
 
 #[test]
