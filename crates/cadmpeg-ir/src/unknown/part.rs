@@ -96,6 +96,14 @@ impl GivenUpRecord {
         self
     }
 
+    /// States what else the document lacks because the record was given up,
+    /// such as the transforms its value would have composed, as
+    /// [`Part::costing`] does for a part.
+    pub fn costing(mut self, consequence: impl std::fmt::Display) -> Self {
+        self.error = format!("{}; {consequence}", self.error);
+        self
+    }
+
     /// The records that state their unstated children marked because this
     /// record is dropped (§5.6).
     pub fn marking<I>(mut self, records: I) -> Self
@@ -130,7 +138,7 @@ impl GivenUpRecord {
         let head = format!("record {}{span} given up: {}", self.record, self.error);
         let tail = Tail {
             dropped: self.dropped,
-            marked: self.marked,
+            marked: self.marked.filter(|marked| !marked.is_empty()),
             ..Tail::default()
         };
         let loss = charge(&head, self.record, tail).with_severity(Severity::Error);
@@ -316,6 +324,7 @@ pub struct Part<'a> {
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
+    marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
     digest_only: bool,
@@ -363,6 +372,7 @@ impl<'a> Part<'a> {
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
+            marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
             digest_only: false,
@@ -396,6 +406,14 @@ impl<'a> Part<'a> {
     #[must_use]
     pub fn dropping(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
         self.dropped.extend(records);
+        self
+    }
+
+    /// Names records the decoder states in a partial form or with a mark
+    /// because they lose this part's records (§5.6, Unstated children).
+    #[must_use]
+    pub fn marking(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
+        self.marked.extend(records);
         self
     }
 
@@ -1005,9 +1023,16 @@ impl DecodeParts for DecodeContext<'_> {
             part.kind,
             part.offset(),
         );
+        let mut marked: Vec<String> = part
+            .marked
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect();
+        marked.sort_unstable();
+        marked.dedup();
         let tail = Tail {
             dropped: dropped.into_iter().map(str::to_owned).collect(),
-            marked: None,
+            marked: (!marked.is_empty()).then_some(marked),
             stated: Vec::new(),
             lost: part.lost.clone(),
         };

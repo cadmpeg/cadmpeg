@@ -1771,6 +1771,135 @@ A `TolWiDRF` declaration has four scalars. Scalar `1` is the number of leading f
 
 A `TTRSBloc` field references the `CATMmrTTRS` roots of a tolerance or datum. Each root is a source shape aspect. Open item DI-28 records its face and edge relation.
 
+#### 7.3.2 Compact record form and feature-tree membership
+
+A nested `7C05` record is in the compact record form when its complete definition prefix is `<lead> <flags> <class> <second>`:
+
+| Field | Offset | Values |
+|---|---|---|
+| `lead` | 0 | `00`, `01`, `08`, or `10` |
+| `flags` | 1 | a combination of bits `04` and `08` |
+| `class` | 2 | a tag byte, or a wide field `32 <ordinal:u32le>` |
+| `second` | after `class` | a tag byte, or a wide field `32 <ordinal:u32le>`; it ends the prefix |
+
+| `class` | `second` | Prefix length |
+|---|---|---|
+| tag | tag | 4 |
+| tag | wide | 8 |
+| wide | tag | 8 |
+| wide | wide | 12 |
+
+| Field form | Values | Entry the field selects |
+|---|---|---|
+| tag | `34` through `33 + n`, for a catalog of `n` entries; another value selects no class | zero-based catalog ordinal `tag − 34` |
+| wide | `1` through `n`; another value selects no class | one-based catalog ordinal `ordinal` |
+
+A tag byte is never `32`, so the first byte of each field gives its form.
+
+The class field names the record's class. The second field selects one entry of the same catalog:
+
+| Class | Entry the second field selects |
+|---|---|
+| `HybridBody` | `HybridBody` |
+| `MechanicalTool` | `MechanicalTool` |
+| `GSMTool` | `Open_body` |
+| `MechanicalPart` | the part's name |
+
+Preserve the class tag or wide ordinal, the selected zero-based ordinal, and the selected entry and name. Each wide field is also a definition selector under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
+
+The paired `7C0A` payload of a part root, a body, a geometrical set, or a Boolean feature (`Add`, `Remove`, `Assemble`, `Intersect`) in the compact form is a run of tagged segments:
+
+```text
+payload := segment* FE+
+segment := <field> value
+field   := <tag> | 32 <ordinal:u32le>
+value   := list | field-of | <entity>
+list    := <count> 81 (<entity> <persistent-id>){count}
+field-of := FD <entity> field
+```
+
+A field is a tag byte or a wide field, and it names a catalog entry under the field-form rule above. Every count, entity, and persistent identity is one integer token:
+
+| Token | Bytes | Value |
+|---|---|---|
+| escaped | `80 <value:u32le>` | `value`; the token ends before the payload's final byte |
+| compact atom | `81..D0` | `byte − 81` |
+| paged atom | `D1..E4 <low>` | `(byte − D1)·256 + low` |
+
+| Condition | Reading |
+|---|---|
+| all `count` pairs are present, and the list ends at the final `FE` run or at the start of a field | `list` |
+| `FD`, one entity token, and one field, which end at the final `FE` run or at the start of a field | `field-of`: the field of the record that the entity selects |
+| any other value | one `<entity>` token |
+| bytes that start no field where a segment starts | the walk stops; the remaining bytes are unsegmented |
+| the final `FE` run | the walk is complete |
+
+Preserve each segment's field tag or wide ordinal, payload offset, selected entry and name, and value, and the payload offset where an incomplete walk stops. An entity token selects the same graph's unique paired entity and object record, and the compact class of that record is preserved with it. An identity that selects no paired record keeps its value and position. A persistent identity is preserved as stored.
+
+| Class | Record |
+|---|---|
+| `MechanicalPart` | the part root |
+| `MechanicalTool` | a body |
+| `HybridBody` | the main body where the root's `MainTool` selects it; a body where its `_FtrList` lists a solid feature; otherwise a body, an ordered geometrical set, or a geometrical set |
+| `GSMTool` | an ordered geometrical set or a geometrical set |
+
+A solid feature is a record of class `Pad`, `Pocket`, `Shaft`, `Groove`, `Hole`, `Rib`, `Slot`, `Stiffener`, `EdgeFillet`, `TritangentFillet`, `Chamfer`, `Draft`, `Shell`, `Thickness`, `ThickSurface`, `CloseSurface`, `SewSurface`, `Add`, `Remove`, `Assemble`, `Intersect`, `Split`, `RemoveFace`, `Thread`, or `Mirror`. Only a body holds a solid feature.
+
+Each container's `_FtrList` segment lists its members in stored order. A member that is a container is a set nested in the set that lists it. A member list states containment and order.
+
+| Stored `_FtrList` | Member list |
+|---|---|
+| one segment whose value is a list | the list's entities, in stored order |
+| no segment, in a complete walk | empty |
+| no segment before the walk stops, a single-token value, or a repeated segment | unread |
+
+The part root's other segments are its remaining fields:
+
+| Root field | Value | Selects |
+|---|---|---|
+| `CurrentFeature` | entity | the in-work object: a member of a body or set, or a body |
+| `MainTool` | entity | the main body |
+| `_ReferencePlanes` | list | the principal planes |
+
+The root's other fields, such as `PartAlgoConfigs`, have the same segment form. The `_ReferencePlanes` list selects the same three `GSMPlane` records as the first three members of the root's `_FtrList`.
+
+A Boolean feature's `_FtrList` starts with the result record. The list can end after the result or carry a second member. When that member is a body, it is the Boolean's tool. `ToolList` lists the tool body independently of the result list. In the two-member form it can repeat the second member. The tool body stands outside the set member lists. A `Remove` can also store a record of class `Boolean` as the second member. A Boolean feature listed by a body targets that body.
+
+The compact class of a member names its feature kind. Each class below has the operation family of CADIR v11 §6:
+
+| Family | Classes |
+|---|---|
+| `Sketch` | `PRTSketch` |
+| `Datum` | `GSMPoint`, `GSMPointBetween`, `GSMPointCenter`, `GSMPointCoord`, `GSMPointOnCurve`, `GSMPointOnPlane`, `GSMPointOnSurface`, `GSMPlane`, `GSMPlane2Lines`, `GSMPlaneAngle`, `GSMPlaneBetween`, `GSMPlaneEquation`, `GSMPlaneNormal`, `GSMPlaneOffset`, `GSMPlaneOffsetPt`, `GSMPlaneTangent`, `AxisSystem` |
+| `Extrude` | `Pad`, `Pocket`, `GSMExtrude` |
+| `Revolve` | `Shaft`, `Groove` |
+| `Sweep` | `Rib`, `Slot` |
+| `Rib` | `Stiffener` |
+| `Loft` | `GSMLoft` |
+| `Fillet` | `EdgeFillet`, `TritangentFillet` |
+| `Chamfer` | `Chamfer` |
+| `Shell` | `Shell` |
+| `Draft` | `Draft` |
+| `Thicken` | `ThickSurface` |
+| `Offset` | `GSMOffset`, `Thickness` |
+| `Hole` | `Hole`, `CATSm_Hole3D` |
+| `Thread` | `Thread` |
+| `Pattern` | `RectPattern`, `CircPattern`, `UserPattern`, `Mirror` |
+| `TemplateInstance` | `UdfFeature` |
+| `Combine` | `Add`, `Remove`, `Assemble`, `Intersect` |
+| `Split` | `Split`, `GSMSplit`, `GSMTrim` |
+| `DeleteFaces` | `RemoveFace` |
+| `Patch` | `GSMFill` |
+| `Knit` | `GSMAssemble`, `CloseSurface` |
+| `Graft` | `SewSurface` |
+| `Extract` | `GSMExtract` |
+| `Extend` | `GSMExtrapol` |
+| `TransformBodies` | `GSMTranslate`, `GSMRotate`, `GSMSymmetry` |
+| `Curve` | `GSMLine`, `GSMLinePtDir`, `GSMLinePtPt`, `GSMAxisLine`, `GSMHelix`, `GSMSpiral`, `GSMIntersect`, `GSMProject`, `GSMCombine`, `GSMBoundary` |
+| `SheetMetal` | `ShePart`, `PredefinedFlange`, `CATSmd_Stamp`, `CATSmCorner`, `CATSmCutOut`, `CATSmd_Extrusion`, `CATSmd_Wall`, `CATSmd_NewWallOnEdge`, `CATSm_ExtrudedHolePunch`, `CATSmd_BendExtremity` |
+
+The root also lists records that hold no operation: `MechanicalPartProperties` (the part's properties), `TTRSSet` (its annotation set), `RelationSet` and `ParameterSet` (its relation and parameter sets), `String` (a parameter), `GSMWSupportSet` (its work-on-support set), and `StDynAnalysisRootNodeFeature` (its analysis root).
+
 ### 7.4 `7C0B` visualization value blocks
 
 ```text
@@ -2095,5 +2224,22 @@ A nested-`V5_CFV2` file without a standard FBB spine uses the object-stream `b5 
 
 - **On-carrier incidence tolerance is 1e-3 mm.** Endpoint-by-surface-intersection binding uses `on(P,surf)` := signed distance ≤ 1e-3 mm (§5.6); circle/arc vertex matching uses `|dist(v,c) − r| ≤ 1e-3` (§5.6); per-coordinate cylinder rim/axis identity gates and the plane/cylinder/torus/cone/sphere on-carrier gates (§5.7) run at the same order.
 - **Normalized-relation checks are exact (f64 bit-equality)** where the source is f64: the surface-of-revolution angular relations (`angular_lo/scale == 0.5`, `(angular_hi−angular_lo)/scale == 2π`; §5.15) and the `SurfacicReps` bounding-sphere containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` (§3.5) hold to bit-equality, not within a tolerance band.
+
+## 13. Partial decode
+
+These records are the parts of a partial decode (CADIR §3.3). The part kind names the record in a `record.unreadable` loss. The offset of a part is its offset in the file image. The offset of an `fbb-face-row` part is its offset in the logical `MainDataStream+SurfacicReps` stream (§3.4), which the loss names `catia:MainDataStream+SurfacicReps`.
+
+| Part kind | Record | Framing |
+| --- | --- | --- |
+| `a5-nurbs-curve` | One `a5/a6/a7 13 16` NURBS curve (§6.4) | The A-family record (§6) |
+| `a5-nurbs-surface` | One `a5 03 34` freeform surface (§6.1) | The A-family record (§6) |
+| `a8-nurbs-surface` | One `a8 <flag> 34` frame in a record pool (§6.6) | The frame. A frame in a logical source of several extents has the offset of its first byte in the extent that holds that byte |
+| `b2-nurbs-curve` | One `b2/b3/b4 03 16` rational NURBS curve (§6.4) | The B-family record (§6) |
+| `zero-entity-nurbs-surface` | One zero-entity NURBS surface carrier (§8) | From the first byte of the record to the end of its inline pole grid |
+| `e5-nurbs-surface` | One E5 `0xe7` surface carrier (§9) | The E5 record |
+| `fbb-face-row` | One FBB face row of a standard nested body (§5) | The 8-byte row |
+| `object-stream` | The object stream of a graph selection that passes its work bound (§6.8) | The object stream |
+
+A carrier record is a part when its knots, poles, or weights break a rule of the NURBS carrier. When a kept record holds the whole file image, the stub of a carrier part links to that record, and the part keeps only the length and digest of its frame. The `21` support records after a `zero-entity-nurbs-surface` part form no support run. The part drops the curve of each support record whose NURBS pcurve bounds a parameter range, and the construction of that curve when the record states no UV endpoints, the pcurve is periodic, or its poles share neither one `u` coordinate nor one `v` coordinate. A refused `a8` frame that a reference-closed object graph selects (§6.8) gives no surface. The face that refers to the frame takes an unknown surface, and the refusal is a note. An FBB face row is a part when its run is outside every standard population, and when the population that takes its run has a face count different from its count of face-sense bindings. The stub of an `fbb-face-row` part links to the retained payload record, which keeps the stream bytes. The part keeps only the length and digest of the row.
 
 ---

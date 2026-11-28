@@ -59,8 +59,8 @@ use crate::report::check::Finding;
 use crate::report::Severity;
 use crate::CadIr;
 
-pub(crate) use eval::{cache_value, check_types, kind_type, unit_factor, ExpressionSite, Type};
-pub use eval::{evaluate, EvalError, Value};
+pub use eval::{cache_value, evaluate, kind_value, EvalError, Value};
+pub(crate) use eval::{check_types, kind_type, unit_factor, ExpressionSite, Type};
 
 /// Why an edit helper or a resolver refuses.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]

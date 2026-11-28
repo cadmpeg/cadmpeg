@@ -14,6 +14,7 @@
 use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -231,6 +232,26 @@ impl Record {
     /// `chunk[i]` indexes.
     pub fn chunk_len(&self) -> usize {
         self.chunks().count()
+    }
+
+    /// The record's bytes in `stream`, the bytes it was framed in.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when the record's extent leaves `stream`.
+    pub fn bytes_in<'b>(&self, stream: &'b [u8]) -> Result<&'b [u8], CodecError> {
+        self.offset
+            .checked_add(self.len)
+            .and_then(|end| stream.get(self.offset..end))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "record {} at byte {} declares {} bytes, beyond the {} the stream holds",
+                    self.index,
+                    self.offset,
+                    self.len,
+                    stream.len()
+                ))
+            })
     }
 }
 

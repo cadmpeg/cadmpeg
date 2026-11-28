@@ -2,6 +2,7 @@
 mod scan;
 
 mod base;
+mod giveups;
 mod kernel;
 mod mirror;
 mod motion;

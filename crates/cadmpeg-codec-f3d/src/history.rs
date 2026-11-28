@@ -63,6 +63,7 @@ pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
+mod edge_continuity;
 pub(crate) mod edge_flange;
 pub(crate) mod edge_recipe_scope;
 mod edge_samples;
@@ -195,14 +196,20 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// per-entity insert/delete/update changes and the raw history-entity records
 /// framed between it and the next `delta_state`. `stream` is the source ZIP
 /// entry name, recorded in each decoded item's provenance. Returns `None` when
-/// `bytes` carries no `delta_state` record (the stream is a construction
-/// snapshot with no history tail) or a malformed history body. `width` is the
+/// `bytes` carries no `delta_state` record that states a state (the stream is
+/// a construction snapshot with no history tail). `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
 /// `remaining_retained_bytes` is the session's remaining retained-byte allowance,
 /// less the estimates reserved for earlier history streams. A history whose
 /// estimate does not fit keeps only its state headers. `binding_work` bounds
 /// the topology binding of the history; a history that exhausts it has no
 /// historical topology.
+///
+/// # Errors
+///
+/// A [`HistoryFailure`] when a `delta_state` record does not read, so no
+/// state of the history is kept: it names where the history partition
+/// starts.
 #[cfg(test)]
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -211,7 +218,7 @@ pub(crate) fn decode(
     width: RefWidth,
     remaining_retained_bytes: &mut u64,
     binding_work: &cadmpeg_core::decode::WorkBudget,
-) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
+) -> Result<Option<AsmHistory>, HistoryFailure> {
     decode_with_senses(
         ctx,
         bytes,
@@ -223,7 +230,55 @@ pub(crate) fn decode(
     )
 }
 
+/// [`decode`], recording the chamfer face senses of the history's bound
+/// transitions into `chamfer_senses` when it is given.
+///
+/// # Errors
+///
+/// A [`HistoryFailure`] when a `delta_state` record does not read, so no
+/// state of the history is kept: it names where the history partition
+/// starts.
 pub(crate) fn decode_with_senses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    width: RefWidth,
+    remaining_retained_bytes: &mut u64,
+    binding_work: &cadmpeg_core::decode::WorkBudget,
+    chamfer_senses: Option<&mut chamfer_supports::ChamferSenses>,
+) -> Result<Option<AsmHistory>, HistoryFailure> {
+    decode_framed(
+        ctx,
+        bytes,
+        stream,
+        width,
+        remaining_retained_bytes,
+        binding_work,
+        chamfer_senses,
+    )
+    .map_err(|error| HistoryFailure {
+        start: partition_start(bytes).unwrap_or(0),
+        error,
+    })
+}
+
+/// Where the ASM history partition of the BREP stream `bytes` starts: at
+/// the history preamble, or at the first `delta_state` record of a stream
+/// without one. `None` when the stream stores neither.
+pub(crate) fn partition_start(bytes: &[u8]) -> Option<usize> {
+    HistoryFraming::scan(bytes, "").partition_start()
+}
+
+/// An ASM history whose states do not read.
+#[derive(Debug)]
+pub(crate) struct HistoryFailure {
+    /// Where the history partition starts in its stream, as
+    /// [`partition_start`] finds it.
+    pub(crate) start: usize,
+    pub(crate) error: cadmpeg_core::CodecError,
+}
+
+fn decode_framed(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
@@ -236,10 +291,14 @@ pub(crate) fn decode_with_senses(
     let mut states = Vec::new();
     let mut preframed_records = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
-        let header = match read_delta_state_header(bytes, offset, width) {
+        let header = match state_header(bytes, offset, width) {
             DeltaStateHeaderRead::Framed(header) => header,
             DeltaStateHeaderRead::Unframed => continue,
-            DeltaStateHeaderRead::Invalid => return Ok(None),
+            DeltaStateHeaderRead::Invalid => {
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "the ASM delta_state record at byte {offset} of {stream} has a missing or mistagged header integer"
+                )));
+            }
         };
         let state_record_id = delta_state_record_id(&header, stream);
         let Some((bulletin_boards, body_end)) = decode_bulletin_boards(
@@ -250,7 +309,9 @@ pub(crate) fn decode_with_senses(
             &state_record_id,
             width,
         ) else {
-            return Ok(None);
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "the bulletin boards of the ASM delta_state record at byte {offset} of {stream} do not frame"
+            )));
         };
         let records = decode_history_records(
             ctx,
@@ -325,7 +386,7 @@ pub(crate) fn decode_header_index(
     let framing = HistoryFraming::scan(bytes, stream);
     let mut states = Vec::new();
     for &offset in &framing.delta_offsets {
-        let header = match read_delta_state_header(bytes, offset, width) {
+        let header = match state_header(bytes, offset, width) {
             DeltaStateHeaderRead::Framed(header) => header,
             DeltaStateHeaderRead::Unframed => continue,
             DeltaStateHeaderRead::Invalid => return None,
@@ -343,6 +404,27 @@ pub(crate) fn decode_header_index(
         return None;
     }
     Some(framing.into_history(bytes, width, false, states))
+}
+
+/// Length of the `delta_state` marker, from the `0x11` that ends the record
+/// before it through the record name.
+const STATE_MARKER_LEN: usize = b"\x11\x0d\x0bdelta_state".len();
+
+/// The header of the `delta_state` record whose marker is at `offset`. A
+/// marker that ends the stream stores no header, so, like a header that
+/// frames no state body, it states no state.
+fn state_header(bytes: &[u8], offset: usize, width: RefWidth) -> DeltaStateHeaderRead {
+    match read_delta_state_header(bytes, offset, width) {
+        DeltaStateHeaderRead::Invalid
+            if bytes
+                .len()
+                .checked_sub(offset)
+                .is_none_or(|rest| rest <= STATE_MARKER_LEN) =>
+        {
+            DeltaStateHeaderRead::Unframed
+        }
+        read => read,
+    }
 }
 
 pub(crate) use chamfer_supports::ChamferSenses;
@@ -373,6 +455,11 @@ impl HistoryFraming {
             history_id,
             delta_offsets,
         }
+    }
+
+    fn partition_start(&self) -> Option<usize> {
+        self.preamble_offset
+            .or_else(|| self.delta_offsets.first().copied())
     }
 
     fn into_history(

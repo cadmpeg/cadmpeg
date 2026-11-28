@@ -49,6 +49,7 @@ use cadmpeg_ir::units::UnitVector3;
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
+use crate::product::{ProductNodes, UnresolvedLink};
 
 mod parameters;
 pub(crate) mod states;
@@ -70,7 +71,7 @@ pub(crate) fn project(
     definition: ProductDefinitionId,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-    links: &[ProductNodeRecord],
+    nodes: &ProductNodes,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let source = Source::of(objects, properties);
@@ -86,7 +87,8 @@ pub(crate) fn project(
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
-    let places = places(ir, &definition, objects, links, losses);
+    let mut places = places(ir, &definition, objects, nodes, losses);
+    places.extend(unresolved_places(objects, &nodes.unresolved));
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
     let mut containers = Vec::new();
@@ -108,7 +110,26 @@ pub(crate) fn project(
         // A stored empty `Tip` builds no member; a `Tip` that names no member
         // of the Body fixes no rollback (cadir-v11.md §5.2), and the state at
         // it is spelled `After(Container(body))`.
-        let (rollback, at) = match &body.tip {
+        let tip_position = body
+            .tip
+            .as_ref()
+            .and_then(|tip| body.members.iter().position(|member| member == tip));
+        let (rollback, at) = match tip_position {
+            Some(index) => (
+                Some(
+                    members
+                        .get(index + 1)
+                        .map_or(Rollback::End, |next| Rollback::Before(next.clone())),
+                ),
+                Position::After(members[index].clone()),
+            ),
+            None if body
+                .native_ref
+                .as_deref()
+                .is_some_and(|object| source.named_tips.contains(object)) =>
+            {
+                (None, Position::After(Member::Container(id.clone())))
+            }
             None => (
                 Some(
                     members
@@ -117,17 +138,6 @@ pub(crate) fn project(
                 ),
                 Position::Start(id.clone()),
             ),
-            Some(tip) => match body.members.iter().position(|member| member == tip) {
-                Some(index) => (
-                    Some(
-                        members
-                            .get(index + 1)
-                            .map_or(Rollback::End, |next| Rollback::Before(next.clone())),
-                    ),
-                    Position::After(members[index].clone()),
-                ),
-                None => (None, Position::After(Member::Container(id.clone()))),
-            },
         };
         current.push(CurrentState {
             at,
@@ -323,14 +333,14 @@ fn spanned_definitions<'a>(
     spanned
 }
 
-/// The `Place` or `PlaceSet` feature of each `App::Link` (§6.7): the
-/// feature places the occurrences of the link that a definition of the
+/// The `Place` or `PlaceSet` feature of each `App::Link` of `nodes` (§6.7):
+/// the feature places the occurrences of the link that a definition of the
 /// scope of `definition` owns.
 fn places(
     ir: &CadIr,
     definition: &ProductDefinitionId,
     objects: &[ObjectRecord],
-    links: &[ProductNodeRecord],
+    nodes: &ProductNodes,
     losses: &mut Vec<LossNote>,
 ) -> Vec<Feature> {
     let spanned = spanned_definitions(
@@ -367,16 +377,21 @@ fn places(
         .map(|object| (object.id().as_str(), object.name()))
         .collect::<HashMap<_, _>>();
     let mut features = Vec::new();
-    for link in links
+    for link in nodes
+        .records
         .iter()
         .filter(|link| matches!(link.node, ProductNode::Occurrence(_)))
     {
         let container = crate::native::model_id("occurrence", &link.object, "container");
+        // The occurrences of the link in its other containers repeat these.
         let placed = by_object
             .get(link.object.as_str())
             .into_iter()
             .flatten()
-            .filter(|occurrence| occurrence.id.as_str() != container)
+            .filter(|occurrence| {
+                occurrence.id.as_str() != container
+                    && !crate::product::is_listing_copy(occurrence.id.as_str())
+            })
             .collect::<Vec<_>>();
         let operation = match placed.as_slice() {
             [] => continue,
@@ -427,13 +442,50 @@ fn places(
     features
 }
 
+/// The feature of each link given up for a member or element list
+/// stored in a form the decoder cannot read: a `Place` whose operation is
+/// unresolved, at the placement the link stores (§3.3).
+fn unresolved_places(objects: &[ObjectRecord], unresolved: &[UnresolvedLink]) -> Vec<Feature> {
+    let mut features = Vec::new();
+    for link in unresolved {
+        let Ok(id) = FeatureId::mint(format!(
+            "fcstd:design:feature#{}",
+            crate::native::id_key(&link.object)
+        )) else {
+            continue;
+        };
+        features.push(Feature {
+            id,
+            name: objects
+                .iter()
+                .find(|object| object.id() == &link.object)
+                .map(|object| object.name().to_owned()),
+            suppressed: None,
+            definition: FeatureDefinition {
+                operation: FeatureOperation::Unresolved {
+                    family: OperationFamily::Place,
+                },
+                assembly: None,
+                refine: None,
+                fuzzy_tolerance: None,
+            },
+            placement: link.placement.and_then(fixed).map(Box::new),
+            component: None,
+            driven_by: None,
+            native_ref: Some(link.object.clone()),
+        });
+    }
+    features
+}
+
 /// The `Place` of the one occurrence `occurrence` of link `link`. A link
 /// that is no array states its `Placement` and its scale (§6.7): under its
 /// parent where `LinkTransform` is false, and after the linked object's own
 /// occurrence where it is true and the scope holds that occurrence (`own`).
 /// Where it is true and the scope holds no such occurrence, the `Place`
-/// states neither, with a loss naming the link. The identity is absent
-/// under `Parent` with no scale (§2.4).
+/// states neither, with a design loss where the product occurrence
+/// already states a transform. The identity is absent under `Parent` with no
+/// scale (§2.4).
 fn place(
     link: &ProductNodeRecord,
     occurrence: &Occurrence,
@@ -449,7 +501,7 @@ fn place(
     } else {
         Some(PlacementBase::Parent)
     };
-    if scalar && base.is_none() {
+    if scalar && base.is_none() && occurrence.transform.is_some() {
         losses.push(
             FreecadLossCode::FeatureLinkPlacementUnresolved.note(format!(
                 "link {} composes its Placement after the linked object's own placement, \
@@ -536,6 +588,7 @@ struct Source<'a> {
     placements: HashMap<&'a str, &'a PropertyRecord>,
     /// The properties each object stores, by object and name.
     stored: BTreeSet<(&'a str, &'a str)>,
+    named_tips: BTreeSet<&'a str>,
     /// The objects a `MultiTransform` lists in `Transformations`.
     stages: BTreeSet<&'a str>,
 }
@@ -556,10 +609,23 @@ impl<'a> Source<'a> {
             .filter(|property| property.name == "Placement")
             .map(|property| (property.owner.as_str(), property))
             .collect();
+        let named_tips = properties
+            .iter()
+            .filter(|property| {
+                property.name == "Tip"
+                    && property
+                        .links()
+                        .iter()
+                        .flatten()
+                        .any(|link| link.object().is_some())
+            })
+            .map(|property| property.owner.as_str())
+            .collect();
         Self {
             touched,
             placements,
             stored,
+            named_tips,
             stages: multi_transform_stages(objects, properties),
         }
     }
@@ -574,8 +640,7 @@ impl<'a> Source<'a> {
 
     /// The `Placement` that object `object` stores, as a construction: `None`
     /// where it stores none or the identity, which no binding of it is
-    /// stated for (§2.4). The product layer refuses an unreadable
-    /// `Placement` before this projection runs.
+    /// stated for (§2.4), and where the product layer reports it unreadable.
     fn placement(&self, object: &str) -> Option<Box<Construction<kinds::Frame>>> {
         let frame = crate::placement::placement_matrix_unreported(self.placements.get(object)?)?;
         if frame.transform() == Transform::identity() {
