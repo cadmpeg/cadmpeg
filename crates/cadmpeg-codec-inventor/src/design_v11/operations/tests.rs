@@ -235,7 +235,7 @@ fn unequal_two_distance_chamfer_with_a_support_state_names_its_reference_face() 
     let expected_reference =
         selections::support_face(&selection, std::slice::from_ref(&input)).expect("support face");
     let FeatureOperation::Chamfer(value) =
-        typed(&operation, selections::SketchData::default(), &[input]).expect("typed")
+        typed(&operation, selections::SketchData::default(), &[input], &[]).expect("typed")
     else {
         panic!("chamfer");
     };
@@ -250,7 +250,7 @@ fn unequal_two_distance_chamfer_with_a_support_state_names_its_reference_face() 
     // with a named reference no side swap is stated.
     assert_eq!(value.sets[0].reference, Some(expected_reference));
     assert_eq!(value.sets[0].flip, None);
-    assert!(typed(&operation, selections::SketchData::default(), &[]).is_err());
+    assert!(typed(&operation, selections::SketchData::default(), &[], &[]).is_err());
 }
 
 #[test]
@@ -659,6 +659,7 @@ fn stitch_keeps_operand_elements_tolerance_and_output() {
             gap_tolerance: Some(positive(2.5)),
         },
         selections::SketchData::default(),
+        &[],
         &[],
     )
     .expect("typed knit");
@@ -1292,7 +1293,7 @@ fn an_extrude_to_a_native_face_projects_a_geometry_limit_and_validates() {
         },
     };
     let FeatureOperation::Extrude(value) =
-        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+        typed(&operation, selections::SketchData::default(), &[], &[]).expect("extrude")
     else {
         panic!("extrude");
     };

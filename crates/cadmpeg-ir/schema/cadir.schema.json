@@ -2006,13 +2006,17 @@
       "description": "The relief operands of an attached bend.",
       "type": "object",
       "properties": {
-        "depth": {
-          "description": "The depth.",
-          "$ref": "#/$defs/Dimension8"
-        },
         "form": {
           "description": "The source relief form.",
           "$ref": "#/$defs/AttachedReliefForm"
+        },
+        "width": {
+          "description": "The width.",
+          "$ref": "#/$defs/Dimension8"
+        },
+        "depth": {
+          "description": "The depth.",
+          "$ref": "#/$defs/Dimension8"
         },
         "minimum_remnant": {
           "description": "The minimum material remnant.",
@@ -2021,10 +2025,6 @@
         "seam_gap": {
           "description": "The gap between adjacent sheet edges.",
           "$ref": "#/$defs/Dimension13"
-        },
-        "width": {
-          "description": "The width.",
-          "$ref": "#/$defs/Dimension8"
         }
       },
       "additionalProperties": false,
@@ -50973,21 +50973,21 @@
             "value": {
               "type": "object",
               "properties": {
-                "attachment": {
-                  "description": "The edges of the existing sheet.",
-                  "$ref": "#/$defs/Selection"
-                },
                 "profile": {
                   "description": "The closed profile in the plate's plane.",
-                  "$ref": "#/$defs/Selection"
+                  "$ref": "#/$defs/Selection2"
+                },
+                "thickness": {
+                  "description": "The sheet thickness.",
+                  "$ref": "#/$defs/Dimension8"
                 },
                 "side": {
                   "description": "Where the thickness lies against the profile normal.",
                   "$ref": "#/$defs/NormalSide"
                 },
-                "thickness": {
-                  "description": "The sheet thickness.",
-                  "$ref": "#/$defs/Dimension8"
+                "attachment": {
+                  "description": "The edges of the existing sheet.",
+                  "$ref": "#/$defs/Selection2"
                 }
               },
               "additionalProperties": false,
@@ -50999,11 +50999,11 @@
               ]
             }
           },
-          "additionalProperties": false,
           "required": [
             "kind",
             "value"
-          ]
+          ],
+          "additionalProperties": false
         },
         {
           "description": "The bend that joins a preceding attached plate to existing sheet edges.",
@@ -51016,17 +51016,17 @@
             "value": {
               "type": "object",
               "properties": {
+                "plate": {
+                  "description": "The preceding attached plate.",
+                  "$ref": "#/$defs/FeatureId"
+                },
                 "attachment": {
                   "description": "The edges in this bend's input state.",
-                  "$ref": "#/$defs/Selection"
+                  "$ref": "#/$defs/Selection2"
                 },
                 "inside_radius": {
                   "description": "The inside radius.",
                   "$ref": "#/$defs/Dimension8"
-                },
-                "plate": {
-                  "description": "The preceding attached plate.",
-                  "$ref": "#/$defs/FeatureId"
                 },
                 "relief": {
                   "description": "The bend relief.",
@@ -51052,11 +51052,11 @@
               ]
             }
           },
-          "additionalProperties": false,
           "required": [
             "kind",
             "value"
-          ]
+          ],
+          "additionalProperties": false
         },
         {
           "description": "A corner child that preserves its preceding bend's geometry and topology.",
@@ -51080,11 +51080,11 @@
               ]
             }
           },
-          "additionalProperties": false,
           "required": [
             "kind",
             "value"
-          ]
+          ],
+          "additionalProperties": false
         },
         {
           "description": "A rule made to govern bodies from its position on.",

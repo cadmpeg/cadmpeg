@@ -1003,7 +1003,7 @@ fn a_historical_attachment_requires_preceding_projected_generators() {
 /// A pattern feature record at `ordinal`, with the header of a feature record.
 fn pattern_record(ordinal: u32, source_index: Option<u32>) -> crate::feature::PmDcPatternFeature {
     let base = crate::test_support::sheet_metal::feature(ordinal, &[]);
-    let mut payload = serde_json::to_value(&*base).expect("payload");
+    let mut payload = cadmpeg_core::serde_erase::json::to_value(&*base).expect("payload");
     let fields = payload.as_object_mut().expect("object");
     if let Some(source_index) = source_index {
         fields["header"]["source_index"] = source_index.into();
@@ -1011,9 +1011,9 @@ fn pattern_record(ordinal: u32, source_index: Option<u32>) -> crate::feature::Pm
     let participants = fields["properties"].clone();
     fields.insert("participants".into(), participants);
     fields.insert("family".into(), "rectangular".into());
-    fields.insert("property_slots".into(), serde_json::json!([]));
+    fields.insert("property_slots".into(), cadmpeg_core::json!([]));
     fields.insert("control".into(), 0.into());
-    fields.insert("extension_values".into(), serde_json::json!([]));
+    fields.insert("extension_values".into(), cadmpeg_core::json!([]));
     crate::record_identity::Located::new(
         cadmpeg_core::serde_erase::json::from_value(payload).expect("pattern"),
         crate::record_identity::RecordTypeId::from_bytes(
