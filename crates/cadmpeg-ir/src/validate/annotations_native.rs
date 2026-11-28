@@ -22,10 +22,11 @@ enum AnnotatedEntity<'ir> {
 
 macro_rules! define_entity_projection {
     ($( $field:ident: $element:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-        /// Adds each record of `ir` that `wanted` names. A design record shares
-        /// the id of the model record it restates, and the CADIR wire leaves
-        /// that model record out, so a record of an arena the wire carries is
-        /// the one added.
+        /// Adds each record of `ir` that `wanted` names: each record of an
+        /// arena the CADIR wire carries, and a record of an arena the wire
+        /// omits only where no written record has its id. A design record
+        /// shares the id of the model record it restates, and a design scope
+        /// the id of its definition, which the product definitions also hold.
         fn entity_projection<'ir>(
             ctx: &DecodeContext<'_>,
             ir: &'ir CadIr,
@@ -40,7 +41,7 @@ macro_rules! define_entity_projection {
                 {
                     for entity in &ir.$home.$field {
                         let id = crate::schema::ArenaRecord::record_identity(entity);
-                        if wanted.contains(id) && projected.insert(id) {
+                        if wanted.contains(id) && (projected.insert(id) || written) {
                             let value = match crate::schema::structural::project(ctx, entity, "annotated entity projection") {
                                 Ok(value) => value,
                                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -138,9 +139,9 @@ impl<'ir> Unindexed<'ir> {
     }
 }
 
-pub(super) fn check_annotations(
+pub(super) fn check_annotations<'ir>(
     ctx: &DecodeContext<'_>,
-    view: NativeView<'_>,
+    view: NativeView<'ir>,
     annotations: &crate::Annotations,
     all_ids: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
@@ -154,11 +155,24 @@ pub(super) fn check_annotations(
         }
     });
     let mut values = Vec::new();
-    let mut entities = BorrowedIdentities::new();
-    // Sort small identity slots rather than moving projected payloads.
-    let mut add = |id, value| {
-        entities.insert(id, values.len());
+    // Sort small identity slots rather than moving projected payloads. An id
+    // holds each neutral record of that id, else its native record.
+    let mut entities = BorrowedIdentities::<Vec<usize>>::new();
+    let mut add = |id, value: AnnotatedEntity<'ir>| {
+        let neutral = matches!(value, AnnotatedEntity::Projected(_));
+        let position = values.len();
         values.push(value);
+        match entities.get_mut(id) {
+            Some(positions)
+                if neutral && !matches!(values[positions[0]], AnnotatedEntity::Projected(_)) =>
+            {
+                *positions = vec![position];
+            }
+            Some(positions) => positions.push(position),
+            None => {
+                entities.insert(id, vec![position]);
+            }
+        }
     };
     view.for_each(|_, _, records| {
         for record in records.records() {
@@ -176,8 +190,6 @@ pub(super) fn check_annotations(
             add(record.id(), value);
         }
     });
-    // Neutral records take precedence over native records with the same id.
-    // The identity index keeps the last inserted matching value.
     entity_projection(ctx, view.ir, &wanted, &mut add)?;
     let mut unindexed = Unindexed::of(ctx, view.ir, annotations, all_ids)?;
     for key in annotations.provenance.keys() {
@@ -213,19 +225,24 @@ pub(super) fn check_annotations(
             continue;
         }
         let projected;
-        let entity = match key.target() {
-            AnnotationTarget::Entity(id) => entities.get(id).map(|position| &values[*position]),
+        let candidates = match key.target() {
+            AnnotationTarget::Entity(id) => entities.get(id).map(|positions| {
+                positions
+                    .iter()
+                    .map(|position| &values[*position])
+                    .collect()
+            }),
             AnnotationTarget::Delta { qualifier, record } => {
                 match unindexed.projected.remove(&(qualifier, record)).flatten() {
                     Some(value) => {
                         projected = AnnotatedEntity::Projected(value);
-                        Some(&projected)
+                        Some(vec![&projected])
                     }
                     None => None,
                 }
             }
         };
-        let Some(entity) = entity else {
+        let Some(candidates) = candidates else {
             super::record_finding(
                 findings,
                 Check::Annotations,
@@ -238,20 +255,28 @@ pub(super) fn check_annotations(
             );
             continue;
         };
-        let product_fields = match entity {
-            AnnotatedEntity::Product(product) => Some(product.fields()?),
-            AnnotatedEntity::Projected(_) | AnnotatedEntity::Source(_) => None,
-        };
+        let candidates = candidates
+            .into_iter()
+            .map(|entity| {
+                let product_fields = match entity {
+                    AnnotatedEntity::Product(product) => Some(product.fields()?),
+                    AnnotatedEntity::Projected(_) | AnnotatedEntity::Source(_) => None,
+                };
+                Ok::<_, CodecError>((entity, product_fields))
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
         for path in note.fields().keys() {
-            let resolves = match entity {
-                AnnotatedEntity::Projected(value) => field_path_resolves(value, path.as_str()),
-                AnnotatedEntity::Product(_) => product_fields
-                    .as_ref()
-                    .is_some_and(|fields| native_field_path_resolves(fields, path.as_str())),
-                AnnotatedEntity::Source(source) => {
-                    source_field_path_resolves(source, path.as_str())
-                }
-            };
+            let resolves = candidates
+                .iter()
+                .any(|(entity, product_fields)| match entity {
+                    AnnotatedEntity::Projected(value) => field_path_resolves(value, path.as_str()),
+                    AnnotatedEntity::Product(_) => product_fields
+                        .as_ref()
+                        .is_some_and(|fields| native_field_path_resolves(fields, path.as_str())),
+                    AnnotatedEntity::Source(source) => {
+                        source_field_path_resolves(source, path.as_str())
+                    }
+                });
             if !resolves {
                 super::record_finding(
                     findings,

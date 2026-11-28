@@ -205,13 +205,15 @@ fn parser_enforces_anchor_name_and_item_grammar() {
 #[test]
 fn parser_omits_unresolved_values_and_rejects_identity_collisions() {
     let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
-    let (parsed, diagnostics) =
+    let (parsed, _) =
         crate::test_support::with_service_context(unresolved, crate::parse::parse_inner)
             .expect("unresolved value reference omits the bounded record");
     assert!(parsed.records().is_empty());
-    assert!(diagnostics
-        .iter()
-        .any(|item| item.message.contains("unresolved instance reference @100")));
+    assert!(parsed.given_up().iter().any(|statement| matches!(
+        &statement.cause,
+        crate::parse::GiveUpCause::Content(cadmpeg_ir::unknown::part::Cause::Unreadable, message)
+            if message.contains("unresolved instance reference @100")
+    )));
 
     let collision = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#value>;ENDSEC;DATA;#100=ITEM();ENDSEC;END-ISO-10303-21;";
     let error = crate::test_support::with_service_context(collision, crate::parse::parse_inner)

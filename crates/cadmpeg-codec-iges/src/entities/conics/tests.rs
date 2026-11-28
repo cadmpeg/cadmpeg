@@ -194,13 +194,15 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
         if decoded {
             assert!(result.report().losses.is_empty(), "{point_name}");
         } else {
-            assert_eq!(result.report().losses.len(), 2, "{point_name}");
-            assert_eq!(
-                result.report().losses[0].code,
-                IgesLossCode::GeometryNotProjected.kind(),
+            assert_eq!(result.report().losses.len(), 1, "{point_name}");
+            assert!(
+                crate::test_support::reports(
+                    &result.report().losses[0],
+                    IgesLossCode::GeometryNotProjected
+                ),
                 "{point_name}"
             );
-            crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 1));
+            crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 1));
         }
     }
 }
@@ -215,12 +217,12 @@ fn decode_rejects_a_conic_endpoint_at_exact_global_resolution() {
         .unwrap();
 
     assert!(result.ir().geometry.curves.is_empty());
-    assert_eq!(result.report().losses.len(), 2);
-    assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::GeometryNotProjected.kind()
-    );
-    crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 1));
+    assert_eq!(result.report().losses.len(), 1);
+    assert!(crate::test_support::reports(
+        &result.report().losses[0],
+        IgesLossCode::GeometryNotProjected
+    ));
+    crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 1));
 }
 
 #[test]
@@ -236,7 +238,7 @@ fn a_given_up_conic_is_the_part_of_its_directory_entry_pair() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
 
-    let loss = &result.report().losses[1];
+    let loss = &result.report().losses[0];
     crate::test_support::assert_given_up(loss, ("entity", 1));
     assert!(
         loss.message
@@ -343,15 +345,15 @@ fn decode_applies_the_scale_relative_standard_position_gate() {
         if decoded {
             assert!(result.report().losses.is_empty());
         } else {
-            assert_eq!(result.report().losses.len(), 2);
-            assert_eq!(
-                result.report().losses[0].code,
-                IgesLossCode::GeometryNotProjected.kind()
-            );
+            assert_eq!(result.report().losses.len(), 1);
+            assert!(crate::test_support::reports(
+                &result.report().losses[0],
+                IgesLossCode::GeometryNotProjected
+            ));
             assert!(result.report().losses[0]
                 .message
                 .contains("standard position"));
-            crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 1));
+            crate::test_support::assert_given_up(&result.report().losses[0], ("entity", 1));
         }
     }
 }

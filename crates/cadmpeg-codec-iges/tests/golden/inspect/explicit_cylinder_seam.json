@@ -89,24 +89,6 @@
       "code": {
         "kind": "namespaced",
         "value": {
-          "code": "parameter.data-quarantined",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "iges"
-        }
-      },
-      "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
-      "provenance": {
-        "format": "iges",
-        "offset": 2642,
-        "stream": "iges",
-        "tag": "D15:parameter"
-      },
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "kind": "namespaced",
-        "value": {
           "code": "record.unreadable",
           "kind": "decode_diagnostic",
           "namespace": "decode",

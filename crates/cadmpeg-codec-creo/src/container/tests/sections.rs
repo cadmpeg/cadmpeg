@@ -150,6 +150,7 @@ fn compressed_section_above_the_per_expansion_allowance_is_skipped_with_a_loss()
     assert_eq!(expanded[0].data, b"ABC");
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].section_offset, 0);
+    assert_eq!(losses[0].cause, cadmpeg_ir::unknown::part::Cause::Undecoded);
     assert!(losses[0]
         .message
         .contains("declared expansion of 5 bytes exceeds the 4-byte per-expansion allowance"));

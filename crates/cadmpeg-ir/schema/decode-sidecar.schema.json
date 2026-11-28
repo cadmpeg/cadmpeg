@@ -911,6 +911,7 @@
         "untyped": {
           "description": "Content classes the bytes can hold where the decoder keeps the record\nwithout decoding it.",
           "type": "array",
+          "uniqueItems": true,
           "items": {
             "type": "string"
           }
@@ -991,6 +992,7 @@
         "unrepresented": {
           "description": "Union of the retained records' untyped classes.",
           "type": "array",
+          "uniqueItems": true,
           "items": {
             "type": "string"
           }

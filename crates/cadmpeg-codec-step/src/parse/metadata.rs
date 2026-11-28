@@ -4,6 +4,7 @@
 use super::Value;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 
 /// These EXPRESS presentation families describe styling and layer assignment.
 /// Placements, coordinates, geometry contexts, units and shape records keep
@@ -64,23 +65,28 @@ pub(super) fn presentation_record(name: &str) -> bool {
     )
 }
 
+/// The cause of the gravest uninterpreted literal in `values`: a grammar
+/// break before a valid token outside the reader's range.
 pub(super) fn unreadable_literal(
     values: &[Value],
     ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> Result<Option<Cause>, CodecError> {
     let _depth = ctx.enter_nested("STEP metadata literal walk")?;
+    let mut found = None;
     for value in values {
-        let unreadable = match value {
-            Value::UninterpretedLiteral => true,
+        let cause = match value {
+            Value::UninterpretedLiteral(cause) => Some(*cause),
             Value::List(values) => unreadable_literal(values, ctx)?,
             Value::Typed(_, value) => {
                 unreadable_literal(std::slice::from_ref(value.as_ref()), ctx)?
             }
-            _ => false,
+            _ => None,
         };
-        if unreadable {
-            return Ok(true);
+        match cause {
+            Some(Cause::Unreadable) => return Ok(Some(Cause::Unreadable)),
+            Some(cause) => found = Some(cause),
+            None => {}
         }
     }
-    Ok(false)
+    Ok(found)
 }

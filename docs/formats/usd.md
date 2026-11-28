@@ -214,8 +214,8 @@ Layer metadata keys with defined meaning:
 | --- | --- | --- |
 | `defaultPrim` | token | the root prim that a reference with no prim path targets |
 | `upAxis` | token `Y` or `Z` | the stage up axis; `Y` when absent (§10.1) |
-| `metersPerUnit` | double | the length of one scene unit in metres; `0.01` when absent (§10.1) |
-| `kilogramsPerUnit` | double | the mass of one scene unit in kilograms |
+| `metersPerUnit` | double | the length of one scene unit in metres, a positive number; `0.01` when absent (§10.1) |
+| `kilogramsPerUnit` | double | the mass of one scene unit in kilograms, a positive number |
 | `startTimeCode`, `endTimeCode` | double | the authored time range |
 | `timeCodesPerSecond`, `framesPerSecond` | double | time scaling |
 | `customLayerData` | dictionary | application data |
@@ -789,7 +789,7 @@ A list operation states one text item for each part, with the list-operation key
 
 ### 10.1 Units and up axis
 
-Every length in a layer is in scene units. One scene unit is `metersPerUnit` metres; when `metersPerUnit` is absent, it is `0.01`. Angles in schemas are degrees unless a schema states otherwise.
+Every length in a layer is in scene units. One scene unit is `metersPerUnit` metres, a positive number; when `metersPerUnit` is absent, it is `0.01`. Angles in schemas are degrees unless a schema states otherwise.
 
 `upAxis` names the stage's up axis, `Y` or `Z`. When `upAxis` is absent, it is `Y`. The up axis is a statement about the scene, not a transform: coordinates are not rotated by it.
 
@@ -974,7 +974,7 @@ A `NurbsPatch` prim is a tensor-product NURBS surface with optional trim curves.
 | `pointWeights` | `double[]` | | control-point weights |
 | `points` | `point3f[]` | | control points |
 
-`points` has `uVertexCount · vVertexCount` entries. The control point at index `(i, j)`, with `i` in U and `j` in V, is `points[j · uVertexCount + i]`: the U index varies fastest.
+`points` has `uVertexCount · vVertexCount` entries. Knot values do not decrease. The control point at index `(i, j)`, with `i` in U and `j` in V, is `points[j · uVertexCount + i]`: the U index varies fastest.
 
 When `uRange` is authored, the surface is defined for `u` in `uRange`, with `uKnots[uOrder-1] ≤ min < max ≤ uKnots[uVertexCount]`. Otherwise it is defined on `[uKnots[uOrder-1], uKnots[uVertexCount]]`. `vRange` is the same in V.
 
@@ -1131,7 +1131,7 @@ The `UsdPhysics` schemas state rigid bodies, collision, mass, physics materials,
 
 ### 16.1 Units
 
-The layer metadata `kilogramsPerUnit` (double, unauthored value `1`) gives the kilograms per mass unit of the layer. Lengths are in `metersPerUnit` (§10.1). Angles are in degrees. A density is mass per cubed length, a moment of inertia mass times squared length, a force mass times length per squared second, and a torque mass times squared length per squared second, all in layer units.
+The layer metadata `kilogramsPerUnit` (double, unauthored value `1`, a positive number) gives the kilograms per mass unit of the layer. Lengths are in `metersPerUnit` (§10.1). Angles are in degrees. A density is mass per cubed length, a moment of inertia mass times squared length, a force mass times length per squared second, and a torque mass times squared length per squared second, all in layer units.
 
 ### 16.2 Rigid bodies and articulations
 
@@ -1174,7 +1174,7 @@ The layer metadata `kilogramsPerUnit` (double, unauthored value `1`) gives the k
 
 ### 16.4 Joints
 
-A joint prim relates two bodies through `rel physics:body0` and `rel physics:body1`. A relationship with no target is the world. Each side has a joint frame in the local frame of its body: `point3f physics:localPos0`, `quatf physics:localRot0` (`(real, i, j, k)`), and the same with `1`. The joint constrains the two frames.
+A joint prim relates two bodies through `rel physics:body0` and `rel physics:body1`. A relationship with no target is the world. Each target of `physics:body0` and `physics:body1` is the path of a prim of the stage. Each side has a joint frame in the local frame of its body: `point3f physics:localPos0`, `quatf physics:localRot0` (`(real, i, j, k)`), and the same with `1`. The joint constrains the two frames.
 
 | Type | Constraint |
 | --- | --- |
@@ -1320,9 +1320,9 @@ The range `[t0, t1]` of an edge has `t0 < t1` and is in the parameter domain of 
 
 ### 17.3 NURBS geometry
 
-A curve of a curve API has `order` (`uint[]`, one for each curve), `vertexCount` (`uint[]`, one for each curve), `controlVertices` (`point3d[]`, or `double2[]` for `BrepCurveUvNurbAPI`), `weights` (`double[]`, one for each control vertex), and `knots` (`double[]`, `vertexCount + order` for each curve). The arrays of each curve follow the arrays of the curves before it. A curve with order `p + 1`, control vertices `P`, weights `w`, and knots `k` is `C(t) = Σ N_{i,p}(t) w_i P_i / Σ N_{i,p}(t) w_i` on `t ∈ [k[p], k[n]]`, where `n` is `vertexCount`. The control vertices are not multiplied by their weights. Each weight is positive.
+A curve of a curve API has `order` (`uint[]`, one for each curve), `vertexCount` (`uint[]`, one for each curve), `controlVertices` (`point3d[]`, or `double2[]` for `BrepCurveUvNurbAPI`), `weights` (`double[]`, one for each control vertex), and `knots` (`double[]`, `vertexCount + order` for each curve). The arrays of each curve follow the arrays of the curves before it. A curve with order `p + 1`, control vertices `P`, weights `w`, and knots `k` is `C(t) = Σ N_{i,p}(t) w_i P_i / Σ N_{i,p}(t) w_i` on `t ∈ [k[p], k[n]]`, where `n` is `vertexCount`. The control vertices are not multiplied by their weights. Each weight is positive. Each order is at least 1 and at most its `vertexCount`. The knot values of each curve do not decrease.
 
-A surface of `BrepSurfaceNurbAPI` has `uOrder`, `vOrder`, `uVertexCount`, and `vVertexCount` (`uint[]`, one for each surface), `controlVertices` (`point3d[]`) and `weights` (`double[]`), `uVertexCount · vVertexCount` for each surface, and `uKnots` and `vKnots` (`double[]`), `uVertexCount + uOrder` and `vVertexCount + vOrder` for each surface. The control net is U-major: `P_ij = controlVertices[i · vVertexCount + j]`, with `i` the U index. A surface is the rational tensor product of its two directions.
+A surface of `BrepSurfaceNurbAPI` has `uOrder`, `vOrder`, `uVertexCount`, and `vVertexCount` (`uint[]`, one for each surface), `controlVertices` (`point3d[]`) and `weights` (`double[]`), `uVertexCount · vVertexCount` for each surface, and `uKnots` and `vKnots` (`double[]`), `uVertexCount + uOrder` and `vVertexCount + vOrder` for each surface. The control net is U-major: `P_ij = controlVertices[i · vVertexCount + j]`, with `i` the U index. A surface is the rational tensor product of its two directions. Each weight is positive. Each order is at least 1 and at most the vertex count of its direction. The knot values of each direction do not decrease.
 
 ### 17.4 Geometry subsets
 
@@ -1331,3 +1331,37 @@ A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects f
 ### 17.5 Fallback prims
 
 A geometry prim that states `customData = { string brepArray = "N" }` is a fallback of the sibling `BrepArray` prim named `N`: a `Mesh` is a tessellation of its B-reps, and a `NurbsPatch` is a face of them. A reader that reads the B-reps of `N` reads a fallback `Mesh` as their tessellation and does not read a fallback `NurbsPatch`.
+
+## 18. Given-up records and strict floors
+
+The decoder gives up a record (CADIR §3.3) in these cases. Each give-up is one entry. A give-up that follows a read of malformed values names those values, and the `usd/attribute.value-malformed` note does not repeat them.
+
+| Record | Case | Cause |
+|---|---|---|
+| The tessellation of a `Mesh` prim | A value of `points`, `faceVertexCounts`, or `faceVertexIndices` is malformed, or each face breaks §12. | `record.unreadable` |
+| The tessellation of a `Mesh` prim | The prim states no `points`, or no face; or the tessellation refuses the triangles. | `record.undecoded` |
+| The body of a `BasisCurves` or `NurbsCurves` prim | A value that the batch needs is malformed, or a curve that the batch leaves out breaks §13. | `record.unreadable` |
+| The body of a `BasisCurves` or `NurbsCurves` prim | The prim states no value that the batch needs, or each curve has a form with no reading: a `type`, `basis`, or `wrap` token outside §13.1, a linear curve below two points, or three when periodic, a periodic cubic curve of no points, or a curve that the IR refuses. | `record.undecoded` |
+| The body of a `NurbsPatch` prim | A count, order, or array is malformed or breaks §14, or a knot vector decreases. | `record.unreadable` |
+| The body of a `NurbsPatch` prim | The prim states no value that the surface needs, or the IR refuses the surface. | `record.undecoded` |
+| The bodies of a `BrepArray` prim | An array breaks §17.1 or §17.3: an array whose length breaks its "one for each" rule or its count arrays, an index that names no element, a token outside its two values, a negative index, a face without two faceuses of opposite orientation, or an order outside `1 … vertexCount`. | `record.unreadable` |
+| The bodies of a `BrepArray` prim | A type token names a geometry API other than those of §17, a face bounds two solid regions, or a surface vertex count passes the platform bound. | `record.undecoded` |
+| The body of one B-rep of a `BrepArray` prim | The IR refuses the B-rep, and its NURBS geometry breaks §17.3: a weight that is not positive, or a knot vector that decreases. | `record.unreadable` |
+| The body of one B-rep of a `BrepArray` prim | The IR refuses the B-rep, and its NURBS geometry keeps §17.3. | `record.undecoded` |
+| A joint | A body relationship names a path that is no prim of the stage, and the composition opened every layer and resolved every arc and variant, and left out no ancestor of the path. | `record.unreadable` |
+| A joint | A joint frame is not a finite rigid transform, a body relationship names a prim that is not a transferred occurrence, or both body relationships are empty. | `record.undecoded` |
+
+A gear or rack-and-pinion joint that couples a given-up joint is dropped with it (`record.dropped-with`).
+
+These codes report recovery from input that breaks the format, and carry strict floor Warning (CADIR §3.2):
+
+| Code | Input |
+|---|---|
+| `usd/composition.target-missing` | A reference or payload names a prim that its layer stack does not hold (§8.2), where every sublayer of the stack opened and no ancestor specification of the target holds a variant set or an arc; or an asset path names a layer with no `defaultPrim` and the arc states no prim path (§8.4). |
+| `usd/attribute.value-malformed` | A value does not have the type that its declaration or its schema table states (§7.2), or a layer metric breaks §10.1 or §16.1. |
+| `usd/xform.malformed` | `!resetXformStack!` is not the first entry, an entry is not a transform op, an op type is outside the table of §11.4, or an op value does not have the shape of its op type. |
+| `usd/mesh.face-rejected` | A face breaks §12: a negative vertex count, indices that end early, an index past `points`, or a face below three vertices. |
+| `usd/curves.rejected` | A curve breaks §13: a vertex count that breaks the condition of its cubic type and wrap, or that passes the end of `points`; a missing or out-of-range order; knots that end early or decrease; or a range outside its knot domain. |
+| `usd/nurbs.range-not-transferred` | A `uRange` or `vRange` breaks §14: `min ≥ max`, or a bound outside the knot domain. |
+
+`usd/composition.target-unresolved`, `usd/xform.not-transferred`, and `usd/curves.not-transferred` report valid input that the decoder does not transfer. No other USD code carries a strict floor.

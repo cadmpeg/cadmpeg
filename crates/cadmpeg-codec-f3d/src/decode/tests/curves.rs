@@ -20,7 +20,7 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_analytic_offset_supports_smbh,
     synthetic_geometry_with_cacheless_helix_curve_smbh,
     synthetic_geometry_with_compound_curve_smbh,
@@ -35,18 +35,18 @@ use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_two_sided_offset_curve_smbh,
     synthetic_geometry_with_vector_offset_curve_smbh, with_legacy_subtype,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_exact_spl_sur_smbh, synthetic_exact_spl_sur_with_decoy_sense_smbh,
 };
-use crate::test_support::tokens_test::{push_tagged_i64, t_dbl};
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::tokens_fixture::{push_tagged_i64, t_dbl};
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
-fn transform_decodes_column_major_basis_and_scaled_translation() {
+fn transform_decodes_column_major_basis_and_centimetre_translation() {
     use cadmpeg_asm::sab::{Record, Token};
 
     let record = Record {
@@ -64,10 +64,10 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         offset: 0,
         len: 0,
     };
-    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
-    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 600.0]);
-    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 1200.0]);
-    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 1800.0]);
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record).unwrap();
+    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 10.0]);
+    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 20.0]);
+    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 30.0]);
     assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
 }
 

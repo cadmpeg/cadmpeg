@@ -3,10 +3,9 @@
 //! patch a retained F3D archive in place.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -14,10 +13,10 @@ use cadmpeg_ir::geometry::{
 
 use crate::decode;
 use crate::loss::F3dLossCode;
-use crate::writer::primitives::{
-    configuration_targets, f3d_native, projects, validate_assembly_projection,
-};
+use crate::writer::primitives::{f3d_native, validate_assembly_projection};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use cadmpeg_ir::codec::write::saved::adopt_configurations;
+use cadmpeg_ir::report::loss::LossNote;
 pub(crate) mod edits;
 mod geometry;
 pub(crate) mod records;
@@ -55,7 +54,9 @@ use records::{
 /// `source_image` must match the F3D source represented by `target`. The
 /// function validates changed topology, geometry, design, sketch, history, and
 /// appearance fields before patching records. Unsupported edits return
-/// [`CodecError::NotImplemented`].
+/// [`CodecError::NotImplemented`]. The configuration tables are written as
+/// the configurations state them, and `losses` takes what they state
+/// otherwise.
 ///
 /// Completeness of the patch is checked by rebuilding the document from the
 /// baseline plus the supported edits and comparing its machine-local content
@@ -63,12 +64,17 @@ use records::{
 /// this binary, which is the only setting in which
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
+///
+/// `restored` is the source image as the restore of a write read from CADIR
+/// decoded it in `ctx`; the patch decodes the image itself without one.
 pub(crate) fn write_semantic(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     source_image: &[u8],
+    restored: Option<&super::RetainedArchive<'_>>,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if !target.model.omitted_arenas_held() {
         return Err(CodecError::NotImplemented(
@@ -78,49 +84,41 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
-    // The archive is input of the write's one session, so the caller's
-    // ceilings bound every read of it (cadir-v11.md §2.5).
-    ctx.charge_input(
-        cadmpeg_core::decode::u64_from_index(source_image.len()),
-        "F3D patch source archive",
-    )?;
-    let policy = *ctx.policy();
-    let limits = policy.limits;
-    let target_native = f3d_native(ctx, target)?;
-    if let Some(native) = target_native.as_ref() {
-        if !projects(
-            &target.model.configurations,
-            &native.design_configurations,
-            &configuration_targets(target, native),
-        )? {
-            return Err(CodecError::NotImplemented(
-                "the neutral configurations differ from the projection of the configuration \
-                 tables, and the patch carries the configuration tables as stored"
-                    .into(),
-            ));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let opened;
+    let source = match restored {
+        Some(source) => source,
+        None => {
+            opened = ctx.with_arena(&arena, |ctx| {
+                super::RetainedArchive::read(ctx, source_image)
+            })?;
+            &opened
         }
-        validate_assembly_projection(ctx, target, Some(native))?;
-    } else {
-        validate_assembly_projection(ctx, target, None)?;
-    }
-    let baseline =
-        super::decode_retained_source(source_image, policy).map_err(|failure| match failure {
-            DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format!(
-                "the salvage decode of the source image refused: {other}"
-            )),
-        })?;
-    if baseline
-        .report()
-        .losses
+    };
+    let baseline = &source.decoded;
+    let mut table_losses = Vec::new();
+    if baseline.report().losses.iter().any(|loss| {
+        [
+            F3dLossCode::DesignIntentUndecoded,
+            F3dLossCode::DesignIntentUnreadable,
+        ]
         .iter()
-        .any(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
-    {
+        .any(|code| loss.code == code.kind())
+    }) {
         return Err(CodecError::NotImplemented(
             "F3D semantic patching refuses a source whose design intent was not decoded".into(),
         ));
     }
     let baseline_native = f3d_native(ctx, baseline.ir())?;
+    let target_native = f3d_native(ctx, target)?;
+    let mut tables = target_native
+        .as_ref()
+        .map(|native| crate::writer::generate::configuration_table::patched(target, native))
+        .transpose()?;
+    if let Some(tables) = &mut tables {
+        table_losses.append(&mut tables.losses);
+    }
+    validate_assembly_projection(ctx, target, target_native.as_ref())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
         target: target_native.as_ref(),
@@ -252,7 +250,14 @@ pub(crate) fn write_semantic(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));
     }
-    let configuration_edits = validate_configuration_edits(natives)?;
+    let configuration_edits = validate_configuration_edits(
+        baseline_native
+            .as_ref()
+            .map_or(&[][..], |native| native.design_configurations.as_slice()),
+        tables
+            .as_ref()
+            .map_or(&[][..], |tables| tables.destination.documents.as_ref()),
+    )?;
     validate_act_appearance_bindings(natives, baseline.ir(), target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir().geometry.bodies, &target.geometry.bodies)?;
@@ -384,6 +389,7 @@ pub(crate) fn write_semantic(
         .model
         .configurations
         .clone_from(&target.model.configurations);
+    adopt_configurations(&mut supported_target.design, &target.design);
     if let (Some(mut supported), Some(target_native)) =
         (baseline_native.clone(), target_native.as_ref())
     {
@@ -473,7 +479,12 @@ pub(crate) fn write_semantic(
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )?;
     }
-    if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
+    supported_target
+        .model
+        .adopt_omitted_arenas_baseline(&target.model);
+    if decode::document_local_sha256(ctx, &supported_target)?
+        != decode::document_local_sha256(ctx, target)?
+    {
         return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),
@@ -653,64 +664,39 @@ pub(crate) fn write_semantic(
     let mut zip = zip::ZipWriter::new(output);
     let mut patched_protein_appearances = BTreeSet::new();
     for index in 0..archive.len() {
-        // `zip` cannot expand or write a Zstandard member: it is read raw and expanded by
-        // `cadmpeg-core`, and written back by `write_zstd_member` below.
-        let zstd = crate::zip_write::is_zstd_member(&mut archive, index)?;
-        let (name, options, mut bytes) = {
-            let mut entry = if zstd {
-                archive.by_index_raw(index)
-            } else {
-                archive.by_index(index)
-            }
+        let entry = archive.by_index_raw(index).map_err(|error| {
+            CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
+        })?;
+        let name = entry
+            .name()
             .map_err(|error| {
-                CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
-            })?;
-            let name = entry
-                .name()
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
-                })?
-                .into_owned();
-            let options = crate::zip_write::file_options(entry.compression());
-            if entry.is_dir() {
-                drop(entry);
-                if zstd {
-                    crate::zip_write::write_zstd_member(
-                        &mut zip,
-                        &mut archive,
-                        index,
-                        &[],
-                        &[],
-                        notes,
-                    )?;
-                } else {
-                    zip.add_directory(name, options).map_err(|error| {
-                        CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
-                    })?;
-                }
-                continue;
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?
+            .into_owned();
+        let compression = entry.compression();
+        let options = crate::zip_write::file_options(compression);
+        let expanded = source
+            .scan
+            .rewrite_member(&name, &entry, ctx.per_expand_allowance())?;
+        if entry.is_dir() {
+            if !expanded.is_empty() {
+                return Err(CodecError::NotImplemented(format!(
+                    "ZIP directory {name} carries a payload"
+                )));
             }
-            let mut bytes = Vec::new();
-            if zstd {
-                bytes.extend(crate::zip_write::expand_zstd_member(
-                    &mut entry,
-                    &name,
-                    cadmpeg_core::decode::u64_from_index(source_image.len()),
-                    limits,
-                )?);
+            if compression == zip::CompressionMethod::ZSTD {
+                zip.raw_copy_file(entry).map_err(|error| {
+                    CodecError::malformed(format_args!("cannot copy ZIP directory {name}: {error}"))
+                })?;
             } else {
-                let mut chunk = [0_u8; 16 * 1024];
-                loop {
-                    let read = entry.read(&mut chunk)?;
-                    if read == 0 {
-                        break;
-                    }
-                    bytes.extend_from_slice(&chunk[..read]);
-                }
+                zip.add_directory(name, options).map_err(|error| {
+                    CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
+                })?;
             }
-            (name, options, bytes)
-        };
-        let expanded = zstd.then(|| bytes.clone());
+            continue;
+        }
+        drop(entry);
+        let mut bytes = expanded.to_vec();
         if let Some(cage) = user_knot_edits.remove(&name) {
             bytes = crate::tsm::user_knots::rewrite(ctx, &name, &bytes, &cage)?;
         }
@@ -758,11 +744,12 @@ pub(crate) fn write_semantic(
             }
         } else {
             if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
-                let (patched_bytes, patched_guids) = crate::materials::patch_protein_appearances(
-                    &bytes,
+                let protein = source.scan.protein_source(ctx, &name)?;
+                let (patched_bytes, patched_guids) = crate::materials::patch_protein_source(
+                    &protein,
                     &protein_appearance_edits,
                     notes,
-                    limits,
+                    ctx,
                 )?;
                 bytes = patched_bytes;
                 patched_protein_appearances.extend(patched_guids);
@@ -813,12 +800,12 @@ pub(crate) fn write_semantic(
                 patch_act_entities(&mut bytes, edits)?;
             }
         }
-        if let Some(expanded) = expanded {
+        if compression == zip::CompressionMethod::ZSTD {
             crate::zip_write::write_zstd_member(
                 &mut zip,
                 &mut archive,
                 index,
-                &expanded,
+                expanded,
                 &bytes,
                 notes,
             )?;
@@ -843,7 +830,20 @@ pub(crate) fn write_semantic(
         .finish()
         .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
         .into_inner();
+    if let Some(tables) = tables {
+        tables.destination.read_back(
+            ctx.policy(),
+            &output,
+            target,
+            &target.model.parameters,
+            target_native
+                .as_ref()
+                .map_or(&[], |native| native.design_parameter_scopes.as_slice()),
+            &mut table_losses,
+        );
+    }
     writer.write_all(&output)?;
+    losses.extend(table_losses);
     Ok(())
 }
 

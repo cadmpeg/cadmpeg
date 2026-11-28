@@ -17,11 +17,11 @@
 //!
 //! Every struct position is then read after each edit of its sample: a key no
 //! member declares, `null` for each member, each stated member left out, and
-//! the first key stated twice. An edit states a second spelling when the
-//! readers accept it and the document they write back differs at that object.
+//! each stated key repeated. An undeclared or repeated key must be refused.
+//! For the other edits, the written document must preserve the edited value.
 //! Every data-free enum is read with its name stated as `{"<name>": null}`,
 //! and every array that states each member once with two members swapped
-//! (see `values`).
+//! (see `values`). Map keys and set members are also read with a repetition.
 
 mod generate;
 mod schema;
@@ -30,7 +30,6 @@ mod values;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 
 use crate::spelling::{first_difference, write_repeating};
@@ -70,29 +69,15 @@ pub struct SchemaSweepReport {
     pub reads: usize,
 }
 
-/// Sweeps every target of the `CadIr` schema `schema`, starting from the
-/// serialized `documents`.
-///
-/// # Errors
-///
-/// Returns the serde error when the empty document does not serialize.
-pub fn sweep(schema: &Value, documents: &[Value]) -> Result<SchemaSweepReport, serde_json::Error> {
-    let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
-    let read = |text: &str| {
-        cadmpeg_ir::hash::finite_json::to_json_value(&serde_json::from_str::<CadIr>(text)?)
-    };
-    Ok(sweep_with(schema, documents, &empty, &read))
-}
-
 /// Reads a document's text and writes the document back.
 pub(crate) type Read<'r> = &'r dyn Fn(&str) -> Result<Value, serde_json::Error>;
 
-/// The sweep of [`sweep`], reading through `read`.
-pub(crate) fn sweep_with(
+/// Sweeps the schema targets through the document reader and writer.
+pub fn sweep(
     schema: &Value,
     documents: &[Value],
     empty: &Value,
-    read: Read<'_>,
+    read: &dyn Fn(&str) -> Result<Value, serde_json::Error>,
 ) -> SchemaSweepReport {
     let schema = Schema::new(schema);
     let (targets, uninhabited) = schema.targets();
@@ -104,7 +89,18 @@ pub(crate) fn sweep_with(
     let mut reached = Reached::default();
     let mut ordered = documents.iter().collect::<Vec<_>>();
     ordered.sort_by_cached_key(|document| document.to_string().len());
-    for document in ordered {
+    report.reads += 1;
+    if read(&empty.to_string()).is_err() {
+        report
+            .unprobed
+            .push("the empty document does not read".to_owned());
+    }
+    for (index, document) in ordered.into_iter().enumerate() {
+        report.reads += 1;
+        if read(&document.to_string()).is_err() {
+            report.unprobed.push(format!("seed {index} does not read"));
+            continue;
+        }
         reached.seed(&schema, &targets, document, empty, read, &mut report.reads);
     }
     report.from_documents = reached.samples.len();
@@ -128,6 +124,7 @@ pub(crate) fn sweep_with(
     }
     values::probe_names(&schema, &reached.samples, read, &mut report);
     values::probe_orders(&schema, &reached.samples, &reached.known, read, &mut report);
+    values::probe_maps(&schema, &reached.samples, &reached.known, read, &mut report);
     report
 }
 
@@ -364,11 +361,10 @@ fn anchor(graft_path: &[Step], path: &[Step]) -> String {
 
 /// Reads the struct position at `location` after each edit of its sample: a
 /// key no member declares, `null` for each member, each member left out, and
-/// the first key stated twice.
+/// each key stated twice.
 ///
-/// An edit states a second spelling when the readers accept it and the
-/// document they write back differs at this object: the edit then spells a
-/// value that has another spelling. An `Option` left out writes back left
+/// An undeclared or repeated key must be refused. A different written value
+/// after the other edits states a second spelling. An `Option` left out writes back left
 /// out, and a collection left out writes back as an empty one. A sample that
 /// does not write back as itself is reported and not edited.
 fn probe(
@@ -405,6 +401,20 @@ fn probe(
             });
         return;
     }
+    let key = probe_key(fields);
+    for value in probe_values() {
+        let mut document = sample.document.clone();
+        if let Some(Value::Object(object)) = value_at_mut(&mut document, &sample.path) {
+            object.insert(key.clone(), value);
+        }
+        report.reads += 1;
+        if read(&document.to_string()).is_ok() {
+            report
+                .accepting
+                .insert(format!("{at}: the undeclared key `{key}` is accepted"));
+            break;
+        }
+    }
     let mut second = |edit: &dyn Fn(&mut Map<String, Value>)| {
         let mut document = sample.document.clone();
         if let Some(Value::Object(object)) = value_at_mut(&mut document, &sample.path) {
@@ -412,16 +422,6 @@ fn probe(
         }
         rewrite(&document, &mut report.reads).is_some()
     };
-    let key = probe_key(fields);
-    if probe_values().into_iter().any(|value| {
-        second(&|object| {
-            object.insert(key.clone(), value.clone());
-        })
-    }) {
-        report
-            .accepting
-            .insert(format!("{at}: the undeclared key `{key}` is accepted"));
-    }
     let declared = schema::properties(schema.node(location))
         .into_iter()
         .map(|(name, _, _)| name.to_owned());
@@ -448,9 +448,9 @@ fn probe(
             report.accepting.insert(format!("{at}: `{name}` left out"));
         }
     }
-    if let Some(key) = fields.keys().next() {
+    for key in fields.keys() {
         let mut text = String::new();
-        write_repeating(&sample.document, &sample.path, &mut text);
+        write_repeating(&sample.document, &sample.path, key, &mut text);
         report.reads += 1;
         if read(&text).is_ok() {
             report

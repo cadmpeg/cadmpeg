@@ -4,6 +4,7 @@
 //! The expected volumes and boxes follow from the design values below, which
 //! are lengths in millimetres.
 
+use std::collections::BTreeSet;
 use std::f64::consts::PI;
 use std::io::Cursor;
 
@@ -664,4 +665,212 @@ fn a_stream_whose_geometry_classes_are_unknown_decodes_no_carriers() {
     let result = decode(&patched);
     assert!(!result.report().geometry_transferred());
     assert!(loss_kinds(&result).contains(&AlibreLossCode::GeometryFramedWithoutCarriers.kind()));
+}
+
+/// A face record on a shell in the `SAB_DATA` stream `stream`.
+struct ShellFace {
+    /// The id of the face.
+    face: String,
+    /// The position of the face's surface reference token.
+    surface_reference: usize,
+    /// The face record's offset.
+    offset: usize,
+    /// The ids of the face's loops and of their coedges.
+    loops_and_coedges: Vec<String>,
+    /// The id of the face's shell.
+    shell: String,
+}
+
+/// The offset in the ACIS binary `stream` of the surface reference token of
+/// the first face record that names a shell, and the record's offset.
+fn face_surface_reference(stream: &[u8]) -> ShellFace {
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_asm::{acis_header, sab};
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(stream, &arena, &policy).unwrap();
+    let kernel = crate::dialect::kernel_stream(stream).unwrap();
+    let header = &kernel.header;
+    let limit = acis_header::solved_record_limit_with_header(stream, header);
+    let records = sab::frame_for_header(
+        &ctx,
+        stream,
+        kernel.records_at,
+        limit.unwrap_or(stream.len()),
+        RefWidth::Four,
+        &header.metadata,
+        limit.is_none(),
+    )
+    .unwrap();
+    // The shared entity fields hold the face's shell at 5 and its surface
+    // at 7 once the extended entity base is removed.
+    let mut normalized = records.clone();
+    sab::normalize_extended_base(&mut normalized, header.metadata.save_format_version);
+    let (index, surface) = normalized
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| record.head() == "face" && record.ref_at(5).is_some())
+        .find_map(|(index, record)| record.ref_at(7).map(|surface| (index, surface)))
+        .expect("a face record on a shell");
+    let face = &records[index];
+    let at: Vec<usize> = (0..)
+        .map_while(|token| sab::payload_token(stream, face, RefWidth::Four, token))
+        .filter(|(_, token)| *token == sab::Token::Ref(surface))
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(at.len(), 1, "one reference names the surface");
+    assert_eq!(stream[at[0]], 0x0c, "a reference token");
+    let id = |index: i64| format!("alibre:brep:entity#{index}");
+    let record = |index: i64| {
+        normalized
+            .iter()
+            .find(|record| i64::try_from(record.index) == Ok(index))
+            .expect("a reference names a record")
+    };
+    // A loop names its next loop at 3 and its first coedge at 4; a coedge
+    // names the next coedge of its ring at 3.
+    let mut loops_and_coedges = Vec::new();
+    let mut next_loop = normalized[index].ref_at(4);
+    while let Some(lp) = next_loop {
+        loops_and_coedges.push(id(lp));
+        let first = record(lp).ref_at(4).expect("a loop names a coedge");
+        let mut coedge = first;
+        loop {
+            loops_and_coedges.push(id(coedge));
+            coedge = record(coedge).ref_at(3).expect("a coedge names the next");
+            if coedge == first {
+                break;
+            }
+        }
+        next_loop = record(lp).ref_at(3);
+    }
+    ShellFace {
+        face: id(i64::try_from(face.index).expect("a record index")),
+        surface_reference: at[0],
+        offset: face.offset,
+        loops_and_coedges,
+        shell: id(normalized[index].ref_at(5).expect("a face on a shell")),
+    }
+}
+
+#[test]
+fn a_face_whose_surface_names_no_record_is_given_up_in_the_sab_data_stream() {
+    let mut face = None;
+    let patched = with_sab(BOX, |stream| {
+        let found = face_surface_reference(stream);
+        let at = found.surface_reference;
+        stream[at + 1..at + 5].copy_from_slice(&i32::MAX.to_le_bytes());
+        face = Some(found);
+    });
+    let face = face.unwrap();
+    let face_offset = face.offset;
+    let whole = decode(BOX);
+    let result = decode(&patched);
+    let charges: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    let charge = charges[0];
+    assert_eq!(charge.severity, Severity::Error);
+    assert!(
+        charge.message.starts_with(&format!(
+            "part face stream=\"alibre:SAB_DATA\" offset={face_offset} "
+        )),
+        "{}",
+        charge.message
+    );
+    assert!(
+        charge
+            .message
+            .contains("the face record's surface reference names no record"),
+        "{}",
+        charge.message
+    );
+    let (_, tail) = charge
+        .message
+        .rsplit_once("; dropped=[")
+        .expect("the charge names what it drops");
+    let (dropped, marked) = tail
+        .split_once("]; marked=[")
+        .expect("the charge names what it marks");
+    let dropped: Vec<&str> = dropped.split(", ").collect();
+    assert!(dropped.contains(&face.face.as_str()), "{dropped:?}");
+    assert!(!face.loops_and_coedges.is_empty());
+    for child in &face.loops_and_coedges {
+        assert!(dropped.contains(&child.as_str()), "{child} in {dropped:?}");
+    }
+    let geometry = &whole.ir().geometry;
+    let kept = geometry
+        .faces
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .filter(|id| *id != face.face)
+        .chain(geometry.edges.iter().map(|edge| edge.id.as_str()))
+        .chain(geometry.vertices.iter().map(|vertex| vertex.id.as_str()));
+    for id in kept {
+        assert!(!dropped.contains(&id), "{id} in {dropped:?}");
+    }
+    assert_eq!(marked, format!("{}]", face.shell));
+    let shell = result
+        .ir()
+        .geometry
+        .shells
+        .iter()
+        .find(|shell| shell.id.as_str() == face.shell)
+        .expect("the face's shell is kept");
+    assert_eq!(
+        shell.unstated,
+        Some(cadmpeg_ir::topology::Unstated::Members)
+    );
+    assert!(result.report().geometry_transferred());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(
+        result.ir().geometry.bodies.len(),
+        whole.ir().geometry.bodies.len()
+    );
+    let edited = &result.ir().geometry;
+    assert_eq!(edited.faces.len() + 1, geometry.faces.len());
+    assert_eq!(edited.edges.len(), geometry.edges.len());
+    assert_eq!(edited.vertices.len(), geometry.vertices.len());
+    assert_eq!(
+        edited
+            .faces
+            .iter()
+            .map(|candidate| &candidate.id)
+            .collect::<BTreeSet<_>>(),
+        geometry
+            .faces
+            .iter()
+            .filter(|candidate| candidate.id.as_str() != face.face)
+            .map(|candidate| &candidate.id)
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        edited
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<BTreeSet<_>>(),
+        geometry
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        edited
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.id)
+            .collect::<BTreeSet<_>>(),
+        geometry
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.id)
+            .collect::<BTreeSet<_>>()
+    );
 }

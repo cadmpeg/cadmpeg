@@ -5,9 +5,9 @@ use super::super::sketch::coordinates::resolved_section_points;
 use super::super::sketch::intersect::section_point_in_model;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
+use crate::vecmath::dot;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
-use crate::vecmath::{cross, dot};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::extents::AngularTermination;
@@ -180,7 +180,10 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             candidate_origin.y - origin[1],
             candidate_origin.z - origin[2],
         ];
-        let radial = cross(displacement, direction);
+        let radial = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(displacement)
+                .cross(cadmpeg_ir::math::Vector3::from(direction)),
+        );
         if !matches!(
             (dot(radial, radial).sqrt()).partial_cmp(&(EPS_AXIS_OFFSET * scale)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
@@ -203,7 +206,10 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             center.y - origin[1],
             center.z - origin[2],
         ];
-        let radial = cross(displacement, direction);
+        let radial = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(displacement)
+                .cross(cadmpeg_ir::math::Vector3::from(direction)),
+        );
         if !matches!(
             (dot(radial, radial).sqrt()).partial_cmp(&(EPS_AXIS_OFFSET * scale)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)

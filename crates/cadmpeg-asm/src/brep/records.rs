@@ -8,6 +8,15 @@ use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
 
+cadmpeg_core::named_optional_field!(
+    deserialize_owner_coedge,
+    cadmpeg_ir::ids::CoedgeId,
+    "owner_coedge"
+);
+cadmpeg_core::named_optional_field!(deserialize_asm_face_key, u64, "asm_face_key");
+cadmpeg_core::named_optional_field!(deserialize_asm_body_key, u64, "asm_body_key");
+cadmpeg_core::named_optional_field!(deserialize_source_brep, String, "source_brep");
+
 /// Source namespaces used to derive native record ids.
 pub mod identity;
 
@@ -158,7 +167,7 @@ native_record! {
     /// Solved B-rep edge carrying the selector.
     edge: cadmpeg_ir::ids::EdgeId,
     /// Selected coedge, or null when the native edge has no owner back-reference.
-    owner_coedge: Option<cadmpeg_ir::ids::CoedgeId> [serde(default, skip_serializing_if = "Option::is_none")],
+    owner_coedge: Option<cadmpeg_ir::ids::CoedgeId> [serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::deserialize_owner_coedge")],
 }
 
 native_record! {
@@ -365,7 +374,7 @@ native_record! {
     /// Solved face carrying the key.
     face: cadmpeg_ir::ids::FaceId,
     /// Non-negative Design-join key; absence is the native `-1` null value.
-    asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
+    asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::deserialize_asm_face_key")],
 }
 
 /// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
@@ -449,7 +458,7 @@ native_record! {
     /// Version-gated trailing LONG following the revision stamp, retained
     /// verbatim; absent in older streams, a small non-negative per-entity
     /// change counter when present.
-    trailing_field: Option<i64>,
+    trailing_field: Option<i64> [serde(deserialize_with = "cadmpeg_core::absent_key::nullable")],
 }
 
 native_record! {
@@ -462,7 +471,7 @@ native_record! {
     /// Native start and end parameters following the base coedge fields.
     parameter_range: cadmpeg_ir::units::FiniteVector<2>,
     /// Release-selected fixed fields following the parameter interval.
-    extension: crate::brep::records::TolerantCoedgeExtension [serde(default)],
+    extension: crate::brep::records::TolerantCoedgeExtension,
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
@@ -622,9 +631,9 @@ native_record! {
     /// product-side selector can name.
     body_ordinal: u32,
     /// Basename of the BREP blob containing this body.
-    source_brep: Option<String> [serde(default, skip_serializing_if = "Option::is_none")],
+    source_brep: Option<String> [serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::deserialize_source_brep")],
     /// Non-negative Design-join key; absence is the native `-1` null value.
-    asm_body_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
+    asm_body_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::deserialize_asm_body_key")],
 }
 
 native_record! {

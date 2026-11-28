@@ -17,11 +17,11 @@ fn three_repeated_local_owners_expand_each_member_root_once() {
 }
 
 fn check_repeated_owners(placements: usize) {
-    use crate::test_support::assembly_test::{
+    use crate::test_support::assembly_fixture::{
         f3d_without_brep_with_xref_placement, f3z_archive, XREF_ROLE,
     };
-    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-    use crate::test_support::zip_test::f3d_with_smbh;
+    use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+    use crate::test_support::zip_fixture::f3d_with_smbh;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
@@ -142,12 +142,13 @@ fn check_repeated_owners(placements: usize) {
         decoded: &mut std::collections::BTreeMap::new(),
         stack: vec!["root.f3d".to_owned()],
         members: std::collections::BTreeMap::new(),
-        failed: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeSet::new(),
         scene_sources: &mut crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
         component_path_tables: Vec::new(),
         instance_scopes: &mut instance_scopes,
+        joint_roots: crate::design_v11::joint::RootOperands::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();

@@ -2,7 +2,7 @@ use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
 use crate::records::identity::{Located, ReferenceRun};
-use crate::test_support::native_test::f3d_native_mut;
+use crate::test_support::native_fixture::f3d_native_mut;
 use cadmpeg_core::serde_erase::json;
 
 fn document() -> cadmpeg_ir::CadIr {

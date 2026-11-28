@@ -9260,6 +9260,34 @@ pub(crate) mod assembly_alternate_rigid_group_prefix {
     pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 45;
 }
 
+/// Byte offsets for the `assembly_typed_alternate_rigid_group_prefix` record.
+///
+/// Spec §Assembly operands. Record length 187 B.
+///
+/// ```text
+/// The typed alternate prologue through its first two member references. Offsets are relative to the primary indexed header.
+/// ```
+pub(crate) mod assembly_typed_alternate_rigid_group_prefix {
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `pathless_locator_reference` (`bytes[51]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const PATHLESS_LOCATOR_REFERENCE: usize = 26;
+    /// Offset of `zero_run_77` (`bytes[4]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const ZERO_RUN_77: usize = 77;
+    /// Offset of `locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const LOCATOR_COUNT: usize = 81;
+    /// Offset of `first_locator_reference` (`bytes[51]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 85;
+    /// Offset of `second_locator_reference` (`bytes[51]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 136;
+}
+
 /// Byte offsets for the `assembly_compact_rigid_group_identity_locator` record.
 ///
 /// Spec §Assembly operands. Record length 52 B.
@@ -13398,6 +13426,13 @@ pub(crate) mod base_feature_protein_asset_manager {
 /// Record 0. Values are stated where every design agrees; the view block and the scene fields depend on the body.
 /// ```
 pub(crate) mod base_feature_asset_settings {
+    /// Offset of `key` (`bytes[17]`). Spec §Records of a Base Feature design.
+    pub(crate) const KEY: usize = 15;
+    /// Stated value of `key` (`bytes[17]`). Spec §Records of a Base Feature design.
+    pub(crate) const KEY_VALUE: [u8; 17] = [
+        0x0d, 0x00, 0x00, 0x00, 0x41, 0x73, 0x73, 0x65, 0x74, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e,
+        0x67, 0x73,
+    ];
     /// Offset of `unit_system` (`bytes[11]`). Spec §Records of a Base Feature design.
     pub(crate) const UNIT_SYSTEM: usize = 38;
     /// Offset of `view_a_extent_0` (`f64`, little-endian). Spec §Records of a Base Feature design.

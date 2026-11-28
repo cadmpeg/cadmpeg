@@ -1726,7 +1726,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -1757,7 +1757,7 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &lane,
         &native.feature_histories,
         &[],
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::smbh_curves_test::synthetic_geometry_with_procedural_curve_smbh;
-use super::tokens_test::{
+use super::smbh_curves_fixture::synthetic_geometry_with_procedural_curve_smbh;
+use super::tokens_fixture::{
     push_native_enum, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident, t_vec,
 };
 

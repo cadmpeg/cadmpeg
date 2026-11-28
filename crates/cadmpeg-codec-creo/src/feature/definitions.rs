@@ -244,6 +244,8 @@ pub(crate) struct FeatureVariableTable {
     pub(crate) entity_ref: Option<u32>,
     /// Positional variable rows in stored order.
     pub(crate) rows: Vec<FeatureVariableRow>,
+    /// Byte offset in the original stream where the row reader stopped.
+    pub(crate) rows_end: usize,
     /// Byte offset of the `var_arr` label in the original stream.
     pub(crate) offset: usize,
 }
@@ -1076,6 +1078,8 @@ pub(crate) struct FeatureRelationTable {
     pub(crate) skamps: Option<SolverSubtable<FeatureSkamp>>,
     /// Joins between relation, equation, and incidence identifiers.
     pub(crate) triples: Option<SolverSubtable<FeatureRelationTriple>>,
+    /// Byte offset in the original stream where the row reader stopped.
+    pub(crate) rows_end: Option<usize>,
     /// Byte offset of the `relat_ptr` label in the original stream.
     pub(crate) offset: usize,
 }
@@ -1086,6 +1090,8 @@ pub(crate) enum SolverSubtable<T> {
     Declared {
         header: FeatureSolverTableHeader,
         rows: Vec<T>,
+        /// Byte offset in the original stream where the row reader stopped.
+        rows_end: Option<usize>,
     },
     Unframed(NonEmptySolverRows<T>),
 }
@@ -1095,9 +1101,16 @@ pub(crate) enum SolverSubtable<T> {
 pub(crate) struct NonEmptySolverRows<T>(Vec<T>);
 
 impl<T> SolverSubtable<T> {
-    fn from_parts(header: Option<FeatureSolverTableHeader>, rows: Vec<T>) -> Option<Self> {
+    fn from_parts(
+        header: Option<FeatureSolverTableHeader>,
+        (rows, rows_end): (Vec<T>, Option<usize>),
+    ) -> Option<Self> {
         match header {
-            Some(header) => Some(Self::Declared { header, rows }),
+            Some(header) => Some(Self::Declared {
+                header,
+                rows,
+                rows_end,
+            }),
             None if rows.is_empty() => None,
             None => Some(Self::Unframed(NonEmptySolverRows(rows))),
         }
@@ -1135,7 +1148,7 @@ impl<T> SolverSubtable<T> {
 
     pub(crate) fn is_complete(&self) -> bool {
         match self {
-            Self::Declared { header, rows } => {
+            Self::Declared { header, rows, .. } => {
                 cadmpeg_core::decode::index_from_u32(header.declared_count) == rows.len()
             }
             Self::Unframed(_) => false,
@@ -1146,7 +1159,7 @@ impl<T> SolverSubtable<T> {
     /// an over-run, not a shortfall, and `is_complete` reports that state.
     pub(crate) fn missing_rows(&self) -> usize {
         match self {
-            Self::Declared { header, rows } => {
+            Self::Declared { header, rows, .. } => {
                 let declared = cadmpeg_core::decode::index_from_u32(header.declared_count);
                 // The two cases the doc sentence above names: a declaration
                 // above the decoded count is the shortfall, and rows decoded
@@ -1183,8 +1196,15 @@ impl<T: HasOffset> SolverSubtable<T> {
     /// Rebases the table header and row offsets.
     pub(crate) fn shift_offsets(&mut self, delta: usize) {
         let rows = match self {
-            Self::Declared { header, rows } => {
+            Self::Declared {
+                header,
+                rows,
+                rows_end,
+            } => {
                 header.offset += delta;
+                if let Some(end) = rows_end {
+                    *end += delta;
+                }
                 rows
             }
             Self::Unframed(rows) => &mut rows.0,
@@ -1868,6 +1888,7 @@ fn variable_table(
     // more rows than the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
     let max_rows = bounded_len(u64::from(declared_count), 1, window).unwrap_or(window);
+    let mut rows_end = cursor;
     while cursor < end && rows.len() < max_rows {
         if payload[cursor] == 0xe2 {
             cursor += 1;
@@ -1931,8 +1952,10 @@ fn variable_table(
             offset: row_offset,
         };
         rows.push(row);
+        rows_end = cursor;
     }
     Some(FeatureVariableTable {
+        rows_end,
         declared_count,
         entity_ref,
         rows,
@@ -1979,6 +2002,7 @@ fn positional_variable_table(
     // count cannot exceed the unread bytes in the table window.
     let mut rows = Vec::new();
     let prototype_separator_len = 2 + reference_bytes.len() + 1;
+    let mut rows_end = cursor;
     'rows: while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
         let (variable_type, next) = psb::compact_int(payload, cursor);
@@ -2045,8 +2069,10 @@ fn positional_variable_table(
             offset: row_offset,
         };
         rows.push(row);
+        rows_end = cursor;
     }
     Some(FeatureVariableTable {
+        rows_end,
         declared_count,
         entity_ref: Some(table_class),
         rows,
@@ -2521,8 +2547,15 @@ fn segment_table_body(
     let Ok(row_limit) = usize::try_from(declared_body_rows) else {
         return None;
     };
+    // The reader resumes at the next byte after a row it cannot read, so the
+    // first unread row starts where the last row read before it ends.
+    let mut next_row = first_row;
+    let mut first_unread = None;
     while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
+        if row_start != next_row {
+            first_unread.get_or_insert(next_row);
+        }
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
             Some([0xc0, 0x80] | [0xc1, 0x00])
@@ -2603,6 +2636,9 @@ fn segment_table_body(
                     _ => {}
                 }
                 rows.push(row);
+                if first_unread.is_none() {
+                    next_row = p + 1;
+                }
             }
             cursor = p + 1;
         } else {
@@ -2613,7 +2649,7 @@ fn segment_table_body(
         declared_count,
         has_elided_prototype,
         entity_ref,
-        rows: SegmentRows::from_parsed_rows(rows),
+        rows: SegmentRows::from_parsed_rows(rows, first_unread.unwrap_or(next_row)),
         offset: table,
     })
 }
@@ -4788,9 +4824,9 @@ fn self_described_positional_dimension_table(
     candidate
 }
 
-fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
+fn feature_skamps(payload: &[u8], start: usize, end: usize) -> (Vec<FeatureSkamp>, Option<usize>) {
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let mut cursor = table + b"skamp_ptr\0".len();
     if payload
@@ -4802,22 +4838,22 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         cursor += 2;
     }
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let class_start = cursor;
     let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let class_encoding = &payload[class_start..next];
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     cursor += 2;
     let Some(prototype_end) = find_class_close(payload, cursor, end, 0xf3, class_encoding) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let named_item = (|| {
         Some(FeatureSkampItem {
@@ -4826,17 +4862,17 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         })
     })();
     let Some(items_label) = find_bytes(payload, b"items\0", cursor, prototype_end) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let mut item_cursor = items_label + b"items\0".len();
     if payload.get(item_cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let (prototype_item_count, after_count) = psb::compact_int(payload, item_cursor + 1);
     item_cursor = after_count;
     let item_class_start = item_cursor;
     let Ok((_, after_item_class)) = psb::reference_id(payload, item_cursor + 1) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let item_class_encoding = &payload[item_class_start..after_item_class];
     let named_item_end = find_class_close(
@@ -4854,7 +4890,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             // and its one-item schema; there is no inner item trailer.
             (prototype_end, 0)
         }
-        None => return Vec::new(),
+        None => return (Vec::new(), None),
     };
     item_cursor = named_item_end + named_item_close_len;
     let mut prototype_items = Vec::new();
@@ -4863,17 +4899,17 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
     }
     while prototype_items.len() < index_from_u32(prototype_item_count) {
         let (Some(entity_id), next) = segment_int(payload, item_cursor) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         item_cursor = next;
         let (Some(sense), next) = segment_int(payload, item_cursor) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         item_cursor = next;
         prototype_items.push(FeatureSkampItem { entity_id, sense });
     }
     if item_cursor != prototype_end {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let Some(prototype) = (|| {
         Some(FeatureSkamp {
@@ -4885,11 +4921,12 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             offset: cursor,
         })
     })() else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let mut rows = Vec::new();
     rows.push(prototype);
     cursor = prototype_end + class_encoding.len() + 2;
+    let mut rows_end = cursor;
     'rows: while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -4963,8 +5000,9 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             items,
             offset: row_offset,
         });
+        rows_end = cursor;
     }
-    rows
+    (rows, Some(rows_end))
 }
 
 fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
@@ -5109,21 +5147,22 @@ fn positional_feature_skamps(
     start: usize,
     end: usize,
     table_class: u32,
-) -> Vec<FeatureSkamp> {
+) -> (Vec<FeatureSkamp>, Option<usize>) {
     let Some((_, count, mut cursor, table_class_encoding)) =
         positional_array_header(payload, start, end, table_class)
     else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
     let mut item_classes = None::<(&[u8], &[u8])>;
+    let mut rows_end = cursor;
     'rows: while rows.len() < index_from_u32(count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -5187,8 +5226,9 @@ fn positional_feature_skamps(
             cursor = next;
         }
         rows.push(row);
+        rows_end = cursor;
     }
-    rows
+    (rows, Some(rows_end))
 }
 
 fn positional_skamp_item_array<'a>(
@@ -5362,29 +5402,29 @@ fn feature_relation_triples(
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Vec<FeatureRelationTriple> {
+) -> (Vec<FeatureRelationTriple>, Option<usize>) {
     let Some(table) = find_bytes(payload, b"triples_ptr\0", start, end) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let mut cursor = table + b"triples_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
         cursor += 2;
     }
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     cursor += 2;
     let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     let prototype = FeatureRelationTriple {
         relation_id: named_compact_int(payload, b"rel_id\0", cursor, close),
@@ -5393,15 +5433,16 @@ fn feature_relation_triples(
         offset: cursor,
     };
     let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     cursor = next;
     if payload.get(cursor) != Some(&0xe2) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     cursor += 1;
     let mut rows = Vec::new();
     rows.push(prototype);
+    let mut rows_end = cursor;
     while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
@@ -5421,8 +5462,9 @@ fn feature_relation_triples(
             skamp_id,
             offset: row_offset,
         });
+        rows_end = cursor;
     }
-    rows
+    (rows, Some(rows_end))
 }
 
 fn positional_relation_triples(
@@ -5430,20 +5472,21 @@ fn positional_relation_triples(
     start: usize,
     end: usize,
     table_class: u32,
-) -> Vec<FeatureRelationTriple> {
+) -> (Vec<FeatureRelationTriple>, Option<usize>) {
     let Some((_, count, mut cursor, class_encoding)) =
         positional_array_header(payload, start, end, table_class)
     else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
+    let mut rows_end = cursor;
     while rows.len() < index_from_u32(count) {
         let offset = cursor;
         let before_relation = cursor;
@@ -5476,8 +5519,9 @@ fn positional_relation_triples(
             cursor = next;
         }
         rows.push(row);
+        rows_end = cursor;
     }
-    rows
+    (rows, Some(rows_end))
 }
 
 fn owned_relation_operand_vectors(
@@ -5579,16 +5623,20 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
         (payload.get(after_ref) == Some(&0xe2)).then_some(after_ref + 1)
     })();
-    let rows = match rows_start {
-        Some(rows_start) => positional_relation_rows(
-            payload,
-            rows_start,
-            rows_end,
-            RelationBodyRows::from_declared(declared_count),
-        ),
-        None => Vec::new(),
+    let (rows, read_end) = match rows_start {
+        Some(rows_start) => {
+            let (rows, stop) = positional_relation_rows(
+                payload,
+                rows_start,
+                rows_end,
+                RelationBodyRows::from_declared(declared_count),
+            );
+            (rows, Some(stop))
+        }
+        None => (Vec::new(), None),
     };
     Some(FeatureRelationTable {
+        rows_end: read_end,
         declared_count,
         entity_ref,
         rows,
@@ -5639,12 +5687,12 @@ fn positional_relation_rows(
     mut cursor: usize,
     end: usize,
     row_count: RelationBodyRows,
-) -> Vec<FeatureRelation> {
+) -> (Vec<FeatureRelation>, usize) {
     if cursor > end || end > payload.len() {
-        return Vec::new();
+        return (Vec::new(), cursor);
     }
     let Some(row_count) = row_count.get() else {
-        return Vec::new();
+        return (Vec::new(), cursor);
     };
     let mut rows = Vec::new();
     for _ in 0..row_count {
@@ -5698,7 +5746,7 @@ fn positional_relation_rows(
         });
         cursor = row_end + 1;
     }
-    rows
+    (rows, cursor)
 }
 
 fn positional_relation_table(
@@ -5730,16 +5778,20 @@ fn positional_relation_table(
         let prototype_end = find_class_close(payload, prototype, end, 0xf1, reference_bytes)?;
         Some(prototype_end + reference_bytes.len() + 2)
     })();
-    let rows = match rows_start {
-        Some(rows_start) => positional_relation_rows(
-            payload,
-            rows_start,
-            end,
-            RelationBodyRows::from_declared(declared_count),
-        ),
-        None => Vec::new(),
+    let (rows, rows_end) = match rows_start {
+        Some(rows_start) => {
+            let (rows, stop) = positional_relation_rows(
+                payload,
+                rows_start,
+                end,
+                RelationBodyRows::from_declared(declared_count),
+            );
+            (rows, Some(stop))
+        }
+        None => (Vec::new(), None),
     };
     Some(FeatureRelationTable {
+        rows_end,
         declared_count,
         entity_ref: Some(table_class),
         rows,
@@ -7073,9 +7125,11 @@ fn definitions_in_ranges(
             {
                 if let Some(header) = named_solver_table_header(payload, b"skamp_ptr\0", start, end)
                 {
+                    let (rows, rows_end) = feature_skamps(payload, start, end);
                     table.skamps = Some(SolverSubtable::Declared {
+                        rows_end,
                         header,
-                        rows: feature_skamps(payload, start, end),
+                        rows,
                     });
                 } else {
                     table.skamps = match replay_skamp_class {
@@ -7096,9 +7150,11 @@ fn definitions_in_ranges(
                 if let Some(header) =
                     named_solver_table_header(payload, b"triples_ptr\0", start, end)
                 {
+                    let (rows, rows_end) = feature_relation_triples(payload, start, end);
                     table.triples = Some(SolverSubtable::Declared {
+                        rows_end,
                         header,
-                        rows: feature_relation_triples(payload, start, end),
+                        rows,
                     });
                 } else {
                     table.triples = match replay_triples_class {
@@ -7828,6 +7884,7 @@ mod tests {
             offset: 0,
         };
         let table = |rows: Vec<FeatureVariableRow>| FeatureVariableTable {
+            rows_end: 0,
             declared_count: u32::try_from(rows.len()).expect("row count fits"),
             entity_ref: None,
             rows,
@@ -8078,7 +8135,7 @@ mod tests {
                     entity_ref: 0,
                     offset: 0,
                 }),
-                vec![(); decoded],
+                (vec![(); decoded], None),
             )
             .expect("a declared header always frames a table")
         };

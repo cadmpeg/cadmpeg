@@ -317,7 +317,7 @@ impl<'a> StateTopology<'a> {
 
 /// One stored state's name table, with its topology derived on first use.
 pub(super) struct Matcher<'a> {
-    states: &'a States<'a>,
+    states: StatesRef<'a>,
     state: StateKey<'a>,
     entries: BTreeMap<&'a str, Entry>,
     topology: OnceCell<Option<StateTopology<'a>>>,
@@ -332,7 +332,7 @@ enum StateKey<'a> {
 impl<'a> Matcher<'a> {
     /// The matcher of a stored state. `None` where an evaluation's chain of
     /// bases does not resolve, which the evaluation rules report.
-    fn new(states: &'a States<'a>, state: &Stored<'a>) -> Option<Self> {
+    fn new(states: StatesRef<'a>, state: &Stored<'a>) -> Option<Self> {
         let (entries, key) = match state {
             Stored::Extents(extents) => (
                 states
@@ -342,12 +342,7 @@ impl<'a> Matcher<'a> {
                         Some((entity.id(), Entry::of(entry.name.as_ref()?)))
                     })
                     .collect(),
-                StateKey::Extents(
-                    extents
-                        .iter()
-                        .map(|extent| std::ptr::from_ref(*extent))
-                        .collect(),
-                ),
+                StateKey::Extents(extents.iter().map(Rc::as_ptr).collect()),
             ),
             Stored::Evaluation(evaluation) => (
                 states
@@ -377,12 +372,13 @@ impl<'a> Matcher<'a> {
                         .states
                         .extents
                         .iter()
-                        .filter(|extent| extents.contains(&std::ptr::from_ref(*extent)))
+                        .filter(|extent| extents.contains(&Rc::as_ptr(extent)))
+                        .map(Rc::as_ref)
                         .collect();
                     Some(StateTopology::of_extents(self.states.geometry(), &extents))
                 }
                 StateKey::Evaluation(evaluation) => {
-                    StateTopology::of_evaluation(self.states, evaluation)
+                    StateTopology::of_evaluation(&self.states, evaluation)
                 }
             })
             .as_ref()
@@ -642,41 +638,63 @@ fn index_places(name: &TopoName) -> BTreeMap<Place, BTreeSet<u32>> {
     found
 }
 
+#[derive(Clone)]
+enum StatesRef<'a> {
+    #[cfg(test)]
+    Borrowed(&'a States<'a>),
+    Owned(Rc<States<'a>>),
+}
+
+impl<'a> std::ops::Deref for StatesRef<'a> {
+    type Target = States<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            #[cfg(test)]
+            Self::Borrowed(states) => states,
+            Self::Owned(states) => states,
+        }
+    }
+}
+
 /// The matchers of the stored states one validation reads, each built once.
 pub(in crate::validate) struct Matchers<'a> {
-    states: &'a States<'a>,
+    states: StatesRef<'a>,
     built: std::cell::RefCell<BTreeMap<StateKey<'a>, Option<Rc<Matcher<'a>>>>>,
 }
 
 impl<'a> Matchers<'a> {
+    #[cfg(test)]
     pub(in crate::validate) fn new(states: &'a States<'a>) -> Self {
         Self {
-            states,
+            states: StatesRef::Borrowed(states),
+            built: std::cell::RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub(in crate::validate) fn owned(states: States<'a>) -> Self {
+        Self {
+            states: StatesRef::Owned(Rc::new(states)),
             built: std::cell::RefCell::new(BTreeMap::new()),
         }
     }
 
     /// The resolved states the matchers read.
-    pub(super) const fn states(&self) -> &'a States<'a> {
-        self.states
+    pub(super) fn states(&self) -> &States<'a> {
+        &self.states
     }
 
     /// The matcher of a stored state. `None` where an evaluation's chain of
     /// bases does not resolve.
     pub(super) fn get(&self, state: &Stored<'a>) -> Option<Rc<Matcher<'a>>> {
         let key = match state {
-            Stored::Extents(extents) => StateKey::Extents(
-                extents
-                    .iter()
-                    .map(|extent| std::ptr::from_ref(*extent))
-                    .collect(),
-            ),
+            Stored::Extents(extents) => StateKey::Extents(extents.iter().map(Rc::as_ptr).collect()),
             Stored::Evaluation(evaluation) => StateKey::Evaluation(evaluation),
         };
         if let Some(found) = self.built.borrow().get(&key) {
             return found.clone();
         }
-        let matcher = Matcher::new(self.states, state).map(Rc::new);
+        let matcher = Matcher::new(self.states.clone(), state).map(Rc::new);
         self.built.borrow_mut().insert(key, matcher.clone());
         matcher
     }

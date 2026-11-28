@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{assert_valid, decode};
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base_feature;
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_base_feature;
 
 #[test]
 fn product_history_owner_survives_two_component_archive_merge() {
@@ -44,8 +44,8 @@ fn product_history_owner_survives_two_component_archive_merge() {
 
 #[test]
 fn root_sketch_owner_follows_document_membership() {
-    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-    use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_sketch_dimension;
+    use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+    use crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_sketch_dimension;
 
     let document =
         f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh());

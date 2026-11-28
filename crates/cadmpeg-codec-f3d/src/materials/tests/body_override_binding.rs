@@ -126,11 +126,12 @@ fn decode_binds_the_override_appearance_over_a_different_assignment_and_charges_
 }
 
 fn assert_override_binds(assigned: &str, overriding: &str) {
-    let f3d = crate::test_support::zip_test::f3d_with_smbh_and_protein_guids_and_browser_override(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
-        &[assigned, overriding],
-        overriding,
-    );
+    let f3d =
+        crate::test_support::zip_fixture::f3d_with_smbh_and_protein_guids_and_browser_override(
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
+            &[assigned, overriding],
+            overriding,
+        );
     let result = crate::F3dCodec
         .decode(
             &mut std::io::Cursor::new(f3d),

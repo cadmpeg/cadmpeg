@@ -3,12 +3,12 @@
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
 
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_without_brep, f3d_without_brep_with_xref_placement, f3z_archive,
     f3z_archive_with_design_description, XREF_ROLE,
 };
-use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_geometry_fixture::{synthetic_geometry_smbh, synthetic_mixed_smbh};
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use crate::F3dLossCode;
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -643,7 +643,7 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
     assert!(
         decoded.report().losses.iter().all(|loss| loss.code
             != F3dLossCode::XrefPlacementUndecoded.kind()
-            && loss.code != F3dLossCode::XrefTableUndecoded.kind()),
+            && !crate::test_support::xref_table_given_up(loss)),
         "{:?}",
         decoded.report().losses
     );

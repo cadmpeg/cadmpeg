@@ -141,7 +141,10 @@ fn one_cylinder([first, second]: [CylinderEquation; 2]) -> bool {
     ) else {
         return false;
     };
-    let axis_cross = crate::vecmath::cross(first_axis, second_axis);
+    let axis_cross = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(second_axis)),
+    );
     if crate::vecmath::dot(axis_cross, axis_cross) > EPS_SHARED_CYLINDER_AXIS_CROSS_SQUARED {
         return false;
     }
@@ -195,7 +198,9 @@ fn shared_cylinder_generator_line(
         })
         .then_some(())?;
     let displacement: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
-    let off_axis = crate::vecmath::cross(displacement, axis);
+    let off_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(displacement).cross(cadmpeg_ir::math::Vector3::from(axis)),
+    );
     (crate::vecmath::dot(off_axis, off_axis).sqrt() <= EPS_SHARED_CYLINDER_AGREEMENT * scale)
         .then_some(())?;
     generator_paths
@@ -331,7 +336,10 @@ enum SharedCarrier {
 
 /// Whether two placed plane equations describe one plane.
 fn one_plane([first, second]: [PlaneEquation; 2]) -> bool {
-    let normal_cross = crate::vecmath::cross(first.normal, second.normal);
+    let normal_cross = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first.normal)
+            .cross(cadmpeg_ir::math::Vector3::from(second.normal)),
+    );
     if crate::vecmath::dot(normal_cross, normal_cross) > EPS_COPLANAR_NORMAL_CROSS_SQUARED {
         return false;
     }

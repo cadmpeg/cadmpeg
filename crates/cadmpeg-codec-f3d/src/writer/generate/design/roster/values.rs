@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::up_axis::UpAxis;
 use sha2::{Digest, Sha256};
 
 use crate::writer::generate::presentation::deterministic_guid;
@@ -88,6 +89,8 @@ pub(in crate::writer::generate) struct Values {
     /// Why the unit system fell back to `MmMKS` (record 67), where it did.
     pub(super) unit_system_fallback: Option<UnitFallback>,
     pub(super) name: String,
+    /// The document up axis `AssetSettings` stores as its direction pair.
+    pub(super) up_axis: Option<UpAxis>,
     /// The vertex box of each result body, in body order; `None` where the
     /// body's vertices span no extent.
     pub(super) boxes: Vec<Option<BodyBox>>,
@@ -129,6 +132,7 @@ impl Values {
             unit_system,
             unit_system_fallback,
             name,
+            up_axis: target.up_axis,
             boxes: body_boxes(target),
         }
     }

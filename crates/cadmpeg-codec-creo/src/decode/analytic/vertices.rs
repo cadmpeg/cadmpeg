@@ -25,7 +25,7 @@ use super::pcurves::{
     solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
@@ -350,7 +350,10 @@ fn conic_conic_intersections(
     let Some(second_equation) = planar_conic_equation(second) else {
         return Ok(Vec::new());
     };
-    let normal_cross = cross(first_equation.normal, second_equation.normal);
+    let normal_cross = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first_equation.normal)
+            .cross(cadmpeg_ir::math::Vector3::from(second_equation.normal)),
+    );
     if dot(normal_cross, normal_cross) > 1e-18 {
         let Some((origin, direction)) = plane_intersection_line(
             PlaneEquation {

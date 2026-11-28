@@ -428,7 +428,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         .expect("test projection has a synthetic exact timeline")
     });
     assert_eq!(features.len(), 1);
-    assert_eq!(features[0].name.as_deref(), Some("Extrude 1"));
+    assert_eq!(features[0].name.as_deref(), Some("Extrude1"));
     assert_eq!(features[0].suppressed, Some(true));
     for family in [
         crate::design::DesignFeatureFamily::Extrude,
