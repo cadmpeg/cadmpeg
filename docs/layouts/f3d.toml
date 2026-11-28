@@ -46768,7 +46768,7 @@ note = "Bytes between the matrix and null GUID."
 name = "legacy_external_leading_placement_prefix"
 kind = "byte"
 section = "1.4"
-anchor = "The empty-attribute generation can insert a source-placement flag"
+anchor = "The source-placement generation inserts a source-placement flag"
 size = 7
 parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
 note = "Offsets start at the member sequence after the empty attribute block. The optional source matrix and UUIDs follow this prefix."
@@ -46778,7 +46778,7 @@ name = "control"
 offset = 0
 type = "u16"
 source = "spec"
-anchor = "The empty-attribute generation can insert a source-placement flag"
+anchor = "The source-placement generation inserts a source-placement flag"
 
 [[record.field]]
 name = "ordinal"

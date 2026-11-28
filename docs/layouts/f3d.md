@@ -13542,7 +13542,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `control` | `u16` | little | spec | The empty-attribute generation can insert a source-placement flag |
+| 0 | 2 | `control` | `u16` | little | spec | The source-placement generation inserts a source-placement flag |
 | 2 | 4 | `ordinal` | `u32` | little | spec | after the positive ordinal and before the two UUIDs |
 | 6 | 1 | `source_identity_flag` | `u8` | little | spec | Flag `1` stores source identity |
 
