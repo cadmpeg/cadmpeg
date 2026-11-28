@@ -8,10 +8,11 @@
 
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::names::{GenerationRole, Generator, NameKind, TopoName};
 use cadmpeg_ir::design::ops::swept::{Extrude, Revolve};
 use cadmpeg_ir::design::options::ProfileRef;
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, SolidOutput};
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::document::CadIr;
@@ -22,7 +23,7 @@ use super::extrude::profile::{profile, ProfileLoop};
 use super::extrude::{self, ExtrudePlan};
 use super::parameters::{OwnedParameter, ParameterPlan};
 use super::revolve::{self, RevolvePlan};
-use super::sketch::{PlannedSketch, SketchPlan};
+use super::sketch::{Entity, PlannedSketch, SketchPlan};
 
 /// The smallest linear tolerance the profile and the faces are checked
 /// with, in mm: the decoder's linear resolution.
@@ -116,6 +117,70 @@ impl<'a> Item<'a> {
         match self {
             Self::Extrude(plan) => plan.result.as_ref().map(|result| result.body),
             Self::Revolve(plan) => plan.result.as_ref().map(|result| result.body),
+        }
+    }
+
+    /// Whether the result's generated name group carries a structured name.
+    pub(super) fn writes_name(
+        &self,
+        entity: &EntityRef,
+        name: &TopoName,
+        sketches: &SketchPlan<'_>,
+    ) -> bool {
+        let TopoName::Generated {
+            kind,
+            role,
+            generator,
+            index: None,
+            ..
+        } = name
+        else {
+            return false;
+        };
+        let matches_role = |written| role.as_ref().is_none_or(|role| *role == written);
+        if let (EntityRef::Body(body), NameKind::Body) = (entity, kind) {
+            return self.body() == Some(body)
+                && matches_role(GenerationRole::Body)
+                && generator.is_none();
+        }
+        let (EntityRef::Face(face), NameKind::Face) = (entity, kind) else {
+            return false;
+        };
+        match self {
+            Self::Extrude(plan) => {
+                let Some(result) = &plan.result else {
+                    return false;
+                };
+                if result.start_cap == face {
+                    return matches_role(GenerationRole::Start) && generator.is_none();
+                }
+                if result.end_cap == face {
+                    return matches_role(GenerationRole::End) && generator.is_none();
+                }
+                let Some(side) = result.sides.iter().position(|candidate| *candidate == face)
+                else {
+                    return false;
+                };
+                matches_role(GenerationRole::Side)
+                    && match generator {
+                        None => true,
+                        Some(Generator::SketchEntity(entity)) => {
+                            plan.entries().nth(side).is_some_and(|(profile, at)| {
+                                sketches.items[plan.sketch].entities.get(entity)
+                                    == Some(&Entity::Curve(profile.entries[at].curve))
+                            })
+                        }
+                        Some(_) => false,
+                    }
+            }
+            Self::Revolve(plan) => {
+                matches_role(GenerationRole::Side)
+                    && generator.is_none()
+                    && plan
+                        .result
+                        .as_ref()
+                        .is_some_and(|result| result.sides.contains(&face))
+            }
         }
     }
 

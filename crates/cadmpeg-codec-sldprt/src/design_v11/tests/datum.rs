@@ -200,8 +200,12 @@ fn typed_with_lanes(
     native: &SldprtNative,
 ) -> (super::super::tree::Timeline, super::super::typed::Typed) {
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let entries =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::super::typed::project(
         &ir.model,
         &native.feature_histories,

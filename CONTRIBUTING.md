@@ -33,7 +33,7 @@ By contributing, you license code under **Apache-2.0** and documentation/spec co
 A codec takes native bytes and produces the cadmpeg IR.
 
 1. **Start from a spec.** Pick a format in [`docs/formats/`](docs/formats/) and review its companion `*-open-items.md` file. When a format allows multiple readings, implement the most likely reading and report the assumption with a loss code.
-2. **Implement the codec interface.** Codecs implement the [`Codec` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
+2. **Implement the codec interface.** Codecs implement the [`CodecBackend` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
 3. **Classify exactness correctly.** `ByteExact` means read from the source stream without transformation beyond documented unit conversion. `Derived` means computed deterministically from byte-exact inputs. `Inferred` means supplied from context or convention rather than an explicit source field. `Unknown` means origin or trustworthiness could not be established.
 4. **Account for loss.** If your decoder skips or approximates something, surface it; do not silently drop bytes.
 5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. NIST MBE PMI specimens are a separate maintainer-curated track (`LicenseRef-NIST-PD`); see [corpus/nist-pmi/README.md](corpus/nist-pmi/README.md). Add focused decode, validation, and round-trip tests where applicable.
@@ -50,7 +50,7 @@ Format research starts with a hypothesis about an unknown file region. Test that
 
 ### Everything else
 
-IR schema tooling, validators, exporters, corpus tooling, hex-annotation tooling, CLI ergonomics, and docs fixes need only the DCO sign-off. See the [roadmap contributor entry points](docs/roadmap.md#contributor-entry-points) for bounded ways to contribute.
+IR schema tooling, validators, exporters, corpus tooling, hex-annotation tooling, CLI ergonomics, and docs fixes offer other ways to contribute. See the [roadmap contributor entry points](docs/roadmap.md#contributor-entry-points) for bounded ways to contribute.
 
 ---
 

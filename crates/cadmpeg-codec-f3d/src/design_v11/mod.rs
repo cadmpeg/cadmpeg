@@ -38,6 +38,7 @@ mod pattern;
 mod sheet_metal;
 mod sketch;
 mod split;
+mod states;
 #[cfg(test)]
 mod tests;
 mod thread;
@@ -50,6 +51,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
@@ -58,8 +60,11 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
+use crate::container::ContainerScan;
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::scope::DesignScopeTailFlags;
 
@@ -69,6 +74,8 @@ const TIMELINES: &str = "design_feature_timelines";
 const TYPES: &str = "design_types";
 /// The native arena that holds the parameter scopes.
 const SCOPES: &str = "design_parameter_scopes";
+/// The native arena that holds the ASM histories.
+const HISTORIES: &str = "asm_histories";
 
 /// The tail flags of one parameter scope.
 #[derive(serde::Deserialize)]
@@ -78,20 +85,36 @@ struct ScopeTail {
     tail_flags: Option<DesignScopeTailFlags>,
 }
 
+/// The sources of the stored states of a single Fusion document.
+pub(crate) struct StoredStates<'a> {
+    /// The archive of the document.
+    pub(crate) scan: &'a ContainerScan<'a>,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    pub(crate) scope_histories: &'a HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    pub(crate) history_owners: &'a HashMap<String, crate::design::components::HistoryPairOwner>,
+    /// The retained source records of the document.
+    pub(crate) fidelity: &'a SourceFidelity,
+}
+
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
-/// definition is already stated.
+/// definition is already stated. The stored states of the root scope's
+/// timeline are read from `sources`. Returns the native records that the
+/// evaluations reference and the document does not hold.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     depth: DecodeDepth,
+    sources: Option<&StoredStates<'_>>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<UnknownRecord>, CodecError> {
     if depth < DecodeDepth::Design {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let Some(namespace) = ir.native.namespace("f3d") else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let timelines = namespace.arena_as_for_decode::<DesignFeatureTimeline>(ctx, TIMELINES)?;
     if ir.model.sketches.is_empty()
@@ -105,9 +128,13 @@ pub(crate) fn project(
             .iter()
             .any(|feature| sketch::construction(feature.evaluation.definition().operation()))
     {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let types = namespace.arena_as_for_decode::<SegmentType>(ctx, TYPES)?;
+    let stored_histories = namespace
+        .arenas()
+        .iter()
+        .any(|(name, records)| name.as_str() == HISTORIES && !records.is_empty());
     let scope_tails = namespace.arena_as_for_decode::<ScopeTail>(ctx, SCOPES)?;
     let tail_flags: timeline::TailFlags<'_> = scope_tails
         .iter()
@@ -144,6 +171,26 @@ pub(crate) fn project(
         &current,
         losses,
     )?;
+    let tails: states::Tails<'_> = scopes
+        .iter()
+        .filter_map(|scope| {
+            let key = (
+                crate::ids::native_stream(&scope.id)?,
+                u64::from(scope.record_index),
+            );
+            Some((
+                key,
+                states::Tail {
+                    state: scope.history_state_id(),
+                    previous: scope.previous_history_state_id(),
+                    flags: tail_flags.get(&key).copied(),
+                    history: sources
+                        .and_then(|sources| sources.scope_histories.get(&scope.id))
+                        .map(String::as_str),
+                },
+            ))
+        })
+        .collect();
     let listing = documents.keys().cloned().collect::<BTreeSet<_>>();
     let mut scopes = BTreeMap::new();
     let mut hosted = Vec::new();
@@ -172,6 +219,7 @@ pub(crate) fn project(
         definitions.insert(prefix, definition.clone());
         into.containers.extend(projected.containers);
         into.features.extend(projected.features);
+        into.items.extend(projected.items);
     }
     let restated = scopes
         .values()
@@ -247,19 +295,32 @@ pub(crate) fn project(
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .collect::<HashMap<_, _>>();
+    let mut root = None;
+    let mut unwalked = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
             definitions: spanned,
             bodies,
         } = spans.remove(&prefix).unwrap_or_default();
         if spanned.len() > 1 {
+            let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
             for feature in &mut projected.features {
-                feature.component = owners
+                let owner = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
-                    .map(|owner| (*owner).clone());
+                    .copied()
+                    .filter(|owner| spanned.contains(*owner));
+                feature.component = owner.and_then(|owner| member_component(feature, owner));
+                if let (Some(owner), None) = (owner, &feature.component) {
+                    *withheld.entry(owner).or_default() += 1;
+                }
+            }
+            for (owner, count) in withheld {
+                losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                    "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+                )));
             }
         }
+        let bodiless = bodies.is_empty();
         let (current, unproduced) = match projected.containers.first() {
             Some(Container::Ordered {
                 id,
@@ -268,7 +329,16 @@ pub(crate) fn project(
                 ..
             }) => {
                 let at = rollback_position(id, members, rollback.as_ref());
-                let current = (!bodies.is_empty())
+                if prefix.is_empty() && !bodiless {
+                    root = Some(states::Scope {
+                        definition: definition.clone(),
+                        at: at.clone(),
+                        bodies: bodies.clone(),
+                        members: members.clone(),
+                        items: std::mem::take(&mut projected.items),
+                    });
+                }
+                let current = (!bodiless)
                     .then(|| CurrentState {
                         at,
                         bodies: bodies.into_iter().collect(),
@@ -317,7 +387,7 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
-            definition,
+            definition: definition.clone(),
             roots: projected
                 .containers
                 .iter()
@@ -328,8 +398,17 @@ pub(crate) fn project(
             current,
             unproduced,
         });
+        let first_container = ir.design.containers.len();
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
+        if stored_histories {
+            unwalked.push((
+                definition,
+                prefix,
+                bodiless,
+                first_container..ir.design.containers.len(),
+            ));
+        }
     }
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
@@ -384,7 +463,115 @@ pub(crate) fn project(
         .extend(scoped_configurations.records);
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
-    Ok(())
+    for (definition, prefix, bodiless, range) in unwalked {
+        unread_scope(
+            ir,
+            &definition,
+            &prefix,
+            bodiless,
+            &ir.design.containers[range],
+            losses,
+        );
+    }
+    match (root, sources) {
+        (Some(root), Some(sources)) => {
+            return states::project(ctx, ir, sources, &root, &tails, losses);
+        }
+        (Some(root), None) if stored_histories => {
+            losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                "scope {}: the states after its timeline items are not stated: the ASM histories of an archive member are not read.",
+                root.definition
+            )));
+        }
+        _ => {}
+    }
+    Ok(Vec::new())
+}
+
+/// Reports built state-changing features outside the stored-state walk.
+fn unread_scope(
+    ir: &CadIr,
+    definition: &ProductDefinitionId,
+    prefix: &str,
+    bodiless: bool,
+    containers: &[Container],
+    losses: &mut Vec<LossNote>,
+) {
+    let first_reason = if !prefix.is_empty() {
+        Some("its timeline lies in a document other than the root")
+    } else if bodiless {
+        Some("it has no current body")
+    } else {
+        None
+    };
+    let configuration = states::configuration(ir, definition);
+    let mut later = BTreeSet::new();
+    for (index, container) in containers.iter().enumerate() {
+        if index == 0 && first_reason.is_none() {
+            continue;
+        }
+        let Container::Ordered {
+            members, rollback, ..
+        } = container
+        else {
+            continue;
+        };
+        let built = built_prefix(members, rollback.as_ref()).unwrap_or(members);
+        let mut features = built.iter().filter_map(|member| {
+            let Member::Feature(feature) = member else {
+                return None;
+            };
+            let stateless = configuration.is_ok_and(|configuration| {
+                states::eligibility(ir, feature, configuration)
+                    .is_ok_and(|(stateless, _)| stateless)
+            });
+            (!stateless).then_some(feature.as_str())
+        });
+        if index == 0 {
+            if let Some(reason) = first_reason.filter(|_| features.next().is_some()) {
+                losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                    "scope {definition}: the states after its timeline items are not stated: {reason}."
+                )));
+            }
+        } else {
+            later.extend(features);
+        }
+    }
+    if !later.is_empty() {
+        losses.push(F3dLossCode::HistoryStateUnread.note(format!(
+            "scope {definition}: the states after features {} are not stated: they lie in a timeline after the first of the scope.",
+            later.into_iter().collect::<Vec<_>>().join(", ")
+        )));
+    }
+}
+
+fn built_prefix<'a>(members: &'a [Member], rollback: Option<&Rollback>) -> Option<&'a [Member]> {
+    match rollback? {
+        Rollback::End => Some(members),
+        Rollback::Before(marker) => {
+            let built = members
+                .iter()
+                .position(|member| member == marker)
+                .unwrap_or(members.len());
+            Some(&members[..built])
+        }
+    }
+}
+
+/// The component a feature names: `owner`, for a feature of the root
+/// document. The span above counts the definitions each document hosts, which
+/// does not match the span of an archive member's own scope: naming the owner
+/// of a member's feature, even one that stands in the member's own document,
+/// makes the checker read the scope as spanning the files its occurrences
+/// place. A member's feature names no component.
+fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
+    let stream = feature
+        .native_ref
+        .as_deref()
+        .and_then(crate::ids::native_stream)?;
+    timeline::document_prefix(stream)
+        .is_empty()
+        .then(|| owner.clone())
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last
@@ -395,17 +582,11 @@ fn rollback_position(
     members: &[Member],
     rollback: Option<&Rollback>,
 ) -> Position {
-    let built = match rollback {
-        None => return Position::After(Member::Container(id.clone())),
-        Some(Rollback::End) => members.len(),
-        Some(Rollback::Before(marker)) => members
-            .iter()
-            .position(|member| member == marker)
-            .unwrap_or(members.len()),
+    let Some(built) = built_prefix(members, rollback) else {
+        return Position::After(Member::Container(id.clone()));
     };
-    members
-        .get(..built)
-        .and_then(<[_]>::last)
+    built
+        .last()
         .cloned()
         .map_or_else(|| Position::Start(id.clone()), Position::After)
 }

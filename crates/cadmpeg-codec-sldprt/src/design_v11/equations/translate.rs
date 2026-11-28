@@ -15,9 +15,11 @@
 //! unless it is one reference to an integer parameter.
 
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::expr::{AddOp, Function, MulOp, Node, UnaryOp};
+use cadmpeg_ir::design::expr::{AddOp, ExpressionToken, Function, MulOp, Node, UnaryOp};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+use cadmpeg_ir::features::ParameterId;
+use std::collections::HashMap;
 
 use super::Names;
 use crate::design_v11::parameters::{canonical, number_node, LITERAL_UNITS};
@@ -31,7 +33,6 @@ const MAX_TOKENS: usize = 256;
 /// What a tree is typed against.
 pub(super) struct Typing<'a> {
     pub(super) parameters: &'a [DesignParameter],
-    pub(super) names: &'a Names,
     /// The kind of the parameter the expression defines.
     pub(super) target: &'a ValueKind,
     pub(super) length_unit: Option<UnitSymbol>,
@@ -40,8 +41,39 @@ pub(super) struct Typing<'a> {
 /// The neutral tree of `expression`, where every construct translates and the
 /// tree's quantity is the target's: dimensionless, rounded at the root, for
 /// an integer target.
-pub(super) fn tree(expression: &str, typing: &Typing<'_>) -> Option<Node<ParameterRef>> {
-    let tokens = tokens(expression, typing.names)?;
+pub(super) fn tree(
+    expression: &str,
+    names: &Names,
+    typing: &Typing<'_>,
+) -> Option<Node<ParameterRef>> {
+    let mut tokens = Vec::new();
+    tokenize(expression, &mut tokens, |name| names.resolve(name))?;
+    from_tokens(tokens, typing)
+}
+
+pub(super) fn source_tree(
+    source: &[ExpressionToken<ParameterRef>],
+    typing: &Typing<'_>,
+    by_id: &HashMap<&ParameterId, usize>,
+) -> Option<Node<ParameterRef>> {
+    let mut tokens = Vec::new();
+    for token in source {
+        match token {
+            ExpressionToken::Text(text) => tokenize(text, &mut tokens, |_| None)?,
+            ExpressionToken::Reference(ParameterRef {
+                target: RefTarget::Parameter(id),
+                through: None,
+            }) => tokens.push(Token::Name(*by_id.get(id)?)),
+            ExpressionToken::Reference(_) => return None,
+        }
+        if tokens.len() > MAX_TOKENS {
+            return None;
+        }
+    }
+    from_tokens(tokens, typing)
+}
+
+fn from_tokens(tokens: Vec<Token>, typing: &Typing<'_>) -> Option<Node<ParameterRef>> {
     if tokens.len() > MAX_TOKENS {
         return None;
     }
@@ -103,8 +135,11 @@ enum Token {
     Close,
 }
 
-fn tokens(expression: &str, names: &Names) -> Option<Vec<Token>> {
-    let mut tokens = Vec::new();
+fn tokenize(
+    expression: &str,
+    tokens: &mut Vec<Token>,
+    resolve: impl Fn(&str) -> Option<usize>,
+) -> Option<()> {
     let mut rest = expression;
     while let Some(character) = rest.chars().next() {
         match character {
@@ -126,7 +161,7 @@ fn tokens(expression: &str, names: &Names) -> Option<Vec<Token>> {
                 if rest[end + 1..].starts_with('"') {
                     return None;
                 }
-                tokens.push(Token::Name(names.resolve(&rest[1..end])?));
+                tokens.push(Token::Name(resolve(&rest[1..end])?));
                 rest = &rest[end + 1..];
             }
             '0'..='9' | '.' => {
@@ -136,8 +171,11 @@ fn tokens(expression: &str, names: &Names) -> Option<Vec<Token>> {
             }
             _ => return None,
         }
+        if tokens.len() > MAX_TOKENS {
+            return None;
+        }
     }
-    Some(tokens)
+    Some(())
 }
 
 /// The number that opens `text`, with the unit its suffix names, and the

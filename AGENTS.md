@@ -43,7 +43,6 @@ Build and run:
 - Rebuild the binary before a batch run. An unchanged report after a code change means a stale binary.
 - In a corpus-wide loop, give each file its own `timeout N`.
 - `cadmpeg dump` does not check the model. Run `cadmpeg check`, or `convert`.
-- `scripts/perf-baseline.sh` times decode and build for hot-path changes.
 
 Inspecting:
 

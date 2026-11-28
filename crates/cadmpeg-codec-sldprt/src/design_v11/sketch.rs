@@ -332,45 +332,72 @@ pub(super) fn project(
     let mut out = Sketches::default();
     let mut preceding = HashSet::new();
     for feature in features.iter_mut() {
-        let sketch_feature = match &feature.definition.operation {
-            FeatureOperation::Unresolved {
-                family: OperationFamily::Sketch,
-            } => true,
-            FeatureOperation::Native { .. } => source(context.model, &feature.id)
-                .and_then(owned_sketch)
-                .is_some_and(|(_, block)| block),
-            _ => false,
-        };
-        if matches!(
-            feature.definition.operation,
-            FeatureOperation::Unresolved {
-                family: OperationFamily::SpatialSketch
-            }
-        ) {
-            if let Some(record) = source(context.model, &feature.id)
-                .and_then(owned_spatial_sketch)
-                .and_then(|id| spatial_record(context.model, id))
-            {
+        match timeline_sketch(feature, context.model) {
+            TimelineSketch::Spatial(record) => {
                 spatial(&feature.id, record, context, &Anchor::Input, &mut out);
                 feature.definition.operation = FeatureOperation::SpatialSketch(record.id.clone());
             }
-        } else if sketch_feature {
-            let support = context
-                .supports
-                .get(&feature.id)
-                .filter(|(datum, _)| preceding.contains(datum));
-            match sketch(feature, context.model, support) {
-                Ok((record, holder)) => {
-                    restate(&feature.id, record, context, holder, &mut out)?;
-                    feature.definition.operation = FeatureOperation::Sketch(record.id.clone());
-                }
-                Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
+            TimelineSketch::Planar(record, block) => {
+                let holder = if block {
+                    Holder::Block
+                } else {
+                    Holder::Ordered(
+                        context
+                            .supports
+                            .get(&feature.id)
+                            .filter(|(datum, _)| preceding.contains(datum)),
+                    )
+                };
+                restate(&feature.id, record, context, holder, &mut out)?;
+                feature.definition.operation = FeatureOperation::Sketch(record.id.clone());
             }
+            TimelineSketch::Unread(reason) => out.unprojected.push((feature.id.clone(), reason)),
+            TimelineSketch::Other => {}
         }
         preceding.insert(feature.id.clone());
     }
     out.outside = outside(features, context, &mut out)?;
     Ok(out)
+}
+
+/// The legacy owners that become members of the root sketch group.
+pub(super) fn owners_outside(
+    model: &cadmpeg_ir::document::Model,
+    features: &[Feature],
+) -> HashSet<FeatureId> {
+    if model.sketches.is_empty() && model.spatial_sketches.is_empty() {
+        return HashSet::new();
+    }
+    let mut planar = HashSet::new();
+    let mut spatial = HashSet::new();
+    let mut timeline = HashSet::new();
+    for feature in features {
+        timeline.insert(&feature.id);
+        match timeline_sketch(feature, model) {
+            TimelineSketch::Planar(record, _) => {
+                planar.insert(&record.id);
+            }
+            TimelineSketch::Spatial(record) => {
+                spatial.insert(&record.id);
+            }
+            TimelineSketch::Unread(_) | TimelineSketch::Other => {}
+        }
+    }
+    model
+        .sketches
+        .iter()
+        .filter(|record| !planar.contains(&record.id))
+        .filter_map(|record| first_planar_owner(model, &record.id).map(|(owner, _)| owner))
+        .chain(
+            model
+                .spatial_sketches
+                .iter()
+                .filter(|record| !spatial.contains(&record.id))
+                .filter_map(|record| first_spatial_owner(model, &record.id)),
+        )
+        .filter(|owner| !timeline.contains(&owner.id))
+        .map(|owner| owner.id.clone())
+        .collect()
 }
 
 /// The owners of the sketches of `context` that no feature of `features`
@@ -392,15 +419,8 @@ fn outside(
         if restated.contains(&record.id) {
             continue;
         }
-        let (source, block) = context
-            .model
-            .features
-            .iter()
-            .find_map(|feature| match owned_sketch(feature) {
-                Some((sketch, block)) if sketch == &record.id => Some((Some(feature), block)),
-                _ => None,
-            })
-            .unwrap_or((None, false));
+        let (source, block) = first_planar_owner(context.model, &record.id)
+            .map_or((None, false), |(owner, block)| (Some(owner), block));
         let id = source
             .map(|feature| feature.id.clone())
             .filter(|id| features.iter().all(|feature| &feature.id != id))
@@ -445,11 +465,7 @@ fn outside(
         if restated.contains(&record.id) {
             continue;
         }
-        let source = context
-            .model
-            .features
-            .iter()
-            .find(|feature| owned_spatial_sketch(feature) == Some(&record.id));
+        let source = first_spatial_owner(context.model, &record.id);
         let id = source
             .map(|feature| feature.id.clone())
             .filter(|id| features.iter().all(|feature| &feature.id != id))
@@ -541,37 +557,84 @@ fn minted_owner(namespace: &cadmpeg_ir::ids::IdentityNamespace, sketch: &str) ->
     )
 }
 
-/// The sketch record of the sketch feature `feature` of `model`, and its
-/// holder, the feature that `support` places.
-fn sketch<'a>(
+enum TimelineSketch<'a> {
+    Planar(&'a cadmpeg_ir::sketches::Sketch, bool),
+    Spatial(&'a cadmpeg_ir::sketches::SpatialSketch),
+    Unread(&'static str),
+    Other,
+}
+
+fn timeline_sketch<'a>(
     feature: &Feature,
     model: &'a cadmpeg_ir::document::Model,
-    support: Option<&'a (FeatureId, PrincipalEntity)>,
-) -> Result<(&'a cadmpeg_ir::sketches::Sketch, Holder<'a>), &'static str> {
-    let source = source(model, &feature.id).ok_or("the sketch feature has no decoded record")?;
-    let (id, block) = match source.evaluation.definition() {
-        FeatureDefinition::Operation(LegacyOperation::Sketch { sketch }) => (
-            sketch
-                .id()
-                .ok_or("the sketch feature names no planar sketch")?,
-            false,
-        ),
-        FeatureDefinition::Operation(LegacyOperation::SketchBlockDefinition {
-            sketch: Some(sketch),
-        }) => (sketch, true),
-        _ => return Err("the sketch feature has no decoded sketch"),
+) -> TimelineSketch<'a> {
+    let legacy = match &feature.definition.operation {
+        FeatureOperation::Unresolved {
+            family: OperationFamily::SpatialSketch,
+        } => {
+            return source(model, &feature.id)
+                .and_then(owned_spatial_sketch)
+                .and_then(|id| spatial_record(model, id))
+                .map_or(TimelineSketch::Other, TimelineSketch::Spatial);
+        }
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Sketch,
+        } => {
+            let Some(legacy) = source(model, &feature.id) else {
+                return TimelineSketch::Unread("the sketch feature has no decoded record");
+            };
+            legacy
+        }
+        FeatureOperation::Native { .. } => {
+            let Some(legacy) = source(model, &feature.id)
+                .filter(|legacy| owned_sketch(legacy).is_some_and(|(_, block)| block))
+            else {
+                return TimelineSketch::Other;
+            };
+            legacy
+        }
+        _ => return TimelineSketch::Other,
     };
-    let record = model
+    let Some((id, block)) = owned_sketch(legacy) else {
+        return TimelineSketch::Unread(
+            if matches!(
+                legacy.evaluation.definition(),
+                FeatureDefinition::Operation(LegacyOperation::Sketch { .. })
+            ) {
+                "the sketch feature names no planar sketch"
+            } else {
+                "the sketch feature has no decoded sketch"
+            },
+        );
+    };
+    model
         .sketches
         .iter()
-        .find(|candidate| &candidate.id == id)
-        .ok_or("the sketch record is missing")?;
-    let holder = if block {
-        Holder::Block
-    } else {
-        Holder::Ordered(support)
-    };
-    Ok((record, holder))
+        .find(|record| &record.id == id)
+        .map_or(
+            TimelineSketch::Unread("the sketch record is missing"),
+            |record| TimelineSketch::Planar(record, block),
+        )
+}
+
+fn first_planar_owner<'a>(
+    model: &'a cadmpeg_ir::document::Model,
+    id: &SketchId,
+) -> Option<(&'a cadmpeg_ir::features::Feature, bool)> {
+    model.features.iter().find_map(|feature| {
+        let (sketch, block) = owned_sketch(feature)?;
+        (sketch == id).then_some((feature, block))
+    })
+}
+
+fn first_spatial_owner<'a>(
+    model: &'a cadmpeg_ir::document::Model,
+    id: &SpatialSketchId,
+) -> Option<&'a cadmpeg_ir::features::Feature> {
+    model
+        .features
+        .iter()
+        .find(|feature| owned_spatial_sketch(feature) == Some(id))
 }
 
 /// The v10 feature `id` of `model`.
