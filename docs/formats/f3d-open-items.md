@@ -1598,6 +1598,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Controlled Split Body saves that distinguish the single-member terminal words and vary the number of splitting surfaces.
 
+### DR-1075. Split tool group whose member selects a Sketch curve
+
+**Question.** Which surface does a `Split` scope cut with when its role-`0x0000002100000000` tool group has one member that selects a Sketch curve?
+
+**Known.** `f3d.md` §3.1 "A role-`0x0000002100000000` tool member that is an expanded entity-selection frame" gives the frame: the first identity is the Sketch entity suffix and the second is the curve identity. The decoder retains the tool group native and reports `feature.split-tool-face-unresolved`.
+
+**Need.** Saves of one Split Body whose tool is a Sketch line, an open Sketch spline, and a closed Sketch profile, each with the stored result bodies and the extension Boolean on and off.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-118. Split tool face without a tool group
 
 **Question.** Which tool does a `Split` scope select when reference zero is a direct face operand record instead of a counted tool group?

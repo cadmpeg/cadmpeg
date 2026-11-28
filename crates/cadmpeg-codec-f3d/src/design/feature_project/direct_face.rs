@@ -265,6 +265,7 @@ pub(in crate::design) fn project_split(
     let Some((stream, tool_group, targets)) = parsed else {
         return Ok(None);
     };
+    let mut unresolved_reason = None;
     let tool = match tool_group.role() {
         DesignOperandRole::ROLE_0X9 => {
             let single_member = tool_group.members().len() == 1;
@@ -289,6 +290,15 @@ pub(in crate::design) fn project_split(
             else {
                 return Ok(None);
             };
+            let candidate_counts =
+                tools
+                    .iter()
+                    .fold((0usize, 0usize), |(preceding, changed), tool| {
+                        (
+                            preceding + tool.preceding_candidate_faces.len(),
+                            changed + tool.changed_candidate_faces.len(),
+                        )
+                    });
             let tools = match tools.as_slice() {
                 [tool] if tool.recipe_program.as_slice() == [0, -1] => {
                     let mut tools =
@@ -313,6 +323,12 @@ pub(in crate::design) fn project_split(
                 }
                 _ => assumed_split_face_tool(scope, tool_group, &tools, losses),
             };
+            if matches!(tools, FaceSelection::Native(_)) {
+                unresolved_reason = Some(format!(
+                    "its face recipes name {} preceding candidate face(s) and {} changed candidate face(s) in the input state, which prove no one face",
+                    candidate_counts.0, candidate_counts.1
+                ));
+            }
             SplitBodyTool::Faces(tools)
         }
         DesignOperandRole::ROLE_0X21 => {
@@ -322,14 +338,37 @@ pub(in crate::design) fn project_split(
                 Some([plane]) => SplitBodyTool::Plane {
                     plane: crate::ids::neutral_feature_id(plane),
                 },
-                _ => SplitBodyTool::Faces(
-                    resolved_body_recipe_selection(scope, tool_group, body_recipe_operands)
-                        .unwrap_or_else(|| FaceSelection::Native(tool_group.id.clone())),
-                ),
+                _ => {
+                    let faces =
+                        resolved_body_recipe_selection(scope, tool_group, body_recipe_operands)
+                            .unwrap_or_else(|| FaceSelection::Native(tool_group.id.clone()));
+                    if matches!(faces, FaceSelection::Native(_)) {
+                        let selects_curve = entity_selection_operands.iter().any(|operand| {
+                            native_stream(&operand.id) == Some(stream)
+                                && operand.scope_record_index == scope.record_index
+                                && operand.group_record_index == tool_group.record_index
+                                && operand.secondary().is_some()
+                        });
+                        unresolved_reason = Some(if selects_curve {
+                            "its tool member selects a Sketch curve, which names no face and no Work Plane".to_owned()
+                        } else {
+                            "its tool members are neither Work Plane selections nor whole-body recipes".to_owned()
+                        });
+                    }
+                    SplitBodyTool::Faces(faces)
+                }
             }
         }
         _ => return Ok(None),
     };
+    if let Some(reason) = unresolved_reason {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureSplitToolFaceUnresolved.note(format!(
+                "Split scope {}: {reason}, and the splitting tool stays native.",
+                scope.id
+            )),
+        );
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SplitBody {
             targets: BodySelection::Native(targets.id.clone()),

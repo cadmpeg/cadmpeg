@@ -222,6 +222,9 @@ pub(in crate::design::decode) fn parse_entity_selection_prefix(
         && View::u32_le_at(bytes, start + coil_persist_sel::ASSET_PRESENCE)? == 1
     {
         start.checked_add(coil_persist_sel::ASSET_UUID_LENGTH)?
+    } else if let Some(asset_start) = typed_nested_selection_asset_start(bytes, start, record_index)
+    {
+        asset_start
     } else if bytes.get(start + 11..start + coil_modern_sel::NESTED_SELECTION_MARKER)? == [0; 11]
         && bytes.get(start + coil_modern_sel::NESTED_SELECTION_MARKER) == Some(&1)
         && View::u32_le_at(bytes, start + coil_modern_sel::NESTED_RECORD_INDEX)?
@@ -265,6 +268,38 @@ pub(in crate::design::decode) fn parse_entity_selection_prefix(
         serialization_form,
         after_context_id,
     })
+}
+
+/// The byte after the selection's inline-typed nested reference, where the
+/// asset UUID length starts. A container generation whose references carry
+/// inline type GUIDs writes the reference to record `N+3` as a typed
+/// reference: the persistent-prefix reference with its LP-ASCII target type
+/// GUID after the u64 target entity ID.
+fn typed_nested_selection_asset_start(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+) -> Option<usize> {
+    if bytes.get(start + 11..start + coil_persist_sel::NESTED_SELECTION_MARKER)? != [0; 10]
+        || bytes.get(start + coil_persist_sel::NESTED_SELECTION_MARKER) != Some(&1)
+        || View::u32_le_at(bytes, start + coil_persist_sel::NESTED_RECORD_INDEX)?
+            != record_index.checked_add(3)?
+    {
+        return None;
+    }
+    let type_guid_at = start.checked_add(coil_persist_sel::NESTED_RECORD_INDEX + 8)?;
+    if bytes.get(start + coil_persist_sel::NESTED_RECORD_INDEX + 4..type_guid_at)? != [0; 4] {
+        return None;
+    }
+    let (type_guid, after_type_guid) =
+        lp_ascii_filtered_view(bytes, type_guid_at, 36..=37, u8::is_ascii_graphic)?;
+    if !is_guid_relaxed(type_guid)
+        || bytes.get(after_type_guid..after_type_guid.checked_add(2)?)? != [0; 2]
+        || View::u32_le_at(bytes, after_type_guid.checked_add(2)?)? != 1
+    {
+        return None;
+    }
+    after_type_guid.checked_add(6)
 }
 
 /// Match the selected curve identity carried by a nested entity-selection frame.

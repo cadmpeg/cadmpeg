@@ -39,6 +39,7 @@ struct Fixture {
     scalars: Vec<(u32, f64)>,
     corrupt: Option<(usize, u8)>,
     lead: usize,
+    typed: bool,
 }
 
 impl Fixture {
@@ -60,15 +61,26 @@ impl Fixture {
             scalars: vec![(INSIDE, 0.25), (OUTSIDE, 0.5)],
             corrupt: None,
             lead: 0,
+            typed: false,
         }
     }
 
     fn bytes(&self) -> Vec<u8> {
-        fn marked(bytes: &mut Vec<u8>, record: u32) {
-            bytes.push(1);
-            bytes.extend_from_slice(&record.to_le_bytes());
-            bytes.extend_from_slice(&[0; 6]);
-        }
+        self.encode().0
+    }
+
+    /// The frame and the offset of its reference-table count.
+    fn encode(&self) -> (Vec<u8>, usize) {
+        let typed = self.typed;
+        let marked = move |bytes: &mut Vec<u8>, record: u32| {
+            if typed {
+                crate::test_support::typed_reference_scopes::typed_reference(bytes, record);
+            } else {
+                bytes.push(1);
+                bytes.extend_from_slice(&record.to_le_bytes());
+                bytes.extend_from_slice(&[0; 6]);
+            }
+        };
         let mut bytes = Vec::new();
         indexed_header(&mut bytes, self.class_tag, 90);
         match self.prefix {
@@ -113,6 +125,7 @@ impl Fixture {
         marked(&mut bytes, self.group_reference);
         lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
         bytes.resize(bytes.len() + 3 + self.gap_before_table, 0);
+        let table_at = bytes.len();
         bytes.extend_from_slice(&u32::try_from(self.table.len()).unwrap().to_le_bytes());
         for record in &self.table {
             marked(&mut bytes, *record);
@@ -138,7 +151,7 @@ impl Fixture {
         if let Some((offset, value)) = self.corrupt {
             bytes[offset] = value;
         }
-        bytes
+        (bytes, table_at)
     }
 
     fn decode(&self) -> Option<DesignShellOperation> {
@@ -169,6 +182,54 @@ impl Fixture {
         };
         (operation, losses)
     }
+}
+
+#[test]
+fn typed_references_read_as_the_plain_slots_group_and_table() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let decode = |typed: bool| {
+        let mut fixture = Fixture::new(Some(INSIDE), None);
+        fixture.prefix = Prefix::Compact;
+        fixture.flag = 1;
+        fixture.typed = typed;
+        let (bytes, table_at) = fixture.encode();
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let mut scope =
+            DesignParameterScope::empty("f3d:test:scope#90", DesignFeatureKind::Shell, 90);
+        scope
+            .try_edit(|draft| {
+                draft.reference_count_offset = cadmpeg_core::decode::u64_from_index(table_at);
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(fixture.table.clone());
+                draft.layout_fixture_references();
+            })
+            .unwrap();
+        let mut losses = Vec::new();
+        let operation = crate::design::decode::scopes::thicken_shell::exact_shell_wall_slots(
+            &bytes,
+            &records,
+            &scope,
+            &mut losses,
+        );
+        (operation, losses)
+    };
+    let (plain, _) = decode(false);
+    let (typed, losses) = decode(true);
+    let Some(DesignDirectFaceOperation::Shell(typed)) = typed else {
+        panic!("a typed-reference Shell frame decodes");
+    };
+    let Some(DesignDirectFaceOperation::Shell(plain)) = plain else {
+        panic!("the plain Shell frame decodes");
+    };
+    assert_eq!(typed.thickness.get(), 0.25);
+    assert_eq!(typed.thickness_record_index, INSIDE);
+    assert!(!typed.outward);
+    assert_eq!(typed.outward_offset, plain.outward_offset);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.shell-prefix-flag-assumed"
+    );
 }
 
 #[test]

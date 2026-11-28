@@ -1174,6 +1174,8 @@ pub(crate) enum F3dLossCode {
     FeatureSplitToolExtensionAssumed,
     FeatureSplitToolExtensionUnresolved,
     FeatureSplitBodyFaceToolGroupAssumed,
+    /// A Split tool stays native when its face or WorkPlane selection is unresolved.
+    FeatureSplitToolFaceUnresolved,
     /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
     FeatureSurfaceExtendDistanceNonpositive,
     FeatureSurfaceBoundaryFlagRecordAssumed,
@@ -2552,6 +2554,7 @@ impl F3dLossCode {
             Self::FeatureSplitBodyFaceToolGroupAssumed => {
                 "feature.split-body-face-tool-group-assumed"
             }
+            Self::FeatureSplitToolFaceUnresolved => "feature.split-tool-face-unresolved",
             Self::FeatureSplitToolExtensionAssumed => "feature.split-tool-extension-assumed",
             Self::FeatureSplitToolExtensionUnresolved => "feature.split-tool-extension-unresolved",
             Self::FeatureSurfaceExtendMethodUnresolved => {
@@ -3502,6 +3505,7 @@ impl F3dLossCode {
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
+            | Self::FeatureSplitToolFaceUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternFeatureSeedAssumed
@@ -4301,6 +4305,7 @@ impl F3dLossCode {
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
+            | Self::FeatureSplitToolFaceUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternFeatureSeedAssumed
@@ -5244,6 +5249,7 @@ mod tests {
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
                 "feature.split-body-face-tool-group-assumed",
+                "feature.split-tool-face-unresolved",
                 "feature.surface-extend-distance-nonpositive",
                 "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-feature-seed-assumed",
