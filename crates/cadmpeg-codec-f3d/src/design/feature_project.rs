@@ -97,6 +97,7 @@ pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod thread_companions;
 mod thread_detail;
+mod thread_units;
 mod unstitch;
 mod work_axes;
 
@@ -2744,11 +2745,14 @@ fn thread_nominal_diameter(
     }
     let size = if let Some(inches) = construction.nominal_size.numbered_inches() {
         cadmpeg_ir::scalar::PositiveLength::new(inches * 25.4)?
-    } else if construction.nominal_size.is_decimal()
-        && construction.profile.as_str() == "ISO Metric profile"
-    {
-        cadmpeg_ir::scalar::PositiveLength::new(construction.nominal_size.value()?)?
     } else if construction.nominal_size.is_decimal() {
+        if let Some(mm) = thread_units::decimal_millimetres(
+            construction.designation.as_str(),
+            construction.profile.as_str(),
+            construction.nominal_size.value()?,
+        ) {
+            return cadmpeg_ir::scalar::PositiveLength::new(mm);
+        }
         losses.push(
             crate::loss::F3dLossCode::ThreadNominalUnitUnresolved.note(format!(
                 "Thread {scope_id} retains its nominal size with an unresolved profile unit."

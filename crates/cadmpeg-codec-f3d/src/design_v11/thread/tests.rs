@@ -181,7 +181,7 @@ fn an_unpaired_thread_item_is_found_by_its_scope_record_item() {
 fn inch_table_physical_scalars_and_tpi_use_design_centimetres() {
     let construction: DesignThreadConstruction = json::from_value(cadmpeg_core::json!({
         "form": "standard", "designation_offset": 0,
-        "designation": "1/2-28 UNEF", "nominal_size_text": "1/2", "nominal_size": 0.5,
+        "designation": "1/2-28 UNEF", "nominal_size_text": "0.5", "nominal_size": 0.5,
         "profile": "ANSI Unified Screw Threads", "major_diameter": 1.27,
         "minor_diameter": 1.1, "pitch_diameter": 1.2, "pitch": 2.54 / 28.0,
         "modeled": false, "face_group_record_indices": [10]

@@ -13,7 +13,12 @@ fn construction(nominal_size: &str, angle: f64) -> DesignThreadConstruction {
     DesignThreadConstruction {
         form: DesignThreadForm::Standard,
         designation_offset: 0,
-        designation: cadmpeg_core::text::NonBlankString::new("G1/8").unwrap(),
+        designation: cadmpeg_core::text::NonBlankString::new(if nominal_size == "10" {
+            "M10"
+        } else {
+            "G1/8"
+        })
+        .unwrap(),
         nominal_size: DesignThreadNominalSize::try_from(nominal_size.to_owned()).unwrap(),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
         diameters: DesignThreadDiameters::new(0.9728, 0.8566, 0.9147).unwrap(),
@@ -109,4 +114,70 @@ fn metric_nominal_size_stays_in_millimetres() {
         6.0
     );
     assert!(losses.is_empty());
+}
+
+#[test]
+fn decimal_nominal_size_requires_designation_agreement() {
+    for (designation, nominal, profile, expected) in [
+        (
+            "1/2-28 UNEF",
+            "0.5",
+            "ANSI Unified Screw Threads",
+            Some(12.7),
+        ),
+        (
+            "1/4-20 UNC",
+            "0.25",
+            "ANSI Unified Screw Threads",
+            Some(6.35),
+        ),
+        (
+            "#10-32 UNF",
+            "0.19",
+            "ANSI Unified Screw Threads",
+            Some(4.826),
+        ),
+        ("0.5-28 UNEF", "0.5", "unassigned profile", Some(12.7)),
+        ("1-8 UNC", "1", "unassigned profile", Some(25.4)),
+        ("M6x1", "6", "ISO Metric profile", Some(6.0)),
+        ("1/2-28 UNEF", "0.25", "ANSI Unified Screw Threads", None),
+        ("unspecified", "0.5", "unassigned profile", None),
+        ("1/2-28 UNEF", "0.5", "ISO Metric profile", None),
+        ("M6x1", "6", "ANSI Unified Screw Threads", None),
+        ("0.5-28 OTHER", "0.5", "unassigned profile", None),
+    ] {
+        let construction: DesignThreadConstruction =
+            cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+                "form": "standard", "designation_offset": 0,
+                "designation": designation, "nominal_size_text": nominal,
+                "nominal_size": nominal.parse::<f64>().unwrap(), "profile": profile,
+                "major_diameter": 1.27, "minor_diameter": 1.1,
+                "pitch_diameter": 1.2, "pitch": 2.54 / 28.0,
+                "modeled": false, "face_group_record_indices": [10]
+            }))
+            .unwrap();
+        let mut losses = Vec::new();
+        let actual = thread_nominal_diameter("scope", &construction, &mut losses);
+        match expected {
+            Some(expected) => {
+                assert!((actual.unwrap().get() - expected).abs() < EPS_DIAMETER_MM);
+                assert!(losses.is_empty());
+            }
+            None => {
+                assert!(actual.is_none());
+                assert_eq!(
+                    codes(&losses),
+                    [crate::loss::F3dLossCode::ThreadNominalUnitUnresolved.kind()]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn absent_designation_has_no_decimal_unit() {
+    assert!(
+        super::super::thread_units::decimal_millimetres("", "ANSI Unified Screw Threads", 0.5)
+            .is_none()
+    );
 }

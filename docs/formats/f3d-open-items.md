@@ -4325,16 +4325,6 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").
 
-### DR-1096. Unit of decimal Thread nominal-size text
-
-**Question.** Which profile field or table unit selects the length unit of a plain decimal nominal-size text outside `ISO Metric profile`?
-
-**Known.** A Thread construction stores three LP-UTF16 fields: designation, nominal-size text, and profile name. A positive decimal nominal-size text has a numeric value. A numbered size `D(#N)` gives an inch diameter. A fractional size uses the profile unit. The following construction block stores major diameter, minor diameter, axial pitch, and pitch diameter in centimetres. The construction carries the profile name as text.
-
-**Need.** Save equal-diameter threads with decimal inch and metric table entries. Change the thread table unit while keeping the diameter fixed. Compare the nominal-size text, profile name, construction scalars, and any table reference or unit field.
-
-**Note.** Identifier allocation through `dr-next` failed because its remote lookup was unavailable.
-
 ### DR-1094. Default name of a construction feature
 
 **Question.** Which name does the timeline give a `WorkPlane`, `WorkAxis`, or `WorkPoint` feature whose scope stores no display name and no label?
