@@ -2057,35 +2057,11 @@ fn retain_live_annotations(
     unknowns: &[UnknownRecord],
     annotations: &mut cadmpeg_ir::Annotations,
 ) {
-    let mut ids = BTreeSet::new();
-    macro_rules! add_ids {
-        ($($arena:expr),+ $(,)?) => {
-            $(for entity in &$arena {
-                ids.insert(entity.id.as_str());
-            })+
-        };
-    }
-    add_ids!(
-        ir.geometry.bodies,
-        ir.geometry.regions,
-        ir.geometry.shells,
-        ir.geometry.faces,
-        ir.geometry.loops,
-        ir.geometry.coedges,
-        ir.geometry.edges,
-        ir.geometry.vertices,
-        ir.geometry.points,
-        ir.geometry.surfaces,
-        ir.geometry.curves,
-        ir.geometry.pcurves,
-        ir.geometry.procedural_surfaces,
-        ir.geometry.procedural_curves,
-        ir.model.features,
-    );
-    for unknown in unknowns {
-        ids.insert(unknown.id().as_str());
-    }
-    annotations.retain_entities(|id| ids.contains(id));
+    let unknowns = unknowns
+        .iter()
+        .map(|unknown| unknown.id().as_str())
+        .collect::<BTreeSet<_>>();
+    annotations.retain_records_of(ir, |id| unknowns.contains(id));
 }
 
 fn retain_live_unknown_links(
