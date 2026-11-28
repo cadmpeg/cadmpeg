@@ -32,6 +32,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3, COINCIDENCE_TOLERANCE};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -116,6 +117,85 @@ DraftError::IdentityCollision(identity) => Ok(format!("{context} conflicts with 
         | DraftError::FeatureParents { .. } => {
             Ok(format!("{context} conflicts with decoded topology: {error}"))
         }
+    }
+}
+
+/// The members of drafts that the commit session refused, with the reason
+/// for each refusal.
+#[derive(Default)]
+struct Rejected {
+    members: Vec<(u64, String)>,
+    errors: Vec<String>,
+}
+
+impl Rejected {
+    fn push(&mut self, members: BTreeSet<u64>, error: String) {
+        self.members
+            .extend(members.into_iter().map(|member| (member, error.clone())));
+        self.errors.push(error);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    fn reasons(&self) -> String {
+        self.errors
+            .iter()
+            .fold(String::new(), |mut reasons, error| {
+                reasons.push_str("; ");
+                reasons.push_str(error);
+                reasons
+            })
+    }
+}
+
+/// Gives each member that a build omitted or a commit refused the reason it
+/// is lost.
+fn lost_members(
+    owner: &str,
+    member: &str,
+    failures: Option<BuildFailures>,
+    rejected: Rejected,
+) -> Vec<(u64, String)> {
+    failures
+        .into_iter()
+        .flat_map(|failures| failures.omitted)
+        .map(|(id, failure)| {
+            let detail = failure
+                .map(|failure| format!(": {}", failure.message()))
+                .unwrap_or_default();
+            (
+                id,
+                format!("{member} #{id} of {owner} does not resolve{detail}"),
+            )
+        })
+        .chain(rejected.members)
+        .collect()
+}
+
+/// Settles the lost members of a wireframe model `owner`. The members of a
+/// model that committed a body join `unresolved`, each with the reason it is
+/// lost. A model that committed no body gives up as a whole for `failure`,
+/// and each lost member drops with it as the record `record` names for it.
+fn settle_lost_members(
+    exchange: &Exchange,
+    owner: u64,
+    committed: bool,
+    failure: String,
+    lost: Vec<(u64, String)>,
+    record: impl Fn(u64) -> cadmpeg_ir::ids::Identity,
+    unresolved: &mut Vec<(u64, String)>,
+) {
+    if committed {
+        unresolved.extend(lost);
+        return;
+    }
+    exchange.lost().give_up(owner, Cause::Undecoded, failure);
+    for (member, _) in lost {
+        exchange
+            .lost()
+            .drop_record_with(member, record(member), owner);
     }
 }
 
@@ -427,18 +507,38 @@ pub(super) fn decode(
                 ),
         );
     }
-    let vertices = vertex_defs(exchange);
+    let mut vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange, ctx)?;
     let shells = shell_defs(exchange, ctx)?;
     let point_positions = carrier_index;
+    // ISO 10303-42 types `vertex_point.vertex_geometry` as a point. A vertex
+    // on a lost point drops with it, and a vertex that names no point or
+    // another geometric item breaks that type. Neither builds a vertex.
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
-            )));
+            exchange.lost().give_up(
+                vertex_id,
+                Cause::Unreadable,
+                format!("VERTEX_POINT #{vertex_id} has no point reference"),
+            );
+            vertices.remove(&vertex_id);
             continue;
         };
-        if !carrier_index.points.contains_key(&point_id) {
+        if super::instance_is_lost(exchange, point_id) {
+            exchange.lost().drop_with(vertex_id, point_id);
+            vertices.remove(&vertex_id);
+        } else if let Some(entity) = exchange
+            .records()
+            .get(&point_id)
+            .and_then(super::geometry::non_point_geometry)
+        {
+            exchange.lost().give_up(
+                vertex_id,
+                Cause::Unreadable,
+                format!("VERTEX_POINT #{vertex_id} names {entity} #{point_id} as its point"),
+            );
+            vertices.remove(&vertex_id);
+        } else if !carrier_index.points.contains_key(&point_id) {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
             )));
@@ -479,15 +579,12 @@ pub(super) fn decode(
                 &mut losses,
             )?;
             let (built, failures) = outcome.into_parts();
+            let label = format!("EDGE_BASED_WIREFRAME_MODEL #{model}");
             let mut committed = 0;
-            let mut rejected = Vec::new();
+            let mut rejected = Rejected::default();
             for mut built in built {
                 if let Err(error) = commit_session.commit_model(built.draft)? {
-                    losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
-                        &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
-                        &error,
-                    )?));
-                    rejected.extend(built.shell_sources);
+                    rejected.push(built.shell_sources, topology_commit_error(&label, &error)?);
                 } else {
                     committed += 1;
                     built_wire_models.insert(model);
@@ -501,47 +598,23 @@ pub(super) fn decode(
                     merge_claims(&mut result.claims, std::mem::take(&mut built.typed));
                 }
             }
-            if committed == 0 {
-                losses.extend(super::give_up_instance(
-                    exchange,
-                    model,
-                    StepLossCode::DecodeWarning.note(format!(
-                        "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-                    )),
-                ));
-                let scoped = exchange
-                    .records()
-                    .get(&model)
-                    .and_then(|record| {
-                        named_reference_values(record, "EDGE_BASED_WIREFRAME_MODEL", 1)
-                    })
-                    .is_some_and(|sets| sets.len() > 1);
-                for set in failures
-                    .into_iter()
-                    .flat_map(|failures| failures.omitted)
-                    .chain(rejected)
-                {
-                    exchange.lost().drop_record_with(
-                        set,
-                        wire_set_shell(model, set, scoped).into(),
-                        model,
-                    );
-                }
-            } else {
-                if let Some(failures) = &failures {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
-                        failures.omitted.len()
-                    )));
-                }
-                unresolved.extend(
-                    failures
-                        .into_iter()
-                        .flat_map(|failures| failures.omitted)
-                        .chain(rejected)
-                        .map(|set| (set, "unresolved connected edge set")),
-                );
-            }
+            let scoped = exchange
+                .records()
+                .get(&model)
+                .and_then(|record| named_reference_values(record, "EDGE_BASED_WIREFRAME_MODEL", 1))
+                .is_some_and(|sets| sets.len() > 1);
+            settle_lost_members(
+                exchange,
+                model,
+                committed > 0,
+                format!(
+                    "{label} does not resolve to connected edges{}",
+                    rejected.reasons()
+                ),
+                lost_members(&label, "connected edge set", failures, rejected),
+                |set| wire_set_shell(model, set, scoped).into(),
+                &mut unresolved,
+            );
         }
     }
     for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
@@ -559,15 +632,12 @@ pub(super) fn decode(
             &mut losses,
         )?;
         let (built, failures) = outcome.into_parts();
+        let label = format!("SHELL_BASED_WIREFRAME_MODEL #{model}");
         let mut committed = 0;
-        let mut rejected = Vec::new();
+        let mut rejected = Rejected::default();
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft)? {
-                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
-                    &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
-                    &error,
-                )?));
-                rejected.extend(built.shell_sources);
+                rejected.push(built.shell_sources, topology_commit_error(&label, &error)?);
             } else {
                 committed += 1;
                 for shell in &built.shell_sources {
@@ -585,40 +655,18 @@ pub(super) fn decode(
                 merge_claims(&mut result.claims, std::mem::take(&mut built.typed));
             }
         }
-        if committed == 0 {
-            losses.extend(super::give_up_instance(
-                exchange,
-                model,
-                StepLossCode::DecodeWarning.note(format!(
-                    "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-                )),
-            ));
-            for shell in failures
-                .into_iter()
-                .flat_map(|failures| failures.omitted)
-                .chain(rejected)
-            {
-                exchange.lost().drop_record_with(
-                    shell,
-                    shell_identity(model, shell, scope_root).into(),
-                    model,
-                );
-            }
-        } else {
-            if let Some(failures) = &failures {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
-                    failures.omitted.len()
-                )));
-            }
-            unresolved.extend(
-                failures
-                    .into_iter()
-                    .flat_map(|failures| failures.omitted)
-                    .chain(rejected)
-                    .map(|shell| (shell, "unresolved wire shell")),
-            );
-        }
+        settle_lost_members(
+            exchange,
+            model,
+            committed > 0,
+            format!(
+                "{label} does not resolve to connected edges{}",
+                rejected.reasons()
+            ),
+            lost_members(&label, "wire shell", failures, rejected),
+            |shell| shell_identity(model, shell, scope_root).into(),
+            &mut unresolved,
+        );
     }
     let mut decoded_pcurves = BTreeSet::new();
     for pcurve in &commit_session.document().geometry.pcurves {
@@ -702,12 +750,13 @@ pub(super) fn decode(
     }
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
-            losses.extend(super::give_up_instance(exchange,
+            exchange.lost().give_up(
                 id,
-                StepLossCode::DecodeWarning.note(format!(
-                    "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                )),
-            ));
+                Cause::Undecoded,
+                format!(
+                    "STEP topology root #{id} does not resolve to a complete connected topology graph"
+                ),
+            );
             continue;
         };
         if let Some(root_built) = built_roots.get(&key) {
@@ -726,32 +775,38 @@ pub(super) fn decode(
             continue;
         }
         let Some((outcome, mut root_losses)) = root_outcomes.remove(&key) else {
-            losses.extend(super::give_up_instance(exchange,
+            exchange.lost().give_up(
                 id,
-                StepLossCode::TopologyRootIncomplete.note(format!(
+                Cause::Undecoded,
+                format!(
                     "STEP topology root #{id} shares a rejected topology graph; no body was admitted"
-                )),
-            ));
+                ),
+            );
             continue;
         };
 
         losses.append(&mut root_losses);
         let (built, failures) = outcome.into_parts();
-        let failure_message = failures
+        let label = format!("STEP topology root #{id}");
+        let lost_need = failures
             .as_ref()
             .and_then(|failures| failures.first.as_ref())
-            .map(BuildFailure::message);
+            .map(|failure| failure.record_id)
+            .filter(|&record| super::instance_is_lost(exchange, record));
+        let owner_failure = match failures
+            .as_ref()
+            .and_then(|failures| failures.first.as_ref())
+        {
+            Some(failure) => format!("{label} rejected: {}", failure.message()),
+            None => format!("{label} does not resolve to a complete connected topology graph"),
+        };
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
-        let mut rejected = Vec::new();
+        let mut rejected = Rejected::default();
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &mut commit_session)?;
             if let Err(error) = commit_session.commit_model(built.draft)? {
-                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
-                    &format!("STEP topology root #{id}"),
-                    &error,
-                )?));
-                rejected.extend(built.shell_sources);
+                rejected.push(built.shell_sources, topology_commit_error(&label, &error)?);
             } else {
                 for shell in &built.shell_sources {
                     result
@@ -772,17 +827,17 @@ pub(super) fn decode(
             }
         }
         if body_ids.is_empty() {
-            let why = if let Some(message) = failure_message {
-                StepLossCode::TopologyRootRejected
-                    .note(format!("STEP topology root #{id} rejected: {message}"))
-            } else {
-                StepLossCode::TopologyRootIncomplete.note(format!(
-                    "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                ))
-            };
-            result
-                .losses
-                .extend(super::give_up_instance(exchange, id, why));
+            // A root that fails first on a lost record and whose drafts the
+            // commit rejects none of drops with that record, so the record's
+            // charge names the root's shells and faces.
+            match lost_need.filter(|_| rejected.is_empty()) {
+                Some(needs) => exchange.lost().drop_with(id, needs),
+                None => exchange.lost().give_up(
+                    id,
+                    Cause::Undecoded,
+                    format!("{owner_failure}{}", rejected.reasons()),
+                ),
+            }
             failed_roots.push((id, record));
         } else {
             let copies = body_ids.clone();
@@ -794,23 +849,7 @@ pub(super) fn decode(
                     body_by_shell,
                 },
             );
-            if let Some(failures) = &failures {
-                let detail = failure_message
-                    .as_deref()
-                    .map(|message| format!(": {message}"))
-                    .unwrap_or_default();
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
-                    failures.omitted.len(),
-                )));
-            }
-            unresolved.extend(
-                failures
-                    .into_iter()
-                    .flat_map(|failures| failures.omitted)
-                    .chain(rejected)
-                    .map(|shell| (shell, "unresolved shell")),
-            );
+            unresolved.extend(lost_members(&label, "shell", failures, rejected));
         }
     }
     // A failed root drops the base shell of each of its shells and the faces
@@ -862,7 +901,7 @@ pub(super) fn decode(
             || result.body_by_shell.contains_key(&base)
             || built_wire_sets.contains(&source))
         {
-            exchange.lost().give_up(source, why);
+            exchange.lost().give_up(source, Cause::Undecoded, why);
         }
     }
     // Every admitted relation shares one class of unproved invariant, so the
@@ -907,23 +946,24 @@ pub(super) fn decode(
             ) {
                 continue;
             }
-            losses.extend(super::give_up_instance(exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Undecoded,
+                &StepLossCode::DecodeWarning.note(format!(
                     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
                 )),
-            ));
+            );
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft)? {
-            losses.extend(super::give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(topology_commit_error(
+                Cause::Undecoded,
+                &StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                     &error,
                 )?),
-            ));
+            );
         } else {
             result
                 .body_by_root
@@ -1071,7 +1111,7 @@ enum BuildOutcome {
 }
 
 struct BuildFailures {
-    omitted: Vec<u64>,
+    omitted: Vec<(u64, Option<BuildFailure>)>,
     first: Option<BuildFailure>,
 }
 
@@ -1088,13 +1128,13 @@ impl BuildOutcome {
                 *self = Self::Partial {
                     built: std::mem::take(built),
                     failures: BuildFailures {
-                        omitted: vec![member],
+                        omitted: vec![(member, failure.clone())],
                         first: failure,
                     },
                 };
             }
             Self::Partial { failures, .. } => {
-                failures.omitted.push(member);
+                failures.omitted.push((member, failure.clone()));
                 if failures.first.is_none() {
                     failures.first = failure;
                 }
@@ -1808,12 +1848,13 @@ fn build_geometric_set(
             continue;
         };
         let Some(items) = named_reference_values(set, set_type, 1) else {
-            losses.extend(super::give_up_instance(exchange,
+            exchange.lost().give_up_for(
                 set_id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!(
                     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
                 )),
-            ));
+            );
             continue;
         };
         typed.insert(set_id);

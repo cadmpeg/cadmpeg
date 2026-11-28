@@ -24,6 +24,13 @@ right sibling identifiers, child identifier, first sector, and u64 stream size.
 The sibling trees and storage children form slash-qualified stream paths such
 as `Contents/Config-0-Partition`.
 
+The decoder reads a compound document whose last DIFAT sector links to
+FREESECT, and a stream whose chain has no ENDOFCHAIN terminator. Each such
+deviation is the loss `sldprt/container.noncanonical`. This code carries
+strict floor Warning (CADIR §3.2), so a pinned decode refuses the document. A
+stream whose chain is broken is given up as a `compound-stream` part (§1.5).
+No other SolidWorks code carries a strict floor.
+
 A directory slot whose object-type byte is zero is unallocated. Its name,
 links, color, sector, and size fields are not interpreted, even when those
 fields contain nonzero stale bytes. The slot remains in the directory index so
@@ -63,10 +70,19 @@ field, or the end of the payload. It includes the magic, every frame, and the
 section's zero padding. Each frame inflates to exactly `uncompressed_size`;
 the declared member extent is the complete zlib member. Concatenating the
 inflated frames of one section in payload order produces one complete
-Parasolid stream. The concatenation occurs before stream-header parsing and
+Parasolid stream. A frame whose uncompressed byte count or zlib-member byte
+count is zero adds no bytes to the concatenation, and the next frame starts
+after its declared member. The concatenation occurs before stream-header parsing and
 record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
+
+A frame whose member does not inflate to `uncompressed_size`, a frame whose
+member runs past the section, or bytes after the frames that are neither a
+frame nor zero padding cut the section at that frame. The frames before the
+cut concatenate to the section's stream, which then ends early; the bytes from
+the cut to the section end are given up. A section cut at its first frame holds
+no stream and is given up whole.
 
 ### 1.1 Outer header and block frame
 
@@ -356,7 +372,10 @@ directory membership.
 ### 1.5 Parts
 
 Each part below has its own framing, and its end follows from that framing.
-The part kind names the part in a `record.unreadable` loss.
+The part kind names the part in its give-up loss. The loss is
+`record.unreadable` when the bytes break a rule of the format, and
+`record.undecoded` when the bytes obey the format and the decoder has no
+reading for them. A part that a resource limit stops is `record.undecoded`.
 
 | Part kind | Unit | Framing |
 | --- | --- | --- |
@@ -368,7 +387,7 @@ The part kind names the part in a `record.unreadable` loss.
 | `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
 | `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
 | `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
-| `wrapped-member` | One ZLB-wrapped zlib member whose inflated size is not its declared size | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
+| `wrapped-member` | One ZLB wrapper or chained section whose frames do not read: a zlib member whose inflated size is not its declared size or whose declared size passes the frame ceiling, or a frame that runs past its section | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
 | `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
@@ -379,30 +398,51 @@ bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
 
-A Parasolid site whose streams frame entity records that build no geometry is
-given up as a `parasolid-site` part. A component tree gives no occurrence
-when its XML does not parse, when it repeats a model or file id, when it
+A `history-member` part is `record.unreadable` when the member holds no XML
+payload, when its bytes are not text, and when its XML is not well formed. It
+is `record.undecoded` when the XML parser stops at one of its bounds, and when
+the root element is not `Keywords`.
+
+A Parasolid site whose streams frame entity records that build no face,
+surface, point or body is given up as an undecoded `parasolid-site` part. A site
+that states a body whose faces are all lost keeps that body. A component tree
+gives no occurrence when its XML does not parse, when it repeats a model or
+file id, when it
 names no active configuration or more than one, when its active model has no
 valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
+loss is `record.unreadable` when the tree text has no UTF-16 byte-order mark
+and is not UTF-8, when its XML is not well formed, when it repeats a model or file id, and when its
+active model has no valid identity or no definition. A valid identity is a
+decimal `id` (§11.1). The loss is `record.undecoded` when the
+document holds two different trees, when the root element is not
+`swSolidWorks`, when the tree names no active configuration or more than one,
+and when the tree passes a bound of the XML reader: more than 256 attributes
+on one element, more than 256 namespace prefixes, or more nodes than the
+reader holds. The give-up is the one loss of the tree. The loss
+`assembly.structure-not-transferred` records an assembly document that holds
+no component tree section. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
-The decoder gives up a wrapped member only when its declared size is within
-the frame ceiling. A property carrier that stores its properties in a form
+A property carrier that stores its properties in a form
 that the decoder does not read is kept with the loss
 `metadata.default-carrier-unsupported` or
 `metadata.configuration-property-carrier-unsupported`.
 
 A record that the decoder parses and then drops is given up without a part.
-Its `record.unreadable` loss names the record by its id, and gives its stream
+Its `record.undecoded` loss names the record by its id, and gives its stream
 and offset where the decoder holds them. Such records are a B-rep face that
 names no loop and does not cover a whole closed surface, a B-rep loop whose
 ring or vertex does not decode, a B-rep edge that the topology walk
-withholds, a component instance that has a valid identity and no placement, no
-defined model, or a model that contains the instance, a PMI dimension map that
-does not parse, and a feature-input sketch whose face projects no edge to a
-sketch entity. A record of an alternate configuration is named by its id with the
+withholds, a component instance that has a valid identity and no proper
+rigid placement or no model, a PMI
+dimension map that does not parse, a feature-input sketch whose face
+projects no edge to a sketch entity, and a sketch entity whose edge projects
+to no entity and no profile. The loss text tells why the decoder dropped the
+record. A component instance that names a model the component tree does not
+define, a model that contains the instance, or a model with no valid
+identity is given up with the loss `record.unreadable`. A record of an alternate configuration is named by its id with the
 `@<site>` suffix of that configuration.
 
 A record that the decoder drops only because it needs a given-up record is
@@ -754,7 +794,7 @@ In the legacy repeated-class form, a non-direct feature name carries a u16 class
 
 A generated Hole Wizard profile with two diameter-displayed dimensions, two length dimensions, and one angle dimension is threaded when its ordered dimension roles are diameter, length, diameter, length, angle. These fields are the drill diameter, drill depth, nominal thread major diameter, thread depth, and drill-point included angle. The profile is counterbored when the same dimension multiset terminates with a diameter-displayed dimension: the smaller and larger diameters are the drill and counterbore diameters, the smaller and larger lengths are the counterbore and drill depths, and the angle is the drill-point included angle. A profile with two diameter-displayed dimensions, two lengths, and two angles carries a tapered threaded hole. The smaller and larger diameters are the drill and thread-major diameters, the smaller and larger lengths are the thread and drill depths, and the smaller and larger angles are the included thread taper and drill-point angles. Ordered roles length, diameter, angle, length, diameter, diameter carry a counterbored through hole with a countersunk exit. The three increasing diameters are the bore, exit-countersink, and counterbore diameters; the two increasing lengths are the counterbore depth and current through-body span; and the angle is the exit-countersink included angle. The through-body span locates the generated far-side profile and does not change the through-all termination. A generated axial profile with two diameter-displayed dimensions, two lengths, and no angle carries a counterbored through hole when at least two of its entry-wall, radial-step, and bore-wall segments are nonconstruction lines and the remaining segment has both endpoint markers. The smaller and larger diameters are the bore and counterbore diameters, and the smaller and larger lengths are the counterbore depth and current through-body span. The bore wall terminates at that span, 0.000025 mm beyond it, 0.00005 mm beyond it, or 0.001 mm beyond it. A 180° drill angle changes this construction to a blind flat-bottom counterbore and makes the larger length its depth. A generated axial profile with two diameter-displayed dimensions, one length, and one angle carries a countersunk through hole when its nonconstruction lines contain the countersink wall and the adjoining bore wall. The two walls can occupy the same radial half or opposite radial halves of the axial profile. The smaller and larger diameters are the bore and countersink diameters, the angle is the countersink included angle, and the length is the current through-body span. The bore wall terminates at that span, 0.000025 mm beyond it, 0.00005 mm beyond it, or 0.001 mm beyond it. A generated axial profile with two diameter-displayed dimensions, one length, and two angles carries a drilled countersink when at least two of its countersink, bore-wall, and drill-tip segments are nonconstruction lines and the remaining segment has both endpoint markers. The smaller and larger diameters are the bore and countersink diameters, the smaller and larger angles are the countersink and drill-point included angles, and the length is the blind drill depth. A profile with three diameter-displayed dimensions, two lengths, and two angles carries a counterdrilled blind hole. The three increasing diameters are the bore, cylindrical recess, and surface-entry diameters; the two increasing lengths are the recess and drill depths; and the two increasing angles are the entry-transition and drill-point included angles. A profile with one diameter and one length carries a flat-bottomed simple hole with bore diameter and blind depth. Adding one angle changes the bottom to the conical drill point with that included angle. A closed four-line axial profile with one axis segment, entry and terminal radial segments, and one full-depth sloping wall carries a tapered flat-bottomed hole. Its entry diameter is the radial span at axial zero, its blind depth is the axis length, and its included taper angle is twice the arctangent of the absolute radial-span difference divided by the depth.
 
-Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order. A sweep depends on the one sketch feature that owns a section of it, including a section that the sweep record encloses. In a history containing a classless `Extrusion` element with one distinct Keywords dimension, positive source identifiers order otherwise unrelated features before dependency ordering.
+Keywords elements follow serialization order. Parent and dependency references order the features that the active partition's PMARK main line does not order (§3.4). Unrelated features retain their serialization order. A sweep depends on the one sketch feature that owns a section of it, including a section that the sweep record encloses. In a history containing a classless `Extrusion` element with one distinct Keywords dimension, positive source identifiers order otherwise unrelated features before dependency ordering.
 
 Feature-tree node roles are invariant across configurations. A configuration snapshot changes a tree node's suppression and graph state without changing its role.
 
@@ -1922,7 +1962,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
 | `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
-| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
+| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c`, `moSideFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
 | `moMirPatternSurfIdRep_c` | an object pointer to the hop it mirrors |
@@ -2087,6 +2127,8 @@ A handle object (`sgPointHandle`, `sgLineHandle`, `sgArcHandle`, `sgEllipseHandl
 
 A handle's slot is the position of the record it names among the `sgSketch` object's records of the handle's kind: an `sgPointHandle` counts the point records, an `sgLineHandle` the line records, and an `sgArcHandle` the arc and circle records. Each run of records of one kind holds its count in the little-endian u32 that ends ten bytes before its first record: *N* in the `sgSketch` head; for the lines after the points, the u32 before the last point record's u16 and identifier; for a run after a 12-byte list header, the u32 that ends with the header's first two bytes. The ten bytes before a record are a little-endian u16 external flag, a little-endian u32 and a little-endian u32 identifier. Before a curve record that u32 is the curve's chain identifier, by which a `moSketchChain_c` names the curve. A relation-group entry's operand handles name records the same way.
 
+A CADIR native sketch relation keeps the handle order. For each operand, `sldprt:operand.<i>.kind` identifies its decoded class or marker role, `sldprt:operand.<i>.index` holds its slot when read, and `sldprt:operand.<i>.class-tag` preserves the relation-table class tag. The row flag is `sldprt:native_flags`. These are native options under Rule N(a). An unresolved handle is a model operand with a native pick, by marker identity where available and by slot otherwise. Its typed home is the entity or model pick the handle identifies.
+
 The parameter of a sketch dimension writes, after its tolerance pointer, a 32-byte trailer: the parameter's object identifier as a little-endian u32 at trailer +0, sixteen bytes, the relation code of the dimension's measure as a little-endian u32 at trailer +20 (`1` a distance, `3` a radius, `15` a diameter), the operand count as a little-endian u16 at trailer +24, a little-endian u32 at trailer +26 and two bytes. In an `sgCircleDim` the 34 bytes after the parameter hold f64 `1` or `0` at +10 and zero bytes elsewhere. In an `sgPntPntDist`, `sgPntLineDist`, `sgLLDist` or `sgPntPntHorDist` they open with a little-endian u16 *a*, *a* again (`1` or `2`) and u16 `1`, and the other 28 bytes are zero.
 
 An `sgExtEnt_c` object writes an object pointer to a `moSketchExtRef_w` object, which writes an object pointer to a `moCompSketchEntHandle_c` object. That object writes a component (a `moUnitComponent_c` or `moContextChainComponent_c` object), a little-endian u32 feature number, a little-endian u32 time stamp, a handle object, a little-endian u32, u16 `0` and an object pointer. When that pointer is null, 58 bytes follow (holding a little-endian u32 at +4, three i32 `-12345` at +20 and a version number at +36, and ending with twelve zero bytes, i32 `-1` and u16 `0`, or with eighteen zero bytes after the version), or 54 in older files and in some of `swVersion` 14000, which end with fourteen zero bytes after the version; when it is a second context component, twelve zero bytes, i32 `-1` and u16 `0` follow (fourteen zero bytes in older files). Then come an object pointer to a `moPointBackedUpData_c` object, and, when six zero bytes and a string marker follow, those six bytes and a Unicode `CString` naming the external entity (for example `Point1@Origin`). A `moPointBackedUpData_c` object writes three little-endian f64.
@@ -2201,7 +2243,7 @@ A `moInkMarkupView_c` (in a `moInkMarkupFolder_c`) is a feature whose block hold
 
 Files of `swVersion` 11000 differ further: a unit component has eight bytes after its sixteen `ff` bytes, plane data six bytes after its u32 `1`, a dimension handle's prefix is 91 bytes, a favourite handle with bit 7 writes twelve zero bytes after its last `CString`, a plane trailer can end after its u32 and two zero counts, and a `moCompSketchEntHandle_c` tail holds two i32 `-12345`, the version, eighteen zero bytes and the entity's name. The sketch settings of these files are open item EV-16.
 
-A `moScale_c` feature writes the feature, its body head, units and `moPMarkRecord_c` as an extrusion does, then little-endian u32 `1`, three little-endian f64 scale factors (`25.4` each), u32 `0`, u16 `0`, u16 `1`, the scaled body (a `moCompSolidBody_c`, its face reference inside), a little-endian u32 count and that many identifiers, i32 `-1` and twelve zero bytes.
+A `moScale_c` feature writes the feature, its body head, units and `moPMarkRecord_c` as an extrusion does, then little-endian u32 `1`, three little-endian f64 scale factors (`25.4` each), u32 `0`, u16 `0`, a little-endian u16 count *b* of scaled bodies (`0` or `1`), *b* object pointers to the scaled bodies (a `moCompSolidBody_c`, its face reference inside), a little-endian u32 count and that many identifiers, i32 `-1` and twelve zero bytes. A `moScale_c` that ends the stream ends after its identifier list.
 
 A `moSweepThread_c` thread feature (in files of `swVersion` 16000) writes a feature whose inputs are a reference plane, followed by its `moAbsoluteRefPlnData_c`, and the thread-profile `moProfileFeature_c`; the plane's feature-object block has eight zero bytes and little-endian u32 `2` where other blocks have twelve zero bytes. The body head has *g* `1`, and the extrusion's fields follow it (u32 count, identifiers, five u32, u16 *x*). Then come the `moPMarkRecord_c`; `CString`, i32 `-2`, `CString`, i32 `-2`, two `CString` values, 36 zero bytes and little-endian u32 `1`; the pitch as a little-endian f64; the size (`M6x1.0`) and the thread-profile library path as Unicode `CString` values; a `moCircleRef_w` to the edge the thread starts at; zero bytes, u32 `1`, u32 `0`, a u32 identifier, twelve zero bytes, three i32 `-12345`, u32 `0`, the version, twelve zero bytes and i32 `-1`; two f64, a zero byte, eight `ff` bytes and six zero bytes; a point and an axis (six f64) and a length (f64); u32 `1`, u32 `0`; an optional `moSingleFaceRef_w`, which is followed by ten zero bytes, a u32 identifier, u32 `0`, i32 `-1`, u32 `0`, the `-12345` block with the version, four f64, u32 `0` and two u32; then 40 bytes, u32 `1`, u32 `1` and 26 zero bytes (in files of `swVersion` 17000 the same 74 bytes hold eight zero bytes, u32 `1`, u32 `0`, u32 `1` and 54 zero bytes). A sequence of objects ends the feature: display dimensions (each with its `moFeatureDimHandle_c` and favourite), and `moCylinderRef_w` and `moSurfaceRef_w` references. Each reference is followed by a handle block of the edge form or the face form above, then its geometry: a cylinder's eleven f64 and u16 `0`, a surface's four f64, a little-endian u32 (`0` or `1`) and nine f64. The fields this paragraph leaves unnamed are open item EV-21.
 
@@ -2550,13 +2592,23 @@ A `Contents/Config-<N>-Partition` section holds two Parasolid transmits in order
 
 The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head: the mark, a little-endian u32 at +0; the form, a little-endian u32 at +4; and the form word, a little-endian u32 at +8. The form is `0` or `1`, or a feature identifier in the id-range form, whose form word is `1`. The mark is the `id` of the PMARK set after the feature that holds the record. `Contents/Config-<N>` declares `moPMarkRecord_c`, so each record in `Config-<N>-ResolvedFeatures` opens with that class's token: u16 `8000|index`, or `7fff` and u32 `80000000|index` for an index of `7fff` and above.
 
-The records follow the order of their features. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
+The records follow the order of their features. The persistent PMARK identifiers join these features to the main line in regeneration order. The main line orders the recorded features independently of their element order in Keywords. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
 
 - The current mark is the mark of the last record: the bar stands after the feature of that record.
 - The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
 - Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
 
+Compatible main lines from other configurations supplement the active main line when they order features that it does not. A configuration whose order conflicts with the shared CADIR timeline still supplies its own states in its stored mark order. Where the shared position cannot express the dependency of a structured name, the evaluation keeps the native name attached to its entity.
+
 A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
+
+The deltas transmit also stores the states before the current mark. The deltas of the main line, applied from the current mark back, give the node set of the state at each earlier mark of the main line (`parasolid.md`). The state at the mark of a record is the state after one feature of the record:
+
+- The features of a record are the named objects with an object id before the record, from the nearest back to the first feature that changes the state, its holder. A named object whose history record is no feature of the timeline is a part of the holder. A feature that does not change the state, such as a sketch or a datum, and a cosmetic thread come inside the feature that they belong to.
+- The state at the mark is the state after the last feature of the record, in the timeline, that changes the state.
+- An imported body (`moBaseBody_c`) has no state of its own: its bodies merge into the delta of the next feature.
+
+A later record names the same mark as an earlier record or a mark nearer the current mark.
 
 ## 4. Typed topology records
 
@@ -2670,10 +2722,11 @@ record fields determine the framing. Complete analytic carriers, bounded-curve r
 
 The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
-A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
-A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
-A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
+A vertex loop decodes to a vertex boundary on its vertex-use. A framed FACE record with no decoded loop gives up with `record.undecoded` (§1.5). A vertex loop whose vertex-use does not resolve and a loop whose FIN is ambiguous each give up with the same code. Their FACE keeps its other loops in the partial form.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. One loss note gives the count for each kind.
+A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut` when the cut has no separate loop give-up.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with all its faces withheld stays in its REGION as a partial shell. A SHELL whose stated faces fall into pieces that share no edge is stated as one shell per piece. A retained shell keeps its role when the stored face chains establish it. Unresolved shell roles keep the REGION shell-chain order. Where the region holds both proven and unresolved roles, `topology.shell-role-unstated` records the proven roles.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body and one region, with one shell per piece of faces that share edges (`topology.body-hierarchy-derived`). A derived region of more than one shell leaves its shells unclassified, since no node says which bounds the outside. The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where merged streams or sites derive bodies whose kinds come from different sources, one note names each source. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 
@@ -2850,8 +2903,10 @@ absent identity is retained only when its FACE transmit index is
 named by the validated typed FACE set. Without valid typed ownership, no
 deltas bridge is added to a nonempty partition bridge table.
 
-An empty partition bridge table adopts all deltas bridges when valid typed
-ownership is absent. With valid typed ownership, it adopts only deltas bridges
+A terminated partition with zero nodes is empty at the current mark when its
+first backward delta contains only restored nodes or has no content. Those
+nodes belong to the preceding state. For other partitions, an empty bridge
+table adopts all deltas bridges when valid typed ownership is absent. With valid typed ownership, it adopts only deltas bridges
 selected by FACE transmit index. This adoption fills an empty
 table; it does not replace a partition face. In every branch, missing loop,
 edge-use, coedge, vertex-use, and point identities are filled from deltas.
@@ -3167,14 +3222,16 @@ A face belongs to a body only when this closure is complete:
 FACE.refs[3] → SHELL.refs[6] → REGION.refs[1] → BODY
 ```
 
-The BODY region-chain head is the first REGION attribute or a null-like
-predecessor sentinel. In the sentinel form, exactly one REGION has
-`previous_region` equal to the stored head. Follow `next_region` and require
-the following REGION's `previous_region` to equal the current REGION. The
+The BODY region-chain head is the attribute of its first REGION, whose
+`previous_region` is null-like; a null-like head names no REGION. Follow
+`next_region` and require the following REGION's `previous_region` to equal
+the current REGION. The
 chain ends at a null-like value and may not repeat an attribute. A SHELL's
 region and body links must agree with the REGION closure. A shell with a
 non-null-like body reference must name that same BODY; a null-like shell body
 reference is valid for a void-region shell.
+
+The first REGION of a BODY is the infinite void. A manifold solid boundary FACE names its solid shell in the back-side links and its void shell in the front-side links. Reciprocal face chains pair the shells on the two sides of each boundary. If the FACE has a null front-shell cell, a unique complete front chain supplies its owner when the corresponding back chain names the same faces. A boundary paired to the infinite void is the exterior of its solid REGION. In a tree rooted at the infinite void, the shell toward the root bounds the exterior and the shells toward finite void regions bound cavities. The same rule applies to a general BODY with a complete manifold region graph.
 
 The BODY `body_type` byte is the body kind: `1` solid, `2` wire, `3` sheet,
 and `6` general. The kind is not inferred from an ATTRIBUTE list, a chain
@@ -3638,7 +3695,7 @@ The `id` values of `swModel` and `swReference` elements are decimal numbers, dis
 
 The placement is relative to the assembly model that contains the `swReference`. The world placement of an occurrence is the product of the placements on its path from the root model.
 
-An instance with a valid, unrepeated identity is given up by its occurrence id when it names no model, when its model is not defined, when its `swTransform` is not a proper rigid motion, or when its model contains the instance. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
+An instance with a valid, unrepeated identity is given up by its occurrence id. The loss is `record.undecoded` when it names no model or when its `swTransform` is not a proper rigid motion. The loss is `record.unreadable` when its model is not defined, when its model contains the instance, or when its model has no valid identity. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
 
 ### 11.3 Mate lists
 

@@ -142,6 +142,8 @@ pub enum ParameterField {
     Scope,
     /// `owner`
     Owner,
+    /// `position`
+    Position,
     /// `name`
     Name,
     /// `kind`
@@ -172,6 +174,7 @@ design_fields! {
     ParameterField of DesignParameter {
         scope => Scope,
         owner => Owner,
+        position => Position,
         name => Name,
         kind => Kind,
         unit => Unit,
@@ -321,6 +324,8 @@ pub enum ModelSketchEntityField {
     GeometryRef,
     /// `endpoint_refs`
     EndpointRefs,
+    /// `center_ref`
+    CenterRef,
     /// `geometry`
     Geometry,
 }
@@ -331,6 +336,7 @@ field_keys!(ModelSketchEntityField {
     native_ref => NativeRef,
     geometry_ref => GeometryRef,
     endpoint_refs => EndpointRefs,
+    center_ref => CenterRef,
     geometry => Geometry,
 });
 

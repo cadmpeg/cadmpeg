@@ -47,7 +47,12 @@ pub(super) fn project(
                 external_geometry.id
             ))
         })?;
-    let records = direct_counted_records(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
+    let records = direct_counted_records(
+        xml.tree(),
+        "GeometryList",
+        "Geometry",
+        &external_geometry.id,
+    )?;
     validate_external_geo_prefix(&records, &external_geometry.id)?;
     if let Some(references) = references {
         if references.type_name != "App::PropertyLinkSubList" {

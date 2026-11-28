@@ -70,7 +70,7 @@ fn feature_named<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::design::featu
         .unwrap()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
+pub(crate) fn assert_no_design_findings(ir: &CadIr) {
     let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     let design = report
         .findings
@@ -293,9 +293,32 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
+/// A configuration takes its place in the history's configuration list.
+#[test]
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
+}
+
 /// A configuration is restated without its custom properties, and one other
 /// than the active one without the feature suppressions that differ from the
-/// active one's and that its overrides do not state.
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
 #[test]
 fn a_configuration_is_restated_without_what_its_record_does_not_state() {
     use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
@@ -340,6 +363,7 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         id: id(key),
         scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
         name: key.to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),
@@ -413,6 +437,18 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
             "feature_states.dependencies",
             "ordinal"
         ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
     );
 }
 
@@ -754,7 +790,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -788,7 +824,7 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -988,12 +1024,15 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
     let [sketch] = sketches.records.as_slice() else {
@@ -1127,6 +1166,54 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     assert_no_design_findings(&ir);
 }
 
+#[test]
+fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
+    use cadmpeg_ir::design::ops::sketch::{DefiningRole, EntityRole};
+
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    entities.as_array_mut().unwrap().push(
+        cadmpeg_core::json!({"id": "sldprt:model:sketch-entity#test:center",
+            "sketch": "sldprt:model:sketch#test", "construction": false,
+            "native_ref": "native:center", "endpoint_refs": [],
+            "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+    );
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let definition = ir.design.scopes[0].definition.clone();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
+            angular: ir.tolerances.angular.get(),
+        },
+    )
+    .expect("the session admits the evaluation");
+    let center = typed
+        .sketches
+        .entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(":center"))
+        .unwrap();
+    assert_eq!(
+        center.roles,
+        vec![EntityRole {
+            of: cadmpeg_ir::sketches::SketchEntityId::mint("sldprt:model:sketch-entity#test:hole")
+                .unwrap(),
+            role: DefiningRole::Center,
+        }]
+    );
+}
+
 /// The timeline of `ir`'s design, with its sketches and extrudes typed, and
 /// the parameter entries of its features.
 fn typed_timeline<'a>(
@@ -1146,12 +1233,15 @@ fn typed_timeline<'a>(
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, entries, typed)
 }
 
@@ -1331,43 +1421,103 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
 }
 
 #[test]
-fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved() {
-    assert_sketch_unresolved(
-        |ir| {
+fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_stated_with_a_loss() {
+    use cadmpeg_ir::design::ops::sketch::{EntityDefinition, EntityForm, SketchRelation};
+
+    const WIDTH: &str = "sldprt:model:sketch-constraint#test:1";
+    const TEXT: &str = "sldprt:model:sketch-entity#test:text";
+    let bind_width = |parameter: &str| {
+        let parameter = parameter.to_owned();
+        move |ir: &mut CadIr| {
             let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
             for constraint in constraints.as_array_mut().unwrap() {
-                if constraint["id"].as_str().unwrap().ends_with(":1") {
-                    constraint["definition"]["parameter"] =
-                        cadmpeg_core::json!("sldprt:model:parameter#unlisted");
+                if constraint["id"] == WIDTH {
+                    constraint["definition"]["parameter"] = cadmpeg_core::json!(parameter);
                 }
             }
             ir.model.sketch_constraints = json::from_value(constraints).unwrap();
-        },
-        "a sketch dimension binds no parameter",
+        }
+    };
+    let typed = assert_sketch_stated(
+        bind_width("sldprt:model:parameter#unlisted"),
+        SldprtLossCode::DesignSketchDimensionUnbound,
+        WIDTH,
     );
-    assert_sketch_unresolved(
+    let width = typed
+        .sketches
+        .constraints
+        .iter()
+        .find(|constraint| constraint.id.as_str() == WIDTH)
+        .unwrap();
+    let SketchRelation::Distance {
+        value: Dimension::Literal(length),
+        ..
+    } = &width.relation
+    else {
+        panic!("a distance of the stored value: {:#?}", width.relation);
+    };
+    assert_eq!(length.get(), 50.0);
+
+    let typed = assert_sketch_stated(
+        bind_width("sldprt:model:parameter#absent"),
+        SldprtLossCode::DesignSketchDimensionUnbound,
+        WIDTH,
+    );
+    let width = typed
+        .sketches
+        .constraints
+        .iter()
+        .find(|constraint| constraint.id.as_str() == WIDTH)
+        .unwrap();
+    assert!(
+        matches!(&width.relation, SketchRelation::Native { values, .. } if values.is_empty()),
+        "{:#?}",
+        width.relation
+    );
+
+    let typed = assert_sketch_stated(
         |ir| {
             ir.model.sketch_entities.push(
                 json::from_value(cadmpeg_core::json!({
-                    "id": "sldprt:model:sketch-entity#test:text",
+                    "id": TEXT,
                     "sketch": "sldprt:model:sketch#test",
                     "construction": false, "endpoint_refs": [],
                     "geometry": {"kind": "native", "native_kind": "sldprt:sketch-text"}}))
                 .unwrap(),
             );
         },
-        "a sketch entity has no planar curve",
+        SldprtLossCode::DesignSketchEntityNative,
+        TEXT,
+    );
+    let text = typed
+        .sketches
+        .entities
+        .iter()
+        .find(|entity| entity.id.as_str() == TEXT)
+        .unwrap();
+    let EntityDefinition::Defined { form, solved: None } = &text.definition else {
+        panic!("a native entity: {:#?}", text.definition);
+    };
+    assert!(
+        matches!(form.as_ref(), EntityForm::Native(kind) if kind.as_str() == "sldprt:sketch-text")
     );
 }
 
-/// Assert that the sketch of [`sketch_and_extrude`], after `change`, stays
-/// `Unresolved` for `reason`, and its extrude with it; that its vertical
-/// dimension and the extrude's depth still state their parameters' quantity;
-/// and that its reference dimensions still make their parameters `Driven`,
-/// the tree's hole diameter and one minted for a dimension no tree node lists.
-fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
+/// Assert that the sketch of [`sketch_and_extrude`], after `change`, is the
+/// operation of its feature with a loss of `code` that names `named`; that
+/// its vertical dimension and the extrude's depth still state their
+/// parameters' quantity; that its reference dimensions still make their
+/// parameters `Driven`, the tree's hole diameter and one minted for a
+/// dimension no tree node lists; and that the design it states holds no
+/// finding. The fixture holds a parameter record `unlisted` of 50 mm, the
+/// sketch's width, that no tree node lists.
+fn assert_sketch_stated(
+    change: impl FnOnce(&mut CadIr),
+    code: SldprtLossCode,
+    named: &str,
+) -> super::typed::Typed {
     use cadmpeg_ir::design::parameter::ParameterDefinition;
-    use cadmpeg_ir::design::units::Quantity;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 
     const MINTED: &str = "sldprt:model:parameter#reference";
     let (mut ir, native) = sketch_and_extrude();
@@ -1387,54 +1537,78 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
     ir.model.sketch_constraints = json::from_value(constraints).unwrap();
     let mut parameters = json::to_value(&ir.model.parameters).unwrap();
     let parameters_list = parameters.as_array_mut().unwrap();
-    let mut minted = parameters_list
+    let hole = parameters_list
         .iter()
         .find(|parameter| parameter["id"] == hole_parameter)
         .unwrap()
         .clone();
+    let mut minted = hole.clone();
     minted["id"] = cadmpeg_core::json!(MINTED);
     minted["name"] = cadmpeg_core::json!("D9");
     parameters_list.push(minted);
+    let mut unlisted = hole;
+    unlisted["id"] = cadmpeg_core::json!("sldprt:model:parameter#unlisted");
+    unlisted["name"] = cadmpeg_core::json!("D8");
+    unlisted["value"] = cadmpeg_core::json!({"kind": "length", "value": 50.0});
+    parameters_list.push(unlisted);
     ir.model.parameters = json::from_value(parameters).unwrap();
     change(&mut ir);
     let (timeline, entries, typed) = typed_timeline(&ir, &native);
-    assert!(typed.sketches.records.is_empty(), "{reason}");
     let sketch = timeline_feature(&timeline, "Sketch1");
-    let height = entries.owned(&sketch.id, "D2").unwrap();
-    assert_eq!(typed.bound.get(height), Some(&Quantity::LENGTH), "{reason}");
-    let hole = entries.owned(&sketch.id, "D3").unwrap();
-    assert!(typed.references.contains(hole), "{reason}");
-    assert!(
-        typed
-            .sketches
-            .driven
-            .iter()
-            .any(|parameter| parameter.id.as_str() == MINTED
-                && parameter.definition == ParameterDefinition::Driven),
-        "{reason}"
+    let [record] = typed.sketches.records.as_slice() else {
+        panic!("one sketch: {:#?}", typed.sketches.records);
+    };
+    assert_eq!(
+        sketch.definition.operation,
+        FeatureOperation::Sketch(record.id.clone())
     );
+    let height = entries.owned(&sketch.id, "D2").unwrap();
+    assert_eq!(typed.bound.get(height), Some(&Quantity::LENGTH));
+    let hole = entries.owned(&sketch.id, "D3").unwrap();
+    assert!(typed.references.contains(hole));
+    assert!(typed
+        .sketches
+        .driven
+        .iter()
+        .any(|parameter| parameter.id.as_str() == MINTED
+            && parameter.definition == ParameterDefinition::Driven));
     let depth = entries
         .owned(&timeline_feature(&timeline, "Boss").id, "D1")
         .unwrap();
-    assert_eq!(typed.bound.get(depth), Some(&Quantity::LENGTH), "{reason}");
-    assert_eq!(
-        sketch.definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Sketch
-        },
-        "{reason}"
-    );
-    assert!(matches!(
-        timeline_feature(&timeline, "Boss").definition.operation,
-        FeatureOperation::Unresolved { .. }
-    ));
-    let loss = typed.loss.expect("the sketch is reported");
+    assert_eq!(typed.bound.get(depth), Some(&Quantity::LENGTH));
     assert!(
-        loss.message
-            .contains(&format!("{reason} (1: {})", sketch.id.as_str())),
-        "{}",
-        loss.message
+        typed
+            .sketch_notes
+            .iter()
+            .any(|note| note.code == code.kind() && note.message.contains(named)),
+        "{:#?}",
+        typed.sketch_notes
     );
+    let (mut parameters, _, _) = entries.parameters(
+        &ir.design.scopes[0].definition,
+        &super::parameters::Readings {
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
+            length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
+            bound: typed.bound.clone(),
+            measured: typed.measured.clone(),
+            driven: typed.references.clone(),
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
+        },
+    );
+    parameters.extend(typed.sketches.driven.iter().cloned());
+    ir.design.features = timeline.features.clone();
+    ir.design.parameters = parameters;
+    ir.design.sketches = typed.sketches.records.clone();
+    ir.design.sketch_entities = typed.sketches.entities.clone();
+    ir.design.sketch_constraints = typed.sketches.constraints.clone();
+    assert_no_design_findings(&ir);
+    typed
 }
 
 #[test]
@@ -1529,7 +1703,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1545,12 +1719,15 @@ fn members_follow_the_features_they_depend_on() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
     assert!(
@@ -1561,9 +1738,32 @@ fn members_follow_the_features_they_depend_on() {
 }
 
 #[test]
+fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::test_support::native::sldprt_native(&ir);
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
+    let id = |name| {
+        timeline.features[member_position(&timeline, name)]
+            .id
+            .clone()
+    };
+    let active = [id("Boss"), id("Fillet1")];
+    let alternate = [id("Boss"), id("Odd"), id("Fillet1")];
+    let reversed = [id("Fillet1"), id("Odd")];
+    super::order::regeneration_order(
+        &mut timeline,
+        &ir.model,
+        [&active[..], &alternate[..], &reversed[..]],
+    );
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Odd"));
+    assert!(member_position(&timeline, "Odd") < member_position(&timeline, "Fillet1"));
+}
+
+#[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -1580,7 +1780,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model);
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1605,7 +1805,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty()).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()
@@ -1754,8 +1954,11 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 mod configuration_states;
 mod datum;
 mod dimension_curves;
+pub(super) mod outside_history;
 mod parameters;
 mod pattern;
+pub(crate) mod restated;
 mod revolve;
 mod rollback;
-mod state_zero;
+mod sketch_kinds;
+pub(crate) mod state_zero;

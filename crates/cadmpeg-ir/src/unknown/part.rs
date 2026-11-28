@@ -5,8 +5,12 @@
 //! compressed stream, a record with its own length or terminator, a section,
 //! an XML element. A decoder that cannot read a part gives up that part only:
 //! one `unknowns` stub stands for it, linked to the innermost record that
-//! contains it, its bytes are retained, and one `record.unreadable` loss
-//! names it. Nothing else in the document describes the failure.
+//! contains it, its bytes are retained, and one loss names it:
+//! `record.unreadable` where its bytes break its format's rules, and
+//! `record.undecoded` where they conform and the decoder does not decode
+//! them. Nothing else in the document describes the failure.
+
+pub mod outcome;
 
 use std::collections::BTreeSet;
 
@@ -23,26 +27,103 @@ use crate::report::Severity;
 use crate::source_fidelity::{RetainedBytes, RetainedSourceRecord, SourceFidelity};
 use crate::unknown::NativeUnknownRecord;
 
-/// The `record.unreadable` loss: one per given-up part.
+/// The `record.unreadable` loss: one per given-up part whose bytes break
+/// its format's rules.
 #[must_use]
 pub fn record_unreadable_kind() -> LossKind {
-    NamespacedLossKind::new(
-        crate::loss_namespace!("decode"),
-        "record.unreadable",
-        LossTaxonomy::DecodeDiagnostic,
-    )
-    .into()
+    Cause::Unreadable.kind()
+}
+
+/// The `record.undecoded` loss: one per given-up part that conforms to its
+/// format and that the decoder does not decode.
+#[must_use]
+pub fn record_undecoded_kind() -> LossKind {
+    Cause::Undecoded.kind()
+}
+
+/// Why a decoder gives up a part or a record (CADIR §3.3). It selects the
+/// shared code of the give-up's one loss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cause {
+    /// The bytes break the format's own rules: the framing, the grammar, a
+    /// reference to a record that does not exist, or a value that the type
+    /// forbids. The loss is `record.unreadable` (Error, strict floor Error).
+    Unreadable,
+    /// The bytes conform to the format, and the decoder does not decode
+    /// them: it has no reading for the form, or a bound of §2.5 or of the
+    /// caller's limits cuts the content. The loss is `record.undecoded`
+    /// (Warning). A decoder that cannot tell which cause applies, where the
+    /// framing holds and the record is of a kind that the format allows,
+    /// states this cause.
+    Undecoded,
+}
+
+impl Cause {
+    /// The cause of a give-up that `error` ends: [`Cause::Undecoded`] for a
+    /// form the decoder has no reading for, a dialect it does not decode, or
+    /// a resource refusal, which is a bound, and `self` otherwise.
+    #[must_use]
+    pub const fn of(self, error: &CodecError) -> Self {
+        match error {
+            CodecError::NotImplemented(_)
+            | CodecError::UnsupportedDialect { .. }
+            | CodecError::ResourceLimit(_) => Self::Undecoded,
+            _ => self,
+        }
+    }
+
+    /// The shared code of the give-up's loss.
+    #[must_use]
+    pub fn kind(self) -> LossKind {
+        let code = match self {
+            Self::Unreadable => "record.unreadable",
+            Self::Undecoded => "record.undecoded",
+        };
+        NamespacedLossKind::new(
+            crate::loss_namespace!("decode"),
+            code,
+            LossTaxonomy::DecodeDiagnostic,
+        )
+        .into()
+    }
+
+    /// The severity of the give-up's loss.
+    #[must_use]
+    pub const fn severity(self) -> Severity {
+        match self {
+            Self::Unreadable => Severity::Error,
+            Self::Undecoded => Severity::Warning,
+        }
+    }
+
+    /// The loss of a give-up of this cause, with `message`, outside the
+    /// give-up records of the part helper, as when a decoder states a
+    /// partial form for content past a bound.
+    #[must_use]
+    pub fn note(self, message: impl Into<String>) -> LossNote {
+        LossNote::new(self.kind(), message).with_severity(self.severity())
+    }
+}
+
+/// Whether `kind` is the code of a give-up: `record.unreadable` or
+/// `record.undecoded`.
+#[must_use]
+pub fn gives_up(kind: &LossKind) -> bool {
+    [Cause::Unreadable, Cause::Undecoded]
+        .into_iter()
+        .any(|cause| *kind == cause.kind())
 }
 
 /// A record a decoder drops after reading it, for a reason of its content,
 /// with no framed bytes of it in hand (CADIR §3.3). Its give-up has no
-/// `unknowns` stub: its `record.unreadable` (Error) names the record's id,
-/// its span where the decoder holds one, the error text, and the sorted ids
-/// of the records dropped with it.
+/// `unknowns` stub: its one loss, of the code its [`Cause`] selects, names
+/// the record's id, its span where the decoder holds one, the error text,
+/// and the sorted ids of the records dropped with it.
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct GivenUpRecord {
     record: Identity,
+    cause: Cause,
     error: String,
     provenance: Option<SourceProvenance>,
     length: Option<u64>,
@@ -51,10 +132,12 @@ pub struct GivenUpRecord {
 }
 
 impl GivenUpRecord {
-    /// The record whose id is `record`, dropped for `error`.
-    pub fn new(record: impl Into<Identity>, error: impl std::fmt::Display) -> Self {
+    /// The record whose id is `record`, dropped for `cause` with the text
+    /// `error`.
+    pub fn new(record: impl Into<Identity>, cause: Cause, error: impl std::fmt::Display) -> Self {
         Self {
             record: record.into(),
+            cause,
             error: error.to_string(),
             provenance: None,
             length: None,
@@ -63,10 +146,12 @@ impl GivenUpRecord {
         }
     }
 
-    /// The record whose id is `record`, dropped for the codec loss `why`:
-    /// the error text is `why`'s code and message, at `why`'s provenance.
-    pub fn caused_by(record: impl Into<Identity>, why: &LossNote) -> Self {
-        Self::new(record, format_args!("{}: {}", why.code, why.message)).at(why.provenance.clone())
+    /// The record whose id is `record`, dropped for `cause` as the codec
+    /// loss `why` states: the error text is `why`'s code and message, at
+    /// `why`'s provenance.
+    pub fn caused_by(record: impl Into<Identity>, cause: Cause, why: &LossNote) -> Self {
+        Self::new(record, cause, format_args!("{}: {}", why.code, why.message))
+            .at(why.provenance.clone())
     }
 
     /// The record's position in its source.
@@ -96,6 +181,14 @@ impl GivenUpRecord {
         self
     }
 
+    /// States what else the document lacks because the record was given up,
+    /// such as the transforms its value would have composed, as
+    /// [`Part::costing`] does for a part.
+    pub fn costing(mut self, consequence: impl std::fmt::Display) -> Self {
+        self.error = format!("{}; {consequence}", self.error);
+        self
+    }
+
     /// The records that state their unstated children marked because this
     /// record is dropped (§5.6).
     pub fn marking<I>(mut self, records: I) -> Self
@@ -112,7 +205,7 @@ impl GivenUpRecord {
         self
     }
 
-    /// The `record.unreadable` (Error) of the give-up.
+    /// The one loss of the give-up.
     #[must_use]
     pub fn loss(self) -> LossNote {
         let span = self
@@ -133,7 +226,7 @@ impl GivenUpRecord {
             marked: self.marked.filter(|marked| !marked.is_empty()),
             ..Tail::default()
         };
-        let loss = charge(&head, self.record, tail).with_severity(Severity::Error);
+        let loss = charge(self.cause, &head, self.record, tail);
         match self.provenance {
             Some(provenance) => loss.with_provenance(provenance),
             None => loss,
@@ -141,10 +234,10 @@ impl GivenUpRecord {
     }
 }
 
-/// The `record.unreadable` that names `named` given up: `head`, then the
-/// lists of `tail`, with the ids it carries for the decode wrapper.
-fn charge(head: &str, named: Identity, tail: Tail) -> LossNote {
-    let mut loss = LossNote::new(record_unreadable_kind(), message(head, Some(&tail)));
+/// The loss of `cause` that names `named` given up: `head`, then the lists
+/// of `tail`, with the ids it carries for the decode wrapper.
+fn charge(cause: Cause, head: &str, named: Identity, tail: Tail) -> LossNote {
+    let mut loss = cause.note(message(head, Some(&tail)));
     loss.give_up = Some(Box::new(GiveUpIds::Charge { named, tail }));
     loss
 }
@@ -154,26 +247,25 @@ fn charge(head: &str, named: Identity, tail: Tail) -> LossNote {
 /// wire form leaves them out: its text states them.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum GiveUpIds {
-    /// A `record.unreadable`: the given-up record or stub, and the lists
-    /// the text names after its head.
+    /// A give-up's loss: the given-up record or stub, and the lists the
+    /// text names after its head.
     Charge { named: Identity, tail: Tail },
     /// A `record.dropped-with` note: `record` is dropped only because it
     /// needs `needs`.
     Needs { record: Identity, needs: Identity },
 }
 
-/// The losses of a record a decoder drops whole for the codec loss `why`:
-/// `why`, then the `record.unreadable` of [`GivenUpRecord::caused_by`],
-/// which names the record by its id `record`.
+/// The one loss of a record a decoder drops whole for `cause` as the codec
+/// loss `why` states: the loss of [`GivenUpRecord::caused_by`], which names
+/// the record by its id `record` and carries `why`'s code and message.
 #[must_use]
-pub fn record_given_up(record: impl Into<Identity>, why: LossNote) -> [LossNote; 2] {
-    let unreadable = GivenUpRecord::caused_by(record, &why).loss();
-    [why, unreadable]
+pub fn record_given_up(record: impl Into<Identity>, cause: Cause, why: &LossNote) -> LossNote {
+    GivenUpRecord::caused_by(record, cause, why).loss()
 }
 
 /// The note that a decoder drops `record` only because it needs `needs`,
-/// a record whose give-up a `record.unreadable` names, or a record that one
-/// names as dropped. The decode wrapper names `record` among the records
+/// a record whose give-up a loss names, or a record that one names as
+/// dropped. The decode wrapper names `record` among the records
 /// that give-up drops, and removes the note (CADIR §3.3).
 #[must_use]
 pub fn dropped_with(record: impl Into<Identity>, needs: impl Into<Identity>) -> LossNote {
@@ -259,7 +351,7 @@ fn give_up_text(ids: &GiveUpIds) -> (String, String) {
     }
 }
 
-/// The given-up record or stub the `record.unreadable` `loss` names, and the
+/// The given-up record or stub the give-up loss `loss` names, and the
 /// records it names dropped, where `loss` carries them.
 pub(crate) fn charged(loss: &LossNote) -> Option<(&Identity, &[String])> {
     match loss.give_up.as_deref() {
@@ -277,7 +369,7 @@ pub fn needs(loss: &LossNote) -> Option<(&Identity, &Identity)> {
     }
 }
 
-/// Adds to the `record.unreadable` `loss` the records `dropped` and
+/// Adds to the give-up loss `loss` the records `dropped` and
 /// `marked`, and the `stated` outcome of each stored state, and restates its
 /// tail. A loss that carries no give-up is unchanged.
 pub(crate) fn name_released(
@@ -312,14 +404,20 @@ pub struct Part<'a> {
     name: Option<String>,
     stream: Option<StreamName>,
     offset: u64,
-    bytes: &'a [u8],
+    bytes: PartBytes<'a>,
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
     marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
-    digest_only: bool,
+}
+
+#[derive(Debug, Clone)]
+enum PartBytes<'a> {
+    Inline(&'a [u8]),
+    DigestOnly(&'a [u8]),
+    Digest { byte_len: u64, sha256: Sha256Digest },
 }
 
 impl<'a> Part<'a> {
@@ -360,14 +458,13 @@ impl<'a> Part<'a> {
             name: None,
             stream: None,
             offset,
-            bytes,
+            bytes: PartBytes::Inline(bytes),
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
             marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
-            digest_only: false,
         }
     }
 
@@ -430,7 +527,17 @@ impl<'a> Part<'a> {
     /// that already retains them in a record holding the whole stream.
     #[must_use]
     pub fn digest_only(mut self) -> Self {
-        self.digest_only = true;
+        if let PartBytes::Inline(bytes) = self.bytes {
+            self.bytes = PartBytes::DigestOnly(bytes);
+        }
+        self
+    }
+
+    /// Describes a part whose stored bytes occupy multiple borrowed extents.
+    #[must_use]
+    pub fn digest_chunks(mut self, chunks: impl IntoIterator<Item = &'a [u8]>) -> Self {
+        let (byte_len, sha256) = Sha256Digest::digest_chunks(chunks);
+        self.bytes = PartBytes::Digest { byte_len, sha256 };
         self
     }
 
@@ -703,7 +810,7 @@ impl GivenUpPart {
         address.extend_from_slice(container.as_str().as_bytes());
         address.extend_from_slice(&part_address(kind, stream.as_ref(), offset));
         let id = part_id(codec, &address)?;
-        if loss.code == record_unreadable_kind() {
+        if gives_up(&loss.code) {
             restate_record(&mut head, stub.id.as_str(), id.as_str());
         }
         let old_field = format!(
@@ -741,8 +848,8 @@ impl GivenUpPart {
         })
     }
 
-    /// A copy of the `record.unreadable` loss that names the part, for a
-    /// report that does not commit it.
+    /// A copy of the loss that names the part, for a report that does not
+    /// commit it.
     #[must_use]
     pub fn loss(&self) -> LossNote {
         self.loss.clone()
@@ -899,7 +1006,7 @@ impl GivenUpPart {
     }
 }
 
-/// Restates the `record.unreadable` loss of the part whose stub id changed
+/// Restates the give-up loss of the part whose stub id changed
 /// from `from` to `to`, as when a decoder composing several documents
 /// rescopes one document's records. Returns whether `loss` names `from`.
 pub fn restate_loss(loss: &mut LossNote, from: &str, to: &str) -> bool {
@@ -954,17 +1061,29 @@ pub fn link_committed(
 /// Gives up the parts a decoder cannot read.
 pub trait DecodeParts {
     /// Gives up `part` after its decode, run inside
-    /// [`DecodeContext::run_part`], failed with `error`.
+    /// [`DecodeContext::run_part`], failed with `error`, for `cause`. A
+    /// resource refusal of the part's scope is a bound, so its give-up
+    /// states [`Cause::Undecoded`] whatever `cause` is.
     ///
     /// # Errors
     ///
     /// `error` itself when it is fatal to the session, a refusal in force,
     /// or a resource refusal for the retained bytes.
-    fn give_up_part(&self, part: Part<'_>, error: CodecError) -> Result<GivenUpPart, CodecError>;
+    fn give_up_part(
+        &self,
+        part: Part<'_>,
+        cause: Cause,
+        error: CodecError,
+    ) -> Result<GivenUpPart, CodecError>;
 }
 
 impl DecodeParts for DecodeContext<'_> {
-    fn give_up_part(&self, part: Part<'_>, error: CodecError) -> Result<GivenUpPart, CodecError> {
+    fn give_up_part(
+        &self,
+        part: Part<'_>,
+        cause: Cause,
+        error: CodecError,
+    ) -> Result<GivenUpPart, CodecError> {
         if let Some(limit) = self.resource_refusal() {
             return Err(limit.into());
         }
@@ -976,25 +1095,29 @@ impl DecodeParts for DecodeContext<'_> {
         {
             return Err(error);
         }
+        let cause = cause.of(&error);
         let id = part.id()?;
-        let bytes = part.bytes;
-        let length = u64_from_index(bytes.len());
-        let retained_bytes = if part.digest_only {
-            RetainedBytes::Digest {
-                byte_len: length,
+        let offset = part.offset();
+        let retained_bytes = match part.bytes {
+            PartBytes::Digest { byte_len, sha256 } => RetainedBytes::Digest { byte_len, sha256 },
+            PartBytes::DigestOnly(bytes) => RetainedBytes::Digest {
+                byte_len: u64_from_index(bytes.len()),
                 sha256: Sha256Digest::digest(bytes),
+            },
+            PartBytes::Inline(bytes) => {
+                self.retain_bytes(u64_from_index(bytes.len()), "given-up part source bytes")?;
+                let mut data =
+                    self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
+                data.copy_from_slice(bytes);
+                RetainedBytes::Inline { data }
             }
-        } else {
-            self.retain_bytes(length, "given-up part source bytes")?;
-            let mut data = self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
-            data.copy_from_slice(bytes);
-            RetainedBytes::Inline { data }
         };
+        let length = retained_bytes.byte_len();
         let owner = part
             .stream
             .clone()
             .map_or(SourceOwner::Root, SourceOwner::from);
-        let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?
+        let retained = RetainedSourceRecord::from_bytes(owner, offset, retained_bytes)?
             .with_untyped(part.holds.iter().copied());
         let mut dropped: Vec<&str> = part.dropped.iter().map(Identity::as_str).collect();
         dropped.sort_unstable();
@@ -1013,7 +1136,7 @@ impl DecodeParts for DecodeContext<'_> {
         let head = format!(
             "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}",
             part.kind,
-            part.offset(),
+            offset,
         );
         let mut marked: Vec<String> = part
             .marked
@@ -1028,16 +1151,14 @@ impl DecodeParts for DecodeContext<'_> {
             stated: Vec::new(),
             lost: part.lost.clone(),
         };
-        let loss = charge(&head, Identity::from(id.clone()), tail.clone());
+        let loss = charge(cause, &head, Identity::from(id.clone()), tail.clone());
         self.retain_bytes(u64_from_index(loss.message.len()), "given-up part loss")?;
         let provenance = match part.stream.clone() {
-            Some(stream) => SourceProvenance::in_stream(part.codec, stream, part.offset()),
-            None => SourceProvenance::root(part.codec, part.offset()),
+            Some(stream) => SourceProvenance::in_stream(part.codec, stream, offset),
+            None => SourceProvenance::root(part.codec, offset),
         }
         .with_tag(part.kind);
-        let loss = loss
-            .with_severity(Severity::Error)
-            .with_provenance(provenance);
+        let loss = loss.with_provenance(provenance);
         Ok(GivenUpPart {
             codec: part.codec,
             kind: part.kind,

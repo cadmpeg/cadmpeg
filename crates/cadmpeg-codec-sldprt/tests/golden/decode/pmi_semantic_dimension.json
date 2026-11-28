@@ -377,37 +377,35 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
-        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=215 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:coedge#31, sldprt:brep:loop#20]",
+        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=215 given up: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:coedge#31, sldprt:brep:loop#20]",
         "provenance": {
           "format": "sldprt",
           "offset": 215,
           "stream": "Contents/Config-0-Partition"
         },
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
-        "message": "record sldprt:brep:edge#42 stream=\"Contents/Config-0-Partition\" offset=275 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#32]",
+        "message": "record sldprt:brep:edge#42 stream=\"Contents/Config-0-Partition\" offset=275 given up: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#32]",
         "provenance": {
           "format": "sldprt",
           "offset": 275,
           "stream": "Contents/Config-0-Partition"
         },
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {
@@ -430,7 +428,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "message": "No body record names a region; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
