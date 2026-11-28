@@ -52,6 +52,7 @@ pub(super) fn project(
                 arrangements: Some(&arrangements),
             },
             &ir.model.feature_input_topologies,
+            &ir.model.features,
         )?;
         target.definition = definition;
         if let Some(reason) = reason {
@@ -87,9 +88,10 @@ fn definition(
     source: &cadmpeg_ir::features::Feature,
     sketches: selections::SketchData<'_>,
     inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(FeatureDefinition, Option<&'static str>), CodecError> {
     let operation = source.evaluation.definition().operation();
-    let (mut operation, reason) = match typed(operation, sketches, inputs) {
+    let (mut operation, reason) = match typed(operation, sketches, inputs, features) {
         Ok(value) => (value, None),
         Err(reason) => (retained(operation)?, Some(reason)),
     };
@@ -132,6 +134,7 @@ fn typed(
     operation: &LegacyOperation,
     sketches: selections::SketchData<'_>,
     inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Projected<FeatureOperation> {
     if let Some(value) = swept::operation(operation, sketches) {
         return value;
@@ -142,7 +145,7 @@ fn typed(
     if let Some(value) = body::operation(operation) {
         return value;
     }
-    if let Some(value) = sheet_metal::operation(operation, sketches) {
+    if let Some(value) = sheet_metal::operation(operation, sketches, features) {
         return value;
     }
     match operation {

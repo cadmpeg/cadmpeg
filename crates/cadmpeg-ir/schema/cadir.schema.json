@@ -2002,6 +2002,50 @@
       "description": "Stable identity of one document asset.",
       "$ref": "#/$defs/Identity"
     },
+    "AttachedRelief": {
+      "description": "The relief operands of an attached bend.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "The source relief form.",
+          "$ref": "#/$defs/AttachedReliefForm"
+        },
+        "width": {
+          "description": "The width.",
+          "$ref": "#/$defs/Dimension8"
+        },
+        "depth": {
+          "description": "The depth.",
+          "$ref": "#/$defs/Dimension8"
+        },
+        "minimum_remnant": {
+          "description": "The minimum material remnant.",
+          "$ref": "#/$defs/Dimension13"
+        },
+        "seam_gap": {
+          "description": "The gap between adjacent sheet edges.",
+          "$ref": "#/$defs/Dimension13"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "form",
+        "width",
+        "depth",
+        "minimum_remnant",
+        "seam_gap"
+      ]
+    },
+    "AttachedReliefForm": {
+      "description": "The construction form of an attached bend's relief.",
+      "oneOf": [
+        {
+          "description": "The source document's sheet-metal style relief.",
+          "type": "string",
+          "const": "style_default"
+        }
+      ]
+    },
     "AttributeId": {
       "description": "Identifies a linked [`crate::attributes::SourceAttribute`] record.",
       "$ref": "#/$defs/Identity"
@@ -50953,6 +50997,130 @@
       "description": "What a sheet-metal feature does.",
       "oneOf": [
         {
+          "description": "A flat plate whose separate bend joins it to existing sheet edges.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "attached_plate"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "description": "The closed profile in the plate's plane.",
+                  "$ref": "#/$defs/Selection2"
+                },
+                "thickness": {
+                  "description": "The sheet thickness.",
+                  "$ref": "#/$defs/Dimension8"
+                },
+                "side": {
+                  "description": "Where the thickness lies against the profile normal.",
+                  "$ref": "#/$defs/NormalSide"
+                },
+                "attachment": {
+                  "description": "The edges of the existing sheet.",
+                  "$ref": "#/$defs/Selection2"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "thickness",
+                "side",
+                "attachment"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "The bend that joins a preceding attached plate to existing sheet edges.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "attached_bend"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "plate": {
+                  "description": "The preceding attached plate.",
+                  "$ref": "#/$defs/FeatureId"
+                },
+                "attachment": {
+                  "description": "The edges in this bend's input state.",
+                  "$ref": "#/$defs/Selection2"
+                },
+                "inside_radius": {
+                  "description": "The inside radius.",
+                  "$ref": "#/$defs/Dimension8"
+                },
+                "relief": {
+                  "description": "The bend relief.",
+                  "$ref": "#/$defs/AttachedRelief"
+                },
+                "transition_form": {
+                  "description": "The transition form.",
+                  "$ref": "#/$defs/TransitionForm"
+                },
+                "transition_radius": {
+                  "description": "The transition radius.",
+                  "$ref": "#/$defs/Dimension13"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "plate",
+                "attachment",
+                "inside_radius",
+                "relief",
+                "transition_form",
+                "transition_radius"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "A corner child that preserves its preceding bend's geometry and topology.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unchanged_corner"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "bend": {
+                  "description": "The preceding bend.",
+                  "$ref": "#/$defs/FeatureId"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "bend"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
           "description": "A rule made to govern bodies from its position on.",
           "type": "object",
           "properties": {
@@ -65387,6 +65555,16 @@
       "required": [
         "between",
         "native_options"
+      ]
+    },
+    "TransitionForm": {
+      "description": "The transition at the end of an attached bend.",
+      "oneOf": [
+        {
+          "description": "The source document's sheet-metal style transition.",
+          "type": "string",
+          "const": "style_default"
+        }
       ]
     },
     "TransitionKind": {

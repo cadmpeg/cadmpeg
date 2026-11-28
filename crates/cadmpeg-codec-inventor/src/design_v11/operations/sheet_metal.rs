@@ -7,11 +7,15 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::sheet_metal::{
-    BendSet, BendSpec, NormalSide, RadiusSide, SheetMetal, SheetMetalKind,
+    AttachedRelief, AttachedReliefForm, BendSet, BendSpec, NormalSide, RadiusSide, SheetMetal,
+    SheetMetalKind, TransitionForm,
 };
 use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::features as old;
-use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::sheet_metal_forms::{
+    SheetMetalCornerEffect, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransitionForm,
+};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
@@ -22,9 +26,14 @@ use super::{selections, swept, Projected};
 pub(super) fn operation(
     value: &LegacyOperation,
     sketches: SketchData<'_>,
+    features: &[old::Feature],
 ) -> Option<Projected<FeatureOperation>> {
     let kind = match value {
-        LegacyOperation::SheetMetalBaseFlange { profile, thickness, side } => (|| {
+        LegacyOperation::SheetMetalBaseFlange {
+            profile,
+            thickness,
+            side,
+        } => (|| {
             Ok(SheetMetalKind::Wall {
                 profile: selections::planar(profile, sketches)?,
                 thickness: thickness.map(Dimension::Literal),
@@ -36,25 +45,142 @@ pub(super) fn operation(
                 rule: None,
             })
         })(),
-        LegacyOperation::SheetMetalContourFlange { construction } => contour(construction, sketches),
-        LegacyOperation::SheetMetalUnfold { construction } if construction.neutral_factor.is_none() => (|| {
-            let bends = match (construction.all_bends, &construction.bends) {
-                (Some(true), None) => Some(BendSet::All),
-                (Some(false) | None, Some(faces)) => Some(BendSet::Selected(selections::face(faces)?)),
-                (None, None) => None,
-                _ => return Err("the unfold has conflicting bend selection controls"),
-            };
-            Ok(SheetMetalKind::Unfold {
-                fixed: construction.stationary.as_ref().map(selections::face).transpose()?,
-                bends,
+        LegacyOperation::SheetMetalContourFlange { construction } => {
+            contour(construction, sketches)
+        }
+        LegacyOperation::SheetMetalUnfold { construction }
+            if construction.neutral_factor.is_none() =>
+        {
+            (|| {
+                let bends = match (construction.all_bends, &construction.bends) {
+                    (Some(true), None) => Some(BendSet::All),
+                    (Some(false) | None, Some(faces)) => {
+                        Some(BendSet::Selected(selections::face(faces)?))
+                    }
+                    (None, None) => None,
+                    _ => return Err("the unfold has conflicting bend selection controls"),
+                };
+                Ok(SheetMetalKind::Unfold {
+                    fixed: construction
+                        .stationary
+                        .as_ref()
+                        .map(selections::face)
+                        .transpose()?,
+                    bends,
+                })
+            })()
+        }
+        LegacyOperation::SheetMetalAttachedPlate {
+            profile,
+            thickness,
+            side,
+            attachment,
+        } => (|| {
+            match profile {
+                PlanarProfileRef::Sketch(id)
+                | PlanarProfileRef::SketchRegions { sketch: id, .. }
+                    if sketches
+                        .sketches
+                        .iter()
+                        .any(|sketch| &sketch.id == id && !sketch.profiles.is_empty()) => {}
+                _ => return Err("the attached plate closed sketch profile is unresolved"),
+            }
+            let profile = selections::planar(profile, sketches)?;
+            if !matches!(
+                &profile.picks,
+                cadmpeg_ir::design::selection::Picks::Named(_)
+            ) {
+                return Err("the attached plate profile is unresolved");
+            }
+            Ok(SheetMetalKind::AttachedPlate {
+                profile,
+                thickness: Dimension::Literal(*thickness),
+                side: match side {
+                    SheetMetalThicknessSide::Forward => NormalSide::Along,
+                    SheetMetalThicknessSide::Reverse => NormalSide::Against,
+                    SheetMetalThicknessSide::Symmetric => NormalSide::Symmetric,
+                },
+                attachment: attachments::edges(attachment, features)?,
             })
         })(),
-        LegacyOperation::SheetMetalAttachedPlate { .. } => Err("the attached plate has an attachment edge outside the v11 wall contract"),
-        LegacyOperation::SheetMetalBend { .. } => Err("the attached bend stores plate, relief, and transition operands outside the v11 bend contract"),
-        LegacyOperation::SheetMetalUnfold { .. } => Err("the unfold stores a feature-local neutral factor outside the v11 unfold contract"),
-        LegacyOperation::SheetMetalRefold { construction } if construction.unfold.is_none() => Ok(SheetMetalKind::Refold { bends: None }),
-        LegacyOperation::SheetMetalRefold { .. } => Err("the refold selects an unfold feature outside the v11 bend-set contract"),
-        LegacyOperation::SheetMetalCorner { .. } => Err("the unchanged corner effect has no v11 corner-break operation"),
+        LegacyOperation::SheetMetalBend {
+            plate,
+            attachment,
+            inside_radius,
+            relief,
+            transition,
+        } => (|| {
+            let source = features
+                .iter()
+                .find(|feature| &feature.id == plate)
+                .ok_or("the attached bend plate is absent")?;
+            if !matches!(
+                source.evaluation.definition().operation(),
+                LegacyOperation::SheetMetalAttachedPlate { .. }
+            ) {
+                return Err("the attached bend plate has a different kind");
+            }
+            let Some(Ok(_)) = operation(
+                source.evaluation.definition().operation(),
+                sketches,
+                features,
+            ) else {
+                return Err("the attached bend plate operands are unresolved");
+            };
+            Ok(SheetMetalKind::AttachedBend {
+                plate: plate.clone(),
+                attachment: attachments::edges(attachment, features)?,
+                inside_radius: Dimension::Literal(*inside_radius),
+                relief: AttachedRelief {
+                    form: match relief.form {
+                        SheetMetalReliefForm::StyleDefault => AttachedReliefForm::StyleDefault,
+                    },
+                    width: Dimension::Literal(relief.width),
+                    depth: Dimension::Literal(relief.depth),
+                    minimum_remnant: Dimension::Literal(relief.minimum_remnant),
+                    seam_gap: Dimension::Literal(relief.seam_gap),
+                },
+                transition_form: match transition.form {
+                    SheetMetalTransitionForm::StyleDefault => TransitionForm::StyleDefault,
+                },
+                transition_radius: Dimension::Literal(transition.radius),
+            })
+        })(),
+        LegacyOperation::SheetMetalUnfold { .. } => {
+            Err("the unfold stores a feature-local neutral factor outside the v11 unfold contract")
+        }
+        LegacyOperation::SheetMetalRefold { construction } if construction.unfold.is_none() => {
+            Ok(SheetMetalKind::Refold { bends: None })
+        }
+        LegacyOperation::SheetMetalRefold { .. } => {
+            Err("the refold selects an unfold feature outside the v11 bend-set contract")
+        }
+        LegacyOperation::SheetMetalCorner {
+            bend,
+            effect: SheetMetalCornerEffect::Unchanged,
+        } => (|| {
+            let source = features
+                .iter()
+                .find(|feature| &feature.id == bend)
+                .ok_or("the unchanged corner bend is absent")?;
+            if !matches!(
+                source.evaluation.definition().operation(),
+                LegacyOperation::SheetMetalBend { .. }
+            ) {
+                return Err("the unchanged corner bend is unresolved");
+            }
+            if !matches!(
+                operation(
+                    source.evaluation.definition().operation(),
+                    sketches,
+                    features
+                ),
+                Some(Ok(_))
+            ) {
+                return Err("the unchanged corner bend operands are unresolved");
+            }
+            Ok(SheetMetalKind::UnchangedCorner { bend: bend.clone() })
+        })(),
         _ => return None,
     };
     Some(kind.map(|kind| {
@@ -173,3 +299,8 @@ fn contour(
         rule: None,
     })
 }
+
+#[cfg(test)]
+mod tests;
+
+mod attachments;
