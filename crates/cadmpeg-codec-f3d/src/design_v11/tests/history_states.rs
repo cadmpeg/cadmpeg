@@ -62,7 +62,15 @@ fn a_later_timeline_reports_only_built_state_changing_features() {
                 &[cadmpeg_core::json!({"id": "f3d:BREP.test:asm-history#0"})],
             )
             .unwrap();
-        super::super::project(ctx, &mut ir, DecodeDepth::Design, None, &mut losses).unwrap();
+        super::super::project(
+            ctx,
+            &mut ir,
+            DecodeDepth::Design,
+            &crate::design_v11::joint::RootOperands::new(),
+            None,
+            &mut losses,
+        )
+        .unwrap();
     });
     assert!(matches!(
         &ir.design.containers[2],

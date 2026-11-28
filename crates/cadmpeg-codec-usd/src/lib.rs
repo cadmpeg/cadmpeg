@@ -51,27 +51,27 @@ use cadmpeg_ir::ContainerSummary;
 /// USDZ package of a USDA 1.0 root layer.
 const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: dialect::USD_USDA_1_0,
+        id: dialect::registry_ids::USD_USDA_1_0,
         aliases: &["usda", "1.0"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDA_1_1,
+        id: dialect::registry_ids::USD_USDA_1_1,
         aliases: &["1.1"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDA_1_2,
+        id: dialect::registry_ids::USD_USDA_1_2,
         aliases: &["1.2"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDA_1_3,
+        id: dialect::registry_ids::USD_USDA_1_3,
         aliases: &["1.3"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDZ,
+        id: dialect::registry_ids::USD_USDZ,
         aliases: &["usdz"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDC_0_8_0,
+        id: dialect::registry_ids::USD_USDC_0_8_0,
         aliases: &["usdc", "0.8.0"],
     },
 ];
@@ -84,7 +84,7 @@ const TARGET_VERSIONS: [&str; 6] = ["1.0", "1.1", "1.2", "1.3", "1.0", "1.0"];
 pub struct UsdCodec;
 
 impl CodecBackend for UsdCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,
@@ -134,10 +134,10 @@ impl EncoderBackend for UsdCodec {
     ) -> Result<ExportBody, CodecError> {
         let packaged = target
             .synthesized_row()
-            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDZ);
+            .is_some_and(|(_, entry)| entry.id == dialect::registry_ids::USD_USDZ);
         let binary = target
             .synthesized_row()
-            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDC_0_8_0);
+            .is_some_and(|(_, entry)| entry.id == dialect::registry_ids::USD_USDC_0_8_0);
         let (mut body, members) = writer::plan(ctx, input, &target, packaged)?;
         if binary {
             let (bytes, left_out) = crate_layer(ctx, &body.bytes)?;

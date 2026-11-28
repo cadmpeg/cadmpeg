@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn manifest_extensions_preserve_depth_refusal() {
-        let bytes = crate::test_support::assembly_test::f3z_archive(
+        let bytes = crate::test_support::assembly_fixture::f3z_archive(
             r#"model.f3d","extension":[[[0]]],"spare":"unused"#,
             &[("model.f3d", b"model")],
         );

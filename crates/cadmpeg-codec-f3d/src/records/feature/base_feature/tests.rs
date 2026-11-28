@@ -139,7 +139,7 @@ fn base_feature_construction_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:base-feature#0",
         value: &value,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::BASE_FEATURE_CONSTRUCTION_CLONE_COUNT.with(|count| count.set(0)),

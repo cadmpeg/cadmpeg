@@ -29,7 +29,7 @@ use super::equations::{
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
 };
 use super::vertices::{finite_model_point, model_points_agree};
-use crate::vecmath::{cross, dot, local_system_lanes};
+use crate::vecmath::{dot, local_system_lanes};
 
 const EPS_ON_CARRIER: f64 = 1.0e-7;
 const EPS_POINT_UNIQUE: f64 = 1.0e-7;
@@ -68,7 +68,10 @@ pub(in crate::decode) fn point_on_carrier(point: [f64; 3], carrier: CarrierEquat
             if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return false;
             }
-            let y_axis = cross(axis, x_axis);
+            let y_axis = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(axis)
+                    .cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+            );
             let relative = std::array::from_fn(|index| point[index] - cone.origin()[index]);
             let axial = dot(relative, axis);
             let radius = cone.radius() + axial * cone.half_angle().tan();
@@ -655,7 +658,9 @@ fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<FinitePo
     let normal = normalize(chart.normal)?;
     let u_axis = normalize(chart.u_axis)?;
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
-    let v_axis = cross(normal, u_axis);
+    let v_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(u_axis)),
+    );
     finite_model_point(std::array::from_fn(|axis| {
         chart.origin[axis] + uv[0] * u_axis[axis] + uv[1] * v_axis[axis]
     }))
@@ -675,7 +680,10 @@ fn pcurve_candidate_endpoint_witness(
     let Some(candidate_normal) = normalize(candidate.equation.normal) else {
         return false;
     };
-    let cross_normals = cross(candidate_normal, adjacent_normal);
+    let cross_normals = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(candidate_normal)
+            .cross(cadmpeg_ir::math::Vector3::from(adjacent_normal)),
+    );
     if dot(cross_normals, cross_normals) <= EPS_ORTHO * EPS_ORTHO {
         return false;
     }
@@ -1964,7 +1972,10 @@ pub(super) fn topology_bound_plane(
         for second in first + 1..points.len() {
             let first_direction = std::array::from_fn(|axis| points[first][axis] - origin[axis]);
             let second_direction = std::array::from_fn(|axis| points[second][axis] - origin[axis]);
-            let Some(candidate) = normalize(cross(first_direction, second_direction)) else {
+            let Some(candidate) = normalize(<[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(first_direction)
+                    .cross(cadmpeg_ir::math::Vector3::from(second_direction)),
+            )) else {
                 continue;
             };
             normal = Some(candidate);
@@ -2049,7 +2060,10 @@ pub(super) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<Boundar
                         point.y - origin[1],
                         point.z - origin[2],
                     ];
-                    let residual = cross(relative, direction);
+                    let residual = <[f64; 3]>::from(
+                        cadmpeg_ir::math::Vector3::from(relative)
+                            .cross(cadmpeg_ir::math::Vector3::from(direction)),
+                    );
                     dot(residual, residual).sqrt()
                 })
                 .all(|residual| residual <= EPS_AGREE * scale)
@@ -2070,11 +2084,18 @@ fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {
     let mut candidate = None;
     'pairs: for first in 0..lines.len() {
         for second in first + 1..lines.len() {
-            let direction_cross = cross(lines[first].direction, lines[second].direction);
+            let direction_cross = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(lines[first].direction)
+                    .cross(cadmpeg_ir::math::Vector3::from(lines[second].direction)),
+            );
             let displacement =
                 std::array::from_fn(|axis| lines[second].origin[axis] - lines[first].origin[axis]);
-            let normal = normalize(direction_cross)
-                .or_else(|| normalize(cross(lines[first].direction, displacement)));
+            let normal = normalize(direction_cross).or_else(|| {
+                normalize(<[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(lines[first].direction)
+                        .cross(cadmpeg_ir::math::Vector3::from(displacement)),
+                ))
+            });
             if let Some(normal) = normal {
                 candidate = Some(PlaneEquation {
                     origin: lines[first].origin,

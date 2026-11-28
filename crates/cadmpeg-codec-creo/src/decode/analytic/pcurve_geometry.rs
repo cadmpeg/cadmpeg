@@ -7,7 +7,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::Point2;
 
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
@@ -126,13 +126,18 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
     let surface_axis = stored_unit_vector([axis.x, axis.y, axis.z])?;
     let surface_x = stored_unit_vector([ref_direction.x, ref_direction.y, ref_direction.z])?;
     (dot(surface_axis, surface_x).abs() <= EPS_ORTHO).then_some(())?;
-    let surface_y = cross(surface_axis, surface_x);
+    let surface_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(surface_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(surface_x)),
+    );
     let conic_axis = stored_unit_vector([conic_axis.x, conic_axis.y, conic_axis.z])?;
     let conic_x = stored_unit_vector([conic_x.x, conic_x.y, conic_x.z])?;
     (dot(conic_axis, conic_x).abs() <= EPS_ORTHO
         && (dot(conic_axis, surface_axis).abs() - 1.0).abs() <= EPS_ORTHO)
         .then_some(())?;
-    let conic_y = cross(conic_axis, conic_x);
+    let conic_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(conic_axis).cross(cadmpeg_ir::math::Vector3::from(conic_x)),
+    );
     let center_relative = [
         center.x - origin.x,
         center.y - origin.y,
@@ -258,11 +263,17 @@ pub(in crate::decode) fn meridian_circle_pcurve(
     let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
     let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
     (dot(surface_axis, surface_x).abs() <= EPS_ORTHO).then_some(())?;
-    let surface_y = cross(surface_axis, surface_x);
+    let surface_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(surface_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(surface_x)),
+    );
     let circle_axis = stored_unit_vector([circle_axis.x, circle_axis.y, circle_axis.z])?;
     let circle_x = stored_unit_vector([circle_x.x, circle_x.y, circle_x.z])?;
     (dot(circle_axis, circle_x).abs() <= EPS_ORTHO).then_some(())?;
-    let circle_y = cross(circle_axis, circle_x);
+    let circle_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(circle_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(circle_x)),
+    );
     let center_relative = [
         circle_center.x - surface_center.x,
         circle_center.y - surface_center.y,
@@ -287,10 +298,16 @@ pub(in crate::decode) fn meridian_circle_pcurve(
         radial.map(|coordinate| coordinate / radial_length)
     } else {
         (dot(center_relative, center_relative).sqrt() <= EPS_AGREE * scale).then_some(())?;
-        let radial = cross(circle_axis, surface_axis);
+        let radial = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(circle_axis)
+                .cross(cadmpeg_ir::math::Vector3::from(surface_axis)),
+        );
         stored_unit_vector(radial)?
     };
-    let meridian_normal = cross(surface_axis, radial);
+    let meridian_normal = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(surface_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(radial)),
+    );
     ((dot(circle_axis, meridian_normal).abs() - 1.0).abs() <= EPS_ORTHO).then_some(())?;
     let u = dot(radial, surface_y).atan2(dot(radial, surface_x));
     let phase = dot(circle_x, surface_axis).atan2(dot(circle_x, radial));
@@ -348,7 +365,10 @@ pub(in crate::decode) fn ruled_generator_line_pcurve(
     let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
     let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
     (dot(surface_axis, surface_x).abs() <= EPS_ORTHO).then_some(())?;
-    let surface_y = cross(surface_axis, surface_x);
+    let surface_y = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(surface_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(surface_x)),
+    );
     let relative = [
         line_origin.x - surface_origin.x,
         line_origin.y - surface_origin.y,

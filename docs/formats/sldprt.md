@@ -1889,7 +1889,7 @@ After the feature-object block, a `moRefPlane_c` reference plane writes these by
 | +136 | little-endian u32 |
 | +140 | ten zero bytes, or six in a file whose `swVersion` is below 13000 |
 
-The plane's plane-data object follows these bytes, as a class token or a class declaration and the object's fields.
+The plane's plane-data object follows these bytes, as a class token or a class declaration and the object's fields. A plane-data object written as a class token behind six zero bytes stores its frame immediately after the token, in the 121-byte matrix form, the 97-byte fixed form or the 81-byte form (open item DI-96).
 
 A `moRefAxis_c` reference axis writes the same bytes as a reference plane.
 

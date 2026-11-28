@@ -312,8 +312,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let archive = crate::test_support::zip_test::f3d_with_configuration(
-        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_configuration(
+        &crate::test_support::smbh_header_fixture::synthetic_smbh(),
         stream_name,
         &bytes,
     );
@@ -321,7 +321,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     record.id = crate::ids::native_scoped_id(stream_name, "record", 100);
     recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
     let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let decoded = crate::design::decode::operands::body_recipes::decode_body_recipe_operands(
             scan,
             &[],

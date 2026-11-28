@@ -11,6 +11,7 @@ use crate::failure::{Missing, Outcome};
 use crate::reason::UnavailableReason;
 
 /// Whole periods that one span of a loop polyline segment may cover.
+// resource-cap: MAX_SPAN_LIFTS = 4
 pub(super) const MAX_SPAN_LIFTS: usize = 1 << 16;
 
 fn refused(reason: UnavailableReason, message: &str) -> Missing {

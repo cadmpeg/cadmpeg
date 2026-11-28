@@ -33,7 +33,12 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    CATIA_E5_STREAM, CATIA_FBB_ONLY, CATIA_FLOAT_PACKED_INNER_NO_FBB, CATIA_INNER_NO_DIRECTORY,
+    CATIA_STANDARD_NESTED, CATIA_UNKNOWN, CATIA_ZERO_ENTITY,
+};
 
 /// Key of the `LastSaveVersion` generation number in [`DialectMatch::declared`].
 const DECLARED_VERSION: &str = "last_save_version";

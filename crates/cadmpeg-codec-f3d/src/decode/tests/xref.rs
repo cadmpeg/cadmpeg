@@ -89,7 +89,7 @@ fn assembly_property_note_preserves_role_and_data_text() {
 fn an_invalid_component_reference_table_without_redirections_gives_up_its_own_entry() {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
     let properties = r#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
     zip.write_all(&u32::try_from(properties.len()).unwrap().to_le_bytes())

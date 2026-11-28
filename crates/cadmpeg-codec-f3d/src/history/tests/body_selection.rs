@@ -1344,10 +1344,7 @@ fn a_seed_body_the_final_model_keeps_selects_that_model_body() {
 }
 
 #[test]
-fn a_seed_body_updated_after_its_seed_state_stays_historical() {
-    use cadmpeg_ir::features::patterns::PatternSeed;
-    use cadmpeg_ir::features::selections::BodySelection;
-    use cadmpeg_ir::features::FeatureDefinition;
+fn a_seed_body_updated_after_its_seed_state_is_generated_by_its_writer_at_that_state() {
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -1363,51 +1360,74 @@ fn a_seed_body_updated_after_its_seed_state_stays_historical() {
             later_update: false,
         },
     );
-    assert!(matches!(
-        pattern.evaluation.definition(),
-        FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. })
-            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Historical { .. })])
-    ));
+    assert_eq!(
+        seed_generators(&pattern),
+        [("f3d:test:feature#extrude", "1")]
+    );
 }
 
 #[test]
-fn a_seed_body_updated_after_the_pattern_state_stays_historical() {
-    use cadmpeg_ir::features::patterns::PatternSeed;
-    use cadmpeg_ir::features::selections::BodySelection;
-    use cadmpeg_ir::features::FeatureDefinition;
+fn a_seed_body_that_an_unscoped_state_updates_is_generated_by_its_inserting_feature() {
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    let (pattern, _) = generated_case_in(
+    let histories = [crate::test_support::history::history(
+        "f3d:Assets/BREP.source.smbh:asm-history#0".into(),
+        0,
+        None,
+        false,
+        [
+            (81, vec![1]),
+            (80, vec![1]),
+            (79, vec![1]),
+            (77, vec![1]),
+            (2, Vec::new()),
+        ]
+        .into_iter()
+        .map(|(state_id, bodies)| {
+            let mut state = history_state(state_id, bodies);
+            if state_id == 80 {
+                for version in &mut state.2 {
+                    version.record_ref = 79;
+                }
+            }
+            state
+        })
+        .collect(),
+    )];
+    let (pattern, _, losses) = generated_selection_in_state(
         std::slice::from_ref(&body),
         GeneratedSelector::Pattern,
-        GeneratedHistory::Single {
-            id: "f3d:Assets/BREP.source.smbh:asm-history#0",
-            seed_state: 79,
-            later_update: true,
-        },
+        &histories,
+        &std::collections::HashMap::new(),
+        79,
+        1,
     );
-    assert!(matches!(
-        pattern.evaluation.definition(),
-        FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. })
-            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Historical { .. })])
-    ));
+    assert_eq!(
+        seed_generators(&pattern),
+        [("f3d:test:feature#extrude", "1")]
+    );
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.body-operand-writer-assumed"
+    );
 }
 
 #[test]
-fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
-    assert_seed_with_updated_entity_stays_historical(|topology| &mut topology.faces);
+fn a_seed_body_with_a_face_updated_after_the_pattern_state_is_generated_by_its_writer() {
+    assert_seed_with_updated_entity_is_generated(|topology| &mut topology.faces);
 }
 
 #[test]
-fn a_seed_body_with_a_surface_updated_after_the_pattern_state_stays_historical() {
-    assert_seed_with_updated_entity_stays_historical(|topology| &mut topology.surfaces);
+fn a_seed_body_with_a_surface_updated_after_the_pattern_state_is_generated_by_its_writer() {
+    assert_seed_with_updated_entity_is_generated(|topology| &mut topology.surfaces);
 }
 
-fn assert_seed_with_updated_entity_stays_historical(
+fn assert_seed_with_updated_entity_is_generated(
     entity_slots: impl Fn(&mut crate::history_records::AsmHistoricalTopology) -> &mut Vec<i64>,
 ) {
     use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
@@ -1561,9 +1581,28 @@ fn assert_seed_with_updated_entity_stays_historical(
         None,
         &mut Vec::new(),
     );
-    assert!(matches!(
-        features[1].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
-            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Historical { .. })])
-    ));
+    assert_eq!(
+        seed_generators(&features[1]),
+        [("f3d:test:feature#extrude", "1")]
+    );
+}
+
+/// The generating feature and local identity of each seed body of a body
+/// pattern whose seed is a generated selection.
+fn seed_generators(pattern: &cadmpeg_ir::features::Feature) -> Vec<(&str, &str)> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+        pattern.evaluation.definition()
+    else {
+        panic!("pattern definition");
+    };
+    let [PatternSeed::Bodies(BodySelection::Generated { bodies, .. })] = seeds.as_slice() else {
+        panic!("generated seed: {seeds:?}");
+    };
+    bodies
+        .iter()
+        .map(|body| (body.feature.as_str(), body.local_id.as_str()))
+        .collect()
 }

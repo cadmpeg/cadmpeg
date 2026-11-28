@@ -4,6 +4,7 @@
 mod body_bounds;
 mod body_centers;
 mod body_incidence;
+mod body_operands_by_writer;
 mod body_recipe;
 mod body_recipe_selections;
 mod body_selection;

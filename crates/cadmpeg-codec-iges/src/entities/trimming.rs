@@ -45,6 +45,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Endpoint clustering compares every endpoint pair of one boundary. A boundary
 /// with more endpoints than this is not projected and reports a geometry loss.
+// resource-cap: MAX_BOUNDARY_CLUSTER_ENDPOINTS = 4
 pub(super) const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
 
 struct BoundarySegment {

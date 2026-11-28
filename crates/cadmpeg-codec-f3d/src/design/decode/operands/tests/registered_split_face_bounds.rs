@@ -146,9 +146,9 @@ fn decode_with_scanned_header(
         byte_offset: scanned_header_offset,
         class_tag: "256".to_owned().try_into().unwrap(),
     };
-    let archive = crate::test_support::body_reference_tail_test::archive(&fixture.bytes, meta);
+    let archive = crate::test_support::body_reference_tail_fixture::archive(&fixture.bytes, meta);
     crate::test_support::with_decode_context(|ctx| {
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             super::super::face_operands::decode_face_operands(
                 ctx,
                 scan,

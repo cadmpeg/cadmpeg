@@ -31,6 +31,7 @@ use crate::native::ActiveCarrierRecord;
 
 /// Local work cap of one state-index read, in live records inspected. The
 /// work is the state count times the live record count.
+// resource-cap: MAX_STATE_SCAN_WORK = 4
 pub(crate) const MAX_STATE_SCAN_WORK: usize = 1 << 24;
 
 /// Source tag of a Split feature that partitions one body.

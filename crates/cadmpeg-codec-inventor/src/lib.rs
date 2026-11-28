@@ -62,7 +62,7 @@ fn issue_detail(error: CodecError) -> Result<String, CodecError> {
 pub struct InventorCodec;
 
 impl CodecBackend for InventorCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn validate_native(
         ctx: &DecodeContext<'_>,

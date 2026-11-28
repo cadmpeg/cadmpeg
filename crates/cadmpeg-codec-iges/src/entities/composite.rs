@@ -35,8 +35,11 @@ use std::fmt;
 
 const EPS_COMPOSITE_DEGENERATE: f64 = 1.0e-10;
 
+// resource-cap: MAX_COMPOSITE_CHILDREN = 2
 const MAX_COMPOSITE_CHILDREN: usize = 100_000;
+// resource-cap: MAX_COMPOSITE_DEGREE = 1
 const MAX_COMPOSITE_DEGREE: usize = 1024;
+// resource-cap: MAX_COMPOSITE_DEPTH = 4
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
 fn composite_minimum_child_count(global_table: GlobalTable) -> usize {

@@ -756,8 +756,11 @@ pub(in crate::solve) fn propagate_common_ordered_face_quotients(
     budget: &WorkBudget,
 ) -> Result<Option<()>, CodecError> {
     (|| -> Option<Result<(), CodecError>> {
+        // resource-cap: MAX_FACE_OPTIONS = 4
         const MAX_FACE_OPTIONS: usize = 4_096;
+        // resource-cap: MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS = 4
         const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
+        // resource-cap: MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS = 4
         const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
         let mut face_order = vec![0usize; domains.len()];
         for (face, slot) in face_order.iter_mut().enumerate() {
@@ -1196,8 +1199,11 @@ pub(in crate::solve) fn propagate_common_boundary_components(
     quotient: &mut MeshQuotient,
     budget: &WorkBudget,
 ) -> Result<Option<()>, CodecError> {
+    // resource-cap: MAX_COMPONENT_STATES = 4
     const MAX_COMPONENT_STATES: usize = 128;
+    // resource-cap: MAX_COMPONENT_OPERATIONS = 4
     const MAX_COMPONENT_OPERATIONS: usize = 8_192;
+    // resource-cap: MAX_COMPONENT_ROUNDS = 4
     const MAX_COMPONENT_ROUNDS: usize = 8;
 
     let mut domain_edges = Vec::new();

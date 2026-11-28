@@ -231,6 +231,8 @@ impl Role {
 /// What the operation `operation` of a v11 timeline item changes.
 fn role(operation: &FeatureOperation) -> Role {
     match operation {
+        FeatureOperation::RigidGroup(_) => Role::Inert,
+        FeatureOperation::Joint(_) => Role::Assembly,
         FeatureOperation::Unresolved { family } => match family {
             OperationFamily::RigidGroup => Role::Inert,
             OperationFamily::Joint

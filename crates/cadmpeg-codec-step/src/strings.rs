@@ -13,6 +13,7 @@ pub(crate) struct StringError {
     message: String,
 }
 
+// resource-cap: MAX_STORED_STRING_OCTETS = 2
 const MAX_STORED_STRING_OCTETS: usize = 32_767;
 
 pub(crate) fn decode(input: &[u8], level: ImplementationLevel) -> Result<String, StringError> {

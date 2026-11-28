@@ -162,10 +162,10 @@ fn container_only_neutral_parameter_id_matches_identity_shape() {
 
 #[test]
 fn archive_entries_do_not_hide_new_model_entities() {
-    let bytes = crate::test_support::assembly_test::f3d_without_brep(
+    let bytes = crate::test_support::assembly_fixture::f3d_without_brep(
         "assembly",
         "root.f3d",
-        &[("part.f3d", crate::test_support::assembly_test::XREF_ROLE)],
+        &[("part.f3d", crate::test_support::assembly_fixture::XREF_ROLE)],
     );
     crate::test_support::with_decode_context(|scan_ctx| {
         let scan =
