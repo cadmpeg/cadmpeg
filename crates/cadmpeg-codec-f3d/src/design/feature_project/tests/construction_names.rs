@@ -58,7 +58,11 @@ fn an_unnamed_construction_feature_charges_its_composed_name() {
         (DesignFeatureKind::WorkAxis, "WorkAxis1"),
         (DesignFeatureKind::WorkPoint, "WorkPoint1"),
     ] {
-        assert_eq!(project(scope(kind)), (Some(expected.to_owned()), 1), "{expected}");
+        assert_eq!(
+            project(scope(kind)),
+            (Some(expected.to_owned()), 1),
+            "{expected}"
+        );
     }
     let mut localized = scope(DesignFeatureKind::WorkPlane);
     localized.source_kind = Some("Plan de construction".to_owned());
