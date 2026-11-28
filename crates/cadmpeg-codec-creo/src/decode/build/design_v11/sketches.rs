@@ -25,6 +25,7 @@ use cadmpeg_ir::design::ops::sketch::{
     Operand, Planar, PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity,
     SketchPlane, SketchRelation, SketchSolve,
 };
+use cadmpeg_ir::design::projection::sketch::planar_curve;
 use cadmpeg_ir::design::selection::{Anchor, Picks, PrincipalEntity, Selection};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::document::CadIr;
@@ -38,10 +39,10 @@ use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{
     Sketch as LegacySketch, SketchAxis, SketchConstraintDefinitionInput as Input,
-    SketchCoordinateAxis, SketchEntity as LegacyEntity, SketchEntityId, SketchGeometry,
+    SketchCoordinateAxis, SketchEntity as LegacyEntity, SketchEntityId,
     SketchGeometryDefinition as Geometry, SketchId, SketchLocus,
 };
-use cadmpeg_ir::units::{FinitePoint2, UnitVector2, UnitVector3};
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use crate::container::ContainerScan;
 
@@ -283,62 +284,8 @@ fn native_form(kind: &str) -> Result<EntityDefinition<Planar>, CodecError> {
     })
 }
 
-fn direction(angle: Angle) -> Option<UnitVector2> {
-    UnitVector2::new([angle.get().portable_cos(), angle.get().portable_sin()])
-}
-
-/// The solved curve of an entity whose v10 geometry has a v11 curve.
-fn curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
-    Some(match geometry.definition() {
-        Geometry::Point { position } => PlanarCurve::Point(*position),
-        Geometry::Line { start, end } => PlanarCurve::Line {
-            start: *start,
-            end: *end,
-        },
-        Geometry::ReferenceLine { origin, direction } => {
-            let length = direction.u.portable_hypot(direction.v);
-            PlanarCurve::InfiniteLine {
-                through: *origin,
-                direction: UnitVector2::new([direction.u / length, direction.v / length])?,
-            }
-        }
-        Geometry::Circle { center, radius } => PlanarCurve::Circle {
-            center: *center,
-            radius: *radius,
-        },
-        Geometry::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => PlanarCurve::Arc {
-            center: *center,
-            radius: *radius,
-            start: *start_angle,
-            end: *end_angle,
-        },
-        Geometry::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds,
-        } => PlanarCurve::Ellipse {
-            center: *center,
-            major: direction(*major_angle)?,
-            radii: [radii.major(), radii.minor()],
-            range: *bounds,
-        },
-        Geometry::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        Geometry::Hyperbola { .. }
-        | Geometry::Parabola { .. }
-        | Geometry::Text { .. }
-        | Geometry::ExternalReference { .. }
-        | Geometry::Native { .. } => return None,
-    })
-}
-
 fn project_entity(entity: &LegacyEntity) -> Result<SketchEntity<Planar>, CodecError> {
-    let definition = match curve(&entity.geometry) {
+    let definition = match planar_curve(&entity.geometry) {
         Some(curve) => EntityDefinition::Free(curve),
         None => match entity.geometry.definition() {
             Geometry::Hyperbola { .. } => native_form("hyperbola")?,
@@ -426,7 +373,7 @@ impl Points {
         };
         let mut records = BTreeMap::new();
         for entity in entities.clone() {
-            let geometry = curve(&entity.geometry);
+            let geometry = planar_curve(&entity.geometry);
             if let (Some(PlanarCurve::Point(position)), [record]) =
                 (&geometry, entity.endpoint_refs.as_slice())
             {

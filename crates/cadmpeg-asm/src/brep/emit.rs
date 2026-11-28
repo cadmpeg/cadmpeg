@@ -5157,8 +5157,6 @@ pub struct ContainerInputs<'a, 'record> {
     pub wire: &'a WireShellTopology,
     /// Source stream name.
     pub stream: &'a str,
-    /// Transform length scale.
-    pub header_scale: f64,
     /// Identity format.
     pub format: IdFormat,
 }
@@ -5176,7 +5174,6 @@ pub fn emit_containers(
         reach,
         wire,
         stream,
-        header_scale,
         format,
     } = inputs;
     let Reachable {
@@ -5298,8 +5295,7 @@ pub fn emit_containers(
                 out.bodies.push(Body {
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
-                    transform: transform_record
-                        .and_then(|transform| decode_transform(transform, header_scale)),
+                    transform: transform_record.and_then(|transform| decode_transform(transform)),
                     name: attribute_name(r)?,
                     color: attribute_color(r),
                     visible: None,
@@ -5443,20 +5439,7 @@ fn retain_record(
     bytes: &[u8],
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let end = r.offset.checked_add(r.len).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "record {} at byte {} declares a length of {} bytes, which leaves the address space",
-            r.index, r.offset, r.len
-        ))
-    })?;
-    let retained = bytes.get(r.offset..end).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "record {} declares bytes {}..{end}, but the stream holds {} bytes",
-            r.index,
-            r.offset,
-            bytes.len()
-        ))
-    })?;
+    let retained = r.bytes_in(bytes)?;
     ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(retained.len()),
         "retain ASM unknown record",

@@ -169,7 +169,7 @@ fn assert_paste_inserts_its_copies(
     assert_eq!(outputs.len(), copies);
     assert_eq!(outputs, expected);
     assert!(outputs.iter().all(|output| !sources.contains(output)));
-    assert_eq!(feature.name.as_deref(), Some("CopyPasteBodies 1"));
+    assert_eq!(feature.name.as_deref(), Some("CopyPasteBodies1"));
 }
 
 /// The timeline item of the paste object has the feature of the `Base Feature`

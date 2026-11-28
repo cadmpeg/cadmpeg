@@ -8,6 +8,7 @@ mod attribute_colors;
 mod body_reference_tails;
 mod cc0_controller;
 mod configuration_parameters;
+pub(crate) mod configuration_wire;
 mod design_containment;
 mod design_parameters;
 mod design_v11;
@@ -31,6 +32,7 @@ mod fusion_surface_loft;
 mod fusion_surface_revolve;
 mod fusion_tessellate;
 mod fusion_timeline_state;
+mod fusion_two_sided_extrude;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -241,6 +243,33 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
         "W-1"
     );
     assert_valid(&configured);
+}
+
+/// A `delta_state` header whose integer is mistagged leaves every state of
+/// the history unread, so the history partition is given up over its bytes.
+#[test]
+fn a_mistagged_delta_state_header_gives_up_the_history_partition() {
+    let mut smbh = synthetic_geometry_with_history_smbh();
+    let marker = b"\x0d\x0bdelta_state";
+    let second = smbh
+        .windows(marker.len())
+        .enumerate()
+        .filter(|(_, window)| *window == marker)
+        .nth(1)
+        .map(|(at, _)| at)
+        .expect("the history holds a second state");
+    let tag = second + marker.len();
+    assert_eq!(smbh[tag], 0x04, "the state id is an integer");
+    smbh[tag] = 0x0c;
+    let bytes = f3d_with_smbh(&smbh);
+
+    let decoded = decode(bytes.clone());
+    let head =
+        "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=";
+    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    assert!(f3d_native(decoded.ir()).asm_histories.is_empty());
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    crate::test_support::assert_pinned_refusal(bytes, head);
 }
 
 #[test]

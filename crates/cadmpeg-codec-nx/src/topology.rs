@@ -618,10 +618,12 @@ pub(crate) struct Graph {
     by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
-    primary_edge_refusals: Vec<usize>,
+    /// The framed EDGE records that the graph leaves out, by XMT index and
+    /// range.
+    primary_edge_refusals: Vec<(u32, std::ops::Range<usize>)>,
     /// Supported non-EDGE nodes of a terminated sequence that the graph
-    /// leaves out, by kind and start.
-    primary_node_refusals: Vec<(NodeKind, usize)>,
+    /// leaves out, by kind, XMT index, and range.
+    primary_node_refusals: Vec<(NodeKind, u32, std::ops::Range<usize>)>,
     primary_unread_from: Option<usize>,
     /// The node ranges of a terminated primary sequence.
     primary_records: Option<Vec<std::ops::Range<usize>>>,
@@ -744,6 +746,8 @@ pub(crate) struct CompositeCurve {
     pub(crate) references: [Option<XmtTarget>; 6],
     /// Record type-tag offset in the inflated stream.
     pub(crate) pos: usize,
+    /// The offset past the record's last read field.
+    pub(crate) end: usize,
 }
 
 /// Decode validated type-38 surface-intersection construction records.
@@ -782,6 +786,7 @@ impl Graph {
                     sense,
                     references: references.map(XmtTarget::from_wire),
                     pos: node.pos(),
+                    end: node.end(),
                 })
         }))
         .collect::<Vec<_>>()
@@ -840,6 +845,7 @@ fn declared_composite_curve_at(stream: &[u8], pos: usize) -> Option<CompositeCur
             sense,
             references: references.map(XmtTarget::from_wire),
             pos,
+            end: at,
         })
 }
 

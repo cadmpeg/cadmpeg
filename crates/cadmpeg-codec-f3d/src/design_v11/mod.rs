@@ -21,7 +21,7 @@
 //! parameters and configuration rows of a referenced design without a scope
 //! of its own belong to no scope here, and a loss names each of them.
 
-mod configurations;
+pub(crate) mod configurations;
 mod datum;
 mod operation;
 pub(crate) mod parameters;

@@ -32,7 +32,7 @@ pub(crate) struct MemberCurveRecord {
     body: MemberCurveBody,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "body", rename_all = "snake_case")]
 enum MemberCurveBody {
     /// Body kind 5: one u32 value and no curve lanes.

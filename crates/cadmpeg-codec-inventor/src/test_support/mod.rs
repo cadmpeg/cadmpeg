@@ -2,6 +2,7 @@
 //! Shared synthetic Inventor byte-fixture builders and diagnostic readers for
 //! crate tests.
 
+pub(crate) mod base_envelope;
 pub(crate) mod coil;
 pub(crate) mod combine;
 pub(crate) mod history_carrier;

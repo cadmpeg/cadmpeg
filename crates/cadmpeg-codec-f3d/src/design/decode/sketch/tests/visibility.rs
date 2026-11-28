@@ -277,6 +277,15 @@ fn collection_stream_version(
     collections: &[(u64, &[u64])],
     version: u32,
 ) -> (Vec<u8>, crate::metastream::MetaStream) {
+    collection_stream_form(named_collection, collections, version, None)
+}
+
+fn collection_stream_form(
+    named_collection: u64,
+    collections: &[(u64, &[u64])],
+    version: u32,
+    member_type: Option<&str>,
+) -> (Vec<u8>, crate::metastream::MetaStream) {
     let (mut bytes, mut metadata) = visibility_stream();
     let member_at = bytes.len() - member(1, 1).len();
     bytes[member_at + 37..member_at + 45].copy_from_slice(&named_collection.to_le_bytes());
@@ -307,6 +316,9 @@ fn collection_stream_version(
         for target in *members {
             bytes.push(1);
             bytes.extend_from_slice(&target.to_le_bytes());
+            if let Some(member_type) = member_type {
+                crate::test_support::lp_ascii(&mut bytes, member_type);
+            }
             bytes.extend_from_slice(&[0; 2]);
         }
         metadata.records.push(crate::metastream::RecordIndexEntry {
@@ -610,6 +622,26 @@ fn version_three_collection_has_six_bytes_before_its_member_run() {
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
     assert!(visibilities[0].1.visible);
+}
+
+#[test]
+fn version_three_collection_run_carries_the_sketch_container_type() {
+    let undecoded = crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind();
+    let decode = |version, member_type| {
+        let (bytes, metadata) =
+            collection_stream_form(300, &[(300, &[ENTITY_SUFFIX])], version, Some(member_type));
+        decode_with_losses(&bytes, &metadata)
+    };
+    let (visibilities, losses) = decode(3, SKETCH_CONTAINER_TYPE_GUID);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert!(losses.is_empty());
+    for (version, member_type) in [
+        (4, SKETCH_CONTAINER_TYPE_GUID),
+        (3, "11111111-2222-4333-8444-555555555555"),
+    ] {
+        let (_, losses) = decode(version, member_type);
+        assert!(losses.iter().any(|loss| loss.code == undecoded));
+    }
 }
 
 #[test]
