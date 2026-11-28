@@ -1583,7 +1583,7 @@ fn restated<'a>(
     restated
 }
 
-fn position(at: &Position) -> String {
+pub(in crate::writer) fn position(at: &Position) -> String {
     match at {
         Position::Start(container) => format!("at the start of {container}"),
         Position::After(member) => format!("after {}", member_id(member)),

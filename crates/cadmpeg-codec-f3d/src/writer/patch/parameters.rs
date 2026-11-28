@@ -25,6 +25,7 @@ use crate::ids::{native_scope_matches, native_stream, neutral_parameter_id};
 use crate::native::F3dNative;
 use crate::records::parameters::DesignParameter as Native;
 use crate::writer::generate::design::parameters::{database_value, printed_expression};
+use crate::writer::generate::design::position;
 
 pub(super) struct Parameters {
     changes: BTreeMap<ParameterId, Change>,
@@ -271,8 +272,9 @@ impl Parameters {
             scope.current.iter().filter_map(|state| {
                 status(state.status).map(|status| {
                     format!(
-                        "{} current state {:?} ({status})",
-                        scope.definition, state.at
+                        "{} current state {} ({status})",
+                        scope.definition,
+                        position(&state.at)
                     )
                 })
             })
