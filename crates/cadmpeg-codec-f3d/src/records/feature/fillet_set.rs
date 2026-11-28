@@ -166,7 +166,7 @@ impl DesignFilletSet {
 }
 
 /// Parameter owner that carries a fillet set's radius law.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignFilletSetLaw {
     /// Owner of a `Radius` parameter.

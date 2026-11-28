@@ -136,8 +136,8 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .unwrap()
             .iter()
             .any(|loss| {
-                loss["code"]["value"]["namespace"] == "rhino"
-                    && loss["code"]["value"]["code"] == "object.framing-undecodable"
+                loss["code"]["value"]["namespace"] == "decode"
+                    && loss["code"]["value"]["code"] == "record.unreadable"
             }));
     }
 }

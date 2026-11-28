@@ -35,6 +35,7 @@ mod triangulate;
 
 pub use face::{CoedgeTrace, FaceMesh, Refusal};
 
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::CadIr;
@@ -73,17 +74,28 @@ pub struct Tessellator<'ir> {
     index: ModelIndex<'ir>,
     options: Options,
     edges: boundary::EdgeCache,
+    admission: EvaluationAdmission<'ir, 'ir>,
 }
 
 impl<'ir> Tessellator<'ir> {
-    /// A tessellator of `ir`.
+    /// A tessellator of `ir` whose evaluations run under their own limits
+    /// ([`EvaluationAdmission::Standard`]).
     #[must_use]
     pub fn new(ir: &'ir CadIr, options: Options) -> Self {
         Self {
             index: ModelIndex::new_model_only(ir),
             options,
             edges: boundary::EdgeCache::default(),
+            admission: EvaluationAdmission::Standard,
         }
+    }
+
+    /// This tessellator with each evaluation under `admission`, so that a
+    /// write session's refusal refuses the faces meshed after it.
+    #[must_use]
+    pub fn within(mut self, admission: EvaluationAdmission<'ir, 'ir>) -> Self {
+        self.admission = admission;
+        self
     }
 
     /// The options of this tessellator.

@@ -8,8 +8,7 @@ use crate::design::decode::deleted_members::timestamp_table_spans_by_owner;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
-    cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset,
-    IndexedRecordOffsets,
+    indexed_record_header_at, next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
@@ -133,7 +132,6 @@ pub(crate) fn decode_surface_trim_operations(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
-    let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut timestamp_tables = HashMap::<String, HashMap<u32, Option<Range<usize>>>>::new();
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
@@ -147,12 +145,12 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offsets, stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         let timestamp_tables = timestamp_tables
             .entry(stream.to_owned())
             .or_insert_with(|| timestamp_table_spans_by_owner(bytes));
         let Some(mut operation) =
-            exact_surface_trim_operation(bytes, records, timestamp_tables, scope)
+            exact_surface_trim_operation(bytes, &records, timestamp_tables, scope)
         else {
             continue;
         };

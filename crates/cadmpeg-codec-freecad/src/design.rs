@@ -62,6 +62,7 @@ use crate::layout::fillet_edge_item;
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod cell_content;
 mod first_feature;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
@@ -91,6 +92,7 @@ macro_rules! required {
 pub(crate) struct DesignObjects<'a> {
     pub(crate) objects: &'a [ObjectRecord],
     pub(crate) extensions: &'a [crate::native::ExtensionRecord],
+    pub(crate) products: &'a [crate::native::ProductNodeRecord],
 }
 
 #[derive(Clone, Copy)]
@@ -111,6 +113,7 @@ pub(crate) fn transfer(
     let DesignObjects {
         objects,
         extensions,
+        products,
     } = graph;
     let attachment_owners = extensions
         .iter()
@@ -132,6 +135,7 @@ pub(crate) fn transfer(
             owned.push(property);
         }
     }
+    let parent_map = crate::product::ParentMap::new(products, objects, &properties_by_owner);
     let reference_graph = DesignReferenceGraph {
         objects,
         properties_by_owner: &properties_by_owner,
@@ -157,6 +161,7 @@ pub(crate) fn transfer(
             .iter()
             .flatten()
             .filter_map(crate::native::LinkTarget::object)
+            .filter(|member| parent_map.coordinate(member) == Some(body.id().as_str()))
         {
             parent_by_member.insert(member, feature_id(body)?);
         }
@@ -232,7 +237,7 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(&owned, &feature_ids)?
+            body_definition(object.id(), &owned, &feature_ids, &parent_map)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned)
@@ -265,7 +270,7 @@ pub(crate) fn transfer(
         } else if is_primitive(&object.type_name) {
             match primitive_definition(ctx, &object.type_name, &owned)? {
                 Some(mut definition) => {
-                    match primitive_placement::resolve(object, objects, &properties_by_owner)? {
+                    match primitive_placement::resolve(object, &parent_map, &properties_by_owner)? {
                         Some(frame) => {
                             if let FeatureDefinition::Operation(FeatureOperation::Primitive {
                                 placement,
@@ -392,14 +397,13 @@ pub(crate) fn transfer(
                 .and_then(|(_, target)| {
                     objects.iter().find(|object| object.id().as_str() == target)
                 })
-                .map(|profile_object| {
+                .and_then(|profile_object| {
                     let profile_properties = properties_by_owner
                         .get(profile_object.id().as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
                     sketch_frame(profile_properties).map(|frame| frame.1)
-                })
-                .transpose()?;
+                });
             extrusion_definition(
                 ctx,
                 &object.type_name,
@@ -603,7 +607,9 @@ pub(crate) fn transfer(
     Ok((cycle_affected, losses))
 }
 
-fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
+pub(crate) fn body_membership_property<'a>(
+    properties: &'a [&PropertyRecord],
+) -> Option<&'a PropertyRecord> {
     match (property(properties, "Group"), property(properties, "Model")) {
         (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
             Some(group)
@@ -620,9 +626,13 @@ fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
     }
 }
 
+/// The tree node of Body `body`: the features it holds, of those its
+/// membership list names, and its `Tip` where the Body holds it.
 fn body_definition(
+    body: &str,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
+    parent_map: &crate::product::ParentMap<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     if !body_membership_carrier_is_valid(properties) {
         return Ok(None);
@@ -633,6 +643,7 @@ fn body_definition(
             .links()
             .iter()
             .filter_map(|link| link.as_ref()?.object())
+            .filter(|target| parent_map.coordinate(target) == Some(body))
         {
             if let Some(feature) = feature_ids.get(target) {
                 children.push(feature.clone());
@@ -640,7 +651,9 @@ fn body_definition(
         }
     }
     let active_child = match body_tip(properties, feature_ids)? {
-        BodyTipResolution::Valid(active_child) => active_child,
+        BodyTipResolution::Valid(active_child) => {
+            active_child.filter(|child| children.contains(child))
+        }
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
@@ -1081,23 +1094,35 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
         })
 }
 
-/// The value a spreadsheet cell states by itself: a `'`-quoted string, or a
-/// number with an optional length or angle unit, written directly or as the
-/// whole `=` expression. A cell computed from other cells or functions has no
-/// stated value.
+/// The value a spreadsheet cell states by itself: the text of a text cell,
+/// the length, angle, or real of a value cell (`cell_content`), or a number
+/// with an optional length or angle unit written as the whole `=` formula. A
+/// cell computed from other cells or functions, and a value of another
+/// quantity, has no stated value.
 const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
 const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
 
 fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
-    let (expression, text) = match content.strip_prefix('=') {
-        Some(text) => (true, text),
-        None => (false, content),
-    };
-    if !expression {
-        if let Some(text) = text.strip_prefix('\'') {
-            return Some(ParameterValue::String(text.to_owned()));
+    use cadmpeg_ir::design::units::Quantity;
+    use cell_content::{CellContent, CellKind};
+    let text = match cell_content::read(content) {
+        CellContent::Formula(formula) => formula,
+        CellContent::Text(text) => return Some(ParameterValue::String(text.to_owned())),
+        CellContent::Value(value) => {
+            return match value.kind {
+                CellKind::Quantity(Quantity::LENGTH) => {
+                    Length::new(value.number).map(ParameterValue::Length)
+                }
+                CellKind::Quantity(Quantity::ANGLE) => {
+                    cadmpeg_ir::scalar::Angle::new(value.number).map(ParameterValue::Angle)
+                }
+                CellKind::Quantity(Quantity::REAL) => {
+                    cadmpeg_ir::scalar::FiniteReal::new(value.number).map(ParameterValue::Real)
+                }
+                CellKind::Quantity(_) | CellKind::Native(_) => None,
+            }
         }
-    }
+    };
     let text = text.trim();
     let number_end = text
         .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))
@@ -1494,55 +1519,77 @@ fn append_operation_parameters(
         let Some(value) = scalar_value(ctx, property)? else {
             continue;
         };
-        let expression = expression_binding(properties, &property.name);
-        let is_angle = property.type_name.contains("Angle");
-        let mut retained = BTreeMap::new();
-        if let Some((native_ref, _)) = &expression {
-            retained.insert(
-                cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                native_ref.to_owned(),
-            );
-        }
-        let expression = match expression {
-            Some((_, expression)) => expression,
+        let binding = expression_binding(properties, &property.name);
+        let (engine, expression) = match binding {
+            Some((engine, expression)) => (Some(engine), expression),
             None => match scalar_text(ctx, property, str::to_owned)? {
-                Some(text) => text,
-                None => format!("{}", value.get()),
+                Some(text) => (None, text),
+                None => (None, format!("{}", value.get())),
             },
         };
-        parameters.push(DesignParameter {
-            product_definition: None,
-            id: ParameterId::mint(design_identity_text(
-                "parameter",
-                object,
-                format_args!(
-                    ":{}",
-                    cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
-                ),
-            ))
-            .map_err(CodecError::malformed)?,
-            owner: Some(owner.clone()),
-            ordinal: u32::try_from(property.order).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "FreeCAD ordinal {} exceeds u32",
-                    property.order
-                ))
-            })?,
-            name: property.name.clone(),
+        parameters.push(property_parameter(
+            object,
+            owner.clone(),
+            property,
+            value,
             expression,
-            display: None,
-            value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
-            } else {
-                Some(ParameterValue::Length(Length::from_assigned_real(value)))
-            },
-            dependencies: DistinctMembers::default(),
-            properties: retained,
-            pmi: None,
-            native_ref: Some(property.id.clone()),
-        });
+            engine,
+        )?);
     }
     Ok(())
+}
+
+/// The parameter of scalar property `property` of `object`, owned by
+/// `owner`: its stored value `value`, a length or, for an angle carrier, an
+/// angle stored in degrees, and its expression `expression`, which the
+/// `ExpressionEngine` property `engine` binds where it is `Some`.
+fn property_parameter(
+    object: &ObjectRecord,
+    owner: FeatureId,
+    property: &PropertyRecord,
+    value: FiniteReal,
+    expression: String,
+    engine: Option<String>,
+) -> Result<DesignParameter, CodecError> {
+    let is_angle = property.type_name.contains("Angle");
+    let mut retained = BTreeMap::new();
+    if let Some(native_ref) = engine {
+        retained.insert(
+            cadmpeg_core::nonblank_literal!("expression_native_ref"),
+            native_ref,
+        );
+    }
+    Ok(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint(design_identity_text(
+            "parameter",
+            object,
+            format_args!(
+                ":{}",
+                cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
+            ),
+        ))
+        .map_err(CodecError::malformed)?,
+        owner: Some(owner),
+        ordinal: u32::try_from(property.order).map_err(|_| {
+            CodecError::malformed(format_args!(
+                "FreeCAD ordinal {} exceeds u32",
+                property.order
+            ))
+        })?,
+        name: property.name.clone(),
+        expression,
+        display: None,
+        value: if is_angle {
+            cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
+        } else {
+            Some(ParameterValue::Length(Length::from_assigned_real(value)))
+        },
+        dependencies: DistinctMembers::default(),
+        properties: retained,
+        pmi: None,
+        native_ref: Some(property.id.clone()),
+    })
 }
 
 struct SketchTransfer {
@@ -2041,15 +2088,19 @@ fn parse_sketch(
         );
         Vec::new()
     });
-    let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
             name: Some(object.name().to_owned()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            placement: match sketch_frame(properties) {
+                Some((origin, normal, u_axis)) => {
+                    cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
+                        .map_err(cadmpeg_core::CodecError::malformed)?
+                }
+                None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            },
             profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: Some(object.id().to_owned()),
@@ -2300,18 +2351,26 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     })
 }
 
-fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
-    validate_sketch_placement(properties)?;
-    Ok(placement_frame(properties).map_or_else(
-        || {
-            (
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-        },
-        |(origin, normal, x_axis, _)| (origin, normal, x_axis),
-    ))
+/// The frame of a sketch: its `Placement`, else its `AttachmentOffset`, else
+/// the identity. `None` where the carrier is stored in a form the decoder
+/// cannot read; the product layer gives that carrier up.
+fn sketch_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3)> {
+    let Some(property) =
+        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
+    else {
+        return Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ));
+    };
+    if property.type_name != "App::PropertyPlacement"
+        || property.values().len() != 1
+        || property.values()[0].tag != "PropertyPlacement"
+    {
+        return None;
+    }
+    placement_frame(properties).map(|(origin, normal, x_axis, _)| (origin, normal, x_axis))
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
@@ -2325,36 +2384,6 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
         column(0),
         column(1),
     ))
-}
-
-fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
-    let Some(property) =
-        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
-    else {
-        return Ok(());
-    };
-    let error = if property.type_name != "App::PropertyPlacement" {
-        Some(format!(
-            "sketch {} placement carrier has runtime type {}",
-            property.name, property.type_name
-        ))
-    } else if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
-        Some(format!(
-            "sketch {} placement carrier requires one PropertyPlacement value",
-            property.name
-        ))
-    } else if placement_frame(properties).is_none() {
-        Some(format!(
-            "sketch {} placement carrier has incomplete or invalid components",
-            property.name
-        ))
-    } else {
-        None
-    };
-    if let Some(message) = error {
-        return Err(CodecError::Malformed(message));
-    }
-    Ok(())
 }
 
 fn feature_state(
@@ -3268,6 +3297,14 @@ fn bind_parameter_dependencies(
         let source_name = parameter.properties.get("source_name");
         let mut names = Vec::new();
         names.push(parameter.name.clone());
+        // An expression names an aliased cell by its alias or its address.
+        if let Some(address) = parameter
+            .properties
+            .get("address")
+            .filter(|address| **address != parameter.name)
+        {
+            names.push(address.to_owned());
+        }
         if let Some(source_name) = source_name {
             let constraint = parameter
                 .native_ref
@@ -3470,6 +3507,10 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
     let bytes = expression.as_bytes();
     let mut identifiers = Vec::new();
     let mut cursor = 0;
+    let identifier_len = |text: &str| {
+        text.find(|character: char| !character.is_alphanumeric() && !matches!(character, '_' | '.'))
+            .unwrap_or(text.len())
+    };
     while cursor < bytes.len() {
         if matches!(bytes[cursor], b'\'' | b'"') {
             let quote = bytes[cursor];
@@ -3499,27 +3540,20 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
             cursor = end + 2;
             if bytes.get(cursor) == Some(&b'.') {
                 cursor += 1;
-                while cursor < bytes.len()
-                    && (bytes[cursor].is_ascii_alphanumeric()
-                        || matches!(bytes[cursor], b'_' | b'.'))
-                {
-                    cursor += 1;
-                }
+                cursor += identifier_len(&expression[cursor..]);
             }
             continue;
         }
-        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+        let Some(character) = expression[cursor..].chars().next() else {
+            break;
+        };
+        if character.is_alphabetic() || character == '_' {
             let start = cursor;
-            cursor += 1;
-            while cursor < bytes.len()
-                && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'_' | b'.'))
-            {
-                cursor += 1;
-            }
+            cursor += identifier_len(&expression[cursor..]);
             identifiers.push(&expression[start..cursor]);
             continue;
         }
-        cursor += 1;
+        cursor += character.len_utf8();
     }
     identifiers
 }
@@ -5386,11 +5420,11 @@ fn extrusion_shape(
         let raw_direction = vector_property(ctx, properties, "Dir")?;
         let direction_magnitude = raw_direction.map(|direction| direction.get().norm());
         let direction_mode = required!(enumeration_selector(ctx, properties, "DirMode", 0)?);
-        let (mut direction, direction_source) = match direction_mode {
+        let (direction, direction_source) = match direction_mode {
             0 => (
-                required!(cadmpeg_ir::units::UnitVector3::normalized(
+                Some(required!(cadmpeg_ir::units::UnitVector3::normalized(
                     required!(raw_direction).get()
-                )),
+                ))),
                 ExtrusionDirectionSource::Custom {},
             ),
             1 => {
@@ -5399,16 +5433,17 @@ fn extrusion_shape(
                     return Ok(None);
                 }
                 (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(
+                    Some(required!(cadmpeg_ir::units::UnitVector3::normalized(
                         required!(raw_direction).get()
-                    )),
+                    ))),
                     ExtrusionDirectionSource::Edge {
                         reference: PathRef::Native(reference.id.clone()),
                     },
                 )
             }
-            2 => {
-                let normal = required!(match &profile {
+            // `FreeCAD` stores the profile normal it computes in `Dir`.
+            2 => (
+                match &profile {
                     ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
                         .iter()
                         .find(|sketch| sketch.id == *sketch_id)
@@ -5416,12 +5451,11 @@ fn extrusion_shape(
                         .map(|(_, normal, _)| normal.get())
                         .or(profile_normal),
                     _ => profile_normal,
-                });
-                (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
-                    ExtrusionDirectionSource::ProfileNormal {},
-                )
-            }
+                }
+                .or(raw_direction.map(cadmpeg_ir::features::geometry::FiniteVector3::get))
+                .and_then(cadmpeg_ir::units::UnitVector3::normalized),
+                ExtrusionDirectionSource::ProfileNormal {},
+            ),
             _ => return Ok(None),
         };
         let signed_length = |name| -> Result<_, CodecError> {
@@ -5514,9 +5548,22 @@ fn extrusion_shape(
                 (None, None) => return Ok(None),
             }
         };
-        if reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
-            direction = direction.reversed();
-        }
+        let reversed =
+            reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?);
+        let direction = match direction {
+            Some(direction) => cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(if reversed {
+                    direction.reversed()
+                } else {
+                    direction
+                }),
+                source: Some(direction_source),
+            },
+            None if reversed => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+            }
+            None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+        };
         let face_maker = if property(properties, "FaceMakerClass").is_some() {
             let maker = required!(FaceMaker::new(required!(face_maker_class)));
             if property(properties, "FaceMakerMode").is_some()
@@ -5548,10 +5595,7 @@ fn extrusion_shape(
         return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::Extrude {
                 profile,
-                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
-                    source: Some(direction_source),
-                },
+                direction,
                 start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent,
                 op: BooleanOp::NewBody,
@@ -5702,13 +5746,24 @@ fn extrusion_shape(
             None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
         }
     };
-    if required!(bool_selector(ctx, properties, "Reversed", false)?) {
-        let cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } =
-            &mut direction
-        else {
-            return Ok(None);
-        };
-        *vector = vector.reversed();
+    // A Pocket cuts against the sketch normal unless `Reversed`; a Pad goes
+    // along it unless `Reversed`. A custom `Direction` is used as stored, and
+    // a `ReferenceAxis` direction is stored already negated for a Pocket, so
+    // only the sketch-normal direction of a non-symmetric Pocket flips here.
+    let from_profile_normal = !use_custom && reference_axis.is_none();
+    let pocket_flip = kind.contains("Pocket") && side_type != 2 && from_profile_normal;
+    if pocket_flip ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
+        use cadmpeg_ir::features::extents::ExtrudeDirection;
+        match &mut direction {
+            ExtrudeDirection::Explicit { vector, .. } => *vector = vector.reversed(),
+            ExtrudeDirection::ProfileNormal {} => {
+                direction = ExtrudeDirection::ReversedProfileNormal {};
+            }
+            ExtrudeDirection::ReversedProfileNormal {} => {
+                direction = ExtrudeDirection::ProfileNormal {};
+            }
+            ExtrudeDirection::Unresolved {} => return Ok(None),
+        }
     }
     let length_along_profile_normal = Some(required!(bool_selector(
         ctx,
@@ -8782,7 +8837,9 @@ fn axis_reference(
     let owned = required!(properties_by_owner.get(target).map(Vec::as_slice));
     let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(owned));
     let direction = match object.type_name.as_str() {
-        "PartDesign::Line" | "App::Line" => z_axis,
+        // `App::Line` has base direction (1,0,0); `PartDesign::Line` (0,0,1).
+        "App::Line" => x_axis,
+        "PartDesign::Line" => z_axis,
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("X_Axis" | "XAxis" | "X") => x_axis,

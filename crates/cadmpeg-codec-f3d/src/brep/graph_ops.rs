@@ -2,12 +2,15 @@
 //! Select dependencies and qualify identities in the typed BREP graph.
 
 use super::Brep;
+use crate::container::ContainerScan;
+use crate::ids::ID_FORMAT;
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart};
 use std::collections::{HashMap, HashSet};
 
 pub(super) mod ordered;
@@ -319,17 +322,67 @@ impl Brep {
         format: IdFormat,
         namespace: &str,
     ) -> Result<(), CodecError> {
-        let prefix = format!("{format}:");
-        let mut map = IdentityMap::new(|source: &str| {
-            let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
-            Ok(format!("{format}:brep/{namespace}/{suffix}"))
-        });
+        let mut map = IdentityMap::new(|source: &str| Ok(qualified_id(format, namespace, source)));
         let source = std::mem::take(self);
         let rewritten = source.rewrite_identities(ctx, &mut map);
         map.finish()?;
         *self = rewritten?;
         Ok(())
     }
+
+    /// Gives up each topology record the ASM decode of the BREP entry `entry`
+    /// read and left out, as a part over the record's bytes in the entry's
+    /// stream. The inflated entry bytes are retained in no other record, so
+    /// each part keeps them. A part marks only a shell the graph still
+    /// holds. `namespace` qualifies the ids the parts drop and mark as
+    /// [`Brep::qualify_ids`] qualifies the graph's own.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when a qualified id is no identity, or a
+    /// refusal of the part helper.
+    pub(crate) fn give_up_withheld(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scan: &ContainerScan<'_>,
+        entry: &str,
+        namespace: Option<&str>,
+    ) -> Result<Vec<GivenUpPart>, CodecError> {
+        let mut withheld = std::mem::take(&mut self.asm.withheld);
+        if withheld.is_empty() {
+            return Ok(Vec::new());
+        }
+        for record in &mut withheld {
+            record.marked.retain(|marked| {
+                self.asm
+                    .shells
+                    .iter()
+                    .any(|shell| shell.id.as_str() == marked.as_str())
+            });
+        }
+        if let Some(namespace) = namespace {
+            let mut map =
+                IdentityMap::new(|source: &str| Ok(qualified_id(ID_FORMAT, namespace, source)));
+            let rewritten = withheld.rewrite_identities(ctx, &mut map);
+            map.finish()?;
+            withheld = rewritten?;
+        }
+        let stream = scan.entry_stream(entry)?;
+        withheld
+            .into_iter()
+            .map(|record| {
+                let part = record.part("f3d").in_stream(stream.clone());
+                ctx.give_up_part(part, record.cause, record.error())
+            })
+            .collect()
+    }
+}
+
+/// The id `source` takes in the BREP graph of blob `namespace`.
+fn qualified_id(format: IdFormat, namespace: &str, source: &str) -> String {
+    let prefix = format!("{format}:");
+    let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
+    format!("{format}:brep/{namespace}/{suffix}")
 }
 
 impl RewriteIdentities for Brep {

@@ -236,7 +236,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
-        given_up,
+        mut given_up,
         untyped,
         mut admitted_model_entities,
         standard_face_population,
@@ -254,6 +254,11 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    let image = unknowns
+        .iter()
+        .find(|record| record.data() == Some(scan.data.as_ref()))
+        .map(|record| cadmpeg_ir::ids::Identity::from(record.id().clone()));
+    given_up.extend(refusal.take_given_up(ctx, image.as_ref())?);
     ctx.admit_entities(
         u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
@@ -270,6 +275,7 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    given_up.extend(refusal.take_given_up(ctx, image.as_ref())?);
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
     crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
@@ -859,7 +865,15 @@ fn finish_decode(
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
     for record in &native.entity_records {
-        let fields = record.value_fields();
+        let owned_fields;
+        let owned_packets;
+        let (fields, packets) = if let Some((fields, packets)) = record.cached_value_views() {
+            (fields, packets)
+        } else {
+            owned_fields = record.value_fields();
+            owned_packets = record.value_packets(&owned_fields);
+            (owned_fields.as_slice(), owned_packets.as_slice())
+        };
         entity_value_field_count = entity_value_field_count
             .checked_add(fields.len())
             .ok_or_else(|| {
@@ -868,7 +882,7 @@ fn finish_decode(
                     "catia_entity_value_field_count"
                 ))
             })?;
-        for packet in record.value_packets(&fields) {
+        for packet in packets {
             match packet {
                 entity_table::EntityValuePacket::Compact { .. } => {
                     compact_entity_value_packet_count += 1;
@@ -3706,7 +3720,9 @@ fn finish_decode(
             "catia",
             &mut ir,
             &mut report.losses,
-            |ir, losses| crate::design_v11::project(ctx, ir, losses),
+            |ir, losses| {
+                crate::design_v11::project(ctx, ir, &native, &modeling_graph_scope, losses)
+            },
         )?;
         let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
         crate::design_v11::restate_exactness(&ir, &mut restated)?;
