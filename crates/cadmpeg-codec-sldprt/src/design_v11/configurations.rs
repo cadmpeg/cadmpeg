@@ -25,7 +25,7 @@ use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 
 use crate::history::project::neutral_configuration_id;
-use crate::records::FeatureHistory;
+use crate::records::{Configuration, FeatureHistory};
 
 /// The configurations of a scope and the active one.
 #[derive(Default)]
@@ -42,20 +42,7 @@ pub(super) fn configurations(
     source: Option<&SourceMeta>,
     scope: &ProductDefinitionId,
 ) -> Result<Configurations, CodecError> {
-    let native = histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .collect::<Vec<_>>();
-    let selectors = native
-        .iter()
-        .map(|configuration| {
-            (
-                Some(configuration.name.as_str()),
-                configuration.partition_index(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let Some(active) = crate::decode::active_configuration_position(source, &selectors) else {
+    let Some((native, active)) = native_with_active(histories, source) else {
         return Ok(Configurations::default());
     };
     let base_material = native[active].material.as_deref();
@@ -86,6 +73,27 @@ pub(super) fn configurations(
     }
     let active = records.get(active).map(|record| record.id.clone());
     Ok(Configurations { records, active })
+}
+
+pub(super) fn native_with_active<'a>(
+    histories: &'a [FeatureHistory],
+    source: Option<&SourceMeta>,
+) -> Option<(Vec<&'a Configuration>, usize)> {
+    let native = histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .collect::<Vec<_>>();
+    let selectors = native
+        .iter()
+        .map(|configuration| {
+            (
+                Some(configuration.name.as_str()),
+                configuration.partition_index(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let active = crate::decode::active_configuration_position(source, &selectors)?;
+    Some((native, active))
 }
 
 /// States the model configuration fields each configuration leaves out, by
