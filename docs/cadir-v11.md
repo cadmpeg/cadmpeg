@@ -18471,6 +18471,7 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
     "untyped": {
       "description": "Content classes the bytes can hold where the decoder keeps the record\nwithout decoding it.",
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "string"
       }
@@ -18525,6 +18526,7 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
     "unrepresented": {
       "description": "Union of the retained records' untyped classes.",
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "string"
       }
