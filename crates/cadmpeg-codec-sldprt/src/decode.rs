@@ -334,6 +334,7 @@ fn decode_scan(
     if ctx.container_only() {
         let (ir, annotations, unknowns, mut retention) =
             build_container_ir(ctx, &scan, &classification)?;
+        let site_given_up = parasolid_site_given_up(&given_up);
         retention.give_up(given_up);
         let mut report = build_container_report(
             ctx,
@@ -342,6 +343,7 @@ fn decode_scan(
             container::notes(&scan),
             0,
             parasolid_owner_unread,
+            site_given_up,
         )?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         return decode_result(
@@ -401,6 +403,7 @@ fn decode_scan(
         part,
         &given_up,
     )?;
+    let site_given_up = parasolid_site_given_up(&given_up);
     retention.give_up(given_up);
     let display_meshes = ir.model.tessellations.len();
     let mut report = build_container_report(
@@ -410,6 +413,7 @@ fn decode_scan(
         container::notes(&scan),
         display_meshes,
         parasolid_owner_unread,
+        site_given_up,
     )?;
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
@@ -3117,6 +3121,11 @@ fn partition_configuration(section: &str) -> Option<usize> {
 
 /// The configurations whose partition section is a given-up part: a stream,
 /// a block, the Parasolid streams of an owner, or a Parasolid site.
+/// Whether `parts` gives up a Parasolid site.
+fn parasolid_site_given_up(parts: &[GivenUpPart]) -> bool {
+    parts.iter().any(|part| part.kind() == PARASOLID_SITE_PART)
+}
+
 fn partitions_given_up(parts: &[GivenUpPart]) -> BTreeSet<usize> {
     parts
         .iter()
@@ -7245,6 +7254,7 @@ fn build_container_report(
     notes: Vec<String>,
     display_meshes: usize,
     parasolid_owner_unread: bool,
+    site_given_up: bool,
 ) -> Result<DecodeBody, CodecError> {
     let parasolid_sources = scan
         .blocks
@@ -7260,11 +7270,8 @@ fn build_container_report(
 
     // A given-up Parasolid site, or a given-up section that the choice of
     // the active partition needs, states the lost geometry in its give-up.
-    let geometry_given_up = scan
-        .given_up
-        .iter()
-        .any(|part| part.kind() == PARASOLID_SITE_PART)
-        || !container::unread_active_partition_sections(scan).is_empty();
+    let geometry_given_up =
+        site_given_up || !container::unread_active_partition_sections(scan).is_empty();
     let mut losses = Vec::new();
     if !geometry_given_up {
         losses.push(
