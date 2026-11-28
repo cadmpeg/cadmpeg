@@ -167,8 +167,13 @@ pub(crate) fn project(
             .flat_map(|(_, projected)| &projected.features)
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
+        let places = match ir.native.namespace("f3d") {
+            Some(namespace) => parameters::owner_places(ctx, namespace)?,
+            None => HashMap::new(),
+        };
         scoped_parameters = parameters::project(
             &ir.model.parameters,
+            &places,
             &definitions,
             &hosted_prefixes,
             &features,

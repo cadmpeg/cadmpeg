@@ -20,7 +20,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
-use cadmpeg_ir::unknown::part::GivenUpPart;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart};
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
@@ -331,10 +331,13 @@ impl XrefFailure {
         ctx: &DecodeContext<'_>,
         scan: &ContainerScan<'_>,
     ) -> Result<Option<GivenUpPart>, CodecError> {
-        let error =
-            CodecError::malformed(format_args!("F3D external-reference table: {}", self.error));
+        let cause = Cause::Unreadable.of(&self.error);
+        let error = crate::design::decode::record::give_up_error(
+            cause,
+            format_args!("F3D external-reference table: {}", self.error),
+        );
         match &self.source {
-            XrefSource::Entry(entry) => scan.give_up_entry(ctx, entry, error),
+            XrefSource::Entry(entry) => scan.give_up_entry(ctx, entry, cause, error),
             XrefSource::ManifestReferences => {
                 let (Some(extension), Some(manifest)) = (
                     scan.manifest_reference_extension,
@@ -359,7 +362,7 @@ impl XrefFailure {
                     MANIFEST_REFERENCES_PART,
                     start..end,
                     [ArenaClass::Model],
-                    error,
+                    (cause, error),
                 )
                 .map(Some)
             }

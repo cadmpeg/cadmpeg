@@ -111,6 +111,61 @@ fn names_are_unique_per_scope_and_owner() {
 }
 
 #[test]
+fn positions_are_distinct_per_scope_and_owner() {
+    let mut ir = with_width();
+    ir.design.parameters[0].position = Some(0);
+    let mut again = ir.design.parameters[0].clone();
+    again.id = id("parameter", "again");
+    again.name = NonBlankString::new("again".to_owned());
+    ir.design.parameters.push(again);
+    assert_finding(
+        &ir,
+        "2 parameters of the scope with no owner state position 0",
+    );
+    ir.design.parameters[1].position = Some(1);
+    assert_no_design_finding(&ir);
+    ir.design.parameters[1].position = Some(0);
+    ir.design.parameters[1].owner = Some(ParameterOwner::Feature(feature("extrude")));
+    assert_no_design_finding(&ir);
+}
+
+#[test]
+fn a_cell_parameter_states_no_position() {
+    use crate::spreadsheets::{CellAddress, SpreadsheetCell};
+    let mut ir = with_width();
+    let mut sheet = unresolved(
+        "sheet",
+        crate::design::feature::OperationFamily::Spreadsheet,
+    );
+    sheet.definition.operation = FeatureOperation::Spreadsheet(id("spreadsheet", "sheet"));
+    ir.design.features.push(sheet);
+    ir.design.spreadsheets.push(
+        Spreadsheet::new(
+            id("spreadsheet", "sheet"),
+            vec![SpreadsheetCell {
+                address: CellAddress::new(1, 1).unwrap(),
+                parameter: id("parameter", "width"),
+            }],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap(),
+    );
+    let clean = design_findings(&ir);
+    ir.design.parameters[0].position = Some(0);
+    let findings = design_findings(&ir);
+    assert!(
+        findings.iter().any(|finding| finding
+            .message
+            .contains("spreadsheet cell parameter states a `position`")),
+        "{findings:#?}"
+    );
+    assert_eq!(findings.len(), clean.len() + 1, "{findings:#?}");
+}
+
+#[test]
 fn a_parameter_a_sketch_dimension_binds_needs_no_name() {
     let mut ir = with_width();
     ir.design.parameters[0].name = None;

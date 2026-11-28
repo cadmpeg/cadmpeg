@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::Unstated;
-use cadmpeg_ir::unknown::part::{record_unreadable_kind, DecodeParts};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts};
 
 use super::super::tests::CONE_WITH_POINT_APEX_SAT;
 use super::super::{decode_with_header, inspect_with_header, AsmBrep, DecodePurpose};
@@ -19,10 +18,12 @@ fn cone() -> &'static str {
 }
 
 /// A part the decode must give up: its kind, the record line it frames,
-/// the cause its loss states, and the ids it drops and marks.
+/// the cause of its give-up and the reason its loss states, and the ids it
+/// drops and marks.
 struct Expected {
     kind: &'static str,
     line: &'static str,
+    given_up: Cause,
     cause: &'static str,
     dropped: &'static [&'static str],
     marked: &'static [&'static str],
@@ -53,7 +54,7 @@ fn decode_and_give_up(source: &str, purpose: DecodePurpose) -> (AsmBrep, Vec<Los
             .withheld
             .iter()
             .map(|record| {
-                ctx.give_up_part(record.part("f3d"), record.error())
+                ctx.give_up_part(record.part("f3d"), record.cause, record.error())
                     .expect("part given up")
                     .loss()
             })
@@ -94,6 +95,8 @@ fn assert_given_up(source: &str, expected: &[Expected]) {
                 .unwrap_or_else(|| panic!("fixture holds {:?}", part.line));
             (
                 format!("part {} stream=\"\" offset={offset} ", part.kind),
+                part.given_up.kind(),
+                part.given_up.severity(),
                 part.cause,
                 if part.marked.is_empty() {
                     format!("; dropped=[{}]", part.dropped.join(", "))
@@ -107,11 +110,11 @@ fn assert_given_up(source: &str, expected: &[Expected]) {
             )
         })
         .collect::<Vec<_>>();
-    expected.sort();
+    expected.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(losses.len(), expected.len(), "{losses:#?}");
-    for (loss, (head, cause, tail)) in losses.iter().zip(&expected) {
-        assert_eq!(loss.code, record_unreadable_kind());
-        assert_eq!(loss.severity, Severity::Error);
+    for (loss, (head, code, severity, cause, tail)) in losses.iter().zip(&expected) {
+        assert_eq!(&loss.code, code);
+        assert_eq!(&loss.severity, severity);
         assert!(loss.message.starts_with(head.as_str()), "{}", loss.message);
         assert!(loss.message.contains(cause), "{}", loss.message);
         assert!(loss.message.ends_with(tail.as_str()), "{}", loss.message);
@@ -131,6 +134,7 @@ fn a_face_whose_surface_names_no_record_drops_its_loops_and_coedges() {
         &[Expected {
             kind: "face",
             line: face,
+            given_up: Cause::Unreadable,
             cause: "the face record's surface reference names no record",
             dropped: &[
                 "f3d:brep:entity#11",
@@ -228,6 +232,7 @@ fn a_face_whose_surface_names_no_record_drops_what_only_it_reaches_and_marks_its
         &[Expected {
             kind: "face",
             line: face,
+            given_up: Cause::Unreadable,
             cause: "the face record's surface reference names no record",
             dropped: &[
                 "f3d:brep:entity#10",
@@ -277,6 +282,7 @@ fn assert_sheet_face_given_up(source: &str, dropped: &'static [&'static str]) {
         &[Expected {
             kind: "face",
             line: SHEET_FACE,
+            given_up: Cause::Unreadable,
             cause: "the face record's surface reference names no record",
             dropped,
             marked: &[],
@@ -346,6 +352,7 @@ fn an_edge_whose_vertex_reference_names_a_point_is_given_up() {
         &[Expected {
             kind: "edge",
             line: edge,
+            given_up: Cause::Unreadable,
             cause: "the edge record's vertex reference names no vertex record",
             dropped: &["f3d:brep:entity#14"],
             marked: &[],
@@ -365,6 +372,7 @@ fn a_coedge_on_no_kept_loop_gives_up_it_and_its_emptied_loop() {
             Expected {
                 kind: "coedge",
                 line: coedge,
+                given_up: Cause::Unreadable,
                 cause: "the coedge record's loop is no loop of a kept face",
                 dropped: &["f3d:brep:entity#12"],
                 marked: &[],
@@ -372,6 +380,7 @@ fn a_coedge_on_no_kept_loop_gives_up_it_and_its_emptied_loop() {
             Expected {
                 kind: "loop",
                 line: "loop $-1 -1 $-1 $-1 $12 $3 #",
+                given_up: Cause::Undecoded,
                 cause: "the loop record's coedge ring holds no coedge the loop owns",
                 dropped: &["f3d:brep:entity#9"],
                 marked: &[],
@@ -388,6 +397,7 @@ fn a_vertex_with_no_point_is_given_up() {
         &[Expected {
             kind: "vertex",
             line: vertex,
+            given_up: Cause::Unreadable,
             cause: "the vertex record states no point",
             dropped: &["f3d:brep:entity#16"],
             marked: &[],
@@ -403,6 +413,7 @@ fn a_point_with_no_position_is_given_up() {
         &[Expected {
             kind: "point",
             line: point,
+            given_up: Cause::Unreadable,
             cause: "the point record states no position",
             dropped: &["f3d:brep:entity#19"],
             marked: &[],
@@ -418,6 +429,7 @@ fn a_region_with_no_body_is_given_up() {
         &[Expected {
             kind: "region",
             line: lump,
+            given_up: Cause::Unreadable,
             cause: "the region record names no body",
             dropped: &["f3d:brep:entity#1"],
             marked: &[],

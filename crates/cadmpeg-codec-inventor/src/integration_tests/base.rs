@@ -212,7 +212,12 @@ fn base_source_body_uses_its_local_carrier_and_independent_key() {
         .expect("synthetic Base source envelope");
     let snapshot =
         cadmpeg_container::compound::CompoundSnapshot::new(&ctx, root).expect("compound");
-    let document = crate::rse::RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
+    let document = crate::rse::RseInventory::build(
+        &ctx,
+        &snapshot,
+        &mut crate::container::streams::Streams::default(),
+    )
+    .expect("RSe inventory");
     let inventory = crate::feature::inventory(&ctx, &document).expect("feature inventory");
     let design_inventory = crate::design::inventory(&ctx, &document).expect("design inventory");
     ir.model.feature_result_topologies.clear();
@@ -365,7 +370,12 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("compound");
-    let mut document = RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
+    let mut document = RseInventory::build(
+        &ctx,
+        &snapshot,
+        &mut crate::container::streams::Streams::default(),
+    )
+    .expect("RSe inventory");
     let features = crate::feature::inventory(&ctx, &document).expect("feature inventory");
     let mut ir = decode(&design, &base);
     let design = crate::design::inventory(&ctx, &document).expect("design inventory");

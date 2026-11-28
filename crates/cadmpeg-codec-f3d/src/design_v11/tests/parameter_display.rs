@@ -20,6 +20,7 @@ fn the_parameter_of_a_diameter_dimension_states_its_display() {
     let mut losses = Vec::new();
     let projected = crate::design_v11::parameters::project(
         std::slice::from_ref(&legacy),
+        &HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),

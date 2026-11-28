@@ -732,6 +732,7 @@ fn mint(
             id,
             scope: scope.clone(),
             owner: None,
+            position: None,
             name: Some(name),
             kind,
             unit: None,

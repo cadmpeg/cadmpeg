@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly identity keys, repeated records, mate scope and malformed frames.
-use crate::test_support::{assembly::*, read_bytes, Report};
+use crate::test_support::{assembly::*, read_bytes, Charge, Report};
 use cadmpeg_core::json;
 use serde_json::Value;
 use std::path::Path;
@@ -22,11 +22,11 @@ fn decode(bytes: &[u8]) -> (crate::reader::Model, Report) {
 fn read(definition: Value) -> (crate::reader::Model, Report) {
     decode(&bundle(definition))
 }
-fn count(report: &Report, code: &str, detail: &str) -> usize {
+fn count(report: &Report, code: &str, detail: &str, charge: Charge) -> usize {
     report
         .losses()
         .iter()
-        .filter(|loss| loss.code.as_deref() == Some(code) && loss.detail.contains(detail))
+        .filter(|loss| loss.states(code, charge) && loss.detail.contains(detail))
         .count()
 }
 fn parts(model: &crate::reader::Model) -> usize {
@@ -69,7 +69,12 @@ fn assembly_instance_without_microversion_matches_a_stated_definition() {
     definition["subAssemblies"][0]["documentMicroversion"] = json!("microversion");
     let (model, report) = read(definition);
     assert_eq!(
-        count(&report, "onshape/assembly.reference-unresolved", ""),
+        count(
+            &report,
+            "onshape/assembly.reference-unresolved",
+            "",
+            Charge::Any
+        ),
         0
     );
     assert_eq!(model.ir.model.occurrences.len(), 3);
@@ -104,7 +109,8 @@ fn repeated_and_conflicting_element_ids_decode_once_with_a_loss() {
             count(
                 &report,
                 "onshape/assembly.record-repeated",
-                "element id repeats"
+                "element id repeats",
+                Charge::Note
             ),
             1,
             "{element}"
@@ -132,9 +138,14 @@ fn a_repeated_record_charges_only_when_its_content_differs() {
         definition["parts"].as_array_mut().unwrap().push(record);
     }
     let (_, report) = read(definition);
-    assert_eq!(count(&report, code, ""), 0);
+    assert_eq!(count(&report, code, "", Charge::Note), 0);
     assert_eq!(
-        count(&report, "onshape/assembly.reference-unresolved", ""),
+        count(
+            &report,
+            "onshape/assembly.reference-unresolved",
+            "",
+            Charge::Any
+        ),
         0
     );
     // A different name or different instances is a real conflict.
@@ -147,8 +158,67 @@ fn a_repeated_record_charges_only_when_its_content_differs() {
         .push(sub);
     definition["parts"].as_array_mut().unwrap().push(row);
     let (_, report) = read(definition);
-    assert_eq!(count(&report, code, "subassembly definition repeats"), 1);
-    assert_eq!(count(&report, code, "part identity repeats"), 1);
+    assert_eq!(
+        count(
+            &report,
+            code,
+            "subassembly definition repeats",
+            Charge::Note
+        ),
+        1
+    );
+    assert_eq!(
+        count(&report, code, "part identity repeats", Charge::Note),
+        1
+    );
+}
+/// A later element declaration, `subAssemblies` record, or `parts` record
+/// whose content differs from the first has the reading the specification
+/// states: the first stands. A pinned decode admits the bundle, and each
+/// later record charges one Warning `assembly.record-repeated`.
+#[test]
+fn repeated_records_with_other_content_keep_the_first_under_a_pinned_decode() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut definition = nested();
+    let mut sub = definition["subAssemblies"][0].clone();
+    sub["instances"] = json!([part("first")]);
+    let mut row = definition["parts"][0].clone();
+    row["name"] = json!("other name");
+    definition["subAssemblies"]
+        .as_array_mut()
+        .unwrap()
+        .push(sub);
+    definition["parts"].as_array_mut().unwrap().push(row);
+    let bytes = edited(definition, |members| {
+        members["manifest.json"]["elements"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"studio","type":"ASSEMBLY"}));
+    });
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = crate::test_support::codec()
+        .decode(&mut std::io::Cursor::new(bytes), &options)
+        .expect("a pinned decode admits repeated records that the specification reads");
+    let (first, _) = read(nested());
+    assert_eq!(result.ir().model.occurrences, first.ir.model.occurrences);
+    assert_eq!(
+        result.ir().model.product_definitions,
+        first.ir.model.product_definitions
+    );
+    let losses = &result.report().losses;
+    assert!(!losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)));
+    let repeated: Vec<_> = losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "onshape/assembly.record-repeated")
+        .collect();
+    assert_eq!(repeated.len(), 3, "{repeated:?}");
+    assert!(repeated.iter().all(
+        |loss| loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.message.contains("with different content")
+    ));
 }
 #[test]
 fn a_subassembly_without_instances_charges_its_own_code() {
@@ -162,7 +232,8 @@ fn a_subassembly_without_instances_charges_its_own_code() {
         count(
             &report,
             "onshape/assembly.instances-missing",
-            "no instances field"
+            "no instances field",
+            Charge::Note
         ),
         1
     );
@@ -170,7 +241,8 @@ fn a_subassembly_without_instances_charges_its_own_code() {
         count(
             &report,
             "onshape/assembly.record-unsupported",
-            "no instances field"
+            "no instances field",
+            Charge::Any
         ),
         0
     );
@@ -193,7 +265,12 @@ fn an_omitted_or_empty_document_and_microversion_bind_like_the_pinned_ones() {
         let (model, report) = read(definition);
         assert_eq!(parts(&model), 1, "{field} {value:?}");
         assert_eq!(
-            count(&report, "onshape/assembly.reference-unresolved", ""),
+            count(
+                &report,
+                "onshape/assembly.reference-unresolved",
+                "",
+                Charge::Any
+            ),
             0,
             "{field} {value:?}"
         );
@@ -218,7 +295,8 @@ fn a_loss_detail_prints_the_stated_reference_fields() {
         count(
             &report,
             "onshape/assembly.reference-unresolved",
-            "documentMicroversion=\"microversion\", configuration=\"default\""
+            "documentMicroversion=\"microversion\", configuration=\"default\"",
+            Charge::Note
         ),
         1
     );
@@ -233,7 +311,8 @@ fn a_loss_detail_prints_the_stated_reference_fields() {
         count(
             &report,
             "onshape/assembly.reference-unresolved",
-            "documentMicroversion=omitted, configuration=omitted"
+            "documentMicroversion=omitted, configuration=omitted",
+            Charge::Note
         ),
         1
     );
@@ -315,15 +394,19 @@ fn an_off_switch_governs_only_the_limit_it_names() {
         let (_, report) = decode(&bytes);
         let code = "onshape/assembly.mate-limits-unresolved";
         assert_eq!(
-            count(&report, code, ""),
+            count(&report, code, "", Charge::Note),
             usize::from(expected.is_some()),
             "{parameters}"
         );
         if let Some(id) = expected {
-            assert_eq!(count(&report, code, id), 1, "{parameters}");
+            assert_eq!(count(&report, code, id, Charge::Note), 1, "{parameters}");
         }
         for id in absent {
-            assert_eq!(count(&report, code, id), 0, "{id} {parameters}");
+            assert_eq!(
+                count(&report, code, id, Charge::Note),
+                0,
+                "{id} {parameters}"
+            );
         }
     }
 }
@@ -331,7 +414,7 @@ fn an_off_switch_governs_only_the_limit_it_names() {
 fn frame_assumption_is_charged_below_a_direct_child_only() {
     let code = "onshape/assembly.mate-frame-assumed";
     let (_, report) = read(nested());
-    assert_eq!(count(&report, code, ""), 0);
+    assert_eq!(count(&report, code, "", Charge::Note), 0);
     let mut definition = nested();
     let mut deep = mate("deepMate", "FASTENED");
     for entity in deep["featureData"]["matedEntities"].as_array_mut().unwrap() {
@@ -339,7 +422,7 @@ fn frame_assumption_is_charged_below_a_direct_child_only() {
     }
     definition["rootAssembly"]["features"] = json!([deep]);
     let (_, report) = read(definition);
-    assert_eq!(count(&report, code, ""), 1);
+    assert_eq!(count(&report, code, "", Charge::Note), 1);
 }
 #[test]
 fn transform_bottom_row_must_be_the_affine_row() {
@@ -363,7 +446,8 @@ fn transform_bottom_row_must_be_the_affine_row() {
             count(
                 &report,
                 "onshape/assembly.record-unsupported",
-                "transform bottom row is invalid"
+                "transform bottom row is invalid",
+                Charge::Note
             ),
             1,
             "{row:?}"
@@ -387,7 +471,8 @@ fn mated_frames_must_be_proper_rigid() {
             count(
                 &report,
                 "onshape/assembly.mate-unsupported",
-                "proper rigid frame"
+                "proper rigid frame",
+                Charge::Note
             ),
             1,
             "{axis}"

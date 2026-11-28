@@ -71,7 +71,8 @@ use crate::history::parameters::{
 use crate::history::project::{neutral_parameter_id, projected_parameter_names};
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{
-    ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
+    ArchiveParameterClass, Feature, FeatureContent, FeatureHistory, FeatureInputLane,
+    FeatureInputScalarRole,
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
@@ -646,6 +647,8 @@ struct Entry<'a> {
     owner: Option<FeatureId>,
     name: NonBlankString,
     id: ParameterId,
+    /// The parameter's place in its feature's dimension list.
+    position: Option<u32>,
     text: &'a str,
 }
 
@@ -820,6 +823,18 @@ fn entries<'a>(
             None if timeline.equation_records.contains(&feature.id) => None,
             None => continue,
         };
+        let listed = feature
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                FeatureContent::Dimension(name) => feature
+                    .parameters
+                    .contains_key(name.as_str())
+                    .then_some(name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>()
+            .len();
         for (ordinal, name) in projected_parameter_names(feature).into_iter().enumerate() {
             let Some(text) = feature.parameters.get(name.as_str()) else {
                 continue;
@@ -835,8 +850,28 @@ fn entries<'a>(
                 owner: owner.clone(),
                 name: key,
                 id: neutral_parameter_id(feature, ordinal)?,
+                position: (ordinal < listed)
+                    .then(|| u32::try_from(ordinal).ok())
+                    .flatten(),
                 text,
             });
+        }
+    }
+    let mut lists = HashMap::<Option<&FeatureId>, HashSet<&str>>::new();
+    for entry in &entries {
+        lists
+            .entry(entry.owner.as_ref())
+            .or_default()
+            .insert(entry.feature.id.as_str());
+    }
+    let merged = lists
+        .into_iter()
+        .filter(|(_, features)| features.len() > 1)
+        .map(|(owner, _)| owner.cloned())
+        .collect::<HashSet<_>>();
+    for entry in &mut entries {
+        if merged.contains(&entry.owner) {
+            entry.position = None;
         }
     }
     Ok(entries)
@@ -852,6 +887,7 @@ fn parameter(
         id: entry.id.clone(),
         scope: scope.clone(),
         owner: entry.owner.clone().map(ParameterOwner::Feature),
+        position: entry.position,
         name: Some(entry.name.clone()),
         kind: reading.kind,
         unit: None,

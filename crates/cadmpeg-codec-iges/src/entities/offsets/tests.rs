@@ -791,7 +791,7 @@ fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), 1, "{given_up:#?}");
     crate::test_support::assert_given_up(given_up[0], ("entity", 1));
@@ -825,8 +825,13 @@ fn an_offset_of_a_source_that_no_pass_projects_keeps_its_own_charge() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .find(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .unwrap();
+    // A Type 134 source is a valid entity that no pass projects.
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     assert!(
         given_up.message.contains("offset source curve is missing"),
         "{}",

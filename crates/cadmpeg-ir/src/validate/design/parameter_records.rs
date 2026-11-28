@@ -19,6 +19,9 @@ use crate::report::check::Finding;
 /// A parameter name's scope, owner kind and id, and the name.
 type NameKey<'a> = (&'a str, Option<(&'static str, &'a str)>, &'a str);
 
+/// A parameter position's scope, owner kind and id, and the position.
+type PositionKey<'a> = (&'a str, Option<(&'static str, &'a str)>, u32);
+
 pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let design = &index.ir.design;
     let cells: BTreeSet<&str> = design
@@ -28,9 +31,29 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
         .map(|cell| cell.parameter.as_str())
         .collect();
     let mut names: BTreeMap<NameKey<'_>, usize> = BTreeMap::new();
+    let mut positions: BTreeMap<PositionKey<'_>, usize> = BTreeMap::new();
     let mut unnamed = Vec::new();
     for parameter in &design.parameters {
         let id = parameter.id.as_str();
+        if let Some(position) = parameter.position {
+            if cells.contains(id) {
+                super::error(
+                    findings,
+                    id,
+                    crate::rule!(
+                        "design.parameter-cell-position",
+                        "spreadsheet cell parameter states a `position`; its sheet orders it"
+                    ),
+                );
+            }
+            *positions
+                .entry((
+                    parameter.scope.as_str(),
+                    parameter.owner.as_ref().map(owner_key),
+                    position,
+                ))
+                .or_default() += 1;
+        }
         match &parameter.name {
             Some(name) => {
                 *names
@@ -83,6 +106,22 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
                 crate::rule!(
                     "design.parameters-scope-named",
                     "{count} parameters of the scope with {owner} are named {name:?}"
+                ),
+            );
+        }
+    }
+    for ((scope, owner, position), count) in positions {
+        if count > 1 {
+            let owner = owner.map_or_else(
+                || "no owner".to_owned(),
+                |(kind, owner)| format!("owner {kind} {owner}"),
+            );
+            super::error(
+                findings,
+                scope,
+                crate::rule!(
+                    "design.parameters-position-distinct",
+                    "{count} parameters of the scope with {owner} state position {position}"
                 ),
             );
         }

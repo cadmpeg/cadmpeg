@@ -121,7 +121,8 @@ fn give_up_carrier(
     .named(stream.as_str())
     .in_stream(stream.clone())
     .digest_only();
-    given_up.push(ctx.give_up_part(part, error)?);
+    let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+    given_up.push(ctx.give_up_part(part, cause, error)?);
     Ok(())
 }
 
@@ -275,7 +276,7 @@ fn scan_units_xml(
         };
         out.push(attribute(
             section,
-            node.range().start,
+            document.source_range(node.range()).start,
             &cadmpeg_ir::identity_component!("source_linear_unit_code"),
             b"SW_UnitsLinear",
             vec![AttributeValue::Integer(code)],

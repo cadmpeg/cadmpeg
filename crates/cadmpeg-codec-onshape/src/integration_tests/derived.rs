@@ -3,9 +3,10 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use super::bundle::{changed, kinds, read, timeline};
-use crate::test_support::fixture;
+use crate::test_support::{fixture, Charge};
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
@@ -388,9 +389,10 @@ fn derived_studios_validate_their_own_pin_and_continue_after_a_bad_reference_rec
         );
         assert!(!has_unsupported(&report), "{:?}", report.losses());
         assert_eq!(
-            report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/record.malformed")
-                && loss.detail.contains("featureId is missing")),
+            report.losses().iter().any(|loss| loss.states(
+                "onshape/record.malformed",
+                Charge::GivenUp(Cause::Unreadable)
+            ) && loss.detail.contains("featureId is missing")),
             bad_record,
             "{:?}",
             report.losses()
