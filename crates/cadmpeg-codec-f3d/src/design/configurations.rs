@@ -511,25 +511,31 @@ pub(crate) fn attach(
         "Configuration projection",
     )?
     .unwrap_or_default();
-    let unstored = native
-        .design_parameter_scopes
+    let undecided =
+        undecided_suppression(&model.features, &native.design_parameter_scopes, producers);
+    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
+    model.configurations = configurations;
+    Ok(())
+}
+
+pub(crate) fn undecided_suppression(
+    features: &[cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
+) -> BTreeSet<cadmpeg_ir::features::FeatureId> {
+    let unstored = scopes
         .iter()
         .filter(|scope| scope.stored_suppression().is_none())
         .map(crate::ids::neutral_feature_id)
         .collect::<BTreeSet<_>>();
-    // A feature that produces a body is active in the stored geometry.
-    let undecided = model
-        .features
+    features
         .iter()
         .filter(|feature| {
             !producers.contains(&feature.id)
                 && (feature.suppressed.is_none() || unstored.contains(&feature.id))
         })
         .map(|feature| feature.id.clone())
-        .collect();
-    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
-    model.configurations = configurations;
-    Ok(())
+        .collect()
 }
 
 /// Make the active configurations and the current feature states agree where
