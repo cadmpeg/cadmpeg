@@ -372,7 +372,7 @@ impl Brep {
             .into_iter()
             .map(|record| {
                 let part = record.part("f3d").in_stream(stream.clone());
-                ctx.give_up_part(part, record.error())
+                ctx.give_up_part(part, record.cause, record.error())
             })
             .collect()
     }

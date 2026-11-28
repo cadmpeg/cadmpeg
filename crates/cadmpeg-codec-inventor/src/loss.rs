@@ -19,7 +19,7 @@
 //! default.
 
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 
@@ -39,18 +39,6 @@ pub(crate) enum InventorLossCode {
     TopologyFaceBoundaryUnstated,
     /// Structurally paired `RSe` segments have no record semantics.
     RseSegmentPairUntyped,
-    /// `RSe` metadata streams are malformed or outside the implemented envelope.
-    RseMetadataStreamMalformed,
-    /// `RSe` bulk streams have invalid envelope or zlib framing.
-    RseBulkStreamMalformed,
-    /// Typed assembly records are malformed or outside the implemented branch.
-    AssemblyRecordMalformed,
-    /// Typed presentation records are malformed or outside the implemented branch.
-    PresentationRecordMalformed,
-    /// Typed design records are malformed or outside the implemented branch.
-    DesignRecordMalformed,
-    /// Typed sketch records could not be parsed exactly.
-    SketchRecordMalformed,
     /// Typed feature records could not be parsed exactly.
     FeatureRecordMalformed,
     /// A decoded operation has operands outside the v11 operation contract.
@@ -284,16 +272,10 @@ pub(crate) enum InventorLossCode {
     ParameterScopeUnresolved,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
     SketchGraphOpen,
-    /// `RSe` contains unpaired metadata or bulk streams.
-    RseStreamUnpaired,
     /// OLE property-set streams are malformed.
     PropertySetStreamMalformed,
     /// Property values have no neutral metadata mapping.
     MetadataPropertyUnmapped,
-    /// The Protein asset catalog could not be decoded.
-    ProteinCatalogUndecodable,
-    /// Malformed Protein asset records were rejected.
-    ProteinAssetRejected,
     /// The Protein package contains no decoded appearance assets.
     ProteinAppearanceAbsent,
     /// `PmApp` document-default appearance assignments did not resolve.
@@ -302,16 +284,10 @@ pub(crate) enum InventorLossCode {
     ProteinGuidAmbiguous,
     /// A Protein texture states a distance with no length conversion.
     MaterialDistanceUnitUntyped,
-    /// The Inventor Protein stream is malformed.
-    ProteinStreamMalformed,
     /// `PmGraphics` face appearance overrides did not resolve.
     AppearanceFaceOverrideUnresolved,
     /// The `UFRxDoc` external-reference table is malformed.
     UfrxTableMalformed,
-    /// An unsupported `UFRxDoc` schema was retained on an assembly document.
-    UfrxSchemaUnsupportedAssembly,
-    /// An unsupported `UFRxDoc` schema was retained without a typed transfer.
-    UfrxSchemaUnsupported,
     /// External component references remain unresolved.
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
@@ -358,8 +334,6 @@ pub(crate) enum InventorLossCode {
     FeatureBaseSourceBounded,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
-    /// A drawing record is outside its typed prefix form.
-    DrawingRecordMalformed,
     /// A dimension geometry intent names no unique active-body face or edge.
     PmiTargetUnresolved,
     /// A dimension value record stores a tolerance form outside the
@@ -381,12 +355,6 @@ impl InventorLossCode {
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::TopologyFaceBoundaryUnstated,
         Self::RseSegmentPairUntyped,
-        Self::RseMetadataStreamMalformed,
-        Self::RseBulkStreamMalformed,
-        Self::AssemblyRecordMalformed,
-        Self::PresentationRecordMalformed,
-        Self::DesignRecordMalformed,
-        Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
         Self::FeatureDesignOperationNative,
         Self::SketchDesignConstraintNative,
@@ -499,20 +467,14 @@ impl InventorLossCode {
         Self::ParameterUnitLayoutAssumed,
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
-        Self::RseStreamUnpaired,
         Self::PropertySetStreamMalformed,
         Self::MetadataPropertyUnmapped,
-        Self::ProteinCatalogUndecodable,
-        Self::ProteinAssetRejected,
         Self::ProteinAppearanceAbsent,
         Self::AppearanceDefaultUnresolved,
         Self::ProteinGuidAmbiguous,
         Self::MaterialDistanceUnitUntyped,
-        Self::ProteinStreamMalformed,
         Self::AppearanceFaceOverrideUnresolved,
         Self::UfrxTableMalformed,
-        Self::UfrxSchemaUnsupportedAssembly,
-        Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
         Self::AssemblyVisibilityNestedNative,
@@ -533,7 +495,6 @@ impl InventorLossCode {
         Self::FeatureHistoryBodyUnlinked,
         Self::FeatureBaseSourceBounded,
         Self::DrawingNativeOnly,
-        Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
         Self::PmiToleranceUnresolved,
         Self::PmiRecordMalformed,
@@ -551,12 +512,6 @@ impl InventorLossCode {
             }
             Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
-            Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
-            Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
-            Self::AssemblyRecordMalformed => "assembly.record-malformed",
-            Self::PresentationRecordMalformed => "presentation.record-malformed",
-            Self::DesignRecordMalformed => "design.record-malformed",
-            Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureDesignOperationNative => "feature.design-operation-native",
             Self::SketchDesignConstraintNative => "sketch.design-constraint-native",
             Self::FeatureRecordMalformed => "feature.record-malformed",
@@ -703,20 +658,14 @@ impl InventorLossCode {
             Self::ParameterUnitLayoutAssumed => "parameter.unit-layout-assumed",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
-            Self::RseStreamUnpaired => "rse.stream-unpaired",
             Self::PropertySetStreamMalformed => "property-set.stream-malformed",
             Self::MetadataPropertyUnmapped => "metadata.property-unmapped",
-            Self::ProteinCatalogUndecodable => "protein.catalog-undecodable",
-            Self::ProteinAssetRejected => "protein.asset-rejected",
             Self::ProteinAppearanceAbsent => "protein.appearance-absent",
             Self::AppearanceDefaultUnresolved => "appearance.default-unresolved",
             Self::ProteinGuidAmbiguous => "protein.guid-ambiguous",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
-            Self::ProteinStreamMalformed => "protein.stream-malformed",
             Self::AppearanceFaceOverrideUnresolved => "appearance.face-override-unresolved",
             Self::UfrxTableMalformed => "ufrx.table-malformed",
-            Self::UfrxSchemaUnsupportedAssembly => "ufrx.schema-unsupported-assembly",
-            Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
             Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
@@ -737,7 +686,6 @@ impl InventorLossCode {
             Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
             Self::FeatureBaseSourceBounded => "feature.base-source-bounded",
             Self::DrawingNativeOnly => "drawing.native-only",
-            Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
             Self::PmiToleranceUnresolved => "pmi.tolerance-unresolved",
             Self::PmiRecordMalformed => "pmi.record-malformed",
@@ -766,20 +714,9 @@ impl InventorLossCode {
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
-            Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
-                LossTaxonomy::RecordNotTyped
-            }
-            Self::DrawingRecordMalformed
-            | Self::RseMetadataStreamMalformed
-            | Self::RseBulkStreamMalformed
-            | Self::AssemblyRecordMalformed
-            | Self::PresentationRecordMalformed
-            | Self::DesignRecordMalformed
-            | Self::SketchRecordMalformed
-            | Self::FeatureRecordMalformed
-            | Self::RseStreamUnpaired
+            Self::DrawingNativeOnly | Self::RseSegmentPairUntyped => LossTaxonomy::RecordNotTyped,
+            Self::FeatureRecordMalformed
             | Self::PropertySetStreamMalformed
-            | Self::ProteinStreamMalformed
             | Self::KernelHistoryUnclosed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
@@ -908,16 +845,14 @@ impl InventorLossCode {
             | Self::FeatureLabelUnusable
             | Self::FeatureLabelNameReplaced
             | Self::AssemblyGroundingJointDropped => LossTaxonomy::MetadataNotTransferred,
-            Self::ProteinCatalogUndecodable
-            | Self::ProteinAssetRejected
-            | Self::ProteinAppearanceAbsent
+            Self::ProteinAppearanceAbsent
             | Self::AppearanceDefaultUnresolved
             | Self::ProteinGuidAmbiguous
             | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::UfrxSchemaUnsupportedAssembly
-            | Self::AssemblyComponentExternal
-            | Self::AssemblyVisibilityNestedNative => LossTaxonomy::AssemblyComponentsExternal,
+            Self::AssemblyComponentExternal | Self::AssemblyVisibilityNestedNative => {
+                LossTaxonomy::AssemblyComponentsExternal
+            }
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
@@ -928,9 +863,9 @@ impl InventorLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        NamespacedLossKind::new(
             const {
-                match cadmpeg_ir::report::loss::LossNamespace::new("inventor") {
+                match LossNamespace::new("inventor") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }
@@ -938,6 +873,16 @@ impl InventorLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
+    }
+
+    /// The severity floor strict mode applies to this code (CADIR §3.2).
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ContainerNoncanonical => Some(Severity::Warning),
+            _ => None,
+        }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -966,12 +911,6 @@ mod tests {
                 "geometry.procedural-surface-not-transferred",
                 "topology.face-boundary-unstated",
                 "rse.segment-pair-untyped",
-                "rse.metadata-stream-malformed",
-                "rse.bulk-stream-malformed",
-                "assembly.record-malformed",
-                "presentation.record-malformed",
-                "design.record-malformed",
-                "sketch.record-malformed",
                 "feature.record-malformed",
                 "feature.design-operation-native",
                 "sketch.design-constraint-native",
@@ -1084,20 +1023,14 @@ mod tests {
                 "parameter.unit-layout-assumed",
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
-                "rse.stream-unpaired",
                 "property-set.stream-malformed",
                 "metadata.property-unmapped",
-                "protein.catalog-undecodable",
-                "protein.asset-rejected",
                 "protein.appearance-absent",
                 "appearance.default-unresolved",
                 "protein.guid-ambiguous",
                 "material.distance-unit-untyped",
-                "protein.stream-malformed",
                 "appearance.face-override-unresolved",
                 "ufrx.table-malformed",
-                "ufrx.schema-unsupported-assembly",
-                "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
                 "assembly.visibility-nested-native",
@@ -1118,7 +1051,6 @@ mod tests {
                 "feature.history-body-unlinked",
                 "feature.base-source-bounded",
                 "drawing.native-only",
-                "drawing.record-malformed",
                 "pmi.target-unresolved",
                 "pmi.tolerance-unresolved",
                 "pmi.record-malformed",
@@ -1142,6 +1074,15 @@ mod tests {
                     .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
                 "code {text} is not lowercase kebab"
             );
+        }
+    }
+
+    #[test]
+    fn the_compound_deviation_alone_pins_a_strict_floor() {
+        for code in InventorLossCode::ALL {
+            let expected = (*code == InventorLossCode::ContainerNoncanonical)
+                .then_some(cadmpeg_ir::report::Severity::Warning);
+            assert_eq!(code.note("").code.strict_floor(), expected, "{code:?}");
         }
     }
 

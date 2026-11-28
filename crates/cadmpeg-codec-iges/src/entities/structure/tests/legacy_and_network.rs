@@ -496,7 +496,7 @@ fn rejects_wrong_subfigure_definition_pointers_in_v4_and_v5_profiles() {
                     .unwrap();
                 assert!(
                     result.report().losses.iter().any(|loss| {
-                        loss.code == IgesLossCode::EntityNotProjected.kind()
+                        crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
                             && loss.message.contains(message)
                     }),
                     "{version} {definition_type} wrong {pointer_kind}: {:#?}",
@@ -855,12 +855,79 @@ fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(result.report().losses.iter().any(|loss| loss
-        .message
-        .contains("subfigure definition fields or nesting depth is invalid")));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::Cause::Unreadable.kind()
+            && loss.message.contains(
+                "subfigure definition member D3 places a definition whose depth is not below \
+                 this definition's depth",
+            )
+    }));
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["subfigure_definitions"].len(),
         2
+    );
+}
+
+#[test]
+fn a_definition_whose_member_is_undecoded_is_dropped_with_it_and_not_unreadable() {
+    // In inches, the double-precision translation of D3 overflows to a
+    // non-finite millimetre value: the stored placement is valid, and this
+    // decoder cannot evaluate it. D5 holds D3 as a member, so D5 is lost
+    // with D3 and its bytes break no rule.
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,1,4HINCH,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 308,
+                        form: 0,
+                        label: "CHILD".into(),
+                        status: "00000200",
+                        parameters: "308,0,5HCHILD,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 408,
+                        form: 0,
+                        label: "INSTANCE".into(),
+                        status: "00000000",
+                        parameters: "408,1,1.0D308,0.0,0.0,1.0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 308,
+                        form: 0,
+                        label: "PARENT".into(),
+                        status: "00000200",
+                        parameters: "308,1,6HPARENT,1,3;".into(),
+                    },
+                ],
+                global,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let losses = &result.report().losses;
+    let given_up = losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{losses:#?}");
+    assert_eq!(
+        given_up[0].code,
+        cadmpeg_ir::unknown::part::Cause::Undecoded.kind(),
+        "{losses:#?}"
+    );
+    assert!(
+        given_up[0]
+            .message
+            .contains("subfigure-instance placement is invalid"),
+        "{losses:#?}"
+    );
+    assert!(
+        given_up[0]
+            .message
+            .contains("iges:entity:directory#5 (Type 308)"),
+        "{losses:#?}"
     );
 }
 
@@ -886,14 +953,19 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
         expansion.fields().unwrap()["issues"],
         cadmpeg_core::json!(["malformed_placement"])
     );
+    let (given_up, noted): (Vec<_>, Vec<_>) = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected))
+        .partition(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code));
+    // The instance of the given-up definition has no record of its own to
+    // drop, so the give-up of the definition is the one entry for it.
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
-            .count(),
-        4
+        (given_up.len(), noted.len()),
+        (3, 0),
+        "{:#?}",
+        result.report().losses
     );
 }
 
@@ -1256,7 +1328,7 @@ fn decode_rejects_wrong_typed_network_instance_type_flag() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            .any(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)),
         "{:#?}",
         result.report().losses
     );
@@ -1274,7 +1346,7 @@ fn decode_rejects_wrong_typed_network_definition_type_flag() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)));
 }
 
 #[test]
