@@ -37,6 +37,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
+pub(crate) mod replayed_states;
 mod retention;
 pub(crate) mod retired_states;
 
@@ -3824,9 +3825,13 @@ fn build_geometry_ir(
     retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let rollback = part
-        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
-        .transpose()?;
+    let stored_marks = if part {
+        crate::rollback::stored_marks(ctx, scan, &lanes, false)?
+    } else {
+        crate::rollback::StoredMarks::new()
+    };
+    let rollback =
+        part.then(|| crate::rollback::read(scan, &mark_owners, &stored_marks, &mut pmi_losses));
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -4689,6 +4694,89 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(&id, "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
+    crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
+    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
+    for extrusion in &retained.reversals {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag its record states."
+        )));
+    }
+    if !retained.assumed.is_empty() {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal on the reversal flag their records state alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            retained.assumed.len(),
+            retained.assumed.join(", ")
+        )));
+    }
+    for states in &retained.configuration_reversals {
+        let configuration = &states.configuration;
+        let witness = if states.active {
+            "as the solid of that configuration shows"
+        } else {
+            "as the active solid contradicts that flag for the same extrusion"
+        };
+        for extrusion in &states.extrusions {
+            pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag its record states there, {witness}."
+            )));
+        }
+    }
+    for states in &retained.configuration_assumed {
+        let witness = if states.active {
+            "as no test of the active solid holds or contradicts that travel"
+        } else {
+            "as the decoder tests no solid of that configuration for that travel"
+        };
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag their records state there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            states.extrusions.len(),
+            states.configuration,
+            states.extrusions.join(", ")
+        )));
+    }
+    if retained.changed {
+        stamp_feature_baseline(ctx, &mut ir)?;
+    }
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
+    let projection = if let Some(rollback) = rollback {
+        project_design(
+            ctx,
+            &mut ir,
+            crate::design_v11::Part {
+                histories: &native.feature_histories,
+                lanes: &native.feature_input_lanes,
+                configuration_maps: &configuration_maps,
+                bodies: current_bodies,
+                persistent: crate::design_v11::Persistent {
+                    faces: &brep.native_face_identities,
+                    bodies: &brep.native_body_identities,
+                },
+                length: length_unit,
+                equations: equation_managers,
+                length_places,
+                rollback,
+                outside_profile: &outside_profile,
+                given_up_configurations: &given_up_configurations,
+                scan: Some(&*scan),
+                marks: &stored_marks,
+            },
+            &mut pmi_losses,
+        )?
+    } else {
+        crate::design_v11::Projection::default()
+    };
+    drop(stored_marks);
+
     for source_block in &mut scan.blocks {
         let member = container::Section::Block(source_block);
         let id = member.native_id();
@@ -4748,86 +4836,15 @@ fn build_geometry_ir(
         };
         source.links_mut().extend(links);
     }
-    crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
-    for extrusion in &retained.reversals {
-        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag its record states."
-        )));
-    }
-    if !retained.assumed.is_empty() {
-        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
-            "{} extrusion(s) travel against the profile normal on the reversal flag their records state alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
-            retained.assumed.len(),
-            retained.assumed.join(", ")
-        )));
-    }
-    for states in &retained.configuration_reversals {
-        let configuration = &states.configuration;
-        let witness = if states.active {
-            "as the solid of that configuration shows"
-        } else {
-            "as the active solid contradicts that flag for the same extrusion"
-        };
-        for extrusion in &states.extrusions {
-            pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag its record states there, {witness}."
-            )));
-        }
-    }
-    for states in &retained.configuration_assumed {
-        let witness = if states.active {
-            "as no test of the active solid holds or contradicts that travel"
-        } else {
-            "as the decoder tests no solid of that configuration for that travel"
-        };
-        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
-            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag their records state there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
-            states.extrusions.len(),
-            states.configuration,
-            states.extrusions.join(", ")
-        )));
-    }
-    if retained.changed {
-        stamp_feature_baseline(ctx, &mut ir)?;
-    }
-    crate::resolved_features::projections::note_blend_edge_generators(
-        &ir.model.features,
-        &native.feature_input_lanes,
-        &native.feature_histories,
-        &crate::resolved_features::side_generators::SideGenerators::derive(
-            &ir.model,
-            &native.feature_histories,
-            &native.feature_input_lanes,
-        ),
-        &mut pmi_losses,
-    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    if let Some(rollback) = rollback {
-        project_design(
-            ctx,
-            &mut ir,
-            &mut annotations,
-            &mut unknowns,
-            crate::design_v11::Part {
-                histories: &native.feature_histories,
-                lanes: &native.feature_input_lanes,
-                configuration_maps: &configuration_maps,
-                bodies: current_bodies,
-                persistent: crate::design_v11::Persistent {
-                    faces: &brep.native_face_identities,
-                    bodies: &brep.native_body_identities,
-                },
-                length: length_unit,
-                equations: equation_managers,
-                length_places,
-                rollback,
-                outside_profile: &outside_profile,
-                given_up_configurations: &given_up_configurations,
-            },
-            &mut pmi_losses,
-        )?;
-    }
+    finish_design_projection(
+        ctx,
+        &mut ir,
+        &mut annotations,
+        &mut unknowns,
+        projection,
+        &mut pmi_losses,
+    )?;
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
     pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
@@ -4857,23 +4874,32 @@ fn build_geometry_ir(
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut Annotations,
-    unknowns: &mut [UnknownRecord],
     part: crate::design_v11::Part<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    let mut retired = std::collections::BTreeMap::new();
+) -> Result<crate::design_v11::Projection, CodecError> {
+    let mut projection = crate::design_v11::Projection::default();
     cadmpeg_ir::design::projection::project_layer(ctx, "sldprt", ir, losses, |ir, losses| {
-        let projection = crate::design_v11::project(ctx, ir, part, losses)?;
-        ctx.charge_entities(
-            u64_from_index(projection.added),
-            "admit SLDPRT design records",
-        )?;
-        retired = projection.retired;
+        let stated = crate::design_v11::project(ctx, ir, part, losses)?;
+        ctx.charge_entities(u64_from_index(stated.added), "admit SLDPRT design records")?;
+        projection = stated;
         Ok(())
     })?;
-    retired_states::retire(ir, annotations, unknowns, &retired, losses);
-    if retired.is_empty() {
+    Ok(projection)
+}
+
+fn finish_design_projection(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    annotations: &mut Annotations,
+    unknowns: &mut [UnknownRecord],
+    projection: crate::design_v11::Projection,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    retired_states::retire(ir, annotations, unknowns, &projection.retired, losses);
+    annotations
+        .append(projection.annotations)
+        .map_err(CodecError::from)?;
+    if projection.retired.is_empty() {
         return Ok(());
     }
     stamp_feature_baseline(ctx, ir)
@@ -5444,9 +5470,13 @@ fn build_metadata_ir(
     retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let rollback = part
-        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
-        .transpose()?;
+    let stored_marks = if part {
+        crate::rollback::stored_marks(ctx, scan, &lanes, true)?
+    } else {
+        crate::rollback::StoredMarks::new()
+    };
+    let rollback =
+        part.then(|| crate::rollback::read(scan, &mark_owners, &stored_marks, &mut pmi_losses));
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -5947,11 +5977,9 @@ fn build_metadata_ir(
             .collect();
         let given_up_configurations =
             configurations_given_up(&ir, scan, &partitions_given_up(&scan.given_up));
-        project_design(
+        let projection = project_design(
             ctx,
             &mut ir,
-            &mut annotations,
-            &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
@@ -5967,7 +5995,17 @@ fn build_metadata_ir(
                 rollback,
                 outside_profile: &outside_profile,
                 given_up_configurations: &given_up_configurations,
+                scan: Some(scan),
+                marks: &stored_marks,
             },
+            &mut pmi_losses,
+        )?;
+        finish_design_projection(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            &mut unknowns,
+            projection,
             &mut pmi_losses,
         )?;
     }
