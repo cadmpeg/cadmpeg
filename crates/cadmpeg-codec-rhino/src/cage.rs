@@ -15,8 +15,11 @@ use crate::wire::Uuid;
 use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
+// resource-cap: MAX_DIMENSION = 2
 const MAX_DIMENSION: usize = 10_000;
+// resource-cap: MAX_CONTROL_POINTS = 2
 const MAX_CONTROL_POINTS: usize = 1 << 20;
+// resource-cap: MAX_SCALARS = 2
 const MAX_SCALARS: usize = 1 << 24;
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x06, 0x93, 0x6a, 0xfb, 0x3d, 0x3c, 0x41, 0xac, 0xbf, 0x70, 0xc9, 0x31, 0x9f, 0xa4, 0x80, 0xa1,

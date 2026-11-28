@@ -74,10 +74,10 @@ and [`scripts/iges-freecad-expectations.json`](../../scripts/iges-freecad-expect
 
 ```sh
 python3 scripts/prepare-iges-freecad-golden.py \
-  --output-dir "$HOME/side2/tmp/iges-l9/freecad"
-CADMPEG_IGES_INPUT_DIR="$HOME/side2/tmp/iges-l9/freecad" \
+  --output-dir "./iges-l9/freecad"
+CADMPEG_IGES_INPUT_DIR="./iges-l9/freecad" \
 CADMPEG_IGES_EXPECTATIONS=scripts/iges-freecad-expectations.json \
-CADMPEG_IGES_REPORT="$HOME/side2/tmp/iges-l9/freecad-report.json" \
+CADMPEG_IGES_REPORT="./iges-l9/freecad-report.json" \
 FreeCADCmd scripts/verify-iges-freecad.py
 ```
 

@@ -8,9 +8,11 @@ use cadmpeg_ir::design::units::Quantity;
 use super::{unit_word, Cursor, Unit};
 
 /// The most tokens of a formula the reader parses.
+// resource-cap: MAX_TOKENS = 2
 const MAX_TOKENS: usize = 1024;
 
 /// The deepest nesting of parentheses, calls, and signs the reader parses.
+// resource-cap: MAX_NESTING = 2
 pub(super) const MAX_NESTING: usize = 64;
 
 /// The distance from an integer within which `FreeCAD` takes an exponent

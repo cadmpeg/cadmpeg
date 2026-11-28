@@ -11,7 +11,8 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{dialect_loss, SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT};
+use super::registry_ids::FORMAT;
+use super::{dialect_loss, SldprtDialect, DECLARED_SW_VERSION, PARASOLID_FORMAT};
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::add_solidworks_version;
 use crate::test_support::container::make_block;

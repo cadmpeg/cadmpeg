@@ -11,6 +11,7 @@ const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
 /// Boundary points one planar face may state before its loops are left
 /// unclassified. Segment intersection and containment are quadratic in them.
+// resource-cap: MAX_PLANAR_BOUNDARY_POINTS = 4
 pub(crate) const MAX_PLANAR_BOUNDARY_POINTS: usize = 4096;
 
 pub(crate) fn strictly_inside_planar_polygon(

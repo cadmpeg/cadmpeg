@@ -19,6 +19,7 @@ use crate::design::refs::{EntityRef, RecordRef};
 use crate::document::Topology;
 use crate::features::ConfigurationId;
 use crate::ids::BodyId;
+use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 use crate::process::state::ProcessState;
 use crate::report::check::{Check, Finding};
@@ -293,6 +294,18 @@ impl<'a> Resolver<'a, '_, '_> {
         }
         Ok(Extent { records, names })
     }
+}
+
+/// Whether a reference to `target` from a state leaves it: the state does
+/// not hold `target` (`held` false), and `target` is a record of a
+/// `Topology` of the document or no record of it.
+pub(crate) fn leaves_state(
+    held: bool,
+    target: &str,
+    topology: &BTreeSet<&str>,
+    ids: &ModelIndex<'_>,
+) -> bool {
+    !held && (topology.contains(target) || !IdentitySet::contains(ids, target))
 }
 
 /// The ids of every `Topology` of the document: the current geometry's and

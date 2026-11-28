@@ -130,10 +130,10 @@ fn projected(
 ) -> (Feature, Vec<LossNote>) {
     let (_, source) = fixture();
     let mut feature = feature(&source);
-    let archive = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_header_fixture::synthetic_smbh(),
     );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let inputs = Inputs {
                 scan,

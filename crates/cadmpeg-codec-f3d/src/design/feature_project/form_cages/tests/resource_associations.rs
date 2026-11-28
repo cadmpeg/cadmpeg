@@ -333,8 +333,8 @@ fn multiple_cages_from_each_serializer_route_keep_all_associations() {
         neutral_form_cage("f3d:model:subd#a", uuid),
         neutral_form_cage("f3d:model:subd#b", uuid),
     ];
-    let archive = crate::test_support::zip_test::f3d_with_form_body_resource(b"synthetic");
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let archive = crate::test_support::zip_fixture::f3d_with_form_body_resource(b"synthetic");
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let source = form_cages::FormSource { bytes: &bytes, records: &records, scope: &scope, cages: &cages, stream: "FusionAssetName[Active]/Design1/BulkStream.dat" };
             form_cages::bind_serializers(ctx, source, &mut serializers, &mut form_cages::ReferenceGroups::default())?;

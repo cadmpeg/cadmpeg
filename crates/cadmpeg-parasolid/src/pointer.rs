@@ -8,6 +8,7 @@ use cadmpeg_core::decode::View;
 const QUOTIENT_UNIT: u32 = 32_767;
 
 /// The largest pointer: quotient and remainder magnitude 32767.
+// resource-cap: MAX_VALUE = 1
 pub const MAX_VALUE: u32 = 32_768 * 32_767;
 
 /// Read one complete pointer and advance the view.

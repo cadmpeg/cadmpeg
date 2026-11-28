@@ -10,10 +10,10 @@ use std::io::{Cursor, Read, Write};
 
 /// A design whose one timeline item is a captured `Position`.
 fn position_design() -> Vec<u8> {
-    position_design_on(crate::test_support::assembly_test::f3d_without_brep(
+    position_design_on(crate::test_support::assembly_fixture::f3d_without_brep(
         "assembly-design",
         "root.f3d",
-        &[("part.f3d", crate::test_support::assembly_test::XREF_ROLE)],
+        &[("part.f3d", crate::test_support::assembly_fixture::XREF_ROLE)],
     ))
 }
 
@@ -42,7 +42,7 @@ fn position_design_on(base: Vec<u8>) -> Vec<u8> {
         &[],
     );
     let placement_at = bulk.len();
-    let role = crate::test_support::assembly_test::XREF_ROLE;
+    let role = crate::test_support::assembly_fixture::XREF_ROLE;
     let mut placement =
         crate::test_support::legacy_attributed_external_placement(role, false, None);
     placement[4..7].copy_from_slice(b"256");
@@ -55,7 +55,7 @@ fn position_design_on(base: Vec<u8>) -> Vec<u8> {
     push_reference_u64(&mut bulk, 500);
     bulk.extend_from_slice(&1_u32.to_le_bytes());
     push_reference_u64(&mut bulk, 500);
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (PLACEMENT, "", 2, "Component", &[10]),
             (POSITION, "", 6, "Fusion", &[500]),
@@ -186,8 +186,8 @@ fn a_geometry_scope_decode_states_no_design_scope() {
 }
 
 fn reciprocal_hole_design(first: u8, second: u8) -> (Vec<u8>, u64) {
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
     use crate::test_support::{indexed_header, lp_utf16, write_marked_reference};
 
     let mut bulk = Vec::new();

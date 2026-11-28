@@ -40,6 +40,15 @@ pub struct DesignConfiguration {
     pub scope: ProductDefinitionId,
     /// The configuration's name, which identifies it.
     pub name: String,
+    /// The configuration's place, from 0, in the one list where the source
+    /// lists the configurations of its scope. It orders display only. `None`
+    /// where the source lists none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_position"
+    )]
+    pub position: Option<u32>,
     /// The configuration a derived configuration inherits from.
     #[serde(
         default,
@@ -592,6 +601,7 @@ cadmpeg_core::named_optional_field!(deserialize_grounded<T>, T, "grounded");
 cadmpeg_core::named_optional_field!(deserialize_label<T>, T, "label");
 cadmpeg_core::named_optional_field!(deserialize_native_ref<T>, T, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_parent<T>, T, "parent");
+cadmpeg_core::named_optional_field!(deserialize_position<T>, T, "position");
 cadmpeg_core::named_optional_field!(deserialize_part_number<T>, T, "part_number");
 cadmpeg_core::named_optional_field!(deserialize_prototype<T>, T, "prototype");
 cadmpeg_core::named_optional_field!(deserialize_representation<T>, T, "representation");

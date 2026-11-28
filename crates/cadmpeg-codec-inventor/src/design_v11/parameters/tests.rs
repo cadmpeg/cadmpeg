@@ -31,7 +31,7 @@ fn project_parameters(parameters: Vec<LegacyParameter>) -> CadIr {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &[], &[]).expect("projection");
+    project(&ctx, &mut ir, super::super::ParameterRecords::default()).expect("projection");
     assert_eq!(ir.model.parameters, original);
     ir
 }
@@ -202,7 +202,16 @@ fn declared_unit_joins_native_parameter_and_unit_records() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &[raw], &units).expect("projection");
+    project(
+        &ctx,
+        &mut ir,
+        super::super::ParameterRecords {
+            parameters: &[raw],
+            units: &units,
+            tables: &[],
+        },
+    )
+    .expect("projection");
     assert_eq!(ir.design.parameters[0].unit, unit("in"));
     assert_eq!(
         ir.design.parameters[0].kind,
@@ -231,4 +240,60 @@ fn quantity_powers_keep_integral_exponents() {
         ir.design.parameters[0].definition,
         ParameterDefinition::Expression(Expression::Source { .. })
     ));
+}
+
+/// A parameter takes its place in the member list of the one parameter
+/// table that names it, and the parameters of an owner that two tables name
+/// state no position.
+#[test]
+fn a_parameter_is_placed_by_its_table_member_list() {
+    use crate::design::scope::PmDcParameterTablePayload;
+    use crate::pmdc::PmDcReference;
+    use crate::record_identity::{Located, RecordTypeId};
+    use crate::test_support::sheet_metal::list;
+
+    let length = || LegacyValue::Length(Length::new(1.0).expect("length"));
+    let (first, first_legacy) = crate::feature::fillet::tests::parameter(4, length());
+    let (second, second_legacy) = crate::feature::fillet::tests::parameter(5, length());
+    let table = |ordinal, members: &[u32]| {
+        let payload: PmDcParameterTablePayload = json::from_value(cadmpeg_core::json!({
+            "save_version_major": 29, "header_value": 0, "header_id": 0,
+            "next": PmDcReference::from_packed(0), "flags": 0,
+            "context": PmDcReference::from_packed(0), "members": list(members),
+            "names_metadata": null, "names": [], "suffix_len": 0
+        }))
+        .expect("table payload");
+        Located::new(
+            payload,
+            RecordTypeId::from_bytes(crate::pmdc::inventor_id(1)),
+            first.identity.segment_token.clone(),
+            ordinal,
+        )
+    };
+    let positions = |tables: &[_]| {
+        let mut ir = root_part_ir();
+        ir.model.parameters = vec![first_legacy.clone(), second_legacy.clone()];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        project(
+            &ctx,
+            &mut ir,
+            super::super::ParameterRecords {
+                parameters: &[first.clone(), second.clone()],
+                units: &[],
+                tables,
+            },
+        )
+        .expect("projection");
+        let by_id = ir
+            .design
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.id.clone(), parameter.position))
+            .collect::<BTreeMap<_, _>>();
+        (by_id[&first_legacy.id], by_id[&second_legacy.id])
+    };
+    assert_eq!(positions(&[table(9, &[6, 5])]), (Some(1), Some(0)));
+    assert_eq!(positions(&[table(9, &[6]), table(10, &[5])]), (None, None));
 }

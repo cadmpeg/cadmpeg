@@ -1603,13 +1603,15 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let first_ref = markers[0].id().to_string();
                 let second_ref = markers[1].id().to_string();
                 let endpoint_refs = vec![first_ref, second_ref];
-                entities.push(
-                    SketchEntity::new(id, sketch_id, line.geometry.clone())
-                        .with_construction(line.construction)
-                        .with_native_ref(native_ref)
-                        .with_geometry_ref(Some(geometry_ref))
-                        .with_endpoint_refs(endpoint_refs),
-                );
+                let mut entity = SketchEntity::new(id, sketch_id, line.geometry.clone())
+                    .with_construction(line.construction)
+                    .with_native_ref(native_ref)
+                    .with_geometry_ref(Some(geometry_ref))
+                    .with_endpoint_refs(endpoint_refs);
+                if line.construction_read() {
+                    entity.read_construction(line.construction);
+                }
+                entities.push(entity);
             }
         }
     }

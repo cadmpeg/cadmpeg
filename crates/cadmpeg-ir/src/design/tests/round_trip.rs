@@ -20,9 +20,9 @@ use crate::design::expr::{
 };
 use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::options::{
-    BodyForm, Boolean, BooleanOp, CornerRound, Hand, LimitOffset, LoopNesting, NativeOption,
-    ProjectionDirection, SectionCondition, SheetOutput, SolidOutput, Solidify, Support,
-    SymmetricMeasure, Targets, Thickness, ThinEnds, ThinWall, WallSide,
+    BlankText, BodyForm, Boolean, BooleanOp, CornerRound, Hand, LimitOffset, LoopNesting,
+    NativeOption, ProjectionDirection, SectionCondition, SheetOutput, SolidOutput, Solidify,
+    Support, SymmetricMeasure, Targets, Thickness, ThinEnds, ThinWall, WallSide,
 };
 use crate::design::selection::{
     DatumPart, Fragment, OccurrencePath, Ordered, PathStep, StepRef, Unordered,
@@ -54,6 +54,7 @@ fn native_options() -> Vec<NativeOption> {
         NativeOption::Length(Dimension::Parameter(id("parameter", 1))),
         NativeOption::Angle(Dimension::Negated(id("parameter", 2))),
         NativeOption::Text(Dimension::Literal(text("blind"))),
+        NativeOption::Blank(BlankText::new(" ".to_owned()).unwrap()),
         NativeOption::Selection(selections().remove(0)),
         NativeOption::OrderedSelection(selections().remove(1)),
     ]

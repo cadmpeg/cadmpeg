@@ -4,8 +4,8 @@
 use std::io::{Cursor, Write};
 
 use super::decode;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::f3d_native;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::native_fixture::f3d_native;
 
 /// A compact null-owner parameter frame decodes through the full decode as a
 /// parameter without an owner binding, and its set trailer byte 3 reports the
@@ -30,7 +30,7 @@ fn compact_null_owner_parameter_reports_its_owner_and_trailer_flag() {
     frame.extend_from_slice(&[0, 1]);
     frame.extend_from_slice(&target.to_le_bytes());
     frame.extend_from_slice(&[0; 6]);
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             TAIL_TYPE_GUID,
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
@@ -84,7 +84,7 @@ fn a_parameter_with_the_header_flag_decodes_and_reports_the_flag() {
     frame[22..26].copy_from_slice(&6u32.to_le_bytes());
     let expression_end = 36 + 4 + 2 * "2.50 mm".len();
     frame.splice(expression_end..expression_end + 9, [0; 10]);
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             TAIL_TYPE_GUID,
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
@@ -137,7 +137,7 @@ fn ten_byte_trailer_driven_flag_reports_its_reading() {
         expression_end..expression_end + 9,
         [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
     );
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             TAIL_TYPE_GUID,
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
@@ -188,7 +188,7 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
         use cadmpeg_ir::features::selections::BodySelection;
         use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
         let (mut bulk, records) =
-            crate::test_support::streams_test::generated_design_base_feature_bulkstream();
+            crate::test_support::streams_fixture::generated_design_base_feature_bulkstream();
         let start = usize::try_from(records.last().unwrap().1).unwrap();
         let mut kind = Vec::new();
         crate::test_support::lp_utf16(&mut kind, "Base Feature");
@@ -213,7 +213,9 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
         bulk[start + prefix::SHARED_METADATA_RECORD..start + prefix::SHARED_METADATA_RECORD + 8]
             .copy_from_slice(&985u64.to_le_bytes());
         let mut metadata =
-            crate::test_support::streams_test::generated_design_base_feature_metastream(&records);
+            crate::test_support::streams_fixture::generated_design_base_feature_metastream(
+                &records,
+            );
         let scope_type = b"00000000-0000-0000-0000-000000001400";
         let type_at = metadata
             .windows(scope_type.len())
@@ -221,8 +223,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
             .unwrap();
         metadata[type_at..type_at + scope_type.len()]
             .copy_from_slice(b"D7015B81-AB4D-4C89-BED7-AA4411E1964A");
-        let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        let archive = crate::test_support::zip_fixture::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
             &[], &bulk, &metadata,
         );
         let decoded = decode(archive);
@@ -255,7 +257,7 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for source_kind in ["DerivedInstance", "LocalizedScope!"] {
         let (mut bulk, records) =
-            crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+            crate::test_support::streams_fixture::generated_design_copy_paste_bodies_bulkstream();
         let mut previous_kind = Vec::new();
         let mut next_kind = Vec::new();
         crate::test_support::lp_utf16(&mut previous_kind, "CopyPasteBodies");
@@ -267,7 +269,7 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
             .unwrap();
         bulk[at..at + previous_kind.len()].copy_from_slice(&next_kind);
         let mut metadata =
-            crate::test_support::streams_test::generated_design_copy_paste_bodies_metastream(
+            crate::test_support::streams_fixture::generated_design_copy_paste_bodies_metastream(
                 &records,
             );
         let previous_type = b"00000000-0000-0000-0000-000000001400";
@@ -277,8 +279,8 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
             .unwrap();
         metadata[type_at..type_at + previous_type.len()]
             .copy_from_slice(b"66E375EA-40F1-4115-8D83-0F23DD30593E");
-        let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(), &[], &bulk, &metadata,
+        let archive = crate::test_support::zip_fixture::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(), &[], &bulk, &metadata,
         );
         let decoded = decode(archive);
         let feature = decoded
@@ -392,7 +394,7 @@ fn commented_document_parameter_keeps_its_comment_through_a_rewrite() {
         offset: 30,
     }))
     .unwrap();
-    crate::test_support::native_test::f3d_native_mut(&mut source)
+    crate::test_support::native_fixture::f3d_native_mut(&mut source)
         .design_parameters
         .push(parameter);
     let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =

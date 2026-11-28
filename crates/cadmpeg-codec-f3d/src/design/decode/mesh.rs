@@ -4189,11 +4189,11 @@ mod tests {
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png";
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             let expected = crate::ids::neutral_asset_id(ENTRY);
             let admitted = super::mesh_image_asset(scan, "mark.png").unwrap();
             assert_eq!(admitted.0, ENTRY);

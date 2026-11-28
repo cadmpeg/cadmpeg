@@ -23,6 +23,7 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
+// resource-cap: MAX_COPIOUS_TUPLES = 2
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
 fn copious_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote {

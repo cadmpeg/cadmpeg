@@ -4,11 +4,19 @@
 //! written on the wire, and the impls of each enum destructure the record by
 //! those names, so every variant names a field and every field has one.
 
+use cadmpeg_core::text::NonBlankString;
+
+use crate::design::configuration::{
+    Arrangement, ArrangementAppearance, ArrangementKind, ArrangementMove, NestedArrangement,
+    Overrides,
+};
 use crate::design::feature::{Feature, FeatureDefinition};
 use crate::design::options::NativeOptions;
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
 use crate::design::units::ValueKind;
-use crate::features::parameters::DesignParameter as ModelParameter;
+use crate::features::parameters::{
+    DesignConfiguration as ModelConfiguration, DesignParameter as ModelParameter,
+};
 use crate::features::serialization::FeatureWriteWire;
 use crate::ids::ProductDefinitionId;
 use crate::sketches::{Sketch as ModelSketch, SketchConstraint as ModelSketchConstraint};
@@ -47,7 +55,13 @@ always_stated!(
     ProductDefinitionId,
     ValueKind,
     ParameterDefinition,
-    NativeOptions
+    NativeOptions,
+    NonBlankString,
+    ArrangementKind,
+    Overrides,
+    Vec<ArrangementAppearance>,
+    Vec<ArrangementMove>,
+    Vec<NestedArrangement>
 );
 
 /// Implements [`Field`] for the field enum `$name`, each variant keyed by its
@@ -142,6 +156,8 @@ pub enum ParameterField {
     Scope,
     /// `owner`
     Owner,
+    /// `position`
+    Position,
     /// `name`
     Name,
     /// `kind`
@@ -172,6 +188,7 @@ design_fields! {
     ParameterField of DesignParameter {
         scope => Scope,
         owner => Owner,
+        position => Position,
         name => Name,
         kind => Kind,
         unit => Unit,
@@ -183,6 +200,43 @@ design_fields! {
         comment => Comment,
         native_options => NativeOptions,
         source_settings => SourceSettings,
+        native_ref => NativeRef,
+    }
+}
+
+/// A field of a design arrangement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ArrangementField {
+    /// `scope`
+    Scope,
+    /// `name`
+    Name,
+    /// `kind`
+    Kind,
+    /// `configuration`
+    Configuration,
+    /// `overrides`
+    Overrides,
+    /// `appearances`
+    Appearances,
+    /// `moves`
+    Moves,
+    /// `nested`
+    Nested,
+    /// `native_ref`
+    NativeRef,
+}
+
+design_fields! {
+    ArrangementField of Arrangement {
+        scope => Scope,
+        name => Name,
+        kind => Kind,
+        configuration => Configuration,
+        overrides => Overrides,
+        appearances => Appearances,
+        moves => Moves,
+        nested => Nested,
         native_ref => NativeRef,
     }
 }
@@ -279,6 +333,49 @@ model_fields! {
     }
 }
 
+/// A field of a model configuration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelConfigurationField {
+    /// `ordinal`
+    Ordinal,
+    /// `active`
+    Active,
+    /// `source_index`
+    SourceIndex,
+    /// `name`
+    Name,
+    /// `material`
+    Material,
+    /// `properties`
+    Properties,
+    /// `parameter_overrides`
+    ParameterOverrides,
+    /// `bodies`
+    Bodies,
+    /// `parameter_values`
+    ParameterValues,
+    /// `feature_states`
+    FeatureStates,
+    /// `native_ref`
+    NativeRef,
+}
+
+model_fields! {
+    ModelConfigurationField of ModelConfiguration {
+        ordinal => Ordinal,
+        active => Active,
+        source_index => SourceIndex,
+        name => Name,
+        material => Material,
+        properties => Properties,
+        parameter_overrides => ParameterOverrides,
+        bodies => Bodies,
+        parameter_values => ParameterValues,
+        feature_states => FeatureStates,
+        native_ref => NativeRef,
+    }
+}
+
 /// A field of a model sketch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ModelSketchField {
@@ -321,6 +418,8 @@ pub enum ModelSketchEntityField {
     GeometryRef,
     /// `endpoint_refs`
     EndpointRefs,
+    /// `center_ref`
+    CenterRef,
     /// `geometry`
     Geometry,
 }
@@ -331,6 +430,7 @@ field_keys!(ModelSketchEntityField {
     native_ref => NativeRef,
     geometry_ref => GeometryRef,
     endpoint_refs => EndpointRefs,
+    center_ref => CenterRef,
     geometry => Geometry,
 });
 

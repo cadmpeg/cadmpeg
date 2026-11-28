@@ -8,9 +8,8 @@ unclassified dump exit, missing output, check failure, conversion failure, or
 generated-file check failure fails the gate. ``--roundtrip`` adds conversion
 to IGES 5.3 and dump plus check of the generated file.
 
-Temporary decoded artifacts are created below ``$HOME/side2/tmp/iges-l9`` by
-default. Set ``--scratch`` when a CI runner needs another dedicated scratch
-directory.
+Temporary decoded artifacts use the system temporary directory by default.
+Set ``--scratch`` to use another directory.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from typing import Sequence
 
 
 IGES_SUFFIXES = {".igs", ".iges"}
-DEFAULT_SCRATCH = Path.home() / "side2" / "tmp" / "iges-l9"
+DEFAULT_SCRATCH = Path(tempfile.gettempdir())
 
 
 @dataclass(frozen=True)
