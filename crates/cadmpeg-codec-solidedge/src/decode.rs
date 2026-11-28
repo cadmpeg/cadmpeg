@@ -9,7 +9,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
-use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpRecord, Part};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::{brep, container, dialect, features, loss::SolidEdgeLossCode, partition, settings};
@@ -92,23 +92,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let source = match ctx.run_part(|| snapshot.open(ctx, entry))? {
                 Ok(source) => source,
                 Err(error) => {
-                    body.losses
-                        .extend(cadmpeg_ir::unknown::part::record_given_up(
-                            cadmpeg_ir::ids::Identity::compose(
-                                &cadmpeg_ir::identity_namespace!(
-                                    "solidedge",
-                                    "container",
-                                    "stream"
-                                ),
-                                cadmpeg_ir::ids::IdentityKey::encode_key_text(entry.path()),
-                            ),
-                            SolidEdgeLossCode::PartitionUnreadable
-                                .note(format!("partition stream does not open: {error}")),
-                        ));
+                    let stream = cadmpeg_ir::ids::Identity::compose(
+                        &cadmpeg_ir::identity_namespace!("solidedge", "container", "stream"),
+                        cadmpeg_ir::ids::IdentityKey::encode_key_text(entry.path()),
+                    );
+                    body.losses.push(
+                        GivenUpRecord::new(
+                            stream,
+                            Cause::Unreadable.of(&error),
+                            format_args!("partition stream does not open: {error}"),
+                        )
+                        .loss(),
+                    );
                     continue;
                 }
             };
             let stream_name = cadmpeg_ir::stream_name!("solidedge:").with_suffix(entry.path());
+            let mut cause = Cause::Unreadable;
             let result = ctx.run_part(|| {
                 let payload = partition::payload(source).map_err(CodecError::from)?;
                 let origin = brep::Origin::new(
@@ -121,9 +121,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         })?,
                     ),
                 );
-                let records = PrimaryRecords::read(payload.window())?.ok_or_else(|| {
-                    CodecError::Malformed("unsupported Parasolid partition header".into())
-                })?;
+                let Some(records) = PrimaryRecords::read(payload.window())? else {
+                    cause = Cause::Undecoded;
+                    return Err(CodecError::Malformed(
+                        "unsupported Parasolid partition header".into(),
+                    ));
+                };
                 kernels.push((
                     partition::schema(payload).map_err(CodecError::from)?,
                     cadmpeg_parasolid::Carrier::new(entry.path().to_owned()),
@@ -134,8 +137,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         records.stop_offset().unwrap_or(0)
                     )));
                 }
-                let stream = u32::try_from(ordinal)
-                    .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
+                let stream = u32::try_from(ordinal).map_err(|_| {
+                    cause = Cause::Undecoded;
+                    CodecError::Malformed("too many partition streams".into())
+                })?;
                 let (mut candidate, resolutions) =
                     brep::project(ctx, &records, stream, &origin, &mut partition_losses)?;
                 candidate.finalize();
@@ -146,6 +151,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     root_definition(),
                     ExternalDocument::default(),
                 )?;
+                // Past the projection, the decoder cannot tell a source defect
+                // from a form it does not decode.
+                cause = Cause::Undecoded;
                 let report =
                     cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &candidate, Vec::new())?;
                 candidate
@@ -181,10 +189,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             match result {
                 Ok(()) => body.losses.extend(partition_losses),
                 Err(error) => {
-                    body.losses.push(
-                        SolidEdgeLossCode::PartitionUnreadable
-                            .note(format!("partition could not be decoded: {error}")),
-                    );
                     let part = Part::at(
                         "solidedge",
                         "partition",
@@ -193,7 +197,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         [ArenaClass::Model],
                     )
                     .in_stream(stream_name);
-                    given_up.push(ctx.give_up_part(part, error)?);
+                    given_up.push(ctx.give_up_part(part, cause, error)?);
                 }
             }
         }

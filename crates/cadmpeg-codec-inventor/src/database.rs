@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RseSchema(u32);
@@ -118,7 +119,9 @@ pub(crate) enum DatabaseHeader {
     Unframed {
         /// The schema the stream declared.
         schema: RseSchema,
-        /// Where the substituted grammar stopped.
+        /// The give-up cause under the declared grammar.
+        cause: Cause,
+        /// Where the selected grammar stopped.
         detail: String,
     },
 }
@@ -151,10 +154,18 @@ pub(crate) fn parse_database(
     match schema_31_body(ctx, cursor, id, schema) {
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => Ok(DatabaseHeader::Unframed {
-            schema,
-            detail: error.to_string(),
-        }),
+        Err(error) => {
+            let cause = if schema == RseSchema::SCHEMA_31 {
+                Cause::Unreadable.of(&error)
+            } else {
+                Cause::Undecoded
+            };
+            Ok(DatabaseHeader::Unframed {
+                schema,
+                cause,
+                detail: error.to_string(),
+            })
+        }
     }
 }
 
@@ -382,7 +393,17 @@ impl<'a> Cursor<'a> {
         field: &'static str,
         maximum: usize,
     ) -> Result<String, CodecError> {
-        let count = self.count(field, maximum)?;
+        let declared = self.u32(field)?;
+        let count = cadmpeg_core::decode::index_from_u32(declared);
+        if count > maximum {
+            if self.source.counted(u64::from(declared), 2).is_none() {
+                return Err(CodecError::truncated(self.source.location(), field));
+            }
+            return Err(CodecError::NotImplemented(format!(
+                "{} {field} {count} exceeds the reader limit {maximum}",
+                self.scope
+            )));
+        }
         crate::reader::utf16_text(
             ctx,
             &mut self.source,
@@ -428,6 +449,7 @@ mod tests {
     use crate::test_support::test_fixtures::push_version;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::unknown::part::Cause;
 
     use super::{
         parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionPayload, RseSchema,
@@ -506,7 +528,7 @@ mod tests {
         });
         bytes.push(0);
         with_context(&bytes, |ctx| {
-            let DatabaseHeader::Unframed { schema, detail } =
+            let DatabaseHeader::Unframed { schema, detail, .. } =
                 parse_database(ctx, &bytes).expect("schema declaration survives trailing bytes")
             else {
                 panic!("trailing bytes cannot frame");
@@ -544,10 +566,16 @@ mod tests {
         bytes.truncate(28);
         with_context(&bytes, |ctx| {
             let header = parse_database(ctx, &bytes).expect("a foreign schema is not an error");
-            let DatabaseHeader::Unframed { schema, detail } = header else {
+            let DatabaseHeader::Unframed {
+                schema,
+                cause,
+                detail,
+            } = header
+            else {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema(12));
+            assert_eq!(cause, Cause::Undecoded);
             let reported = DatabaseHeader::unframed_detail(schema, &detail);
             assert!(reported.contains("schema 12"), "{reported}");
             assert!(reported.contains("schema 31 grammar"), "{reported}");
@@ -560,10 +588,16 @@ mod tests {
         bytes.truncate(28);
         with_context(&bytes, |ctx| {
             let header = parse_database(ctx, &bytes).expect("schema 31 degrades after declaration");
-            let DatabaseHeader::Unframed { schema, detail } = header else {
+            let DatabaseHeader::Unframed {
+                schema,
+                cause,
+                detail,
+            } = header
+            else {
                 panic!("a truncated body cannot frame");
             };
             assert_eq!(schema, RseSchema::SCHEMA_31);
+            assert_eq!(cause, Cause::Unreadable);
             let reported = DatabaseHeader::unframed_detail(schema, &detail);
             assert!(reported.contains("schema 31"), "{reported}");
         });

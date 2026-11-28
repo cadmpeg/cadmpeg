@@ -154,7 +154,7 @@ fn unreadable_surface_keeps_its_sibling_surface() {
         );
         assert_eq!(
             crate::test_support::loss_codes(&losses),
-            crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchSurfaceUndecoded)
+            [cadmpeg_ir::unknown::part::record_undecoded_kind()]
         );
     });
 }

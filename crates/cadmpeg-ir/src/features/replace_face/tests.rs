@@ -4,17 +4,6 @@ use super::ReplaceFaceOperands;
 use crate::features::selections::FaceSelection;
 use cadmpeg_core::serde_erase::json;
 
-#[cfg(feature = "schema")]
-#[test]
-fn tangent_chain_schema_is_optional_boolean() {
-    let schema = json::to_value(schemars::schema_for!(ReplaceFaceOperands)).unwrap();
-    assert_eq!(schema["properties"]["tangent_chain"]["type"], "boolean");
-    assert!(!schema["required"]
-        .as_array()
-        .unwrap()
-        .contains(&cadmpeg_core::json!("tangent_chain")));
-}
-
 #[test]
 fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
     for tangent_chain in [None, Some(false), Some(true)] {

@@ -22,12 +22,9 @@ fn body_reference_tail_replays_exactly_and_unsupported_edits_regenerate() {
     update_f3d_native(&mut edited, |native| {
         native.design_body_reference_tails[0].trailing_form.value = 8;
     });
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "modified F3D IR contains edits beyond supported",
     );
 }

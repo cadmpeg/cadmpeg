@@ -102,25 +102,19 @@ fn bounded_indexed_section_search_gives_up_its_entry_as_a_part() {
     .expect("the bounded entry is given up");
 
     let body = &decoded.body;
-    let bounded = body
-        .losses
-        .iter()
-        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(bounded.len(), 1);
-    assert!(bounded[0].message.contains("/Root/UG_PART/UG_PART"));
-    assert!(bounded[0]
-        .message
-        .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
+    assert_eq!(body.losses.len(), 1, "{:#?}", body.losses);
     let (offset, length) = scan.container.entries[0]
         .file_span()
         .expect("the bounded entry is a file");
     let given_up = body
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), 1);
+    assert!(given_up[0]
+        .message
+        .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
     let prefix = format!(
         "part om-entry \"/Root/UG_PART/UG_PART\" stream=\"nx:container\" \
          offset={offset} length={length} record=nx:source:part#"
@@ -143,5 +137,43 @@ fn bounded_indexed_section_search_gives_up_its_entry_as_a_part() {
             .retained_record(stub)
             .and_then(|record| record.data()),
         Some(&file.as_slice()[start..end])
+    );
+}
+
+/// The charge of an object-model entry of `length` bytes given up under a
+/// caller's retained-byte ceiling of 4096 bytes.
+fn om_entry_charge(length: usize) -> String {
+    use cadmpeg_ir::unknown::part::{Cause, DecodeParts, Part};
+    let bytes = vec![0x5a; length];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 4096,
+        |ctx| {
+            let part = Part::at(
+                "nx",
+                "om-entry",
+                0,
+                &bytes,
+                [cadmpeg_core::decode::ArenaClass::Model],
+            );
+            ctx.give_up_part(
+                crate::decode::within_retained_ceiling(ctx, part, bytes.len()),
+                Cause::Undecoded,
+                cadmpeg_core::CodecError::NotImplemented("entry".into()),
+            )
+            .expect("the part is given up")
+            .loss()
+            .message
+        },
+    )
+}
+
+#[test]
+fn an_om_entry_keeps_only_a_digest_past_the_callers_retained_byte_ceiling() {
+    assert!(!om_entry_charge(1024).contains("max_retained_bytes"));
+    let past = om_entry_charge(8192);
+    assert!(
+        past.contains("max_retained_bytes of 4096") && past.contains("length and digest"),
+        "{past}"
     );
 }

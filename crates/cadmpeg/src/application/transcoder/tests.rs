@@ -140,6 +140,7 @@ fn prepared(
         destination: ResolvedDestination::Stdout,
         write_strictness: flags.write(),
         missing_states: cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
+        limits: cadmpeg_core::decode::ResourceLimits::desktop(),
     }
 }
 
@@ -327,11 +328,13 @@ impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
         cadmpeg_ir::codec::FormatId::new("notimplementedtest");
     const NAME: &'static str = "test";
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
     fn plan_resolved(
         &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _input: EncodeInput<'_>,
         _target: (),
     ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::CodecError> {
@@ -495,10 +498,7 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
         );
         let plan = target
             .encoder
-            .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(spelling),
-            )
+            .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(spelling)))
             .expect("the catalog carries the row under both spellings");
         assert_eq!(
             wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -523,10 +523,7 @@ fn an_unknown_dialect_is_refused_by_plan_with_its_catalog() {
     ));
     let error = target
         .encoder
-        .plan(
-            EncodeInput::new(&CadIr::empty(), None),
-            target.selection.request(),
-        )
+        .plan(EncodeInput::new(&CadIr::empty(), None).with_target(target.selection.request()))
         .expect_err("a STEP alias is not an IGES target");
     let message = error.to_string();
     assert!(message.contains("ap242e3"), "{message}");
@@ -662,7 +659,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
     use cadmpeg_registry::InputCatalog;
 
     CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("plan the mutated CADIR document")
         .write_to(&mut std::fs::File::create(path).expect("create CADIR input"))
         .expect("write the mutated CADIR document");
@@ -863,6 +860,7 @@ fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
             destination: ResolvedDestination::Stdout,
             write_strictness: reject_errors(true).write(),
             missing_states: cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
         };
         if inject_error {
             complete(&mut conversion.validation).findings.push(Finding {
@@ -1001,12 +999,7 @@ fn sidecar_keys_of_cadir_write(
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Vec<String> {
     use cadmpeg_ir::codec::write::CadirEncoder;
-    let plan = CadirEncoder
-        .plan(
-            EncodeInput::new(ir, fidelity),
-            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
-        )
-        .unwrap();
+    let plan = CadirEncoder.plan(EncodeInput::new(ir, fidelity)).unwrap();
     super::emit_export_plan(
         plan,
         Format::Cadir,

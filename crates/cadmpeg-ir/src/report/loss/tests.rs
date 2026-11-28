@@ -270,6 +270,7 @@ fn a_bare_shared_code_takes_the_floor_section_3_2_states() {
         kind("record.unreadable").strict_floor(),
         Some(Severity::Error)
     );
+    assert_eq!(kind("record.undecoded").strict_floor(), None);
     assert_eq!(kind("topology.face-omitted").strict_floor(), None);
 }
 

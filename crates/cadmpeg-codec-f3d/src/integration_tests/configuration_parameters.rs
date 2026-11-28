@@ -235,7 +235,7 @@ fn configuration_parameter_refusal_reports_unparsed_record() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(crate::test_support::parameter_frame_given_up));
     assert_configuration_valid(&decoded);
 }
 
@@ -274,5 +274,5 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(crate::test_support::parameter_frame_given_up));
 }
