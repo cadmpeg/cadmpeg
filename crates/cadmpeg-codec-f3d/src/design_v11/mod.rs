@@ -23,7 +23,7 @@
 
 pub(crate) mod configurations;
 mod datum;
-mod joint;
+pub(crate) mod joint;
 mod operation;
 pub(crate) mod parameters;
 mod pattern;
@@ -73,6 +73,7 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     depth: DecodeDepth,
+    joint_roots: &joint::RootOperands,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if depth < DecodeDepth::Design {
@@ -198,9 +199,11 @@ pub(crate) fn project(
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .collect::<HashMap<_, _>>();
-    let joints = joint_records
-        .as_ref()
-        .map(|records| records.inputs(&ir.model, &scope_records));
+    let joints = joint_records.as_ref().map(|records| {
+        records
+            .inputs(&ir.model, &scope_records)
+            .with_roots(joint_roots)
+    });
     let mut restated = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
@@ -308,6 +311,9 @@ impl JointRecords {
                             && scope.kind()
                                 == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                         group,
+                        additional_members: scope
+                            .assembly_alignment()
+                            .map_or(&[], |alignment| alignment.additional_members.as_slice()),
                         motion: match motions.as_slice() {
                             [motion] => Some(*motion),
                             _ => None,

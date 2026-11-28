@@ -1180,7 +1180,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     if undecoded_motion_count != 0 {
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
-            "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+            "{undecoded_motion_count} legacy assembly joint record(s) use a fixed relation because the legacy motion kinds cannot state the stored combination ({reasons})."
         )));
     }
     if native_angular_limits != 0 {
@@ -1195,7 +1195,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     if resting_joints != 0 {
         losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
-            "{resting_joints} projected Design assembly joint(s) enable a rest position; the neutral joint does not carry it, which is retained natively."
+            "{resting_joints} legacy assembly joint record(s) omit an enabled rest position. The native motion record retains the value."
         )));
     }
     if root_contexts != 0 {
@@ -1215,7 +1215,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     if unprojected_members != 0 {
         losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
-            "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
+            "{unprojected_members} rigid group member(s) have native locators and no legacy assembly joint record: their operands or connector frames cannot form a legacy pair."
         )));
     }
     let (linked, unbound_links) = motion_link::project(scopes, motions, paths, &mut joints);
@@ -2831,7 +2831,7 @@ mod tests {
             loss.code,
             crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
         );
-        assert_eq!(loss.message, "2 rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects.");
+        assert_eq!(loss.message, "2 rigid group member(s) have native locators and no legacy assembly joint record: their operands or connector frames cannot form a legacy pair.");
         let occurrences = instances(&table.references[..1]);
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
@@ -3060,25 +3060,31 @@ mod tests {
                 },
             );
         // The joint record is 9; its Assemble scope is 10.
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-            DesignFeatureKind::Assemble,
-            10,
-        );
-        scope
-            .try_edit(|draft| {
-                draft.payload = DesignScopePayload::Assemble(Some(
-                    DesignAssemblyAlignment::try_new(
-                        0.0,
-                        [0.0; 3],
-                        Vec::new(),
-                        Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
-                    )
-                    .unwrap(),
-                ));
-            })
-            .unwrap();
-        scopes.push(scope);
+        let assemble = |angle| {
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+                DesignFeatureKind::Assemble,
+                10,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.payload = DesignScopePayload::Assemble(Some(
+                        DesignAssemblyAlignment::try_new(
+                            angle,
+                            [0.0; 3],
+                            Vec::new(),
+                            Some(DesignAssemblyAlignmentForm::qualified(
+                                frames.clone(),
+                                qualifiers.clone(),
+                            )),
+                        )
+                        .unwrap(),
+                    ));
+                })
+                .unwrap();
+            scope
+        };
+        scopes.push(assemble(0.0));
         let motion = |codes: &[u32], flags: [u8; 2]| DesignJointMotion {
             id: "f3d:Design/BulkStream.dat:design-joint-motion#900".into(),
             joint_record_index: 9,
@@ -3189,7 +3195,7 @@ mod tests {
         // An enabled rest position is retained natively with a loss; a rest
         // value without the flag is not reported.
         let resting = |flag: u8| {
-            let mut resting = motion(&[8], [1, 1]);
+            let mut resting = motion(&[1], [1, 1]);
             if let Some(lanes) = resting.limits.as_mut() {
                 lanes.rest = Some(crate::records::feature::joint_motion::DesignJointRest {
                     flag,
@@ -3199,13 +3205,9 @@ mod tests {
             project(&[resting])
         };
         let rested = resting(1);
-        assert_eq!(kind(&rested)["kind"], "slider");
+        assert_eq!(kind(&rested)["kind"], "revolute");
         assert_eq!(
-            rested
-                .losses
-                .iter()
-                .map(|loss| loss.code.clone())
-                .collect::<Vec<_>>(),
+            crate::test_support::loss_codes(&rested.losses),
             [
                 crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind(),
                 crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind(),
@@ -3214,6 +3216,23 @@ mod tests {
         assert_eq!(
             crate::test_support::loss_codes(&resting(0).losses),
             [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
+        );
+
+        let mut angled = scopes.clone();
+        angled[2] = assemble(0.25);
+        let angled = super::project_assembly_joints(
+            &angled,
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+            &[motion(&[8], [0, 0])],
+        );
+        assert_eq!(kind(&angled)["kind"], "fixed");
+        assert_eq!(
+            [rested.losses[0].message.as_str(), angled.losses[0].message.as_str()],
+            [
+                "1 legacy assembly joint record(s) omit an enabled rest position. The native motion record retains the value.",
+                "1 legacy assembly joint record(s) use a fixed relation because the legacy motion kinds cannot state the stored combination (slider with an angle offset).",
+            ],
         );
 
         // A rigid group is fixed: one whose joint record states a freedom is

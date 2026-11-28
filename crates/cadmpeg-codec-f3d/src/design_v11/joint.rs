@@ -51,6 +51,7 @@ use cadmpeg_ir::units::UnitVector3;
 
 use crate::design::assembly::operand_keys::OperandKeys;
 use crate::loss::F3dLossCode;
+use crate::records::feature::assembly::DesignQualifiedAssemblyOperand;
 use crate::records::feature::joint_motion::DesignJointMotion;
 
 /// Millimetres per stored centimetre of a translation lane.
@@ -71,11 +72,20 @@ pub(super) struct Source<'a> {
     pub(super) as_built: bool,
     /// Whether the scope is an as-built rigid group.
     pub(super) group: bool,
+    pub(super) additional_members: &'a [DesignQualifiedAssemblyOperand],
     /// The motion record that binds to the scope.
     pub(super) motion: Option<&'a DesignJointMotion>,
     /// Whether two or more motion records bind to the scope.
     pub(super) ambiguous: bool,
 }
+
+/// The connector positions an archive merge rewrote from the member root.
+pub(crate) struct MemberRoots {
+    pub(crate) definition: ProductDefinitionId,
+    pub(crate) subelements: [Option<Vec<String>>; 2],
+}
+
+pub(crate) type RootOperands = HashMap<JointId, MemberRoots>;
 
 /// The occurrences a connector's context path walks.
 pub(super) struct Places<'a> {
@@ -84,6 +94,7 @@ pub(super) struct Places<'a> {
     /// The definition that lists each occurrence.
     pub(super) owners: HashMap<&'a OccurrenceId, &'a ProductDefinitionId>,
     pub(super) keys: OperandKeys<'a>,
+    children: HashMap<&'a ProductDefinitionId, Vec<&'a Occurrence>>,
 }
 
 impl<'a> Places<'a> {
@@ -92,20 +103,69 @@ impl<'a> Places<'a> {
         occurrences: &'a [Occurrence],
         keys: OperandKeys<'a>,
     ) -> Self {
+        let owners: HashMap<_, _> = definitions
+            .iter()
+            .flat_map(|definition| {
+                definition
+                    .occurrences
+                    .iter()
+                    .map(move |occurrence| (occurrence, &definition.id))
+            })
+            .collect();
+        let mut children: HashMap<_, Vec<_>> = HashMap::new();
+        for occurrence in occurrences {
+            if let Some(owner) = owners.get(&occurrence.id) {
+                children.entry(*owner).or_default().push(occurrence);
+            }
+        }
         Self {
             occurrences,
             parents: crate::tree::parent_ids(definitions, occurrences),
-            owners: definitions
-                .iter()
-                .flat_map(|definition| {
-                    definition
-                        .occurrences
-                        .iter()
-                        .map(move |occurrence| (occurrence, &definition.id))
-                })
-                .collect(),
+            owners,
             keys,
+            children,
         }
+    }
+
+    /// Repeated prototypes can reach the same definition by distinct paths.
+    fn unique_placement(
+        &self,
+        assembly: &ProductDefinitionId,
+        owner: &ProductDefinitionId,
+    ) -> Option<OccurrencePath> {
+        let mut queue = vec![(assembly, None)];
+        let mut next = 0;
+        let mut visits = HashMap::new();
+        let mut found = None;
+        while let Some((definition, via)) = queue.get(next).copied() {
+            let at = next;
+            next += 1;
+            if definition == owner {
+                if found.replace(via).is_some() {
+                    return None;
+                }
+                continue;
+            }
+            let visits = visits.entry(definition).or_insert(0);
+            if *visits == 2 {
+                continue;
+            }
+            *visits += 1;
+            for occurrence in self.children.get(definition).into_iter().flatten() {
+                queue.push((&occurrence.prototype, Some((&occurrence.id, at))));
+            }
+        }
+        let mut via = found?;
+        let mut path = Vec::new();
+        while let Some((occurrence, parent)) = via {
+            path.push(PathStep {
+                occurrence: StepRef::Occurrence(occurrence.clone()),
+                configuration: None,
+            });
+            via = queue[parent].1;
+        }
+        path.reverse();
+        Some(OccurrencePath(path))
     }
 
     /// The path from `owner` to `occurrence`: the chain of parents from the
@@ -171,6 +231,7 @@ pub(super) struct Inputs<'a> {
     /// Each scope that a joint names, by scope id.
     scopes: HashMap<&'a str, Scope<'a>>,
     pub(super) places: Places<'a>,
+    roots: Option<&'a RootOperands>,
 }
 
 /// A joint's scope record.
@@ -216,7 +277,22 @@ impl<'a> Inputs<'a> {
             joints: joints.iter().map(|joint| (&joint.id, joint)).collect(),
             scopes,
             places,
+            roots: None,
         }
+    }
+
+    pub(super) fn with_roots(mut self, roots: &'a RootOperands) -> Self {
+        self.roots = Some(roots);
+        self
+    }
+
+    fn member_root(
+        &self,
+        joint: &AssemblyJoint,
+        index: usize,
+    ) -> Option<(&ProductDefinitionId, &[String])> {
+        let roots = self.roots?.get(&joint.id)?;
+        Some((&roots.definition, roots.subelements.get(index)?.as_deref()?))
     }
 
     /// The scope record of `joint`.
@@ -290,9 +366,9 @@ pub(super) fn project(
             unprojected.push(format!("{} (its assembly joint is absent)", feature.id));
             continue;
         };
-        let site = |at, in_context| Site {
+        let site = |at, context_owner| Site {
             owner: at,
-            in_context,
+            context_owner,
             scope: owner,
             definitions: &definitions,
             inputs,
@@ -302,17 +378,17 @@ pub(super) fn project(
         let (site, cleared) = match &component {
             Some(component)
                 if component != owner
-                    && !site(component, false).roots(joint)
-                    && (source.group || site(owner, false).roots(joint)) =>
+                    && !site(component, None).roots(joint)
+                    && (source.group || site(owner, None).roots(joint)) =>
             {
                 if source.group {
-                    (site(owner, false), true)
+                    (site(owner, None), true)
                 } else {
-                    (site(owner, true), false)
+                    (site(owner, Some(component)), false)
                 }
             }
-            Some(component) => (site(component, false), false),
-            None => (site(owner, false), false),
+            Some(component) => (site(component, None), false),
+            None => (site(owner, None), false),
         };
         let operation = match site.operation(joint) {
             Ok(operation) => operation,
@@ -443,7 +519,7 @@ fn joint_cut(
 fn member_cut(
     member: &AssemblyJoint,
     bound: &AssemblyJoint,
-    placed: &[&products::JointConnector],
+    placed: &[(&AssemblyJoint, &products::JointConnector)],
     feature: &Feature,
 ) -> Vec<&'static str> {
     let mut cut = scalar_cut(member, feature);
@@ -452,7 +528,7 @@ fn member_cut(
             kind == group_kind
                 && connectors
                     .iter()
-                    .all(|connector| placed.contains(&connector))
+                    .all(|connector| placed.iter().any(|(_, placed)| *placed == connector))
         }
         _ => false,
     };
@@ -466,9 +542,8 @@ fn member_cut(
 struct Site<'s, 'a> {
     /// The definition the feature's connector paths start at.
     owner: &'s ProductDefinitionId,
-    /// Whether the paths reach through `owner` from a feature whose
-    /// definition is another.
-    in_context: bool,
+    /// The feature's definition when its paths start in an assembly.
+    context_owner: Option<&'s ProductDefinitionId>,
     /// The scope's definition: the document root a `Root` operand names.
     scope: &'s ProductDefinitionId,
     /// The definition of each feature of the scope, by feature id.
@@ -482,14 +557,18 @@ impl<'a> Site<'_, 'a> {
     fn placed<'j>(
         &self,
         joint: &'j AssemblyJoint,
-    ) -> Result<Vec<&'j products::JointConnector>, &'static str>
+    ) -> Result<Vec<(&'j AssemblyJoint, &'j products::JointConnector)>, &'static str>
     where
         'a: 'j,
     {
-        let mut connectors = pair(joint)?.1.iter().collect::<Vec<_>>();
+        let mut connectors = pair(joint)?
+            .1
+            .iter()
+            .map(|connector| (joint, connector))
+            .collect::<Vec<_>>();
         if let Some(scope) = self.inputs.scope(joint).filter(|scope| scope.source.group) {
             for member in scope.joints.iter().filter(|member| member.id != joint.id) {
-                connectors.push(&pair(member)?.1[1]);
+                connectors.push((member, &pair(member)?.1[1]));
             }
         }
         Ok(connectors)
@@ -514,13 +593,13 @@ impl<'a> Site<'_, 'a> {
     /// `owner` itself: through `owner` where the feature's definition is
     /// another.
     fn through(&self, path: Option<OccurrencePath>) -> Option<PickContext> {
-        if self.in_context {
+        if let Some(owner) = self.context_owner {
             Some(PickContext::InContext {
                 assembly: DefinitionRef {
                     definition: self.owner.clone(),
                     configuration: None,
                 },
-                own: None,
+                own: self.inputs.places.unique_placement(self.owner, owner),
                 target: path,
             })
         } else {
@@ -528,19 +607,22 @@ impl<'a> Site<'_, 'a> {
         }
     }
 
-    /// The definition a `Root` operand's object lies in: a datum feature's
-    /// own definition, else the scope's definition, the document root.
-    fn home(&self, operand: &products::JointOperand) -> &ProductDefinitionId {
-        self.datum(operand).unwrap_or(self.scope)
-    }
-
     /// The definition of the datum feature a `Root` operand names.
-    fn datum(&self, operand: &products::JointOperand) -> Option<&ProductDefinitionId> {
-        operand
-            .subelements
-            .is_empty()
-            .then(|| self.definitions.get(&operand.object))
-            .flatten()
+    fn datum(
+        &self,
+        object: &str,
+        subelements: &[String],
+        root: &ProductDefinitionId,
+    ) -> Option<(&str, &ProductDefinitionId)> {
+        if !subelements.is_empty() {
+            return None;
+        }
+        let qualified = crate::ids::member_definition_key(root.as_str())
+            .filter(|_| crate::ids::member_key(object).is_none())
+            .and_then(|key| crate::ids::qualify(object, key));
+        self.definitions
+            .get_key_value(qualified.as_deref().unwrap_or(object))
+            .map(|(object, definition)| (object.as_str(), definition))
     }
 
     /// The path from `owner` to the one occurrence of `home`; `None` where
@@ -569,18 +651,30 @@ impl<'a> Site<'_, 'a> {
         self.placed(joint).map_or(true, |connectors| {
             connectors
                 .iter()
-                .all(|connector| match &connector.operand.container {
-                    OperandContainer::Occurrence { .. } => {
-                        self.inputs.places.reach(&connector.operand).is_none_or(
-                            |(occurrence, _)| {
+                .enumerate()
+                .all(|(index, (_, connector))| {
+                    let operand = &connector.operand;
+                    let member_root = (!group)
+                        .then(|| self.inputs.member_root(joint, index))
+                        .flatten();
+                    match (&operand.container, member_root) {
+                        (OperandContainer::Root {}, _) | (_, Some(_)) => {
+                            let (root, subelements) =
+                                member_root.unwrap_or((self.scope, &operand.subelements));
+                            let home = self
+                                .datum(&operand.object, subelements, root)
+                                .map_or(root, |(_, home)| home);
+                            group || self.placement(home).is_ok()
+                        }
+                        (OperandContainer::Occurrence { .. }, None) => self
+                            .inputs
+                            .places
+                            .reach(operand)
+                            .is_none_or(|(occurrence, _)| {
                                 self.inputs.places.path(&occurrence, self.owner).is_some()
-                            },
-                        )
+                            }),
+                        (OperandContainer::External { .. }, None) => true,
                     }
-                    OperandContainer::Root {} => {
-                        group || self.placement(self.home(&connector.operand)).is_ok()
-                    }
-                    OperandContainer::External { .. } => true,
                 })
         })
     }
@@ -657,18 +751,18 @@ impl<'a> Site<'_, 'a> {
         if source.as_built {
             insert_text(&mut native_options, "joint_mode", "As-built".to_owned());
         }
-        let [first, second] = connectors;
-        let connector = |connector: &products::JointConnector| {
+        let connector = |index: usize| {
+            let connector = &connectors[index];
             let frame = if unturn {
                 unturned(connector.frame).ok_or("its frame does not turn back")?
             } else {
                 connector.frame
             };
-            self.connector(connector, frame)
+            self.connector(connector, frame, self.inputs.member_root(joint, index))
                 .ok_or("its connector names no pick")
         };
         let joint = Joint {
-            connectors: [connector(first)?, connector(second)?],
+            connectors: [connector(0)?, connector(1)?],
             kind,
             alignment: joint.frame_sense().map(|sense| match sense {
                 PlaneSense::Aligned => Alignment::Aligned,
@@ -731,6 +825,7 @@ impl<'a> Site<'_, 'a> {
         &self,
         connector: &products::JointConnector,
         frame: Transform,
+        member_root: Option<(&ProductDefinitionId, &[String])>,
     ) -> Option<JointConnector> {
         let operand = &connector.operand;
         let pick = |target, context, native| Picked {
@@ -741,22 +836,27 @@ impl<'a> Site<'_, 'a> {
             witness: None,
             resolved: None,
         };
-        let (pick, after, resolved) = match &operand.container {
-            OperandContainer::Root {} => {
-                let (target, native) = match self.datum(operand) {
-                    Some(_) => (
+        let (pick, after, resolved) = match (&operand.container, member_root) {
+            (OperandContainer::Root {}, _) | (_, Some(_)) => {
+                let (root, subelements) = member_root.unwrap_or((self.scope, &operand.subelements));
+                let datum = self.datum(&operand.object, subelements, root);
+                let (target, native) = match datum {
+                    Some((object, _)) => (
                         PickTarget::Datum {
-                            feature: FeatureId::mint(operand.object.clone()).ok()?,
+                            feature: FeatureId::mint(object).ok()?,
                             part: None,
                         },
                         None,
                     ),
                     None => (
                         PickTarget::Native { within: None },
-                        Some(native_name(stored_parts(operand))?),
+                        Some(native_name(
+                            std::iter::once(operand.object.as_str())
+                                .chain(subelements.iter().map(String::as_str)),
+                        )?),
                     ),
                 };
-                let home = self.home(operand);
+                let home = datum.map_or(root, |(_, home)| home);
                 let context = match self.placement(home) {
                     Ok(path) => self.through(path),
                     Err(()) => Some(PickContext::Definition(DefinitionRef {
@@ -766,7 +866,7 @@ impl<'a> Site<'_, 'a> {
                 };
                 (pick(target, context, native), Vec::new(), true)
             }
-            OperandContainer::Occurrence { .. } => {
+            (OperandContainer::Occurrence { .. }, None) => {
                 let (occurrence, below) = self.inputs.places.reach(operand)?;
                 (
                     pick(
@@ -778,7 +878,7 @@ impl<'a> Site<'_, 'a> {
                     true,
                 )
             }
-            OperandContainer::External { .. } => (
+            (OperandContainer::External { .. }, None) => (
                 pick(
                     PickTarget::Native { within: None },
                     None,
@@ -805,7 +905,25 @@ impl<'a> Site<'_, 'a> {
         let connectors = self.placed(joint)?;
         let mut members = BTreeSet::new();
         let mut native_options = NativeOptions::new();
-        for (ordinal, connector) in connectors.into_iter().enumerate() {
+        let additional = self.inputs.source(joint).additional_members;
+        let mut seen = BTreeSet::new();
+        for (index, (member_joint, connector)) in connectors.into_iter().enumerate() {
+            let ordinal = if index < 2 || additional.is_empty() {
+                index
+            } else {
+                let Some(ordinal) = member_joint
+                    .id
+                    .as_str()
+                    .strip_prefix(joint.id.as_str())
+                    .and_then(|suffix| suffix.strip_prefix('m'))
+                    .and_then(|suffix| suffix.parse::<usize>().ok())
+                    .filter(|ordinal| (2..2 + additional.len()).contains(ordinal))
+                else {
+                    continue;
+                };
+                seen.insert(ordinal);
+                ordinal
+            };
             let member = self
                 .inputs
                 .places
@@ -835,6 +953,35 @@ impl<'a> Site<'_, 'a> {
         }
         if members.len() < 2 {
             return Err("fewer than two of its members resolve to occurrences");
+        }
+        for (index, locator) in additional.iter().enumerate() {
+            let ordinal = index + 2;
+            if seen.contains(&ordinal) {
+                continue;
+            }
+            let Some(path) = locator.qualifier.occurrence_path() else {
+                continue;
+            };
+            let listing = path
+                .occurrence_guids()
+                .iter()
+                .map(|key| key.value.as_str())
+                .collect::<Vec<_>>()
+                .join("/");
+            if let Some(frame) =
+                crate::design::components::neutral_affine(locator.frame.transform.rows())
+            {
+                insert_text(
+                    &mut native_options,
+                    &format!("locator.{ordinal}"),
+                    format!("{listing}: {}", rows(&frame)),
+                );
+            }
+            insert_text(
+                &mut native_options,
+                &format!("unresolved_member.{ordinal}"),
+                listing,
+            );
         }
         if let Ok((
             PairedJointKind::Fixed {

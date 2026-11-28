@@ -798,7 +798,7 @@ fn a_feature_of_an_operand_component_keeps_it_and_picks_through_the_scope_defini
                 definition: definition("root"),
                 configuration: None,
             },
-            own: None,
+            own: Some(path(&["b"])),
             target: Some(path(names)),
         })
     };
@@ -1381,44 +1381,71 @@ fn a_root_group_keeps_the_scope_definition_as_its_component() {
 /// through the scope's definition (§5.8, `InContext`).
 #[test]
 fn a_root_operand_of_a_component_feature_picks_in_the_scope_definition() {
+    let mut root_frame = STORED;
+    root_frame[0][3] = 12.0;
     let pair = joint(
         "root-pair",
         90,
         fixed(),
         [
-            connector(JointOperand::root("root-key", Vec::new()), STORED),
-            connector(on("c"), STORED),
+            connector(JointOperand::root("root-key", Vec::new()), root_frame),
+            connector(on("b"), STORED),
         ],
     );
-    let mut feature = unresolved("root-pair");
-    feature.component = Some(definition("part-a"));
-    let mut features = [feature];
-    let losses = restate(
-        &mut features,
-        &[legacy("root-pair", &pair)],
-        &[pair],
-        &[(90, Source::default())],
-    );
-    assert!(losses.is_empty(), "{losses:?}");
-    assert_eq!(features[0].component, Some(definition("part-a")));
-    let through = |target: Option<OccurrencePath>| {
-        Some(PickContext::InContext {
-            assembly: DefinitionRef {
-                definition: definition("root"),
-                configuration: None,
-            },
-            own: None,
-            target,
-        })
-    };
-    let joint = the_joint(&features[0]);
-    let root = only_pick(construction(&joint.connectors[0]));
-    assert_eq!(root.target, PickTarget::Native { within: None });
-    assert_eq!(root.context, through(None));
-    assert_eq!(
-        only_pick(construction(&joint.connectors[1])).context,
-        through(Some(path(&["a", "c"])))
-    );
+    for repeated_owner in [false, true] {
+        let mut feature = unresolved("root-pair");
+        feature.component = Some(definition("part-a"));
+        let mut features = [feature];
+        let mut model = Model::new();
+        let mut placed_at = Transform::identity().affine_rows();
+        placed_at[0][3] = 10.0;
+        model.occurrences[0].transform = Some(frame(placed_at));
+        if repeated_owner {
+            let repeated = occurrence("a-second");
+            model.definitions[0].occurrences.push(repeated.clone());
+            model
+                .occurrences
+                .push(Occurrence::new(repeated, definition("part-a"), None));
+        }
+        let legacy = [legacy("root-pair", &pair)];
+        let joints = [pair.clone()];
+        let inputs = Inputs::new(
+            &legacy,
+            &joints,
+            HashMap::new(),
+            Places::new(
+                &model.definitions,
+                &model.occurrences,
+                OperandKeys::new(&[], &[], &[]),
+            ),
+        );
+        let mut losses = Vec::new();
+        project(&mut features, &definition("root"), &inputs, &mut losses);
+        assert!(losses.is_empty(), "{losses:?}");
+        assert_eq!(features[0].component, Some(definition("part-a")));
+        let through = |target: Option<OccurrencePath>| {
+            Some(PickContext::InContext {
+                assembly: DefinitionRef {
+                    definition: definition("root"),
+                    configuration: None,
+                },
+                own: (!repeated_owner).then(|| path(&["a"])),
+                target,
+            })
+        };
+        let joint = the_joint(&features[0]);
+        let root = construction(&joint.connectors[0]);
+        let cached_x = root.resolved.as_ref().unwrap().origin.coordinates()[0].get();
+        assert_eq!(cached_x, 12.0);
+        assert_eq!(cached_x - placed_at[0][3], 2.0);
+        let root = only_pick(root);
+        assert_eq!(root.target, PickTarget::Native { within: None });
+        assert_eq!(root.context, through(None));
+        assert_eq!(
+            only_pick(construction(&joint.connectors[1])).context,
+            through(Some(path(&["b"])))
+        );
+    }
 }
 
 /// Where the scope's definition has no path to the feature's definition, a
@@ -1715,3 +1742,5 @@ fn a_cadir_write_carries_the_joints_their_features_restate() {
         .collect::<Vec<_>>();
     assert_eq!(operations, ["rigid group", "joint"]);
 }
+
+mod projection;

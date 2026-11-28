@@ -4475,7 +4475,15 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 "f3d",
                 &mut decoded.ir,
                 &mut decoded.body.losses,
-                |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+                |ir, losses| {
+                    crate::design_v11::project(
+                        ctx,
+                        ir,
+                        depth,
+                        &crate::design_v11::joint::RootOperands::new(),
+                        losses,
+                    )
+                },
             )?;
             decoded.ir.finalize();
             Ok(decoded.into_decoded())

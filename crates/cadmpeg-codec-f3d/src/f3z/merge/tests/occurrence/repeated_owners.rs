@@ -148,6 +148,7 @@ fn check_repeated_owners(placements: usize) {
         operation_protected: std::collections::BTreeSet::new(),
         component_path_tables: Vec::new(),
         instance_scopes: &mut instance_scopes,
+        joint_roots: crate::design_v11::joint::RootOperands::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
