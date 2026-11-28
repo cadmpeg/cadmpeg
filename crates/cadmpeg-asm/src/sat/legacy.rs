@@ -242,6 +242,9 @@ pub(super) fn type_extended_record(
             take_slot(&mut cur, L, &mut out)?;
             cur.long()?;
             take_slot(&mut cur, R, &mut out)?;
+            if head == "body" && matches!(cur.peek(), Some(Prim::Integer(_))) {
+                cur.long()?;
+            }
             for slot in slots.get(3..)? {
                 if matches!(head, "edge" | "tedge")
                     && matches!(slot, S)

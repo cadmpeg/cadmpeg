@@ -109,6 +109,8 @@ pub struct TextHeader {
     normalized_resabs_cm: Option<NonNegativeReal>,
     /// Header recovery notes; framing and resource failures remain fatal.
     pub diagnostics: Vec<StreamDiagnostic>,
+    /// The string of the header extension line (`asm.md` §7.1).
+    pub header_extension: Option<String>,
     /// Exact source extent of the independently framed header lines.
     pub source_span: std::ops::Range<usize>,
 }
@@ -422,6 +424,49 @@ fn counted_string<'a>(
     Ok(value)
 }
 
+/// Reads the header extension line after the tolerance line: the logical word
+/// `T` and one `@N` counted string, or the word `F`. A record name is never a
+/// bare logical word, so any other first field starts the records.
+fn header_extension(bytes: &[u8], pos: &mut usize) -> Result<Option<String>, StreamError> {
+    let mut at = *pos;
+    while bytes.get(at).is_some_and(|byte| is_ws(*byte)) {
+        at += 1;
+    }
+    let word_end = bytes[at..]
+        .iter()
+        .position(|byte| is_ws(*byte))
+        .map_or(bytes.len(), |offset| at + offset);
+    match &bytes[at..word_end] {
+        b"F" => {
+            *pos = word_end;
+            Ok(None)
+        }
+        b"T" => {
+            let mut cursor = word_end;
+            while bytes.get(cursor).is_some_and(|byte| is_ws(*byte)) {
+                cursor += 1;
+            }
+            let error = |reason: &str| StreamError {
+                format: StreamFormat::Text,
+                offset: at,
+                reason: format!("header extension line {reason}"),
+            };
+            if bytes.get(cursor) != Some(&b'@') {
+                return Err(error("has no counted string"));
+            }
+            let mut offset = 0;
+            let text = counted_string(&bytes[cursor + 1..], &mut offset, at, "header extension")
+                .map_err(|_| error("has a malformed counted string"))?;
+            let text = std::str::from_utf8(text)
+                .map_err(|_| error("string is not valid UTF-8"))?
+                .to_owned();
+            *pos = cursor + 1 + offset;
+            Ok(Some(text))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// The first save format whose header stores the product and units lines.
 const FIRST_UNITS_LINE_SAVE_FORMAT: u32 = 200;
 
@@ -506,6 +551,7 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamFailu
             resnor: None,
             normalized_resabs_cm: None,
             diagnostics,
+            header_extension: None,
             source_span: header_start..*pos,
         });
     }
@@ -629,6 +675,7 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamFailu
             },
         });
     }
+    let header_extension = header_extension(bytes, pos)?;
     Ok(TextHeader {
         save_format_version,
         record_count,
@@ -642,6 +689,7 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamFailu
         resnor,
         normalized_resabs_cm,
         diagnostics,
+        header_extension,
         source_span: header_start..*pos,
     })
 }
@@ -2354,6 +2402,41 @@ mod tests {
         text.push_str(body);
         text.push_str("End-of-ASM-data \n");
         text.into_bytes()
+    }
+
+    /// A save-format 3100 ACIS text stream whose header extension line is
+    /// `extension`.
+    fn extended_acis_stream(extension: &str, body: &str) -> Vec<u8> {
+        let mut text = String::from("3100 0 1 0 \n");
+        text.push_str("14 IronCAD - 32.0 12 ACIS 32.0 NT 24 Thu Nov 26 21:17:13 2026 \n");
+        text.push_str("1 9.9999999999999995e-07 1e-10 \n");
+        text.push_str(extension);
+        text.push_str(body);
+        text.push_str("End-of-ACIS-data \n");
+        text.into_bytes()
+    }
+
+    const EXTENDED_BODY: &str = "body $-1 -1 -1 $-1 0 $1 $-1 $2 F #\n\
+        lump $-1 -1 -1 $-1 $-1 $-1 $0 F #\n\
+        transform $-1 -1 1 0 0 0 1 0 0 0 1 30 -20 10 10 no_rotate no_reflect no_shear #\n";
+
+    #[test]
+    fn a_header_extension_line_precedes_the_records() {
+        let stream =
+            parse(&extended_acis_stream("T @6 KKF9EP \n", EXTENDED_BODY)).expect("extended stream");
+        assert_eq!(stream.header.header_extension.as_deref(), Some("KKF9EP"));
+        assert_eq!(stream.records.len(), 3);
+        assert_eq!(stream.records[0].name, "body");
+        assert_eq!(stream.records[0].ref_at(3), Some(1));
+        assert_eq!(stream.records[0].ref_at(5), Some(2));
+    }
+
+    #[test]
+    fn a_false_header_extension_line_holds_no_string() {
+        let stream = parse(&extended_acis_stream("F \n", EXTENDED_BODY)).expect("extended stream");
+        assert_eq!(stream.header.header_extension, None);
+        assert_eq!(stream.records.len(), 3);
+        assert_eq!(stream.records[0].name, "body");
     }
 
     #[test]
