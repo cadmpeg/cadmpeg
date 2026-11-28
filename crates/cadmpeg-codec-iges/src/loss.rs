@@ -22,29 +22,10 @@ use cadmpeg_ir::report::{
     loss::{LossKind, LossNote, LossTaxonomy},
     Severity,
 };
-macro_rules! loss_codes {
-    ($( $(#[$meta:meta])* $variant:ident => $code:literal ),+ $(,)?) => {
-        /// A stable identifier for one IGES transfer loss.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub(crate) enum IgesLossCode {
-            $( $(#[$meta])* $variant ),+
-        }
-
-        impl IgesLossCode {
-            /// Every code in declaration order.
-            #[cfg(test)]
-            const ALL: &'static [Self] = &[$(Self::$variant),+];
-
-            /// The stable string identifier.
-            #[must_use]
-            pub(crate) const fn code(self) -> &'static str {
-                match self { $(Self::$variant => $code),+ }
-            }
-        }
-    };
-}
-
-loss_codes! {
+cadmpeg_ir::loss_codes! {
+    /// A stable identifier for one IGES transfer loss.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub(crate) enum IgesLossCode {
     /// A Directory presentation or naming field remains source-only.
     DirectoryMetadataUnreadable => "directory.metadata-unreadable",
     /// A readable display field violates a source rule without changing geometry.
@@ -184,6 +165,7 @@ loss_codes! {
     VertexToleranceWidened => "geometry.vertex-tolerance-widened",
     /// The decoded document holds an error-severity validation finding.
     ProjectionInvalid => "projection.invalid",
+    }
 }
 
 impl IgesLossCode {

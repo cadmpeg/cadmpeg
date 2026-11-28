@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The design configurations of a part (§5.11) and what a CADIR write of
 //! them keeps.
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 

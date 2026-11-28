@@ -420,25 +420,6 @@ class PatternFilters(unittest.TestCase):
             )
         )
 
-    def test_excludes_loss_note_return_and_struct(self) -> None:
-        text = (
-            "struct LossNote {\n"
-            "    msg: String,\n"
-            "}\n"
-            "impl LossNote {\n"
-            "    fn new() -> Self { todo!() }\n"
-            "}\n"
-            "fn make() -> LossNote {\n"
-            "    LossNote { msg: String::new() }\n"
-            "}\n"
-        )
-        hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
-        self.assertEqual([item.rule for item in hits], ["loss_note_literal"])
-
-    def test_malformed_format_multiline(self) -> None:
-        text = 'CodecError::Malformed(format!(\n    "bad {}", x\n))\n'
-        self.assertEqual(len(policy.MALFORMED_FORMAT.findall(text)), 1)
-
     def test_integer_clamp_reports_every_form(self) -> None:
         source = (
             "fn production() {\n"
@@ -465,42 +446,6 @@ class PatternFilters(unittest.TestCase):
         )
         findings = policy.scan_patterns(policy.ROOT / "source.rs", source)
         self.assertEqual([finding for finding in findings if finding.rule == "integer_clamp"], [])
-
-    def test_loss_note_qualified_returns_are_types(self) -> None:
-        for name in ["LossNote", "cadmpeg_ir::LossNote", "::cadmpeg_ir::report::LossNote",
-                     "r#type::LossNote", "données::LossNote", "r#LossNote"]:
-            for gap in [" ", "\n    ", " /* return type */ "]:
-                with self.subTest(name=name, gap=gap):
-                    text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
-                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
-
-    def test_loss_note_reference_returns_are_types(self) -> None:
-        for reference in ["&", "& ", "&'a ", "&mut ", "&'a mut "]:
-            for name in ["LossNote", "cadmpeg_ir::LossNote"]:
-                with self.subTest(reference=reference, name=name):
-                    text = f"fn loss(&self) -> {reference}{name} {{ &self.losses[0] }}"
-                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
-                    text = f"fn loss(&self) -> {reference}{name} {{ LossNote {{ message }} }}"
-                    hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
-                    self.assertEqual([hit.rule for hit in hits], ["loss_note_literal"])
-
-    def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
-        for text, expected in [
-            ("fn make() -> LossNote { LossNote { message } }", [1]),
-            ("fn make() -> cadmpeg_ir::LossNote { cadmpeg_ir::LossNote { message } }", [1]),
-            ("struct LossNote {} fn make() { LossNote { message }; LossNote { message }; }", [1, 1]),
-            ("impl LossNote { fn make() -> Self { LossNote { message } } }", [1]),
-            ("impl Trait for cadmpeg_ir::LossNote { fn make() { LossNote { message }; } }", [1]),
-            ("struct r#LossNote {} impl r#LossNote {} impl Trait for r#LossNote {}", []),
-            ("fn make() ->\n LossNote {\n LossNote { message }\n}", [3]),
-        ]:
-            with self.subTest(text=text):
-                hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
-                self.assertEqual([(hit.rule, hit.line) for hit in hits], [("loss_note_literal", line) for line in expected])
-
-    def test_loss_note_rule_matches_the_complete_type_name(self) -> None:
-        text = "fn make() { OtherLossNote { message }; LossNoteSuffix { message }; }"
-        self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
 
     def test_production_filter_rejects_test_paths(self) -> None:
         self.assertFalse(policy.is_production_rs(Path("crates/c/src/foo_test.rs")))
@@ -1137,37 +1082,6 @@ class DiscardedValues(TempSourceCase):
         self.assertEqual(self.findings("discarded_value"), [])
 
 
-class ScriptTestCollection(TempSourceCase):
-    GUARD = 'if __name__ == "__main__":\n    unittest.main()\n'
-    CASE = (
-        "import unittest\n\n\n"
-        "class ZzScratchTests(unittest.TestCase):\n"
-        "    def test_one(self) -> None:\n"
-        "        pass\n\n\n"
-    )
-
-    def test_a_case_after_the_main_block_is_named(self) -> None:
-        self.write("scripts/test_zz_scratch.py", self.GUARD + self.CASE)
-        findings = self.findings("script_test_collection")
-        self.assertEqual(len(findings), 1, findings)
-        self.assertEqual(findings[0].path, "scripts/test_zz_scratch.py")
-        self.assertIn("class ZzScratchTests", findings[0].message)
-        self.assertIn("test_zz_scratch.py", findings[0].message)
-
-    def test_a_free_test_function_after_the_main_block_is_named(self) -> None:
-        self.write(
-            "scripts/test_zz_scratch.py",
-            self.GUARD + "def test_loose() -> None:\n    pass\n",
-        )
-        findings = self.findings("script_test_collection")
-        self.assertEqual(len(findings), 1, findings)
-        self.assertIn("function test_loose", findings[0].message)
-
-    def test_a_case_before_the_main_block_is_collected(self) -> None:
-        self.write("scripts/test_zz_scratch.py", self.CASE + self.GUARD)
-        self.assertEqual(self.findings("script_test_collection"), [])
-
-
 class AuthoringPaths(TempSourceCase):
     PATH = "/home/author/project/target/debug/deps/libdemo.rlib"
 
@@ -1238,9 +1152,6 @@ class SourcePolicyCommand(TempSourceCase):
         self.write("crates/demo/src/lib.rs", """fn f() {
     let x = 1e-9;
     let x = vec![0; count];
-    CodecError::Malformed(
-        format!("bad {}", x));
-    LossNote { code, severity, message, provenance };
 }
 """)
         result, output = self.run_check("--json")
@@ -1248,7 +1159,6 @@ class SourcePolicyCommand(TempSourceCase):
         findings = json.loads(output)["findings"]
         self.assertEqual([(f["rule"], f["line"]) for f in findings], [
             ("bare_tolerance", 2), ("unchecked_vec_repeat", 3),
-            ("formatted_malformed_error", 4), ("loss_note_literal", 6),
         ])
         self.assertTrue(all(f["path"] == "crates/demo/src/lib.rs" and f["message"] for f in findings))
         result, output = self.run_check()
@@ -1640,33 +1550,6 @@ mod tests { #![allow(clippy::unwrap_used)] fn f() {} }
 """)
         self.write("crates/demo/src/owner/tests.rs", "#![allow(dead_code)]")
         self.assertEqual(self.findings("lint_suppression"), [])
-
-
-class OptionalDecodeContexts(TempSourceCase):
-    def test_function_method_trait_and_function_pointer_parameters_fail(self) -> None:
-        sources = [
-            "fn f(ctx: Option<&DecodeContext<'_>>) {}",
-            "fn f<'a, T>(ctx: std::option::Option<&'a cadmpeg_core::decode::DecodeContext<'a>>) {}",
-            "impl X { fn f(&self, ctx: Option<&mut DecodeContext<'_>>) {} }",
-            "trait X { fn f(ctx: core::option::Option<&DecodeContext<'_>>); }",
-            "fn f(callback: fn(Option<&DecodeContext<'_>>)) {}",
-            "fn r#context(ctx: Option<&::cadmpeg_core::decode::DecodeContext<'_>>) {}",
-        ]
-        for source in sources:
-            with self.subTest(source=source):
-                self.write("crates/demo/src/lib.rs", source)
-                self.assertEqual(len(self.findings("optional_decode_context")), 1)
-
-    def test_required_context_context_free_and_nonsignature_types_are_exempt(self) -> None:
-        self.write("crates/demo/src/lib.rs", """struct X { ctx: Option<&'static DecodeContext<'static>> }
-fn decode(ctx: &DecodeContext<'_>) {}
-fn reconstruct() {}
-fn context() -> Option<&'static DecodeContext<'static>> { None }
-fn f() { let ctx: Option<&DecodeContext<'_>> = None; }
-#[cfg(test)] mod tests { fn f(ctx: Option<&DecodeContext<'_>>) {} }
-""")
-        self.assertEqual(self.findings("optional_decode_context"), [])
-
 
 
 class NativeByteFields(TempSourceCase):

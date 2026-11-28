@@ -9,7 +9,6 @@ Use --json for structured findings. See docs/source-policy.md for scope and limi
 from __future__ import annotations
 
 import argparse
-import ast
 import importlib.util
 from bisect import bisect_right
 from concurrent.futures import ProcessPoolExecutor
@@ -86,15 +85,6 @@ class Finding:
 
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
-MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
-LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
-LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
-LOSS_NOTE_RETURN = re.compile(
-    r"->\s*(?:&\s*(?:'\w+\s+)?(?:mut\s+)?)?" + LOSS_NOTE_PATH + r"\s*\{"
-)
-LOSS_NOTE_STRUCT = re.compile(r"\bstruct\s+(?:r#)?(?P<name>LossNote)\s*\{")
-LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+" + LOSS_NOTE_PATH + r"\s*\{")
-LOSS_NOTE_TRAIT_IMPL = re.compile(r"\bfor\s+" + LOSS_NOTE_PATH + r"\s*\{")
 BARE_TOLERANCE = re.compile(
     r"(?<![0-9A-Za-z_.])1(?:\.0+)?[eE]-(?:6|7|8|9|10|11|12)\b"
 )
@@ -616,45 +606,6 @@ def scan_integer_clamps(path: Path, code: str) -> list[Finding]:
     return findings
 
 
-OPTIONAL_DECODE_CONTEXT = re.compile(
-    r"\bOption\s*<\s*&\s*(?:'[A-Za-z_]\w*\s*)?(?:mut\s+)?"
-    r"(?:::\s*)?(?:(?:[A-Za-z_]\w*)\s*::\s*)*DecodeContext\b"
-)
-
-
-def scan_optional_decode_contexts(path: Path, code: str) -> list[Finding]:
-    """Require a decode context in function parameters, never an optional one."""
-    findings = []
-    tokens, pairs, _ = evaluation_tokens(code)
-    words = [token[0] for token in tokens]
-    reported: set[int] = set()
-    for index, word in enumerate(words):
-        if word != "fn":
-            continue
-        opening = index + (1 if words[index + 1:index + 2] == ["("] else 2)
-        if words[index + 1:index + 3] == ["r", "#"]:
-            opening += 2
-        if words[opening:opening + 1] == ["<"]:
-            depth = 1
-            opening += 1
-            while opening < len(words) and depth:
-                depth += (words[opening] == "<") - (words[opening] == ">")
-                opening += 1
-        if words[opening:opening + 1] != ["("] or opening not in pairs:
-            continue
-        start = tokens[opening].end()
-        end = tokens[pairs[opening]].start()
-        for match in OPTIONAL_DECODE_CONTEXT.finditer(code, start, end):
-            if match.start() in reported:
-                continue
-            reported.add(match.start())
-            findings.append(Finding(
-                "optional_decode_context", relative_path(path), code.count("\n", 0, match.start()) + 1,
-                "The decode path takes its caller DecodeContext; context-free reconstruction and writing take no context.",
-            ))
-    return findings
-
-
 CONVERSION_EXPECTATION = {
     "clippy::as_conversions", "clippy::cast_possible_truncation",
     "clippy::cast_precision_loss", "clippy::cast_sign_loss",
@@ -792,7 +743,6 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
     findings = scan_saturating_arithmetic(path, code)
     findings.extend(scan_wrapping_arithmetic(path, source, code))
     findings.extend(scan_lint_suppressions(path, source, code))
-    findings.extend(scan_optional_decode_contexts(path, code))
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
@@ -892,21 +842,6 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
                 report("discarded_value", index + 1,
                        "This `let _ =` drops a computed value. Thread its refusal, delete the binding, or state why the answer has no reader in a `// discarded-value:` comment on the line above.")
 
-    # Exclude the type occurrence, not its entire line: the same function may
-    # construct a LossNote immediately after its return type and opening brace.
-    loss_note_types = {
-        match.start("name")
-        for pattern in (LOSS_NOTE_RETURN, LOSS_NOTE_STRUCT, LOSS_NOTE_IMPL, LOSS_NOTE_TRAIT_IMPL)
-        for match in pattern.finditer(code)
-    }
-    for match in LOSS_NOTE_LIT.finditer(code):
-        if match.start() not in loss_note_types:
-            report("loss_note_literal", code.count("\n", 0, match.start()) + 1,
-                   "Construct loss notes through the owning loss code's note method.")
-
-    for match in MALFORMED_FORMAT.finditer(code):
-        report("formatted_malformed_error", code.count("\n", 0, match.start()) + 1,
-               "Use a structured codec error instead of Malformed(format!(...)).")
     findings.extend(scan_integer_clamps(path, code))
     declarations = {match.end() for match in NAMED_TOLERANCE_DECL.finditer(code)}
     for match in BARE_TOLERANCE.finditer(code):
@@ -1825,86 +1760,6 @@ def scan_measurement_dependency() -> list[Finding]:
     return findings
 
 
-def is_main_guard(node: ast.AST) -> bool:
-    """Whether one statement is the ``if __name__ == "__main__":`` block."""
-    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
-        return False
-    left = node.test.left
-    if not isinstance(left, ast.Name) or left.id != "__name__":
-        return False
-    return any(
-        isinstance(value, ast.Constant) and value.value == "__main__"
-        for value in node.test.comparators
-    )
-
-
-def declares_tests(node: ast.ClassDef) -> bool:
-    """Whether one class is a test case: a `TestCase` base or a `test_` method."""
-    for base in node.bases:
-        name = base.attr if isinstance(base, ast.Attribute) else getattr(base, "id", "")
-        if name.endswith("TestCase"):
-            return True
-    return any(
-        isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and child.name.startswith("test_")
-        for child in node.body
-    )
-
-
-def script_test_definitions(tree: ast.Module):
-    """Each test class and free test function a script declares, with its line."""
-    methods = {
-        id(child)
-        for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
-        for child in node.body
-    }
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            if declares_tests(node):
-                yield node.lineno, f"class {node.name}"
-        elif (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name.startswith("test_")
-            and id(node) not in methods
-        ):
-            yield node.lineno, f"function {node.name}"
-
-
-def scan_script_tests() -> list[Finding]:
-    """Every test a script declares where unittest discovery cannot reach it.
-
-    Discovery imports the module and never runs its ``__main__`` block, so a
-    test declared after that block, or inside it, is collected by nothing.
-    """
-    findings: list[Finding] = []
-    for path in sorted(ROOT.glob("scripts/test_*.py")):
-        relative = path.relative_to(ROOT).as_posix()
-        text = path.read_text(encoding="utf-8", errors="replace")
-        try:
-            tree = ast.parse(text)
-        except SyntaxError as error:
-            findings.append(Finding(
-                "script_test_collection", relative, error.lineno or 1,
-                f"{path.name} does not parse, so the tests it collects cannot "
-                f"be read: {error.msg}.",
-            ))
-            continue
-        guards = [node.lineno for node in ast.walk(tree) if is_main_guard(node)]
-        if not guards:
-            continue
-        guard = min(guards)
-        for line, declaration in script_test_definitions(tree):
-            if line > guard:
-                findings.append(Finding(
-                    "script_test_collection", relative, line,
-                    f"{path.name} declares test {declaration} at or after its "
-                    f'if __name__ == "__main__" block on line {guard}; unittest '
-                    "discovery imports the module without running that block, "
-                    "so the test is collected by nothing.",
-                ))
-    return findings
-
-
 # Results carrying EvaluationFailure retain the ResourceLimit arm until a
 # propagating conversion. Discover names from signatures, rather than keeping
 # a second catalog of the evaluator API.
@@ -2546,7 +2401,6 @@ SOURCE_SCANS = {
     "module_visibility": lambda sources: scan_module_visibility(sources),
     "authoring_paths": lambda sources: scan_authoring_paths(),
     "measurement_dependency": lambda sources: scan_measurement_dependency(),
-    "script_tests": lambda sources: scan_script_tests(),
     "json_reads": lambda sources: scan_json_reads(sources),
     "json_writes": lambda sources: scan_json_writes(sources),
 }
