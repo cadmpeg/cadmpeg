@@ -15,9 +15,9 @@
 //! model target cannot yet name in a state that is not current (interim,
 //! §8), with one loss per configuration. The display tables bind to the
 //! active configuration's faces only, so none names a retired record.
-//! [`retire`] first keys a copy of the annotations of each record an
-//! evaluation's delta holds by that evaluation (§3.2), so a retired record
-//! keeps them.
+//! [`retire`] first keys a copy of the annotations of each record the delta
+//! of a configuration's evaluation holds by that evaluation (§3.2), so a
+//! retired record keeps them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -37,12 +37,17 @@ use cadmpeg_ir::AnnotationBuilder;
 use crate::design_v11::states::{remove_records, topology_ids};
 use crate::loss::SldprtLossCode;
 
-/// Annotates each record of the delta of each evaluation as the geometry
-/// record of the same id is annotated, under the record's key in that
-/// evaluation.
+/// Annotates each record of the delta of each evaluation based on `Empty`
+/// as the geometry record of the same id is annotated, under the record's
+/// key in that evaluation. The delta of a state between features decodes
+/// from a replayed transmit and carries its own annotations.
 fn annotate_state_records(ir: &CadIr, annotations: &mut Annotations) {
     for evaluation in &ir.design.evaluations {
-        let Some(content) = &evaluation.content else {
+        let Some(content) = evaluation
+            .content
+            .as_ref()
+            .filter(|content| content.base == StateBase::Empty)
+        else {
             continue;
         };
         topology_ids(&content.delta.records, |id| {

@@ -271,7 +271,7 @@ pub(crate) struct DesignPatternAxisWrapper {
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignCircularPatternAxisWire {
     /// Axis coordinates stored directly in the Design record.

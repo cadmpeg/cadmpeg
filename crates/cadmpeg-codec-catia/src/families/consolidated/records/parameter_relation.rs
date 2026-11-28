@@ -2,10 +2,10 @@
 //! Shared target sites and arithmetic comparison for parameter relations.
 
 use cadmpeg_ir::scalar::FiniteReal;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Only target sites that have serialized words.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TargetSites {
     Absent,

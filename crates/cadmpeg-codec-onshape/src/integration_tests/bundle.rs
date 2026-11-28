@@ -11,6 +11,7 @@ use crate::reader::Model;
 use crate::test_support::*;
 use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 
 pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
@@ -50,6 +51,38 @@ pub(super) fn timeline(model: &Model) -> Value {
     wire
 }
 
+/// The design operation kind of each member of the timeline, in order.
+pub(super) fn design_kinds(model: &Model) -> Vec<String> {
+    let [cadmpeg_ir::design::container::Container::Ordered { members, .. }] =
+        model.ir.design.containers.as_slice()
+    else {
+        panic!("one timeline");
+    };
+    members
+        .iter()
+        .map(|member| {
+            let cadmpeg_ir::design::refs::Member::Feature(id) = member else {
+                panic!("a feature member");
+            };
+            let feature = model
+                .ir
+                .design
+                .features
+                .iter()
+                .find(|f| &f.id == id)
+                .unwrap();
+            let operation = json::to_value(&feature.definition.operation).unwrap();
+            match operation["kind"].as_str().unwrap() {
+                "unresolved" => format!(
+                    "unresolved:{}",
+                    operation["value"]["family"].as_str().unwrap()
+                ),
+                kind => kind.to_owned(),
+            }
+        })
+        .collect()
+}
+
 pub(super) fn kinds(model: &Model) -> Vec<String> {
     timeline(model)["model"]["features"]
         .as_array()
@@ -66,14 +99,36 @@ pub(super) fn kinds(model: &Model) -> Vec<String> {
 
 #[test]
 fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
-    for (name, expected) in [
-        ("plate-fillet", vec!["sketch", "extrude", "fillet"]),
-        ("revolve", vec!["sketch", "revolve"]),
-        ("hole", vec!["sketch", "extrude", "sketch", "hole"]),
-        ("unsupported", vec!["sketch", "extrude", "native"]),
+    for (name, expected, designed) in [
+        (
+            "plate-fillet",
+            vec!["sketch", "extrude", "fillet"],
+            vec!["sketch", "extrude", "fillet"],
+        ),
+        (
+            "revolve",
+            vec!["sketch", "revolve"],
+            vec!["sketch", "revolve"],
+        ),
+        (
+            "hole",
+            vec!["sketch", "extrude", "sketch", "hole"],
+            vec!["sketch", "extrude", "sketch", "hole"],
+        ),
+        (
+            "unsupported",
+            vec!["sketch", "extrude", "native"],
+            vec!["sketch", "extrude", "native"],
+        ),
     ] {
         let (model, report) = read(&fixture(name)).unwrap();
         assert_eq!(kinds(&model), expected, "{name}: {:?}", report.losses());
+        assert_eq!(
+            design_kinds(&model),
+            designed,
+            "{name}: {:?}",
+            report.losses()
+        );
         assert_eq!(model.ir.geometry.bodies.len(), 1);
         let wire = timeline(&model);
         let written = json::to_value(&model.ir).unwrap();
@@ -100,7 +155,11 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
             .as_ref()
             .unwrap()
             .starts_with("ISO-10303-21;"));
-        let losses: Vec<_> = report
+        let unresolved = designed
+            .iter()
+            .filter(|kind| kind.starts_with("unresolved:"))
+            .count();
+        let (design, losses): (Vec<_>, Vec<_>) = report
             .losses()
             .iter()
             .filter(|loss| {
@@ -108,7 +167,10 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
                     .as_deref()
                     .is_some_and(|s| s.starts_with("onshape/"))
             })
-            .collect();
+            .partition(|loss| {
+                loss.code.as_deref() == Some("onshape/history.design-operation-unresolved")
+            });
+        assert_eq!(design.len(), unresolved, "{name}: {design:?}");
         if name == "unsupported" {
             assert_eq!(losses.len(), 1);
             assert_eq!(
@@ -215,13 +277,19 @@ fn rollback_edge_sampling_retains_ids_and_reports_each_failure() {
         assert_eq!(samples.len(), 2);
         assert_eq!(samples[0]["edge"], "circle-edge");
         assert_eq!(samples[1]["edge"], "upright");
+        assert_eq!(
+            design_kinds(&model),
+            ["sketch", "extrude", "fillet"],
+            "{failure}"
+        );
         let losses: Vec<_> = report
             .losses()
             .iter()
             .filter(|loss| {
-                loss.code
-                    .as_deref()
-                    .is_some_and(|code| code.starts_with("onshape/"))
+                loss.code.as_deref().is_some_and(|code| {
+                    code.starts_with("onshape/")
+                        && code != "onshape/history.design-operation-unresolved"
+                })
             })
             .collect();
         assert_eq!(losses.len(), 1, "{failure}: {losses:?}");
@@ -322,14 +390,14 @@ fn consistency_flag_reports_mixed_snapshots_and_preserves_legacy_v1() {
         model.ir.geometry.bodies.len(),
         original.ir.geometry.bodies.len()
     );
+    assert!(report.losses().iter().any(|loss| loss.states(
+        "onshape/history.not-supported",
+        Charge::GivenUp(Cause::Unreadable)
+    )));
     assert!(report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/history.not-supported")));
-    assert!(report
-        .losses()
-        .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/record.malformed")));
+        .any(|loss| loss.states("onshape/record.malformed", Charge::Note)));
     for flag in [Value::Null, json!("false"), json!(0)] {
         let malformed = changed(&legacy, |path, value| {
             if path == "manifest.json" {
@@ -438,6 +506,15 @@ fn up_to_face_uses_analytic_boundaries_of_that_feature_input() {
     assert_eq!(
         termination["face"]["value"]["state"],
         "onshape:model:input#toFace"
+    );
+    let design = cadmpeg_core::serde_erase::json::to_value(
+        &model.ir.design.features[2].definition.operation,
+    )
+    .unwrap();
+    assert_eq!(
+        design["value"]["span"]["end"],
+        json!({"kind":"to_geometry","value":{"extend":{"kind":"literal","value":true},"target":{"at":{"kind":"input"},"picks":{"kind":"named","value":[
+            {"target":{"kind":"native","value":{}},"native":{"codec":"onshape","value":{"kind":"text","value":"top"}}}]}}}})
     );
     assert_eq!(
         wire["model"]["feature_input_topologies"][0]["edge_geometry"][0]["faces"],
@@ -1002,7 +1079,15 @@ fn thin_extrusions_refuse_unscoped_design_construction() {
                     )
                     .unwrap();
                 let (ir, report, fidelity) = result.into_parts();
-                assert!(ir.design.features.is_empty());
+                assert_eq!(
+                    crate::test_support::review::design_operation(&ir, "Plate"),
+                    crate::test_support::review::unresolved("extrude")
+                );
+                assert!(ir.design.sketches.iter().all(|sketch| ir
+                    .design
+                    .features
+                    .iter()
+                    .any(|feature| feature.id == sketch.owner)));
                 let wire = cadmpeg_test_support::wire::in_memory_json(&ir);
                 let feature = wire["model"]["features"]
                     .as_array()

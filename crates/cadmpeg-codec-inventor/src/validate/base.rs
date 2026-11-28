@@ -204,17 +204,42 @@ pub(super) fn valid(
     if PmDcReference::from_packed(*selected_key) != link.body {
         return false;
     }
-    let Some(body) = base::current_body(
+    if let Some(body) = base::current_body(
         output,
         link,
         segment_token,
         *record_ordinal,
         &data.body_native_keys,
-    ) else {
-        return false;
-    };
-    ir.geometry
-        .bodies
-        .iter()
-        .any(|candidate| candidate.id == body.body)
+    ) {
+        return ir
+            .geometry
+            .bodies
+            .iter()
+            .any(|candidate| candidate.id == body.body);
+    }
+    // The final model holds no body with the result key. The result is then a
+    // body of the history state that introduces it, which the validator
+    // cannot decode: the feature needs a bound state of that key, and the
+    // final model must not contradict the link. Bound means "introduced"
+    // only for a state of the feature's own class, Base or derived (for Split
+    // it means consumed), and the validator trusts it because the state's
+    // body keys are not persisted.
+    base::history_candidate(
+        output,
+        link,
+        segment_token,
+        *record_ordinal,
+        &data.body_native_keys,
+    ) && data.feature_history_states.iter().any(|state| {
+        state.feature == source.id()
+            && state.source_index == source.header.source_index
+            && state.state_after.is_some()
+            && crate::feature::history_states::creates_body(&state.kind)
+            && crate::feature::history_states::class_of(&state.kind)
+                == crate::feature::history_states::class_of(
+                    &crate::feature::history_states::kind_of(feature),
+                )
+            && state.binding == crate::feature::history_states::Binding::Bound
+            && state.body_key == Some(base::result_key(link))
+    })
 }

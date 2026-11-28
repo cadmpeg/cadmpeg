@@ -383,14 +383,10 @@ pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
     let (outline, id, feature_id) = (|| {
         let outline = find(payload, marker, 0)?;
         let id_marker = b"\xe0\x01geom_id\0";
-        let id_at = payload[..outline]
-            .windows(id_marker.len())
-            .rposition(|window| window == id_marker)?;
+        let id_at = cadmpeg_core::bytes::rfind_in(payload, id_marker, 0, outline)?;
         let id_start = id_at + id_marker.len();
         let feature_marker = b"feat_id\0";
-        let feature_at = payload[..outline]
-            .windows(feature_marker.len())
-            .rposition(|window| window == feature_marker)?;
+        let feature_at = cadmpeg_core::bytes::rfind_in(payload, feature_marker, 0, outline)?;
         let feature_field_start = feature_at.checked_sub(2)?;
         (payload.get(feature_field_start) == Some(&crate::psb::token::NAMED_RECORD))
             .then_some(())?;

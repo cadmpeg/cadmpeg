@@ -68,6 +68,9 @@ use e5_curve_support::CatiaE5CurveSupportRecord;
 use e5_edge::CatiaE5EdgeRecord;
 use e5_nurbs_limits::CatiaE5NurbsLimitRecord;
 
+pub(crate) mod feature_tree;
+use feature_tree::CatiaFeatureContainer;
+
 pub(crate) mod entity_record;
 use entity_record::{
     CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityRecordWire,
@@ -80,7 +83,7 @@ use zero_entity_allocation::CatiaZeroEntityAllocationEdge;
 pub(crate) mod inline_field;
 use inline_field::CatiaInlineField;
 
-mod paired_records;
+pub(crate) mod paired_records;
 pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
 pub(crate) mod schema_configuration_roles;
@@ -269,7 +272,7 @@ struct CatiaOwnerIdentityTarget {
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
@@ -813,7 +816,7 @@ struct CatiaConsolidatedCylinderWire {
     payload: CatiaConsolidatedCylinderPayloadWire,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaConsolidatedCylinderPayloadWire {
     Resolved {
@@ -1456,7 +1459,7 @@ pub(crate) struct CatiaConsolidatedVertexIdentity {
 }
 
 /// Exact carrier selected for one side of a consolidated historical edge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub(crate) enum CatiaConsolidatedSupportBinding {
     /// Standalone `b2 03 28` cylinder.
@@ -4696,7 +4699,7 @@ fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
     matches!(record.head.get(1), Some(HeadToken::Separator))
 }
 
-fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
+pub(crate) fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
     format!("catia:outer:design-object#{graph_offset:010}-{owner_entity_id:010}")
 }
 
@@ -7592,6 +7595,11 @@ define_catia_arenas! {
         /// External CATIA document references in source order.
         pub(crate) stored;
     },
+    feature_containers: CatiaFeatureContainer {
+        /// Part roots, bodies, geometrical sets, and Boolean features with
+        /// their stored feature-tree fields.
+        pub(crate) stored;
+    },
     finjpl_segments: CatiaFinjplSegment {
         /// Complete bounded outer FINJPL segments.
         pub(crate) stored;
@@ -8673,6 +8681,8 @@ impl CatiaNative {
                     &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
                     catalog,
                 )?;
+                entity.compact_class =
+                    feature_tree::compact_class(ctx, entity.definition_prefix(), catalog)?;
                 let value_fields = entity.value_fields();
                 let value_packets = entity.value_packets(&value_fields);
                 entity.value_schema_selections =
@@ -8690,6 +8700,7 @@ impl CatiaNative {
                     &incidences,
                     entity.entity_id,
                 )?;
+                entity.cache_value_views(value_fields, value_packets);
             }
         }
         let entity_classes_by_graph_identity =
@@ -8786,6 +8797,8 @@ impl CatiaNative {
         });
         resolve_alias_surface_tags(&mut alias_rows);
         let design_objects = design_objects(ctx, &object_graphs, &entity_records)?;
+        let feature_containers =
+            feature_tree::derive(ctx, bytes, &object_graphs, &entity_records, &catalogs)?;
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
                 graph
@@ -8970,6 +8983,7 @@ impl CatiaNative {
             e5_nurbs_limit_programs,
             entity_records,
             external_references,
+            feature_containers,
             finjpl_segments,
             legacy_entity_runs,
             object_graphs,

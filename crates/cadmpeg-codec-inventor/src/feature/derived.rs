@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::{
     PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
@@ -28,7 +28,7 @@ const SOURCE_TYPE: [u8; 16] = [
 const COMPONENT_TYPE: [u8; 16] = [
     0xa0, 0x34, 0x36, 0x3f, 0xd3, 0x11, 0x91, 0xb5, 0xc0, 0x00, 0x03, 0x85, 0xe8, 0x9c, 0x6b, 0x4f,
 ];
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Property {
     Source {
