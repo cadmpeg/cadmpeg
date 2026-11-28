@@ -114,7 +114,7 @@ fn visibility(body: &str, selector: u64, browser_node_entity: u64) -> BodyVisibi
 fn archive(tools: &[Tool], visibilities: &[BodyVisibility]) -> cadmpeg_ir::CadIr {
     placed_archive(
         crate::test_support::legacy_attributed_external_placement(
-            crate::test_support::assembly_test::XREF_ROLE,
+            crate::test_support::assembly_fixture::XREF_ROLE,
             false,
             None,
         ),
@@ -196,7 +196,7 @@ fn placed_archive(
         }),
         from: "root.f3d".to_owned().try_into().unwrap(),
         relative_path: "part.f3d".to_owned().try_into().unwrap(),
-        neutron_role: crate::test_support::assembly_test::XREF_ROLE
+        neutron_role: crate::test_support::assembly_fixture::XREF_ROLE
             .to_owned()
             .try_into()
             .unwrap(),
@@ -303,7 +303,7 @@ fn legacy_tool_stays_local_without_a_unique_join() {
 fn legacy_tool_binds_through_a_legacy_typed_placement() {
     let mut ir = placed_archive(
         crate::test_support::legacy_occurrence_record(
-            crate::test_support::assembly_test::XREF_ROLE,
+            crate::test_support::assembly_fixture::XREF_ROLE,
             10,
             None,
         ),

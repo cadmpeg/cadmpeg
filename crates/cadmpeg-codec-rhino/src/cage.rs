@@ -15,8 +15,11 @@ use crate::wire::Uuid;
 use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
+// resource-cap: MAX_DIMENSION = 2
 const MAX_DIMENSION: usize = 10_000;
+// resource-cap: MAX_CONTROL_POINTS = 2
 const MAX_CONTROL_POINTS: usize = 1 << 20;
+// resource-cap: MAX_SCALARS = 2
 const MAX_SCALARS: usize = 1 << 24;
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x06, 0x93, 0x6a, 0xfb, 0x3d, 0x3c, 0x41, 0xac, 0xbf, 0x70, 0xc9, 0x31, 0x9f, 0xa4, 0x80, 0xa1,
@@ -120,7 +123,7 @@ pub(crate) fn decode_at(
     }
     let dimension = positive(&mut body, "dimension")?;
     if dimension > MAX_DIMENSION {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             body.position() - 4,
             "NURBS cage dimension exceeds cap",
         ));
@@ -159,7 +162,7 @@ pub(crate) fn decode_at(
         .try_fold(1_usize, usize::checked_mul)
         .filter(|count| *count <= MAX_CONTROL_POINTS)
         .ok_or_else(|| {
-            GeometryError::malformed(body.position(), "NURBS cage control count exceeds cap")
+            GeometryError::undecoded(body.position(), "NURBS cage control count exceeds cap")
         })?;
 
     let mut knots: [Vec<FiniteReal>; 3] = std::array::from_fn(|_| Vec::new());

@@ -30,6 +30,7 @@ pub(crate) mod archive_session;
 pub(crate) mod canvas;
 pub(crate) mod configuration_table;
 pub(crate) mod origin_types;
+pub(crate) mod parameter_machinery;
 pub(crate) mod procedural_support;
 pub(crate) mod reverse_normal;
 pub(crate) mod sketch_relations;
@@ -37,15 +38,23 @@ pub(crate) mod sketch_text;
 pub(crate) mod split_face;
 pub(crate) mod verification;
 
-/// The report codes of one record given up under `code`: its own loss, then
-/// `record.unreadable`.
-pub(crate) fn given_up_codes(
-    code: crate::loss::F3dLossCode,
-) -> [cadmpeg_ir::report::loss::LossKind; 2] {
-    [
-        code.kind(),
-        cadmpeg_ir::unknown::part::record_unreadable_kind(),
-    ]
+/// Whether `loss` gives up the external-reference table.
+pub(crate) fn xref_table_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    cadmpeg_ir::unknown::part::gives_up(&loss.code)
+        && loss.message.contains("F3D external-reference table")
+}
+
+/// Whether `loss` gives up a T-spline control cage.
+pub(crate) fn tspline_cage_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    cadmpeg_ir::unknown::part::gives_up(&loss.code)
+        && loss.message.contains("T-spline control cage not decoded")
+}
+
+/// Whether `loss` gives up a parameter frame that matches no parameter
+/// grammar.
+pub(crate) fn parameter_frame_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    cadmpeg_ir::unknown::part::gives_up(&loss.code)
+        && loss.message.contains("matches no parameter grammar")
 }
 
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.
@@ -417,55 +426,55 @@ pub(crate) fn push_marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
     bytes.extend_from_slice(&[0; 6]);
 }
 
-pub(crate) mod tokens_test;
+pub(crate) mod tokens_fixture;
 
-pub(crate) mod smbh_header_test;
+pub(crate) mod smbh_header_fixture;
 
-pub(crate) mod smbh_blocks_test;
+pub(crate) mod smbh_blocks_fixture;
 
-pub(crate) mod sketch_region_test;
-pub(crate) mod smbh_geometry_test;
+pub(crate) mod sketch_region_fixture;
+pub(crate) mod smbh_geometry_fixture;
 
-pub(crate) mod smbh_pcurves_test;
+pub(crate) mod smbh_pcurves_fixture;
 
-pub(crate) mod smbh_curves_test;
+pub(crate) mod smbh_curves_fixture;
 
-pub(crate) mod smbh_surfaces_test;
+pub(crate) mod smbh_surfaces_fixture;
 
-pub(crate) mod smbh_revision_test;
+pub(crate) mod smbh_revision_fixture;
 
-pub(crate) mod smbh_blends_test;
+pub(crate) mod smbh_blends_fixture;
 
-pub(crate) mod smbh_bf4_test;
+pub(crate) mod smbh_bf4_fixture;
 
-pub(crate) mod native_test;
+pub(crate) mod native_fixture;
 
-pub(crate) mod manifest_test;
+pub(crate) mod manifest_fixture;
 
-pub(crate) mod protein_test;
+pub(crate) mod protein_fixture;
 
 pub(crate) mod empty_attribute_occurrences;
-pub(crate) mod streams_test;
+pub(crate) mod streams_fixture;
 
-pub(crate) mod zip_test;
+pub(crate) mod zip_fixture;
 
-pub(crate) mod assembly_test;
+pub(crate) mod assembly_fixture;
 
-pub(crate) mod procedural_test;
+pub(crate) mod procedural_fixture;
 
 pub(crate) mod history;
 
 pub(crate) mod history_stream;
 
-pub(crate) mod body_map_test;
+pub(crate) mod body_map_fixture;
 
-pub(crate) mod component_insert_test;
+pub(crate) mod component_insert_fixture;
 
-pub(crate) mod lost_edge_test;
+pub(crate) mod lost_edge_fixture;
 
 pub(crate) mod step_conversion;
 
-pub(crate) mod body_reference_tail_test;
+pub(crate) mod body_reference_tail_fixture;
 
 pub(crate) mod placement_construction;
 
@@ -473,7 +482,7 @@ pub(crate) mod pipe;
 
 pub(crate) mod work_plane;
 
-pub(crate) mod component_body_test;
+pub(crate) mod component_body_fixture;
 pub(crate) mod component_design;
 
 pub(crate) mod scan_counts;
@@ -491,21 +500,18 @@ pub(crate) mod move_face;
 
 pub(crate) mod typed_reference_scopes;
 
-/// The one `record.unreadable` loss of `losses` whose message starts with
+/// The one give-up loss for `cause` of `losses` whose message starts with
 /// `head`, after checking that it names a stub of the F3D `unknowns` arena of
 /// `ir` and that its dropped list is `dropped`.
 pub(crate) fn charged_part<'a>(
     ir: &CadIr,
     losses: &'a [cadmpeg_ir::report::loss::LossNote],
-    head: &str,
+    (cause, head): (cadmpeg_ir::unknown::part::Cause, &str),
     dropped: &str,
 ) -> &'a cadmpeg_ir::report::loss::LossNote {
     let charges = losses
         .iter()
-        .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(head)
-        })
+        .filter(|loss| loss.code == cause.kind() && loss.message.starts_with(head))
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{head}: {losses:#?}");
     let charge = charges[0];
@@ -546,4 +552,14 @@ pub(crate) fn assert_pinned_refusal(bytes: Vec<u8>, head: &str) {
         "{}",
         rejection.loss().message
     );
+}
+
+/// A pinned decode of `bytes` accepts its `record.undecoded` give-ups.
+pub(crate) fn assert_pinned_acceptance(bytes: Vec<u8>) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    F3dCodec
+        .decode(&mut std::io::Cursor::new(bytes), &options)
+        .expect("a pinned decode accepts the undecoded give-ups");
 }

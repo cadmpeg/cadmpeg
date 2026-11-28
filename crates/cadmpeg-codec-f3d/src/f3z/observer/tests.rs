@@ -5,7 +5,7 @@ use std::io::Cursor;
 use std::rc::Rc;
 
 use super::*;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
 };
 use crate::F3dCodec;

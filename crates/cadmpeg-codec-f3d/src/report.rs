@@ -213,7 +213,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::{build_decode_report, classify_document, ReportScope};
-    use crate::test_support::zip_test::synthetic_f3d;
+    use crate::test_support::zip_fixture::synthetic_f3d;
     use std::collections::BTreeMap;
 
     #[test]

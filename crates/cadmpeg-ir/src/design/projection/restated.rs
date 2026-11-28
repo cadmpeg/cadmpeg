@@ -166,9 +166,11 @@ impl RewriteIdentities for RestatementEdge {
     }
 }
 
-/// The feature that produced each body, where a design record states it.
+/// The feature that produced each body, where a design record states it,
+/// and the records each design record restates.
 struct Facts<'ir> {
     produced: HashSet<(&'ir str, &'ir str)>,
+    restated: &'ir Restatements,
 }
 
 impl<'ir> Facts<'ir> {
@@ -199,7 +201,20 @@ impl<'ir> Facts<'ir> {
                 }
             }
         }
-        Self { produced }
+        Self {
+            produced,
+            restated: &ir.model.restated,
+        }
+    }
+
+    /// Whether the design record `design` restates the record `legacy`.
+    fn restates(&self, legacy: &str, design: &str) -> bool {
+        self.restated.get(legacy).is_some_and(|restating| {
+            restating
+                .0
+                .keys()
+                .any(|by| matches!(by, Restater::Record(id) if id == design))
+        })
     }
 }
 
@@ -320,12 +335,14 @@ fn holds_content(operation: &ModelOperation) -> bool {
 
 /// Whether `design` states the definition of `model`: what its operation
 /// holds beyond its kind, its native parameters by name, and every reference
-/// and state-local member it holds.
+/// and state-local member it holds. A reference to a record that `design`
+/// restates is stated.
 fn definition_stated(
     ctx: &DecodeContext<'_>,
     design: &Feature,
     model: &ModelFeature,
     strings: &HashSet<String>,
+    facts: &Facts<'_>,
 ) -> Result<bool, CodecError> {
     let definition = model.evaluation.definition();
     let operation = definition.operation();
@@ -357,12 +374,14 @@ fn definition_stated(
         return Ok(false);
     }
     let mut stated = true;
-    let mut visit = |id: &str| {
+    definition.visit_identity_references(ctx, &mut |id: &str| {
+        stated &= strings.contains(id) || facts.restates(id, design.id.as_str());
+        Ok(())
+    })?;
+    definition.visit_local_members(ctx, &mut |id: &str| {
         stated &= strings.contains(id);
         Ok(())
-    };
-    definition.visit_identity_references(ctx, &mut visit)?;
-    definition.visit_local_members(ctx, &mut visit)?;
+    })?;
     Ok(stated)
 }
 
@@ -374,15 +393,19 @@ fn feature_cut(
 ) -> Result<Vec<&'static str>, CodecError> {
     let strings = json_strings(design);
     let mut cut = Vec::new();
-    if !definition_stated(ctx, design, model, &strings)? {
+    if !definition_stated(ctx, design, model, &strings, facts)? {
         cut.extend(definition_cut(model));
     }
+    let stored = match &design.definition.operation {
+        FeatureOperation::Stored { bodies, .. } => bodies.as_deref().unwrap_or_default(),
+        _ => &[],
+    };
     let id = design.id.as_str();
     if model
         .evaluation
         .outputs()
         .iter()
-        .any(|body| !facts.produced.contains(&(body.as_str(), id)))
+        .any(|body| !stored.contains(body) && !facts.produced.contains(&(body.as_str(), id)))
     {
         cut.push(ModelFeatureField::Outputs.key());
     }
@@ -526,7 +549,7 @@ pub(crate) fn same_id_cuts<'ir>(
             }
         }
     }
-    for (id, cut) in parameters::parameter_cuts(ir, &compared)
+    for (id, cut) in parameters::parameter_cuts(ir, written, &compared)
         .into_iter()
         .chain(sketches::sketch_cuts(ir, &compared))
     {
@@ -536,9 +559,26 @@ pub(crate) fn same_id_cuts<'ir>(
     let models = model_values(ir, &compared);
     let wanted = models.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
     let designs = design_values(ir, &wanted);
+    let configuration_positions = ir
+        .design
+        .configurations
+        .iter()
+        .filter_map(|design| Some((&design.id, design.position?)))
+        .collect::<HashMap<_, _>>();
+    let carried_ordinals = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|model| configuration_positions.get(&model.id) == Some(&model.ordinal))
+        .map(|model| model.id.as_str())
+        .collect::<HashSet<_>>();
     for (id, model) in models {
         if let (Some(model), Some(design)) = (model, designs.get(id)) {
-            cuts.insert(id, record_cut(&model, design));
+            let mut cut = record_cut(&model, design);
+            if carried_ordinals.contains(id) {
+                cut.remove("ordinal");
+            }
+            cuts.insert(id, cut);
         }
     }
     cuts

@@ -45,6 +45,22 @@ pub(crate) fn node_with_program(
     index: u16,
     fields: &[F],
 ) {
+    write_node(out, kind, program, index, fields, false);
+}
+
+/// Write a Deltas image of one node with the base field list.
+pub(crate) fn status_node(out: &mut Vec<u8>, kind: u16, index: u16, fields: &[F]) {
+    write_node(out, kind, &[0xff], index, fields, true);
+}
+
+fn write_node(
+    out: &mut Vec<u8>,
+    kind: u16,
+    program: &[u8],
+    index: u16,
+    fields: &[F],
+    status: bool,
+) {
     out.extend_from_slice(&kind.to_be_bytes());
     out.extend_from_slice(program);
     let count = fields.iter().find_map(|field| match field {
@@ -63,7 +79,13 @@ pub(crate) fn node_with_program(
     for field in fields {
         match field {
             F::I(value) => out.extend_from_slice(&value.to_be_bytes()),
-            F::P(value) | F::S(value) => out.extend_from_slice(&value.to_be_bytes()),
+            F::P(value) => {
+                out.extend_from_slice(&value.to_be_bytes());
+                if status {
+                    out.push(0);
+                }
+            }
+            F::S(value) => out.extend_from_slice(&value.to_be_bytes()),
             F::R(value) => out.extend_from_slice(&value.to_be_bytes()),
             F::C(value) | F::B(value) => out.push(*value),
             F::L(value) => out.push(u8::from(*value)),
@@ -84,9 +106,14 @@ pub(crate) fn node_with_program(
             F::Ints(values) => values
                 .iter()
                 .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
-            F::Pointers(values) => values
-                .iter()
-                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Pointers(values) => {
+                for value in values {
+                    out.extend_from_slice(&value.to_be_bytes());
+                    if status {
+                        out.push(0);
+                    }
+                }
+            }
         }
     }
 }

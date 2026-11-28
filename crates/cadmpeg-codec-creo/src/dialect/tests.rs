@@ -8,9 +8,10 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::registry_ids::FORMAT;
 use super::{
     classify, DECLARED_LEGACY_ASCII_PRODUCT_RELEASE, DECLARED_LEGACY_ASCII_SCHEMA,
-    DECLARED_VERSION_LINE, FORMAT,
+    DECLARED_VERSION_LINE,
 };
 use crate::container::scan_bytes_ok;
 use crate::container::{Layout, UnknownLayout};

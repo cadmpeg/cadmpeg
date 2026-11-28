@@ -17,10 +17,6 @@ pub(crate) fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     Vector3::from(left).dot(Vector3::from(right))
 }
 
-pub(crate) fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    <[f64; 3]>::from(Vector3::from(left).cross(Vector3::from(right)))
-}
-
 pub(crate) fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
     <[f64; 3]>::from(Vector3::from(left) + Vector3::from(right))
 }

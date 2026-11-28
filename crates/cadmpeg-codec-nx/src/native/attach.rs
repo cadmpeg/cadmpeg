@@ -9,7 +9,7 @@ use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::units::Tolerances;
-use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, DecodeParts, GivenUpPart, Part};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
@@ -254,12 +254,6 @@ pub(super) fn attach(
         Err(error) => {
             let attached = snapshot.attached_records(ir, unknowns);
             snapshot.restore(ir, annotations, unknowns, losses);
-            let why = NxLossCode::NativeAttachmentFailed.note(format!(
-                "Native object-model attachment failed: {error}. Decoded geometry and \
-                 topology are kept. None of the attachment's features, sketches, \
-                 parameters, configurations, appearances, attributes, display \
-                 tessellations, native records, or container passthrough records are kept."
-            ));
             let bytes: &[u8] = &scan.container.data;
             let part = Part::at(
                 "nx",
@@ -271,10 +265,16 @@ pub(super) fn attach(
             .in_stream(cadmpeg_ir::stream_name!("nx:container"));
             let part = ctx.give_up_part(
                 crate::decode::within_retained_ceiling(ctx, part, bytes.len()),
-                CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+                Cause::Undecoded,
+                CodecError::NotImplemented(format!(
+                    "Native object-model attachment failed: {error}. Decoded geometry and \
+                     topology are kept. None of the attachment's features, sketches, \
+                     parameters, configurations, appearances, attributes, display \
+                     tessellations, native records, or container passthrough records are \
+                     kept."
+                )),
             )?;
             let attachment = cadmpeg_ir::ids::Identity::from(part.id().clone());
-            losses.push(why);
             for record in attached {
                 losses.push(dropped_with(
                     cadmpeg_ir::ids::Identity::new(record)?,
@@ -666,7 +666,7 @@ fn attach_configurations<'a>(
         configurations.into_iter().enumerate()
     {
         let id: ConfigurationId = IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
-            .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
+            .id(&cadmpeg_ir::identity_component!("arrangement"), ordinal);
         let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
             CodecError::malformed(format_args!(
                 "NX configuration ordinal {ordinal} exceeds u32"

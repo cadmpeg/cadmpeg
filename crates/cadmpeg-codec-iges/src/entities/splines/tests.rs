@@ -55,7 +55,7 @@ fn decode_skips_a_parametric_spline_segment_count_over_its_projection_limit() {
 
     assert!(decoded.ir().geometry.curves.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("segment count is outside 1..=100000")
     }));
 }
@@ -77,7 +77,7 @@ fn decode_skips_a_parametric_spline_surface_over_its_pole_limit() {
 
     assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss
                 .message
                 .contains("spline-surface pole count exceeds 1000000")
@@ -314,7 +314,10 @@ fn decode_uses_global_resolution_for_spline_position_continuity() {
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
+                .filter(|loss| crate::test_support::reports(
+                    loss,
+                    IgesLossCode::GeometryNotProjected
+                ))
                 .count(),
             usize::from(!decoded)
         );
@@ -483,7 +486,7 @@ fn decode_rejects_a_degenerate_type_112_segment() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
+            .filter(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected))
             .count(),
         1
     );
@@ -617,7 +620,10 @@ fn coefficient_surface_requires_actual_patches_at_their_declared_grid_positions(
                 .report()
                 .losses
                 .iter()
-                .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+                .any(|loss| crate::test_support::reports(
+                    loss,
+                    IgesLossCode::GeometryNotProjected
+                )));
         }
     }
 }

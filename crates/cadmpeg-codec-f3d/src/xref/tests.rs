@@ -24,12 +24,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_redirections_json, f3d_without_brep, redirections_json,
 };
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::f3d_native;
-use crate::test_support::streams_test::design_metastream_with_records;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::native_fixture::f3d_native;
+use crate::test_support::streams_fixture::design_metastream_with_records;
 use crate::test_support::{cross_document_reference, local_reference, lp_utf16};
 use crate::F3dCodec;
 
@@ -130,7 +130,7 @@ fn malformed_redirections_are_reported_by_complete_and_container_routes() {
             .report()
             .losses
             .iter()
-            .find(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+            .find(|loss| crate::test_support::xref_table_given_up(loss))
             .expect("malformed Redirections loss");
         assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
         assert!(loss.message.contains("properties"), "{loss:?}");
@@ -169,7 +169,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
                 &DecodeOptions { depth, ..DecodeOptions::default() },
             ).expect("property refusal preserves the source document"));
             let losses = decoded.report().losses.iter()
-                .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                .filter(|loss| crate::test_support::xref_table_given_up(loss))
                 .collect::<Vec<_>>();
             assert_eq!(losses.len(), usize::from(!valid), "{label}, container_only={container_only}: {losses:?}");
             for loss in losses {
@@ -1700,7 +1700,7 @@ mod document_admission;
 #[test]
 fn identity_insert_carrier_requires_duplicate_targets_and_exact_closure() {
     let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
-    let mut body = crate::test_support::component_insert_test::identity_insert_carrier(role, 10);
+    let mut body = crate::test_support::component_insert_fixture::identity_insert_carrier(role, 10);
     let metadata_tail = 251;
     for flag in [0, 1] {
         for token in [1_u64, 2] {
@@ -1987,4 +1987,5 @@ mod legacy_path_pose;
 mod reference_rows;
 
 mod compact_generation;
+mod local_path_closure;
 mod partial_tables;

@@ -93,7 +93,7 @@ fn read_element<'a>(
     }
     ctx.charge_entities(1, ADMIT_ELEMENT)?;
     let parts = descriptor(descriptor_byte).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        CodecError::NotImplemented(format!(
             "PVS element at offset {start} has undefined descriptor {descriptor_byte:#04x}"
         ))
     })?;

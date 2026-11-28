@@ -35,7 +35,7 @@ use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
 
-use super::vecmath::{add, components, coordinates, cross, scale};
+use super::vecmath::{add, components, coordinates, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
 use crate::families::chamfer::{ChamferParameters, ChamferResultKind};
@@ -55,6 +55,7 @@ const EPS_B5_GRAPH_EXACT_GEOMETRY: f64 = 1.0e-12;
 /// operations admitted for one free-form object population. The allowance
 /// covers one indexed-frame pass, topology materialization, dependency
 /// closure, and one bounded graph-resolution pass.
+// resource-cap: MAX_OBJECT_STREAM_SELECTION_WORK = 4
 pub(in crate::families) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 2_000_000;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
@@ -2058,9 +2059,11 @@ fn merge_targeted_surface(
 
 /// Resolution calls for one requested surface. An analytic offset resolves
 /// both its carrier and its source, so shared offsets can branch.
+// resource-cap: MAX_TARGETED_SURFACE_RESOLUTION_STEPS = 4
 pub(crate) const MAX_TARGETED_SURFACE_RESOLUTION_STEPS: usize = 4_096;
 /// Analytic offsets one requested surface may resolve through before its
 /// resolution stops; each level holds two resolution frames on the stack.
+// resource-cap: MAX_TARGETED_SURFACE_OFFSET_DEPTH = 4
 pub(crate) const MAX_TARGETED_SURFACE_OFFSET_DEPTH: usize = 64;
 
 /// Resolve one requested surface through aliases, constructions and analytic
@@ -3738,12 +3741,14 @@ fn cone_offset_construction_agrees(
     let axial = delta.into_iter().zip(axis).map(|(x, a)| x * a).sum::<f64>();
     let radial = reference_radius.get() - source_radius.get();
     let (sin, cos) = radial_angle.get().sin_cos();
-    let handedness = cross(components(frame.reference()), components(direction_y))
-        .into_iter()
-        .zip(axis)
-        .map(|(x, a)| x * a)
-        .sum::<f64>()
-        .signum();
+    let handedness = <[f64; 3]>::from(
+        Vector3::from(components(frame.reference())).cross(Vector3::from(components(direction_y))),
+    )
+    .into_iter()
+    .zip(axis)
+    .map(|(x, a)| x * a)
+    .sum::<f64>()
+    .signum();
     let translation = axial * sin + radial * cos;
     let measured = handedness * (radial * sin - axial * cos);
     let transverse = std::array::from_fn::<_, 3, _>(|i| delta[i] - axial * axis[i]);
@@ -4780,7 +4785,7 @@ fn lift_pcurve_endpoints(
                     components(frame.axis()),
                     components(frame.reference()),
                 );
-                let reference_y = cross(axis, reference_x);
+                let reference_y = Vector3::from(axis).cross(Vector3::from(reference_x)).into();
                 Some(endpoints.map(|[u, v]| {
                     let angle = u / angular_scale.get();
                     add(
@@ -4926,7 +4931,7 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
         point[1] - origin[1],
         point[2] - origin[2],
     ];
-    let cross_term = cross(axis, relative);
+    let cross_term = Vector3::from(axis).cross(Vector3::from(relative)).into();
     let dot = axis[0] * relative[0] + axis[1] * relative[1] + axis[2] * relative[2];
     add(
         origin,
@@ -6262,6 +6267,7 @@ pub(in crate::families) fn select_object_stream_population(
 
 /// Attached isolated-geometry bytes the topology runs of one logical stream may
 /// copy into their populations, per stream byte.
+// resource-cap: MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE = 4
 pub(crate) const MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE: usize = 2;
 
 /// The topology populations of one logical stream: its object runs, its

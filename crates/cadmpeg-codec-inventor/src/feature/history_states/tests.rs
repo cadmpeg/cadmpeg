@@ -863,30 +863,12 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     });
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].code.local_code(), "feature.history-state-unbound");
-    let unread = losses(&Projection {
-        records: Vec::new(),
-        unread: Some(UnreadChain {
-            reason: Unread::Unclosed,
-            start: 0,
-        }),
-        schema_assumed: 0,
-        bodies: crate::feature::history_bodies::Built::default(),
-    });
     assert_eq!(
-        unread[0].code.local_code(),
+        unread_note(Unread::Unclosed).code.local_code(),
         "source.kernel-history-unclosed"
     );
-    let bounded = losses(&Projection {
-        records: Vec::new(),
-        unread: Some(UnreadChain {
-            reason: Unread::Bounded,
-            start: 0,
-        }),
-        schema_assumed: 0,
-        bodies: crate::feature::history_bodies::Built::default(),
-    });
     assert_eq!(
-        bounded[0].code.local_code(),
+        unread_note(Unread::Bounded).code.local_code(),
         "source.kernel-history-bounded"
     );
     assert!(losses(&Projection {

@@ -41,6 +41,9 @@ def job_commands(workflow: str, job: str, prefix: str) -> list[str]:
 
 def commands(workflow: str, scripts_changed: bool) -> list[str]:
     found = job_commands(workflow, "static", "python3 ")
+    if "python3 scripts/check-source-policy.py" in found:
+        found = [command for command in found
+                 if command != "python3 scripts/check-source-policy.py --authoring-paths-only"]
     if not scripts_changed:
         found = [command for command in found if "unittest" not in command]
     return found + job_commands(workflow, "lint", "cargo fmt")

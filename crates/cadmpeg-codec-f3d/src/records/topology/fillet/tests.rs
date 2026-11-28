@@ -50,7 +50,7 @@ fn fillet_radius_law_native_retained_limit_refuses_before_clone() {
         },
         tangency_weight_parameter_record_index: None,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_fillet_radius_groups",
         || super::FILLET_RADIUS_LAW_CLONE_COUNT.with(|count| count.set(0)),

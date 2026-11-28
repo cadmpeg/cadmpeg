@@ -7,7 +7,7 @@ pub(crate) fn assert_native_scope(scope: &crate::records::feature::scope::Design
     let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
     let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
     {
-        let mut native = crate::test_support::native_test::f3d_native_mut(&mut document);
+        let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut document);
         native.design_parameter_scopes.push(scope.clone());
         native.design_record_headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{}", scope.byte_offset()),

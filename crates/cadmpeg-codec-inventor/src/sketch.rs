@@ -3536,7 +3536,8 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 use cadmpeg_core::serde_erase::json as json_wire;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    pub(crate) mod repeated_blocks;
     use super::{
         block_curve_offsets, block_definition_curves, distinct_operand_keys, entity_endpoint_refs,
         inventory, json_wire, parse_constraint, parse_direction, parse_entity, parse_sketch,

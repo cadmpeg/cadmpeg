@@ -402,6 +402,7 @@ impl Walk<'_, '_, '_> {
                 NativeOption::Length(v) => self.dimension(v, "length"),
                 NativeOption::Angle(v) => self.dimension(v, "angle"),
                 NativeOption::Text(v) => self.dimension(v, "text"),
+                NativeOption::Blank(_) => {}
                 NativeOption::Selection(v) => self.selection(v)?,
                 NativeOption::OrderedSelection(v) => self.selection(v)?,
             }

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bundle schema classification.
-use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::ONSHAPE_BUNDLE_1;
 pub(super) fn layers() -> DialectLayers {
     DialectLayers::of(
         DialectMatch::admitted(ONSHAPE_BUNDLE_1).with_declared_entry(

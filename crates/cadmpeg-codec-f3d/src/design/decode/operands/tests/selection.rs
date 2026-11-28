@@ -339,7 +339,8 @@ fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
 
 #[test]
 fn generated_base_flange_profile_frame_resolves() {
-    let (bytes, _) = crate::test_support::streams_test::generated_design_base_flange_bulkstream();
+    let (bytes, _) =
+        crate::test_support::streams_fixture::generated_design_base_flange_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let profile_offset = records
         .offsets(1501)

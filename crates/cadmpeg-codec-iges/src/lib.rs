@@ -125,7 +125,7 @@ impl IgesVersion {
 pub struct IgesCodec;
 
 impl CodecBackend for IgesCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,
@@ -187,8 +187,8 @@ impl CodecBackend for IgesCodec {
                 let (normalized, repeated) = compressed::expand(root.window())?;
                 let mut decoded = reader::decode(&normalized, root.window(), representation, ctx)?;
                 for record in &repeated {
-                    let losses = record.give_up(ctx, root, &mut decoded)?;
-                    decoded.body.losses.extend(losses);
+                    let loss = record.give_up(ctx, root, &mut decoded)?;
+                    decoded.body.losses.push(loss);
                 }
                 Ok(decoded)
             }

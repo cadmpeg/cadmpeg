@@ -644,6 +644,7 @@ fn a_record_past_the_expression_bound_is_given_up() {
         scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
             .unwrap(),
         owner: None,
+        position: None,
         name: None,
         kind: crate::design::units::ValueKind::Text,
         unit: None,
@@ -675,7 +676,7 @@ fn a_record_past_the_expression_bound_is_given_up() {
     let record = value["design"]["parameters"][0].clone();
     let read = read(value.to_string().as_bytes());
 
-    assert_eq!(codes(&read.report), ["decode/record.unreadable"]);
+    assert_eq!(codes(&read.report), ["decode/record.undecoded"]);
     assert_eq!(
         read.document.design.parameters[..],
         ir.design.parameters[1..]

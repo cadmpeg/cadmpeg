@@ -74,7 +74,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    FORMAT, SLDPRT_SW_VERSION_12000_PLUS, SLDPRT_SW_VERSION_PRE_12000, SLDPRT_UNKNOWN,
+};
 
 #[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";

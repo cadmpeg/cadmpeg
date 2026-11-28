@@ -29,7 +29,7 @@ fn localized_position_decodes_dispatches_projects_and_binds_after_products() {
         &[],
     );
     let placement_at = bulk.len();
-    let role = crate::test_support::assembly_test::XREF_ROLE;
+    let role = crate::test_support::assembly_fixture::XREF_ROLE;
     let mut placement =
         crate::test_support::legacy_attributed_external_placement(role, false, None);
     placement[4..7].copy_from_slice(b"256");
@@ -42,7 +42,7 @@ fn localized_position_decodes_dispatches_projects_and_binds_after_products() {
     push_reference_u64(&mut bulk, 500);
     bulk.extend_from_slice(&1_u32.to_le_bytes());
     push_reference_u64(&mut bulk, 500);
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (PLACEMENT, "", 2, "Component", &[10]),
             (POSITION, "", 6, "Fusion", &[500]),
@@ -60,7 +60,7 @@ fn localized_position_decodes_dispatches_projects_and_binds_after_products() {
             (35, u64::try_from(timeline_at).unwrap()),
         ],
     );
-    let base = crate::test_support::assembly_test::f3d_without_brep(
+    let base = crate::test_support::assembly_fixture::f3d_without_brep(
         "assembly-design",
         "root.f3d",
         &[("part.f3d", role)],
@@ -82,7 +82,7 @@ fn localized_position_decodes_dispatches_projects_and_binds_after_products() {
         zip.write_all(&bytes).unwrap();
     }
     let decoded = super::decode(zip.finish().unwrap().into_inner());
-    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
     let scope = native
         .design_parameter_scopes
         .iter()

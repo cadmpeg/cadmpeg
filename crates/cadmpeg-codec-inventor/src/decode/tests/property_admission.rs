@@ -25,7 +25,7 @@ fn parsed_property_records_are_projected() {
             version: 1,
             system_identifier: 0,
             clsid: [1; 16],
-            sections: vec![PropertySection {
+            sections: vec![Some(PropertySection {
                 fmtid: [2; 16],
                 code_page: None,
                 offsets_ordered: true,
@@ -39,7 +39,7 @@ fn parsed_property_records_are_projected() {
                     },
                     raw: View::over_retained(b"raw"),
                 }],
-            }],
+            })],
         }),
     });
 

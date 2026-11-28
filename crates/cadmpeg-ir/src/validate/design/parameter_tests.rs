@@ -3,11 +3,12 @@
 //! of part 10 on variations of the fixture document.
 
 use std::collections::BTreeMap;
+use std::f64::consts::FRAC_PI_2;
 
 use cadmpeg_core::text::NonBlankString;
 
 use crate::design::configuration::{DefinitionOverride, PartNumber};
-use crate::design::construction::Construction;
+use crate::design::construction::{Construction, FrameAxis, PostStep};
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::expr::{
     parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
@@ -108,6 +109,61 @@ fn names_are_unique_per_scope_and_owner() {
     assert_no_design_finding(&ir);
     ir.design.parameters[1].name = None;
     assert_finding(&ir, "states no name but is no spreadsheet cell's parameter");
+}
+
+#[test]
+fn positions_are_distinct_per_scope_and_owner() {
+    let mut ir = with_width();
+    ir.design.parameters[0].position = Some(0);
+    let mut again = ir.design.parameters[0].clone();
+    again.id = id("parameter", "again");
+    again.name = NonBlankString::new("again".to_owned());
+    ir.design.parameters.push(again);
+    assert_finding(
+        &ir,
+        "2 parameters of the scope with no owner state position 0",
+    );
+    ir.design.parameters[1].position = Some(1);
+    assert_no_design_finding(&ir);
+    ir.design.parameters[1].position = Some(0);
+    ir.design.parameters[1].owner = Some(ParameterOwner::Feature(feature("extrude")));
+    assert_no_design_finding(&ir);
+}
+
+#[test]
+fn a_cell_parameter_states_no_position() {
+    use crate::spreadsheets::{CellAddress, SpreadsheetCell};
+    let mut ir = with_width();
+    let mut sheet = unresolved(
+        "sheet",
+        crate::design::feature::OperationFamily::Spreadsheet,
+    );
+    sheet.definition.operation = FeatureOperation::Spreadsheet(id("spreadsheet", "sheet"));
+    ir.design.features.push(sheet);
+    ir.design.spreadsheets.push(
+        Spreadsheet::new(
+            id("spreadsheet", "sheet"),
+            vec![SpreadsheetCell {
+                address: CellAddress::new(1, 1).unwrap(),
+                parameter: id("parameter", "width"),
+            }],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap(),
+    );
+    let clean = design_findings(&ir);
+    ir.design.parameters[0].position = Some(0);
+    let findings = design_findings(&ir);
+    assert!(
+        findings.iter().any(|finding| finding
+            .message
+            .contains("spreadsheet cell parameter states a `position`")),
+        "{findings:#?}"
+    );
+    assert_eq!(findings.len(), clean.len() + 1, "{findings:#?}");
 }
 
 #[test]
@@ -622,6 +678,40 @@ fn programs_assign_through_paths_and_external_names() {
         ],
     };
     assert_no_finding_containing(&ir, "program");
+}
+
+/// `with_width` with the angle parameter `turn`, of expression 270° and of
+/// cache `cached` radians, bound as the angle of a rotation step of an
+/// equation curve's frame where `bound` is true.
+fn with_turn(cached: f64, bound: bool) -> CadIr {
+    let mut ir = with_width();
+    let mut turn = parameter("turn", ValueKind::Quantity(Quantity::ANGLE));
+    turn.definition = expression("270[deg]", &[]);
+    turn.value = Some(number(cached));
+    ir.design.parameters.push(turn);
+    let mut curve = equation_curve("t * 10[mm]");
+    if bound {
+        let FeatureOperation::Curve(curve) = &mut curve else {
+            unreachable!()
+        };
+        let CurveDefinition::Equation { frame, .. } = &mut curve.definition else {
+            unreachable!()
+        };
+        frame.after.push(PostStep::Rotate {
+            axis: FrameAxis::Z,
+            angle: Dimension::Parameter(id("parameter", "turn")),
+        });
+    }
+    ir.design.features[0].definition.operation = curve;
+    ir
+}
+
+#[test]
+fn a_rotation_cache_agrees_with_its_expression_to_within_a_whole_turn() {
+    const FRAGMENT: &str = "disagrees with its expression's value";
+    assert_no_finding_containing(&with_turn(-FRAC_PI_2, true), FRAGMENT);
+    assert_warning(&with_turn(-FRAC_PI_2, false), FRAGMENT);
+    assert_warning(&with_turn(-FRAC_PI_2 + 0.1, true), FRAGMENT);
 }
 
 #[test]

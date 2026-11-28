@@ -43,7 +43,7 @@ fn write_scoped<'a>(
     configurations: &'a [Configuration],
     natives: &Natives,
     scoped: Option<&ConfigurationId>,
-) -> (Written<'a>, Vec<LossNote>) {
+) -> (Written<'a, 'a>, Vec<LossNote>) {
     let targets = natives.targets();
     let (written, mut losses) = regenerate(documents, decoded, configurations, &targets).unwrap();
     let mut ir = CadIr::empty();
@@ -63,7 +63,11 @@ fn write_scoped<'a>(
         &written,
         configurations,
     );
-    losses.extend(written.compare_in_memory(plan.active(), &targets).unwrap());
+    losses.extend(
+        written
+            .compare_in_memory(plan.active(), &targets, &natives.producers)
+            .unwrap(),
+    );
     (written, losses)
 }
 
@@ -73,7 +77,7 @@ fn write<'a>(
     decoded: &Projection,
     configurations: &'a [Configuration],
     natives: &Natives,
-) -> (Written<'a>, Vec<LossNote>) {
+) -> (Written<'a, 'a>, Vec<LossNote>) {
     write_scoped(documents, decoded, configurations, natives, None)
 }
 
@@ -286,6 +290,9 @@ fn active_row_suppression(state: State, change: Change) -> (Feature, Vec<(String
         }
         State::Decided => natives.neutral_features[0].suppressed = Some(false),
     }
+    if !matches!(state, State::Undecided) {
+        store_active_feature_state(&mut natives.scopes[0]);
+    }
     let feature = natives.neutral_features[0].clone();
     let mut documents = documents();
     documents[0]
@@ -491,17 +498,7 @@ fn a_producer_the_active_row_suppresses_is_charged_with_the_condition_of_the_rea
 fn a_stored_state_the_source_row_contradicts_is_charged_only_where_the_write_changes_the_row() {
     for sketch in [false, true] {
         let mut natives = natives();
-        let offset = natives.scopes[0].feature_ordinal_offset();
-        natives.scopes[0].tail_flags = Some(DesignScopeTailFlags {
-            suppression: [false, false],
-            unevaluated: false,
-            wide_state: None,
-            state_offset: offset + 1,
-            no_result: false,
-            rolled_back: false,
-            no_result_offset: offset + 4,
-            envelope_offset: None,
-        });
+        store_active_feature_state(&mut natives.scopes[0]);
         if sketch {
             natives.neutral_features[0]
                 .evaluation
@@ -539,6 +536,20 @@ fn a_stored_state_the_source_row_contradicts_is_charged_only_where_the_write_cha
     }
 }
 
+fn store_active_feature_state(scope: &mut DesignParameterScope) {
+    let offset = scope.feature_ordinal_offset();
+    scope.tail_flags = Some(DesignScopeTailFlags {
+        suppression: [false, false],
+        unevaluated: false,
+        wide_state: None,
+        state_offset: offset + 1,
+        no_result: false,
+        rolled_back: false,
+        no_result_offset: offset + 4,
+        envelope_offset: None,
+    });
+}
+
 /// The table documents of [`documents`] with `row` active.
 fn active_in_source(row: &str) -> Vec<DesignConfiguration> {
     let mut documents = documents();
@@ -572,7 +583,7 @@ fn a_feature_edited_against_an_unchanged_active_row_is_charged_as_a_moved_row() 
     assert_eq!(edited_losses[0].0, "export/value.unwritable");
     assert!(
         edited_losses[0].1.contains(&format!(
-            "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, the active row states {{\"kind\":\"suppressed\"}}"
+            "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}"
         )),
         "{edited_losses:#?}"
     );
@@ -948,7 +959,7 @@ fn a_state_the_features_no_longer_hold_is_charged_in_any_configuration() {
 }
 
 #[test]
-fn moving_the_active_row_is_charged_where_the_features_contradict_the_row() {
+fn moving_the_active_row_charges_the_feature_state_the_row_changes() {
     let (mut natives, documents, _, mut configurations) = tall_active();
     let decoded = reconciled(&natives, &documents);
     configuration(&mut configurations, "tall").active = false;
@@ -961,7 +972,7 @@ fn moving_the_active_row_is_charged_where_the_features_contradict_the_row() {
     assert_eq!(losses[0].0, "export/value.unwritable");
     assert!(
         losses[0].1.contains(&format!(
-            "{feature} stated {{\"kind\":\"suppressed\"}}, the active row states {{\"kind\":\"active\""
+            "{feature} stated {{\"kind\":\"suppressed\"}}, reads back {{\"kind\":\"active\""
         )),
         "{losses:#?}"
     );
@@ -1330,11 +1341,11 @@ fn owner_conflict() -> (
     }
     ir.model.sketches.push(sketch);
     let mut losses = Vec::new();
-    let archive = crate::test_support::zip_test::f3d_with_configurations(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_configurations(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         &[],
     );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut losses)
         })
@@ -1371,6 +1382,7 @@ fn configurations_decoded_after_an_owner_conflict_are_written_as_stated() {
             scopes: native.design_parameter_scopes.clone(),
             neutral_parameters: ir.model.parameters.clone(),
             neutral_features: features,
+            producers: BTreeSet::new(),
         };
         assert!(
             projects(&ir.model.configurations, &documents, &natives.targets()).unwrap(),

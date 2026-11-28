@@ -2,7 +2,7 @@
 //! Synthetic configuration-table documents and Design configuration root records.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
@@ -250,7 +250,7 @@ pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
 pub(crate) fn with_root_segment_in(archive: Vec<u8>, segment: &str, root: Vec<u8>) -> Vec<u8> {
     use std::io::Write;
 
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "11111111-2222-3333-4444-555555555555",
             "",
@@ -280,7 +280,7 @@ pub(crate) fn with_root_segment_in(archive: Vec<u8>, segment: &str, root: Vec<u8
 pub(crate) fn project(
     ir: &cadmpeg_ir::CadIr,
 ) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
-    let native = crate::test_support::native_test::f3d_native(ir);
+    let native = crate::test_support::native_fixture::f3d_native(ir);
     crate::design::configurations::project(
         &native.design_configurations,
         &crate::design::configurations::ConfigurationTargets {
@@ -298,7 +298,7 @@ pub(crate) fn project(
 /// Attach the active row `row_id` of table `1` to the first native
 /// configuration document and project again.
 pub(crate) fn set_active_row(ir: &mut cadmpeg_ir::CadIr, row_id: &str) {
-    crate::test_support::native_test::update_f3d_native(ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(ir, |native| {
         native.design_configurations[0]
             .set_active_row(
                 crate::records::configuration::DesignConfigurationActiveRow {
@@ -400,6 +400,7 @@ pub(crate) struct Natives {
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) neutral_parameters: Vec<NeutralParameter>,
     pub(crate) neutral_features: Vec<Feature>,
+    pub(crate) producers: BTreeSet<FeatureId>,
 }
 
 impl Natives {
@@ -409,6 +410,7 @@ impl Natives {
         Self {
             neutral_parameters: parameters.iter().map(neutral_parameter).collect(),
             neutral_features: vec![neutral_feature(&scopes[0], "f3d:model:feature#sketch")],
+            producers: BTreeSet::new(),
             owners: vec![owner(STREAM, 330, 329)],
             parameters,
             scopes,
@@ -432,11 +434,12 @@ impl Natives {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.parameters = self.neutral_parameters.clone();
         ir.model.features = std::mem::take(&mut self.neutral_features);
-        let archive = super::zip_test::f3d_with_configurations(
-            &super::smbh_geometry_test::synthetic_geometry_smbh(),
+        self.producers = crate::design::configurations::body_producers(&ir.model.features);
+        let archive = super::zip_fixture::f3d_with_configurations(
+            &super::smbh_geometry_fixture::synthetic_geometry_smbh(),
             &[],
         );
-        super::zip_test::with_scan(&archive, |scan| {
+        super::zip_fixture::with_scan(&archive, |scan| {
             super::with_decode_context(|ctx| {
                 crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut Vec::new())
             })

@@ -79,11 +79,11 @@ Segment major versions 15 through 22 use a 17-byte footer. Segment major version
 
 Kernel bytes beginning with `ASM BinaryFile4` or `ASM BinaryFile8` use the ASM header and SAB grammar in [asm.md](asm.md). Kernel bytes beginning with `ACIS BinaryFile` use the 32-bit ACIS header and SAB grammar in [asm.md](asm.md) at every save format. Save-format majors 217 and 218 are the verified bands. A kernel signature validates the already typed record. It is not a record locator.
 
-The reader gives up a carrier that it cannot read. When the record envelope does not parse, the part is an `rse-record` part over the record payload. When the kernel header or the kernel stream does not decode, the part is a `kernel-carrier` part over the kernel bytes. Each part is in the expanded bulk stream of its segment, and its stub links to the RSe record that frames the carrier.
+The reader gives up a carrier that it cannot read. When the record envelope does not parse, the part is an `rse-record` part over the record payload. When the kernel header or the kernel stream does not decode, the part is a `kernel-carrier` part over the kernel bytes. Each part is in the expanded bulk stream of its segment, and its stub links to the RSe record that frames the carrier. The give-up is the one loss of the carrier's geometry. The loss `geometry.kernel-carrier-not-transferred` records a part whose geometry is not transferred and whose carrier is not given up.
 
 ## 6. OLE properties and preview
 
-Root streams that contain an OLE Property Set self-identify through their byte-order marker, section directory, and FMTID. Section offsets bound each property. Code-page properties select LPSTR decoding. LPWSTR values contain UTF-16LE code units. Scalar, vector, FILETIME, BLOB, and clipboard values retain their type code. A clipboard preview is emitted only when its payload has a recognized image signature.
+Root streams that contain an OLE Property Set self-identify through their byte-order marker, section directory, and FMTID. The name of an OLE property-set stream starts with U+0005. Section offsets bound each property. Code-page properties select LPSTR decoding. LPWSTR values contain UTF-16LE code units. Scalar, vector, FILETIME, BLOB, and clipboard values retain their type code. A clipboard preview is emitted only when its payload has a recognized image signature.
 
 ## 7. Protein package
 
@@ -91,7 +91,7 @@ The root `Protein` stream starts with a u32 payload length. Zero length is the c
 
 The ZIP package, `InstanceProperties.bin` page framing, schemas, and typed property records are specified in [`protein.md`](protein.md). Asset definitions form a catalog. A topology assignment requires a separate typed assignment record.
 
-When the schema catalog of the package does not decode, the reader gives up the `Protein` stream as a `protein-stream` part.
+A schema or instance member that does not read gives up its own `protein-member` part. Other members supply their schema and instance records independently.
 
 ## 8. External references
 
@@ -193,7 +193,7 @@ The remaining bytes of a visibility-off record are retained. A visibility-off re
 
 A `UFRxDoc` occurrence joins the `AmDc` and `AmGraphics` records through `occurrence_id`. It joins its external prototype through `reference_id`: the one external reference with the same `reference_id` is the prototype. Copies of one file keep its document identifier, so the document identifier alone does not select a copy. When the occurrence stores a first-section document identifier, the prototype must store the same document identifier. Otherwise, and when no reference or several references have the `reference_id`, the occurrence is unresolved. The external-reference occurrence count equals the number of joined `UFRxDoc` occurrences. Each occurrence in the current document is a root placement. A referenced assembly remains an unresolved external prototype; its internal occurrences are not inserted into the current document.
 
-Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss. The reader gives up each occurrence that it does not transfer once, by its occurrence id. An occurrence id that another `UFRxDoc` occurrence transfers is not given up. An occurrence whose graphics placement records are all given up is dropped with the first of them.
+Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss. The reader gives up each occurrence that it does not transfer once, by its occurrence id. An occurrence id that another `UFRxDoc` occurrence transfers is not given up. A later occurrence that repeats the id of an earlier one is counted in the loss `assembly.placement-not-transferred`, because the earlier occurrence transfers that id. An occurrence whose graphics placement records are all given up is dropped with the first of them.
 
 ## 10. Part appearance assignments
 
@@ -1723,6 +1723,58 @@ The cached-view prefix contains `prefix:bytes[28]` and `view_reference:u32`. The
 
 Drawing metadata section 7 has 32-byte segment-pair entries. Section 8 has 20-byte revision entries. Section 10 has 8-byte entries containing a u32 reference word and two u16 values. The section-8 count field is `reference_count:u16`. Section 9 has the tagged entries of section 3.
 
-A typed drawing record that does not parse is an `rse-record` part over its payload. When metadata sections 7, 8, and 10 of a segment do not read as reference tables, the reader gives up the first section that does not read as a `meta-section` part, which drops the reference-tables record of the segment. When the section-9 entries of a segment do not read, the reader gives up section 9 as a `meta-section` part. A record whose operand references do not select their target types is an `rse-record` part over its payload, which drops the record. A sheet whose view list names a given-up record, and a cached view whose segment has given-up reference tables, are dropped with that record. Any other sheet or cached view whose links do not resolve is an `rse-record` part over its payload, which drops the record.
+A typed drawing record that does not parse is an `rse-record` part over its payload. Each failed reference table in metadata sections 7, 8, and 10 gives up a `meta-section` part. The other tables keep their entries and payloads. A cached view that needs a failed table is dropped with that section. When the section-9 entries of a segment do not read, the reader gives up section 9 as a `meta-section` part. A record whose operand references do not select their target types is an `rse-record` part over its payload, which drops the record. A sheet whose view list names a given-up record is dropped with that record. Any other sheet or cached view whose links do not resolve is an `rse-record` part over its payload, which drops the record.
 
 `RSeEmbeddings/ThirdPartyStorages/_DWFSnapshot` contains opaque file bytes.
+
+## 16. Given-up parts and strict floors
+
+The decoder gives up a part or a record (CADIR §3.3) in these cases:
+
+| Part kind or record | Given up when | Cause |
+|---|---|---|
+| `rse-database` | The database declaration or the body of a schema-31 stream breaks its framing. | `record.unreadable` |
+| `rse-database` | The stream declares a different schema and its body is outside the schema-31 grammar. | `record.undecoded` |
+| `rse-table` | `RSeStorage/RSeSegInfo` or `RSeStorage/RSeDbRevisionInfo` does not parse. | `record.unreadable` |
+| `rse-metadata` | An RSe metadata stream does not parse under the version-8 grammar (§3). | `record.undecoded` |
+| `rse-metadata`, `rse-bulk` | An RSe metadata or bulk stream has no partner (§1). | `record.unreadable` |
+| `rse-bulk` | The bulk envelope or its compressed member breaks its framing (§4). | `record.unreadable` |
+| `rse-bulk-records` | A stored block in the expanded bulk data breaks the record framing (§4). | `record.unreadable` |
+| `rse-bulk-trailer` | The marker after the last framed record is absent or differs from `0xffffffff`. The preceding records remain readable (§4). | `record.unreadable` |
+| `rse-record` | A typed assembly, presentation, design, sketch, or feature record does not parse. A pattern feature whose suppression operand does not pass its check is kept. | `record.undecoded` |
+| `rse-record` | The record envelope of the active kernel carrier does not parse (§5). | `record.unreadable` |
+| `rse-record` | An annotation record is outside its grammar, or a tolerance feature lists attachment records that disagree with its membership (§13.11). | `record.undecoded` |
+| `kernel-carrier` | The kernel header does not parse, the carrier has no record stream, or the SAB records do not frame (§5). | `record.unreadable` |
+| `kernel-carrier` | The kernel decode does not read the framed records, or the decode passes a resource limit. | `record.undecoded` |
+| `face`, `loop`, `coedge`, `edge`, `vertex`, `point`, `region` | The kernel decode reads the topology record and leaves it out, because a reference that the record needs is null or names no record of its kind (§5). | `record.unreadable` |
+| `face`, `loop`, `coedge`, `edge`, `vertex`, `point`, `region` | The kernel decode reads the topology record and leaves it out, because a reference names a record that the decode does not hold (§5). | `record.undecoded` |
+| `history-chain` | The `delta_state` chain does not close (§13.10). | `record.unreadable` |
+| `history-chain` | The state scan passes its work limit (§13.10). | `record.undecoded` |
+| History body | The carrier header or the state does not read, a carrier has no solved form, the body is not closed, the feature does not project, or the body passes the cap of history bodies of the part (§13.10). The body is given up by its id. | `record.undecoded` |
+| `protein-member` | A Protein ZIP member has damaged framing, an unsafe name, or an invalid payload in a selected schema or instance member. | `record.unreadable` |
+| `protein-member` | A selected Protein ZIP member has an unsupported encoding or exceeds an individual read or expansion limit. | `record.undecoded` |
+| `protein-directory` | The Protein ZIP directory cannot be read and local member frames supply the directory. | `record.unreadable` |
+| `property-set` | An OLE property-set stream breaks its framing or grammar, or a root stream whose name starts with U+0005 does not open (§6). | `record.unreadable` |
+| `property-set` | A complete named OLE property-set stream exceeds the 2 MiB read limit. | `record.undecoded` |
+| `property-section` | The section extent or a property value breaks its framing or grammar (§6). | `record.unreadable` |
+| `property-section` | A section uses an unsupported code page or exceeds the 65536-entry decoder limit on a property, dictionary, or vector count (§6). | `record.undecoded` |
+| `protein-stream` | The `Protein` stream does not read as a package (§7). | `record.unreadable` |
+| Protein record | A Protein native record or asset record does not admit. The record is given up by its id. | `record.undecoded` |
+| `ufrx-stream` | A `UFRxDoc` stream of schema 11 through 15 breaks its framing or a value that §8 states. | `record.unreadable` |
+| `ufrx-stream` | The `UFRxDoc` stream declares a schema outside 11 through 15 whose bytes the 11-15 grammar does not read, holds a form of §8 that the decoder does not read, or holds a count above the decoder's bound for that count (§8). | `record.undecoded` |
+| `UFRxDoc` record | A model state, external reference, embedded reference, or occurrence does not admit. The record is given up by its id. | `record.undecoded` |
+| Occurrence | The placement transform of an occurrence is not affine after unit conversion (§9). | `record.unreadable` |
+| Occurrence | The external reference, `AmDc` occurrence, or `AmGraphics` placement of an occurrence is missing or ambiguous (§9). | `record.undecoded` |
+| `rse-record` | A typed drawing record does not parse (§15). | `record.undecoded` |
+| `meta-section` | Metadata section 7, 8, or 10 of an RSe segment has extra bytes after its entry count times the entry width of the surface-body reference form (§13.4, §15). | `record.undecoded` |
+| `meta-section` | Metadata section 7, 8, or 10 of an RSe segment is shorter than its entry count times the entry width of the surface-body reference form (§13.4, §15). | `record.unreadable` |
+| `meta-section` | Metadata section 7, 8, or 10 of an RSe segment breaks its framing in another way (§15). | `record.unreadable` |
+| `meta-section` | The tagged entries of metadata section 9 or the fixed-width entries of section 11 break their framing (§15). | `record.unreadable` |
+| `meta-section` | A bounded metadata section reaches the decoder's entry limit, or a drawing section 9 uses the fixed identifier form outside the tagged-entry reader (§15). | `record.undecoded` |
+| `rse-record` | The operand references or links of a drawing record do not select their targets (§15). | `record.undecoded` |
+
+A stream with a broken chain or a short physical extent is `record.unreadable`. Its digest covers the accessible bytes in chain order. A fragmented stream whose joined copy exceeds the remaining retained-byte budget is `record.undecoded`. An individual frame past its expansion limit is `record.undecoded`. A session-wide resource refusal stops the decode.
+
+An OLE section is addressed in its compound stream. Each separately framed section remains available when a peer fails. A Protein member uses offsets from the start of the embedded ZIP and links to its native entry declaration. ZIP member and page framing precede schema-dependent instance interpretation.
+
+`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It reports a compound-file deviation such as a DIFAT chain that ends with FREESECT (§1) or a stream chain without an ENDOFCHAIN terminator. A stream give-up charges its broken chain. Stream inventory includes the physical extent check. Other Inventor diagnostics use their default severity without a strict floor.

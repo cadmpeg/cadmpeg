@@ -39,7 +39,9 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{FCSTD_SCHEMA_2, FCSTD_SCHEMA_3, FCSTD_SCHEMA_4, FCSTD_UNKNOWN};
 
 /// The synthesis catalog: the dialects this encoder produces for an input whose
 /// retained document graph already declares them.

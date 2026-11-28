@@ -20,7 +20,9 @@ use crate::objects::{
 };
 use crate::wire::{finite, read_finite, uuid, Uuid};
 
+// resource-cap: MAX_STRING_BYTES = 2
 const MAX_STRING_BYTES: usize = 1 << 20;
+// resource-cap: MAX_ARRAY_ITEMS = 2
 const MAX_ARRAY_ITEMS: usize = 1 << 16;
 const PROPERTIES: u32 = 0x1000_0014;
 const SETTINGS: u32 = 0x1000_0015;
@@ -1083,7 +1085,7 @@ fn parse_layer_extensions(
     let major = outer_reader.i32()?;
     let minor = outer_reader.i32()?;
     if major != 1 || minor < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             outer.body().start,
             "layer extensions version is unsupported",
         ));
@@ -1118,7 +1120,7 @@ fn parse_layer_extensions(
         let entry_major = entry_reader.i32()?;
         let entry_minor = entry_reader.i32()?;
         if entry_major != 1 || entry_minor < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 entry.body().start,
                 "layer extensions entry version is unsupported",
             ));
@@ -1274,7 +1276,7 @@ fn parse_revision(
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported revision-history version",
         ));
@@ -1301,7 +1303,7 @@ fn parse_notes(
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported notes version",
         ));
@@ -1365,7 +1367,7 @@ fn parse_units_reader(
     let version = reader.i32()?;
     let legacy = version == 1;
     if !legacy && !(100..200).contains(&version) {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported units structure version",
         ));
@@ -1483,7 +1485,7 @@ fn anonymous_version(
 ) -> Result<(i32, i32), FramingError> {
     let version = (reader.i32()?, reader.i32()?);
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             format!("{label} version is unsupported"),
         ));
@@ -1525,7 +1527,7 @@ fn parse_plugin_list(
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported plugin-list version",
         ));
@@ -1623,7 +1625,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
 ) -> Result<MeshParameters, FramingError> {
     let version = packed(reader)?;
     if version.0 != 1 || (!allow_future_minor && version.1 > 5) {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported mesh-parameters version",
         ));
@@ -1712,7 +1714,7 @@ fn parse_settings_attributes(
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported settings-attributes version",
         ));
@@ -1790,7 +1792,7 @@ pub(crate) fn parse_rendering_attributes(
     let major = payload.i32()?;
     let minor = payload.i32()?;
     if major != 1 || minor < 0 || (matches!(kind, RenderingAttributesKind::Object) && minor < 1) {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported rendering-attributes version",
         ));
@@ -1819,7 +1821,7 @@ pub(crate) fn parse_rendering_attributes(
         let material_major = material_payload.i32()?;
         let material_minor = material_payload.i32()?;
         if material_major != 1 || material_minor < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 material_payload.position(),
                 "unsupported rendering material reference version",
             ));
@@ -1858,7 +1860,7 @@ pub(crate) fn parse_rendering_attributes(
             let mapping_major = mapping_payload.i32()?;
             let mapping_minor = mapping_payload.i32()?;
             if mapping_major != 1 || mapping_minor < 0 {
-                return Err(FramingError::structural(
+                return Err(FramingError::unsupported(
                     mapping_payload.position() - 8,
                     "unsupported obsolete rendering mapping version",
                 ));
@@ -1907,7 +1909,7 @@ pub(crate) fn parse_rendering_attributes(
             let mapping_major = mapping_payload.i32()?;
             let mapping_minor = mapping_payload.i32()?;
             if mapping_major != 1 || mapping_minor < 0 {
-                return Err(FramingError::structural(
+                return Err(FramingError::unsupported(
                     mapping_payload.position() - 4,
                     "unsupported rendering mapping reference version",
                 ));
@@ -1944,14 +1946,14 @@ pub(crate) fn parse_rendering_attributes(
                 let mut channel_payload =
                     BoundedReader::new(data, channel.body().start, channel.body().end)?;
                 if channel_payload.i32()? != 1 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         channel_payload.position() - 4,
                         "unsupported rendering mapping channel version",
                     ));
                 }
                 let channel_minor = channel_payload.i32()?;
                 if channel_minor < 0 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         channel_payload.position() - 4,
                         "unsupported rendering mapping channel version",
                     ));
@@ -2070,7 +2072,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     if (archive.value() < 60 && version != (1, 1))
         || (archive.value() >= 60 && (version.0 != 2 || version.1 < 1))
     {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported embedded linetype version",
         ));
@@ -2163,7 +2165,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     let (chunk, mut payload, version) =
         begin_direct_object(data, reader, archive, "embedded section style")?;
     if version.0 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported embedded section-style version",
         ));
@@ -2325,7 +2327,7 @@ fn parse_layer(
     )?;
     let version = packed(&mut reader)?;
     if version.0 != 1 || version.1 > 15 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported layer version",
         ));
