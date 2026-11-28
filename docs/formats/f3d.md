@@ -2149,7 +2149,7 @@ A native `ToFace` target selection resolves from exactly one qualifying referenc
 
 Each parameter-owning Sketch scope references exactly one paired placement record in its Design stream. Its carrier is a fixed placement frame or a registered versioned placement construction. The compact placement frame is 201 bytes from its primary indexed header to its same-index paired header and denotes the identity local-to-model transform. The explicit placement frame is 329 bytes and inserts a row-major 4×4 f64 local-to-model matrix at primary-record offset 55. The 305- and 325-byte placement frames store the same matrix at primary-record offset 48. Its bottom row is `(0, 0, 0, 1)` and its three basis columns are orthonormal. Matrix column 0 is the sketch u-axis, column 1 is the sketch v-axis, column 2 is the sketch normal, and column 3 is the model-space origin.
 
-A planar or spatial Sketch takes the name of the Feature projected from its owning Sketch scope. This rule applies when exactly one placement in the same stream carries that scope, exactly one Feature with a non-empty name projects from that scope, and exactly one scope selects the sketch. Each other sketch uses its entity-id name.
+A sketch Geometry member display name of 1 to 256 code units that holds a non-whitespace character and no control character is the name of its Sketch. When exactly one placement in the same stream carries the owning Sketch scope, it is also the name of the Feature projected from that scope; a stored label of the scope stays in the scope record. A planar or spatial Sketch without such a display name takes the name of the Feature projected from its owning Sketch scope. This rule applies when exactly one placement in the same stream carries that scope, exactly one Feature with a non-empty name projects from that scope, that name differs from the scope's stored label, and exactly one scope selects the sketch. Each other sketch uses its entity-id name.
 
 The versioned carrier has the placement type GUID, base type GUID `2CA5A1CD-C99B-4C9B-91AF-57989148E841`, module `Fusion`, and the registered class version. Its indexed header agrees with its record index, class tag, and primary offset. Its class members and base level end at its same-index paired header.
 
@@ -2459,14 +2459,18 @@ reference selects a version-3, version-4, or version-5 record of type GUID
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
 references. The four alignment-owner targets occur in this table. The current history word, the length-prefixed UTF-16 stored feature-family name, and
-feature ordinal follow the table. The tail contains fifteen zero bytes, a
+feature ordinal follow the table. The tail contains eight zero bytes, a u32
+associated-reference count `A`, `A` nonnull references, three zero bytes, a
 nonnull reference, an optional zero separator of length `S` (`0` or `1`), the
 previous history word, a u32 word, a finite f64, an independent u32 word, a
-nonnull reference, two boolean bytes, a nonnull reference, and two zero
-bytes. The paired indexed header closes the scope with the same record
-identity. The span from primary to paired header is
-`190 + (R + 12) * W + 128 * M + 4 * E + S`, where `M` is the number of
-explicit connector matrices. Owner references select alignment lanes
+nonnull reference, two boolean bytes, a nonnull reference, and either two zero
+bytes or a closing reference to the scope itself and one zero byte (`C = 1`).
+Most scopes store `A = 0` and `C = 0`. Others store `A = 2`, naming the
+scope itself and the second connector's construction record, together with
+`C = 1`; what selects this form is open (DR-1081). The paired indexed header closes the scope with the
+same record identity. The span from primary to paired header is
+`190 + (R + 12 + A) * W + 128 * M + 4 * E + S + (W - 1) * C`, where `M` is the
+number of explicit connector matrices. Owner references select alignment lanes
 independently of owner ordinals and owner count. Locator type GUID
 `2E3AC990-483D-4A55-8662-C064B976A957` and its registered version select the
 locator envelope. Its counted wrapper joins consecutive version-4 occurrence
@@ -2478,7 +2482,7 @@ connector belongs to the innermost occurrence in that path.
 The extended version-three tail adds a nonnull reference immediately after
 the first tail reference and uses `S = 0`. Its target has type GUID
 `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. Its span is
-`190 + (R + K + 13) * W + 128 * M + 4 * E`. The native alignment retains
+`190 + (R + K + 13 + A) * W + 128 * M + 4 * E + (W - 1) * C`. The native alignment retains
 this additional reference and its marker offset as `additional_tail_reference`.
 The plain-reference tail, from the feature ordinal through its final zero
 bytes, has the fixed fields in
@@ -2496,7 +2500,7 @@ Two zero bytes follow the angle-owner reference. An additional nonnull
 reference follows the first tail reference. This tail uses separator length
 `S = 0`. One zero byte separates its two boolean bytes from its last
 reference. Version 5 uses eleven-byte plain local references. Its span is
-`377 + (R + K + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+`377 + (R + K + 12 + A) * 11 + 128 * M + 4 * E + 10 * C`. The four explicit owner references
 select angle, Z, X, and Y lanes.
 An additional-owner run follows the four explicit alignment references.
 It stores two zero bytes, a u32 count `K`, and `K` nonnull plain local
@@ -2519,7 +2523,7 @@ reference, six zero bytes, an identity byte, and its explicit matrix when
 the identity byte is zero. The second connector follows the first connector
 frame directly. Four zero bytes follow the second connector frame. No zero
 bytes follow the angle-owner reference. The tail stores u8 `1` before its
-two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12) * 11 + 128 * M + 4 * E`.
+two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12 + A) * 11 + 128 * M + 4 * E + 10 * C`.
 
 The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`
@@ -3157,7 +3161,7 @@ The type table can also register the types below with a nonempty entity-ID run. 
 | the scope's record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) | reference | 65 | 64 | 143 |
 | `00 00` | 2 × u8 | 76 | 75 | 194 |
 
-In every form, the state bytes are `00 00 00` when `s0` is `0`, and `s0` and `s1` are each `0` or `1`. A feature is suppressed when state byte 0 or state byte 1 is `1`; what separates the two bytes, and what state byte 2 records, is open item DR-1032. `s0` is `1` when the stored history-state identities of a feature that commits a history state hold no current result. A suppressed feature, a rolled-back feature whose inputs changed after its computation and a rolled-back feature other than a `Sketch` that holds no state store `s0 = 1`; the other states that set `s0` are open item DR-1032. A rolled-back feature that was computed keeps the history-state identities of that computation. When its inputs changed after that computation, its tail stores `s0 = 1` and state bytes 0 and 1 both `0`, its identities name no state of the bound ASM history, and the feature is active. A rolled-back feature that holds no state stores the null current and preceding history-state identities, state bytes `00 00 00`, `s0 = 1` and `s1 = 1`, and the feature is active. A rolled-back `Sketch` stores the null identities, state bytes `00 00 00` and `s1 = 1` with `s0 = 0` or with `s0 = 1`, and the `Sketch` is active in both forms. Its scope keeps its definition: the scope frame with its operation values, its ordered references, and the records that they name. A feature scope that no timeline item lists can store the same tail state. `s1` is `1` for a feature after the saved rollback marker of its timeline: the items with `s1 = 1` are the last items of the timeline, the marker stands before the first of them, and the stored geometry is the history state at the marker. With no such item, the marker stands after the last item; the field that selects the marker is open item DR-523. The current history-state identity is the u32 immediately before the LP-UTF16 family name.
+In every form, the state bytes are `00 00 00` when `s0` is `0`, and `s0` and `s1` are each `0` or `1`. A feature is suppressed when state byte 0 or state byte 1 is `1`. For a feature with `s1 = 0`, state byte 1 is `1` when the suppression of the feature itself was set while each feature whose result it references was active, directly or as a member of a suppressed timeline group. For such a feature, state byte 0 is `1` when a feature whose result it references is suppressed, such as the profile `Sketch` of an `Extrude` or the `Extrude` that made the target body of a cut `Extrude`. An `Extrude` whose own suppression was set before its profile `Sketch` was suppressed stores `1` at state bytes 0 and 1. An `Extrude` whose own suppression was set after its profile `Sketch` was suppressed, and a member of a suppressed group whose profile `Sketch` is in the same group, store `1` at state byte 0 and `0` at state byte 1. What state byte 2 records is open item DR-1032. `s0` is `1` when the stored history-state identities of a feature that commits a history state hold no current result. A suppressed feature, a rolled-back feature whose inputs changed after its computation and a rolled-back feature other than a `Sketch` that holds no state store `s0 = 1`; the other states that set `s0` are open item DR-1032. A rolled-back feature that was computed keeps the history-state identities of that computation. When its inputs changed after that computation, its tail stores `s0 = 1` and state bytes 0 and 1 both `0`, its identities name no state of the bound ASM history, and the feature is active. A rolled-back feature that holds no state stores the null current and preceding history-state identities, state bytes `00 00 00`, `s0 = 1` and `s1 = 1`, and the feature is active. A rolled-back `Sketch` stores the null identities, state bytes `00 00 00` and `s1 = 1` with `s0 = 0` or with `s0 = 1`, and the `Sketch` is active in both forms. Its scope keeps its definition: the scope frame with its operation values, its ordered references, and the records that they name. A feature scope that no timeline item lists can store the same tail state. `s1` is `1` for a feature after the saved rollback marker of its timeline: the items with `s1 = 1` are the last items of the timeline, the marker stands before the first of them, and the stored geometry is the history state at the marker. With no such item, the marker stands after the last item; the field that selects the marker is open item DR-523. The current history-state identity is the u32 immediately before the LP-UTF16 family name.
 
 The paired scope record is the paired indexed header, eight zero bytes, and a reference to the owner collection (type `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`). It is 30 bytes in the plain form.
 

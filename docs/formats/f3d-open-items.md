@@ -116,11 +116,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-1032. Feature item tail state bytes and the no-result flag
 
-**Question.** What separates state byte 0 from state byte 1 of a feature item tail, what does state byte 2 record, what does a state byte above `1` record, which other states set the no-result flag `s0`, and which result-body records does a rolled-back feature that makes a body and holds no state store?
+**Question.** Which of state bytes 0 and 1 does a feature store when several features whose results it references become suppressed before and after its own suppression, and when it has `s1 = 1`? What does state byte 2 of a feature item tail record, what does a state byte above `1` record, which other states set the no-result flag `s0`, and which result-body records does a rolled-back feature that makes a body and holds no state store?
 
-**Known.** `f3d.md` §3.1 "In every form, the state bytes" reads a feature with state byte 0 or state byte 1 set as suppressed. Every tail with state byte 0 or 1 set stores `s0 = 1`. A `Sketch` and a cut `Extrude` in one suppressed timeline group store `1` at state byte 1 and at state byte 0 respectively, each with `s1 = 0`. A directly suppressed `Combine` before the marker stores `1` at state byte 1. A suppressed `Fillet` after the marker stores `1` at state byte 1 when the `Combine` before it is active, and at state byte 0 when that `Combine` is suppressed. A `Sketch` that is the only item of its timeline can store `s0 = 1`, `s1 = 0`, state bytes `00 00 00` and null history-state identities; the saved preview draws its curves. A `Form` scope with the 196-byte tail can store `s0 = 1`, `s1 = 0`, state bytes `00 00 00` and null history-state identities in a design whose T-spline bodies have no BREP member. A rolled-back feature whose inputs changed after its computation stores `s0 = 1`, state bytes `00 00 00` and identities that name no state of the bound ASM history. The tail bytes do not separate this state from the other states that store `s0 = 1` and state bytes 0 and 1 clear. The decoder reads every feature with `s0 = 1` and state bytes 0 and 1 clear as active with no current result, this state included. It charges `feature.unevaluated-state-assumed` when state byte 2 is set, and `feature.no-result-active-assumed` when state byte 2 is clear and `s1 = 0`. The decoder reads a tail with `s0 = 1`, `s1 = 1` and state bytes 0 and 1 clear as active with no charge. That reading assumes that the states this item lists are all the states that set `s0`. The decoder reads a state byte that is not zero as set and charges `feature.state-byte-above-one` for a state byte above `1`. `f3d.md` §3.1 "This subsection gives the records of an `Extrude` item that stands after the saved rollback marker" gives the records of a rolled-back `Extrude` that was computed. `f3d.md` §3.1 "In every form, the state bytes" gives the tail of a rolled-back feature that holds no state: null history-state identities, state bytes `00 00 00`, `s0 = 1` and `s1 = 1`. The writer writes a rolled-back sketch-driven `Extrude` or `Revolve` that has no history state in that tail state, with the records of a computed item and a result body whose Scene records store the empty box, and charges `record.residual-unavailable` for each such item.
+**Known.** `f3d.md` §3.1 "In every form, the state bytes" reads a feature with state byte 0 or state byte 1 set as suppressed. Every tail with state byte 0 or 1 set stores `s0 = 1`. A suppressed `Fillet` after the marker stores `1` at state byte 1 when the `Combine` before it is active, and at state byte 0 when that `Combine` is suppressed. A `Sketch` that is the only item of its timeline can store `s0 = 1`, `s1 = 0`, state bytes `00 00 00` and null history-state identities; the saved preview draws its curves. A `Form` scope with the 196-byte tail can store `s0 = 1`, `s1 = 0`, state bytes `00 00 00` and null history-state identities in a design whose T-spline bodies have no BREP member. A rolled-back feature whose inputs changed after its computation stores `s0 = 1`, state bytes `00 00 00` and identities that name no state of the bound ASM history. The tail bytes do not separate this state from the other states that store `s0 = 1` and state bytes 0 and 1 clear. The decoder reads every feature with `s0 = 1` and state bytes 0 and 1 clear as active with no current result, this state included. It charges `feature.unevaluated-state-assumed` when state byte 2 is set, and `feature.no-result-active-assumed` when state byte 2 is clear and `s1 = 0`. The decoder reads a tail with `s0 = 1`, `s1 = 1` and state bytes 0 and 1 clear as active with no charge. That reading assumes that the states this item lists are all the states that set `s0`. The decoder reads a state byte that is not zero as set and charges `feature.state-byte-above-one` for a state byte above `1`. `f3d.md` §3.1 "This subsection gives the records of an `Extrude` item that stands after the saved rollback marker" gives the records of a rolled-back `Extrude` that was computed. `f3d.md` §3.1 "In every form, the state bytes" gives the tail of a rolled-back feature that holds no state: null history-state identities, state bytes `00 00 00`, `s0 = 1` and `s1 = 1`. The writer writes a rolled-back sketch-driven `Extrude` or `Revolve` that has no history state in that tail state, with the records of a computed item and a result body whose Scene records store the empty box, and charges `record.residual-unavailable` for each such item.
 
-**Need.** Controlled saves of one feature suppressed directly, the same feature suppressed through a suppressed timeline group, and both together, with the state bytes of each compared. A save that sets state byte 2, with the application state that causes it. Saves of a sole `Sketch` and of a `Form` before and after a compute, with their `s0` compared. A save with the timeline marker moved before a new body-making feature that was never computed, with the result-body records of that feature compared with those of the same feature after a compute.
+**Need.** Saves of a `Combine` whose target and tool come from two `Extrude` features, with the `Combine` and each `Extrude` suppressed in each order, and the same saves with the `Combine` after the marker, with the state bytes of each compared. A save that sets state byte 2, with the application state that causes it. Saves of a sole `Sketch` and of a `Form` before and after a compute, with their `s0` compared. A save with the timeline marker moved before a new body-making feature that was never computed, with the result-body records of that feature compared with those of the same feature after a compute.
 
 ### DR-1005. Live flags of duplicate scope envelopes
 
@@ -2328,6 +2328,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 
 **Conflict.** None.
 
+### DR-1081. Assemble scopes with associated references, and the motion of version-6 joints
+
+**Question.** What selects the `Assemble` scope tail that stores two associated references (the scope and its second connector's construction) and a closing self-reference, and where does a version-6 joint record store its motion type and limits?
+
+**Known.** `f3d.md` §3.1 gives the tail grammar with associated-reference count `A` and closing flag `C`. Some `Assemble` scopes store `A = 2` and `C = 1`; others store `A = 0` and `C = 0`. A version-6 joint record of a revolute joint with angle limits stores them as two f64 radian values, the maximum at record offset 75 and the minimum at offset 83, the first 23 bytes after the record's self-reference marker; no motion record holds the freedom entries the decoder reads, so the decoder projects such a joint with the fixed motion fallback and reports it.
+
+**Need.** Saves that differ only in the joint's motion type (rigid, revolute, slider, cylindrical, pin-slot, planar, ball), with and without limits, and saves that make the same joint from the joint tool and from the as-built joint tool.
+
+**Conflict.** None.
+
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
 **Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
@@ -3435,18 +3445,6 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 **Conflict.** None.
 
 **Note.** None.
-
-### DR-376. Stored name of a Sketch renamed in the timeline
-
-**Question.** Where does a Sketch renamed in the timeline store its name?
-
-**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name is the stored scope kind spelling directly followed by the stored feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
-
-**Need.** A design with a Sketch renamed in the timeline.
-
-**Conflict.** None.
-
-**Note.** The decoder charges one aggregate `sketch.name-composed-from-feature-ordinal` loss when sketches take the composed name.
 
 ### DR-340. Compact profile loop groups and their region descendants
 
