@@ -11,6 +11,7 @@ use crate::reader::Model;
 use crate::test_support::*;
 use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 
 pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
@@ -389,14 +390,14 @@ fn consistency_flag_reports_mixed_snapshots_and_preserves_legacy_v1() {
         model.ir.geometry.bodies.len(),
         original.ir.geometry.bodies.len()
     );
+    assert!(report.losses().iter().any(|loss| loss.states(
+        "onshape/history.not-supported",
+        Charge::GivenUp(Cause::Unreadable)
+    )));
     assert!(report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/history.not-supported")));
-    assert!(report
-        .losses()
-        .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/record.malformed")));
+        .any(|loss| loss.states("onshape/record.malformed", Charge::Note)));
     for flag in [Value::Null, json!("false"), json!(0)] {
         let malformed = changed(&legacy, |path, value| {
             if path == "manifest.json" {

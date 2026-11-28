@@ -40,7 +40,43 @@
         }
       ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "0.025[m]"
+              }
+            }
+          },
+          "id": "sldprt:model:parameter#247:0:0",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "D1",
+          "native_options": {},
+          "owner": {
+            "kind": "feature",
+            "value": "sldprt:model:feature#247:0"
+          },
+          "scope": "sldprt:model:product-definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 25.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
       "scopes": [
@@ -377,37 +413,35 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
-        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=215 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:coedge#31, sldprt:brep:loop#20]",
+        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=215 given up: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:coedge#31, sldprt:brep:loop#20]",
         "provenance": {
           "format": "sldprt",
           "offset": 215,
           "stream": "Contents/Config-0-Partition"
         },
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
-        "message": "record sldprt:brep:edge#42 stream=\"Contents/Config-0-Partition\" offset=275 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#32]",
+        "message": "record sldprt:brep:edge#42 stream=\"Contents/Config-0-Partition\" offset=275 given up: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#32]",
         "provenance": {
           "format": "sldprt",
           "offset": 275,
           "stream": "Contents/Config-0-Partition"
         },
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {

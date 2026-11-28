@@ -581,13 +581,12 @@ A sketch constraint expression target is the `Expression` attribute `path` in th
 decimal without leading zeros except for `0`. `.Constraints.name` selects the constraint whose
 nonempty `Name` equals `name`.
 The name form has exactly one leading dot; the index form has none. Path matching is exact and
-case-sensitive. An absent or empty `Name` supplies no name path. A repeated name has no unique
-target. An expression can refer to a named constraint with `object.Constraints.name`, where
-`object` is the sketch object's persisted name.
+case-sensitive. An absent or empty `Name` supplies no name path. A repeated name selects the
+first constraint in list order that stores it. An expression can refer to a named constraint with
+`object.Constraints.name`, where `object` is the sketch object's persisted name.
 
-CADIR decision: repeated names emit `sketch.constraint-name-ambiguous` and do not bind by name.
-Concurrent index and name bindings emit `sketch.constraint-binding-conflict`; neither binding
-enters the neutral parameter. Exact expression records remain native.
+CADIR decision: concurrent index and name bindings emit `sketch.constraint-binding-conflict`;
+neither binding enters the neutral parameter. Exact expression records remain native.
 
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
@@ -604,17 +603,105 @@ object-name reference `object.Placement.Base.<axis>` identifies the named object
 
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
-content, display unit, alignment, style, colors, and spans are retained independently. A cell's
-content states its own value when it is a `'`-quoted string, or a number with an optional length
-unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or angle
-unit (`deg`, `°`, `rad`), written directly or as the whole `=` formula: a number alone is
-dimensionless, a length becomes millimetres and an angle radians. Other formula content remains an
-expression without a value. Content without a leading `=` is a literal and references nothing.
+content, display unit, alignment, style, colors, and spans are retained independently. Cell content
+that starts with `=` is a formula, and content that starts with `'` is the text after the mark.
+Other content is a value where, after its surrounding white space, it is a number, a number with a
+single unit word or symbol, or a division of a numeric value by a numeric value or a unit word or
+symbol. A numeric operand can carry a compound unit. Parentheses can enclose the divisor.
+The constants `pi` and `e` can be divisors. A number is unsigned and takes a `.` or `,` decimal mark
+and an exponent. Content that is one signed number in the C library's form is also a value.
+Other content is text, including `3 bolts`, `2*3`, `-5 mm`, and `2 mm^2`.
+A text cell's value is its text. A value cell's value
+is a length in millimetres, an angle in radians, or a dimensionless real; a value of another
+quantity has no legacy value. A formula states its own value where it is a number with an optional
+length unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or
+angle unit (`deg`, `°`, `rad`). Other formula content remains an expression without a value.
+Content without a leading `=` references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing. Parameter ordinals use stable dependency order and persisted cell
 order as the tie-break rule. A neutral sheet record binds those cell identities to the owning
 feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
+The sheet object is a `Spreadsheet` design feature that names this record. The feature owns each
+cell parameter. A cell alias names its parameter; a cell without an alias has an unnamed parameter.
+A text cell is a `Text` parameter whose value and neutral expression are its text. A value cell's
+kind is its quantity and its value is in canonical units. Its expression is the neutral literal
+where each unit word has a symbol (`12[mm]`, `1 / 2`, `1[m] / 1[s]`), and the source's text where
+a word has none (`3 dm`). A value whose unit has a dimension other than length, mass, angle, and
+time (`5 mA`) has the `Native` kind named by its unit as written, its number as written as its
+value, and the source's text as its expression. A formula is a neutral expression where it
+translates. An expression names a cell by its alias or its address, unqualified within its sheet
+and as `Sheet.name` elsewhere. A stored alias can contain non-ASCII letters. A range argument of an
+aggregate names its endpoints by address or alias. Its expression binds those endpoints that have
+cell parameters. The range syntax stays in the source expression. An unavailable endpoint alias or
+an interior cell without a token emits `parameter.dependency-dropped`.
+A reference to an object property that is no parameter stays the
+source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A formula
+that `FreeCAD`'s expression grammar does not read is a text cell whose value is its content. A
+value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
+formula cell stores no value. Its value kind is the kind of its result under `FreeCAD`'s unit
+rules, with the cells it references read first in dependency order:
+
+- A `<<…>>` string, `str()`, `address()`, the sum of two strings, a string `%` a value, and the
+  product of a string and a Python `int` or `bool`, which repeats the string, are text.
+- A dimensionless number that `FreeCAD` hands to an operator is a Python `int` where its value is
+  whole and a `float` otherwise: a number with no unit, a unitless value cell, a dimensionless
+  `sum`, `min`, `max`, `average`, `stddev`, `count`, `and`, or `or`, and a formula cell whose result
+  is a dimensionless number. A Boolean, an `App::PropertyInteger`, `IntegerConstraint`, or
+  `Percent` property, a sum, a difference, a product, or a remainder of `int` values, `x ^ n` of
+  `int` values with a constant `n` of zero or more, and `href` of an `int` are `int` values. An
+  `App::PropertyFloat`, `FloatConstraint`, or `Precision` property, a placement's axis component,
+  yaw, pitch, or roll, `pi`, `e`, a quotient, and a sum, a difference, or a product with a `float`
+  are `float` values. Every other function returns a quantity object. Where the product of a
+  string and a dimensionless number has a number of unstated value, such as a formula cell whose
+  result is not a constant or an aggregate of numbers that are not all `int` values or constants,
+  the number is an `int`, the result is text, and the parameter emits
+  `parameter.integer-assumed`. A parameter whose expression references that parameter takes its
+  text and emits no `parameter.integer-assumed` of its own. A `sum`, `min`, `max`, or `average` of
+  constants is its value.
+- `True`, `False`, `true`, `false`, a comparison, and a reference to an `App::PropertyBool` property
+  or to a Boolean cell are Boolean. A numeric or Boolean constant followed by a unit has that
+  unit's quantity. `==` and `!=` compare any two values that `FreeCAD` evaluates and
+  admits as operands. Refused operands are `None` (a link that stores no target), a tuple (an
+  `App::PropertyLinkSub` value, a link that stores a sub-name, a color, `tuple()`), a set (an
+  `App::PropertyIntegerSet` value), an `App::PropertyPythonObject` value, a conditional with a
+  refused branch, and an operand that raises. An operand raises where it is an operator with a
+  refused operand, or where it is `cos`, `sin`, `tan`, `acos`, `asin`, `atan`, `exp`, `log`,
+  `log10`, `sinh`, `tanh`, `cosh`, `round`, `trunc`, `ceil`, `floor`, `abs`, `sqrt`, `cbrt`,
+  `atan2`, `mod`, `pow`, `hypot`, `cath`, or `not` with an argument that is text or refused or whose
+  unit the function does not take. `<`, `<=`, `>`, and `>=` compare
+  two strings, two values of one quantity, a Boolean and a number, and a quantity and a
+  dimensionless `int` or `float`. In arithmetic and in a function argument, a Boolean is a
+  dimensionless number.
+- A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
+  typed property of an object, or a placement or vector component, takes the property's quantity;
+  a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
+  property names are text, where the link stores no sub-name.
+  A path through scalar local links to a stored property takes that property's kind.
+- Addition and subtraction of equal quantities keep the quantity; a
+  product and a quotient add and subtract the exponents of the units; the remainder of a quantity
+  keeps its quantity, and the remainder of a plain number by a quantity raises;
+  `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
+  integer.
+- `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
+  `average`, and `stddev` keep the quantity of their values, and an aggregate passes over an
+  argument that is no number (text, `None`, a tuple, a set) and stops at a text, Boolean, or `None`
+  cell of a range and at an argument that raises; `sqrt` and `cbrt` divide its
+  exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
+  `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
+  `vlinedist` and `vplanedist` give a length.
+
+Where the file does not determine the result's kind, as for a reference to another document, to a
+property with no stated quantity, or to a cell of a reference cycle, the product of a string and
+a `float` or a quantity, `Label` of a link that stores a sub-name, an ordering of a string and a
+number, of two different quantities, or of a quantity and a function result, and a comparison with
+a refused operand, the cell's kind is a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
+real number. A display unit whose quantity is the cell's and whose words each have a symbol is
+the parameter's `unit`. Another display unit of a quantity cell is the native option
+`fcstd:displayUnit` (Text, Rule N case (a)). Alignment, style, foreground and background colors, and the display unit of a
+text cell are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`,
+`fcstd:style`, `fcstd:foregroundColor`, `fcstd:backgroundColor`, and `fcstd:displayUnit`, each as
+Text.
 Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
 native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
@@ -854,16 +941,21 @@ Without that marker, `CustomEnumList` is absent. The zero-based index selects th
 property has exactly one direct `XLink` target. That target may have zero, one, or multiple ordered
 direct `Sub` values; a zero-sub target has neither `sub` nor `count`, one sub uses `sub`, and
 multiple subs use `count` with exactly that many direct leaf `Sub` elements. An empty `name` is an
-explicit null target occupying the connector slot. Nested or extra value roots, a link-list carrier,
+explicit null target occupying the connector slot, and a missing connector property is a null
+target. Nested or extra value roots, a link-list carrier,
 or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
 `App::PropertyAngle` or `App::PropertyFloat` properties with one `Float` value in degrees.
 `Distance`, `Distance2`, `LengthMin`, and `LengthMax` are `App::PropertyLength` or
-`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres,
-except that an `Angle` joint's `Distance` value is in degrees. Its absolute value supplies
-the joint angle when no `Angle` property is present. `EnableAngleMin`,
-`EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
-are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
-missing values, and duplicate values are malformed.
+`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres, except
+that an `Angle` joint's `Distance` of type `App::PropertyFloat` is the joint angle in degrees: that
+is the form that precedes the `Angle` property, which `FreeCAD` migrates by the property type.
+`EnableAngleMin`,
+`EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, `Suppressed`, and
+`Activated` are `App::PropertyBool` properties with one `Bool` value. `Activated` is the form that
+precedes `Suppressed`, and `FreeCAD`'s migration sets `Suppressed` to its negation. Wrong runtime
+types, root value tags, missing values, and duplicate values are malformed, except for
+`Activated`: an `Activated` property of another form stays in its native property, the joint's
+suppression comes from `Suppressed`, and the joint emits `feature.joint-flag-unread`.
 Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
 most one `PropertyPlacement` value and the same representation discriminator, null-axis fallback,
 and finite position and rotation-component rules as product placements.
@@ -874,8 +966,111 @@ parallel, perpendicular, angle, rack-pinion, screw, gears, belt, and grounded fa
 an unfamiliar future family remains explicitly native. Connector frames, connector attachment
 offset frames, suppression and detach flags, linear offsets, and enabled limit intervals are
 independent fields.
-Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
+Persisted degree values convert to radians for neutral angles and angular limits. An angle joint's
+angle is the magnitude of the stored angle reflected into a half turn, the angle that the solver
+holds by its cosine. The angular offset of a fixed, revolute, or cylindrical joint is its signed
+stored `Angle`. A joint's suppression is the negation of `Activated`, and `Suppressed` where the
+joint stores no `Activated`. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
+
+Each paired joint is a v11 `Joint` feature whose identity is the assembly joint's identity. The
+`Assembly` that lists the joint, directly or in its `JointGroup`, is the feature's component, and
+connector paths start at its definition. A connector is a frame construction on the elements of
+`Reference1` or `Reference2`: the reference object and each leading sub-name segment that names an
+object placed in the prototype reached give the occurrence path, and the rest of the sub-name is the
+element's native name. A reference with no element names the whole occurrence.
+`Offset1` or `Offset2` is the construction's fixed step where it is not the identity, and
+`Placement1` or `Placement2` is its resolved frame. A connector whose `Detach1` or `Detach2` is true
+is detached: `FreeCAD` holds its placement fixed in the referenced part and applies no offset. It
+is a `Component` pick of the occurrence that the reference object and its first sub-name reach,
+with `Placement1` or `Placement2` as its fixed step and its resolved frame. A detached
+reference to an unread external document uses a native pick naming the document and object.
+Each of its stored
+sub-names is the native option `fcstd:Reference1.sub<i>` or `fcstd:Reference2.sub<i>` (Text, `i`
+counting from zero in stored order), and an offset that is not the identity is the native options
+`fcstd:Offset1.<c>` or `fcstd:Offset2.<c>` (Real) for `c` in `px`, `py`, `pz`, `qx`, `qy`, `qz`,
+and `qw`, the stored position and quaternion (Rule N case (a)). Fixed, revolute, cylindrical, slider, and ball joints
+are motions about the connector frame's z axis, with their enabled limits: angle limits on
+revolute and cylindrical joints, and length limits on cylindrical and slider joints. Parallel,
+perpendicular, and angle joints are relations of those kinds. An angle joint's angle is the
+magnitude of `Angle`, or of a float `Distance`, reflected into a half turn: the solver holds the
+cosine of the angle between the z axes. An angle joint is parallel when the remainder of its absolute angle modulo one turn is less
+than `1e-7` radians. The solver holds the z axes of fixed,
+revolute, cylindrical, slider, and parallel joints, of planar and concentric distance joints, and
+of distance joints between parallel axes, in either sense. The pre-solve of fixed, revolute,
+cylindrical, and slider joints, and the solver's iteration from the stored placements for the
+others, keep the nearer sense: these joints have the alignment `nearest`. Rack-pinion, screw, gears, and belt
+joints are couplings whose pitch radius,
+pitch, or radii are `Distance` and `Distance2`. The solver drops a screw or rack-pinion joint where
+no slider joint shares a moving part with it along a colinear z axis; the joint states its stored
+coupling. Another family is a native kind with its source
+label. The joint's suppression is the feature's suppression. Each other stored joint value is a
+source setting under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
+whose enable flag is false and that flag, an angle outside zero to a half turn whose reflection is
+the joint angle, and
+`Detach1` and `Detach2`. An angle is an `Angle` option in radians, a length a `Length` option in
+millimetres, and a flag a `Bool` option. A native kind keeps these values as native options (Rule N case (a)).
+A joint's `App::PropertyLength` or `App::PropertyAngle` property that an `ExpressionEngine` entry
+of the joint names by its exact path is a parameter that the joint feature owns, with the
+identity, value, and expression of a PartDesign feature's minted parameter. The joint value,
+limit, source setting, or native option that states the stored value is that parameter. A value
+that the joint derives from the stored one is a literal, and the stored value is the source
+setting under its property name, stated as the parameter: the reflected angle of an angle joint,
+a parallel joint, and a distance joint value other than `d`. Where an entry drives a joint
+property that states no parameter, as a derived value, a flag, a placement, an offset, a
+reference, or a float `Distance`, and where an entry drives a property that the joint does not
+state, such as `Label` or `Visibility`, the joint emits `feature.joint-value-unbound`. A
+`JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
+A grounded object is grounded occurrence state. A joint that names no object for a connector, that
+stores a blank joint type, that has an object name that is no feature id, or that grounds an
+object with no occurrence in the scope emits `feature.joint-unresolved` and stays in its native
+record.
+
+A distance joint has the form that `FreeCAD`'s assembly solver gives the element types of its two
+references. The element of a reference is the last `.`-separated segment of its first sub-name,
+and the element type is the letters of that segment: `Face`, `Edge`, or `Vertex`. The element's
+object is the reference object where the sub-name has one segment. Otherwise the leading segments
+walk from the reference object through groups, parts, assemblies, and link groups to the first
+shape object, a Body's sketch, datum, or coordinate-system child, or a link to a Body or a shape
+object. A link resolves to its `LinkedObject`. A face's surface and an edge's curve are those of
+the decoded topology of the object's `Shape` property; the elements of an object with no `Shape`
+property have no surface or curve type. The solver orders the two references by element type: a
+face before an edge, an edge before a vertex, a plane, cylinder, cone, torus, and sphere in that
+order, and a line before a circle. Where it reverses the order, it swaps `Reference1` with
+`Reference2` and `Placement1` with `Placement2`; `Offset1`, `Offset2`, `Detach1`, and `Detach2`
+stay with their connector slots, and each connector is built from its slot's swapped reference and
+placement. A swapped placement holds the offset of the other slot: an attached connector's resolved
+frame is that placement with the other slot's offset removed and its own offset applied. The
+solver writes the exchanged references and placements to the joint's own `Reference1`,
+`Reference2`, `Placement1`, and `Placement2` at each solve: a document saved after a solve stores
+the references in the solver's order, and the order then exchanges nothing. An exchange of all
+four slot values that moves an unconnected reference to the second slot is stored, and the stored
+slot values already hold it.
+With `d` the stored `Distance` (zero where it is absent), and `r1` and `r2` the radii of the first
+and second ordered elements (the radius of a cylinder, a sphere, or a circle, and zero for other
+types), the joint is:
+
+| Ordered element types | Joint |
+| --- | --- |
+| point and plane, point and a curve other than a line | Coincidence of the second connector's point with the first connector's plane, offset `d` |
+| plane and sphere | The same, offset `d + r2` |
+| line and plane | Coincidence of the second connector's axis with the first connector's plane, offset `d` |
+| plane and cylinder | The same, offset `d + r2` |
+| line and line, line and circle, circle and circle, cylinder and cylinder, cylinder and torus | With `v` equal to the magnitude of `d`, `d + r2`, `d + r1 + r2`, `d + r1 + r2`, and `d + r1`: for `v` greater than zero, distance `v` between the connectors' axes and the native option `fcstd:parallelAxes` (Bool `true`) for the parallel axes; for `v` equal to zero, a concentric joint |
+| cylinder and sphere, torus and sphere, point and cylinder, point and line | Point on axis: the second element's point at distance equal to the magnitude of `d + r1 + r2`, `d + r2`, `d + r1`, and `d` from the first element's axis; the point is the joint's first connector and the axis its second |
+| sphere and sphere, point and sphere | Distance `d + r1 + r2` and `d + r1` between the connectors' points |
+| vertex and vertex | Coincidence of the connectors' points for `d` less than `1e-7`, and distance `d` between them for other `d` |
+| each other pair | Planar motion along the first connector frame's z axis with z offset `d` |
+
+A point connector is the origin of the connector frame, an axis connector its origin and z axis,
+and a plane connector its origin, z axis as normal, and x axis. Where an element's object is in
+another document, or a face or edge that the order reads has no decoded surface or curve, the
+joint is a distance joint with no distance, `Distance` is the native option `fcstd:Distance`
+(Length, Rule N case (a)), and the joint emits `feature.joint-distance-unresolved`. The joint is
+the same where a distance and radii have no finite sum. The solver squares a separation from an
+axis and holds the length of a separation of two points. A distance less than zero between the
+points of a sphere and sphere or a point and sphere has no solution: the joint is a distance joint with no distance, keeps `fcstd:Distance`, and emits
+`feature.joint-distance-unsatisfiable`.
 
 ## 10. Drawing graph
 
@@ -2235,3 +2430,31 @@ The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B
 | Key | Records |
 | --- | --- |
 | `fcstd_uncarried_local_sha256` | Every neutral record, the source metadata, and every native record outside the `entries`, `extensions`, `objects`, and `properties` arenas, without `scope`. |
+
+## 14. Given-up parts and strict floors
+
+The decoder gives up a part (CADIR §3.3) in these cases:
+
+| Part kind | Bytes | Cause |
+|---|---|---|
+| `archive-entry` | An archive member whose frame or compressed stream breaks the ZIP rules. | `record.unreadable` |
+| `archive-entry` | An encrypted archive member, a member of a compression method that the decoder does not read, or a member that a decode limit cuts. | `record.undecoded` |
+| `property-element` | The `Document.xml` property XML of a shape property whose element map breaks the element-map grammar of §7 or names a missing record. | `record.unreadable` |
+| `property-element` | The `Document.xml` property XML of a shape property whose element map has a count past the decoder's bound, or whose side entry has a `BeginElementMap` version other than `v1`. | `record.undecoded` |
+| `archive-entry` | `GuiDocument.xml`, when it is not UTF-8 XML, or when a schema-1 document breaks the GUI grammar of §11. | `record.unreadable` |
+| `archive-entry` | `GuiDocument.xml`, when a tag holds more attributes or the text declares more namespace prefixes than the decoder's XML reader admits, when it holds a TechDraw geometry type or a material-list version that the decoder does not read, or when a document of another schema does not read with the schema-1 vocabulary. | `record.undecoded` |
+
+These codes carry strict floor Warning (CADIR §3.2). Each records input that breaks a stated
+rule, and the decoder reads past it:
+
+- `fcstd/metadata.persistence-count-noncanonical`: a `Document.xml` count that differs from the
+  records it counts (§2). An absent optional `TransientCount` is a stated form and records no loss.
+- `fcstd/metadata.program-version-noncanonical` and `fcstd/metadata.file-version-noncanonical`: a
+  root version attribute that breaks the grammar of §2 and §3.
+- `fcstd/metadata.persistence-side-entry-unresolved`: a property names an optional side entry that
+  the archive directory does not list. A side entry that the decoder gives up records no such loss;
+  its give-up states the loss.
+- `fcstd/element-map.string-reference-dangling`: a shape's `HasherIndex` names no document string
+  table, or a mapped name names a persistent string id that its string table does not hold (§7).
+
+No other FreeCAD code carries a strict floor.

@@ -18,8 +18,8 @@ use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, SketchProfileReg
 
 use super::Context;
 use crate::reader::derived::BooleanBody;
+use crate::reader::design::Source;
 use crate::reader::{features, query, rows, Mapping as SourceMapping};
-use serde_json::Value;
 
 pub(super) type Mapping<T> = Result<T, &'static str>;
 
@@ -48,22 +48,31 @@ pub(super) fn selection<O: MemberOrder>(picks: Vec<Picked>) -> Mapping<Selection
 pub(super) fn native(id: &str, within: Option<NativeOwner>) -> Mapping<Picked> {
     let mut picked = pick(PickTarget::Native { within });
     picked.native = Some(NativeName {
-        codec: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+        codec: cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
         value: NativeNameValue::Text(NonBlankString::new(id).ok_or("a selected id is blank")?),
     });
     Ok(picked)
 }
 
 /// The explicit ids in the query list, in source order.
-pub(super) fn ids<'a>(feature: &'a Value, key: &str) -> SourceMapping<Vec<&'a str>> {
+pub(super) fn ids<'a>(source: &Source<'a>, key: &'static str) -> SourceMapping<Vec<&'a str>> {
     let mut ids = Vec::new();
-    for query in rows(features::parameter(feature, key)?, "queries")? {
+    let mut partial = false;
+    for query in rows(features::parameter(source.record, key)?, "queries")? {
         if query::needs_deterministic_ids(query) {
+            partial = true;
             continue;
         }
         for value in rows(query, "deterministicIds")? {
             ids.push(value.as_str().ok_or("a selected id is not a string")?);
         }
+    }
+    if partial {
+        source
+            .usage
+            .partial(key, "contains a query with no readable deterministic ids");
+    } else {
+        source.usage.account(&[key]);
     }
     Ok(ids)
 }
@@ -124,8 +133,11 @@ pub(super) fn blend<O: MemberOrder>(
     })
 }
 
-pub(super) fn selected<O: MemberOrder>(feature: &Value, key: &str) -> SourceMapping<Selection<O>> {
-    let ids = ids(feature, key)?;
+pub(super) fn selected<O: MemberOrder>(
+    source: &Source<'_>,
+    key: &'static str,
+) -> SourceMapping<Selection<O>> {
+    let ids = ids(source, key)?;
     if ids.is_empty() {
         return Err(format!("{key} has no selected ids"));
     }

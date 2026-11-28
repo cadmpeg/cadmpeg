@@ -31,6 +31,7 @@ use crate::design::presentation::{
 };
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
+// resource-cap: MAX_ENVELOPE_GAP = 1
 const MAX_ENVELOPE_GAP: usize = 8;
 
 /// One typed browser-node record.

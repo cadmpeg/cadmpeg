@@ -24,6 +24,7 @@ mod fusion_combine_patterns;
 mod fusion_combine_producers;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
+mod fusion_joint_tail;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
@@ -38,6 +39,7 @@ mod history_scale;
 mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
+mod patch_session;
 mod pcurve_uv_offset;
 mod placement_history;
 mod position;
@@ -68,19 +70,19 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::native_test::{add_empty_f3d_native, f3d_native};
-use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::native_fixture::{add_empty_f3d_native, f3d_native};
+use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_helix_curve_smbh;
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::smbh_pcurves_fixture::{
     synthetic_geometry_with_rational_pcurve_smbh, with_plane_pcurve_offset_vertices,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_compound_loft_smbh, synthetic_cyl_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
 };
-use crate::test_support::zip_test::{
+use crate::test_support::zip_fixture::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_manifest_version,
     f3d_with_smbh_and_protein,
 };
@@ -266,7 +268,12 @@ fn a_mistagged_delta_state_header_gives_up_the_history_partition() {
     let decoded = decode(bytes.clone());
     let head =
         "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=";
-    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
     assert!(f3d_native(decoded.ir()).asm_histories.is_empty());
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     crate::test_support::assert_pinned_refusal(bytes, head);

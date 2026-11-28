@@ -46,7 +46,7 @@ fn edge_identity_operand_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:edge-identity#0",
         value: &operand,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::EDGE_IDENTITY_OPERAND_CLONE_COUNT.with(|count| count.set(0)),
@@ -115,7 +115,7 @@ fn edge_operand_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn edge_operand_native_retained_limit_refuses_before_clone() {
     let operand = edge_operand_for_borrowed(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &operand,
         "design_edge_operands",
         || super::EDGE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),

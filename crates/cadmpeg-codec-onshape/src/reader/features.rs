@@ -756,6 +756,7 @@ pub(super) fn map(
     model: &mut Model,
     report: &mut Report,
     unresolved: &BTreeSet<String>,
+    usage: &super::parameter_usage::ParameterUsage<'_>,
 ) -> Mapping<Value> {
     if is_custom(feature) {
         let name = text(feature, "name").or_else(|_| text(feature, "featureId"))?;
@@ -818,8 +819,24 @@ pub(super) fn map(
         None
     };
     match text(feature, "featureType")? {
-        "cPlane" => super::planes::map(feature, ordinal, inputs, model, unresolved),
-        "newSketch" => sketch::map(feature, ordinal, inputs, model, report, unresolved),
+        "cPlane" => {
+            let definition = super::planes::map(feature, ordinal, inputs, model, unresolved)?;
+            usage.account(&[
+                "cplaneType",
+                "entities",
+                "offset",
+                "oppositeDirection",
+                "flipNormal",
+                "flipAlignment",
+            ]);
+            Ok(definition)
+        }
+        "newSketch" => {
+            let definition = sketch::map(feature, ordinal, inputs, model, report, unresolved)?;
+            usage.account(&["sketchPlane"]);
+            usage.ignore_false(&["disableImprinting"]);
+            Ok(definition)
+        }
         "assignVariable" => {
             if value(feature, "mode").is_some_and(|m| m != "ASSIGNED") {
                 return Err("measured variables are not supported yet".into());
@@ -887,6 +904,13 @@ pub(super) fn map(
                 parameter["value"] = json!({"kind":kind,"value":value});
             }
             push(&mut model.parameters, parameter)?;
+            usage.account(&["mode", "name", "variableType", key]);
+            for inactive in ["lengthValue", "angleValue", "numberValue"] {
+                if inactive != key {
+                    usage.account(&[inactive]);
+                }
+            }
+            usage.ignore_empty_queries(&["initEntities"]);
             Ok(definition(
                 "tree_node",
                 json!({"role":"equations", "children":{"children":[]}}),

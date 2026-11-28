@@ -12,7 +12,7 @@ use crate::records::{
     sketch_geometry::SketchCurveGeometry,
     sketch_links::{PersistentDesignLink, PersistentSubentityTag},
 };
-use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
+use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantEdgeTail, TolerantVertexTail};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
@@ -166,14 +166,6 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
 }
 
 pub(super) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
-    if native.construction_recipes.windows(2).any(|pair| {
-        pair[0].record_index.map(|index| index.value)
-            > pair[1].record_index.map(|index| index.value)
-    }) {
-        return Err(CodecError::InvalidInput(
-            "F3D construction recipes must be ordered by record index".into(),
-        ));
-    }
     let mut group_counts = HashMap::new();
     for recipe in &native.construction_recipes {
         let expected = group_counts
@@ -261,12 +253,106 @@ pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritabl
     for relation in &native.sketch_relations {
         reachable.extend(relation.all_member_indices());
     }
+    let own = own_record_headers(native);
     Unwritable::of(
         "of Design record headers that no sketch header or sketch relation names (the source-less Design stream writes the headers of the sketch graph)",
         native
             .design_record_headers
             .iter()
-            .filter(|header| !reachable.contains(&header.record_index))
+            .filter(|header| {
+                !reachable.contains(&header.record_index) && !own.contains(header.id.as_str())
+            })
+            .map(|header| header.id.clone())
+            .collect(),
+    )
+}
+
+/// The Design record headers that are the indexed prefix of a typed sketch
+/// record: the header at the offset of the typed record, with its class tag
+/// and record index. The typed record writes that prefix.
+pub(super) fn own_record_headers(native: &F3dNative) -> BTreeSet<&str> {
+    let prefixes = native
+        .sketch_points
+        .iter()
+        .map(|record| {
+            (
+                record.byte_offset,
+                record.class_tag.as_str(),
+                record.record_index,
+            )
+        })
+        .chain(native.sketch_curve_identities.iter().map(|record| {
+            (
+                record.byte_offset,
+                record.class_tag.as_str(),
+                record.record_index,
+            )
+        }))
+        .chain(native.sketch_relations.iter().map(|record| {
+            (
+                record.byte_offset,
+                record.class_tag.as_str(),
+                record.record_index,
+            )
+        }))
+        .chain(native.sketch_texts.iter().map(|record| {
+            (
+                record.byte_offset,
+                record.class_tag.as_str(),
+                record.record_index,
+            )
+        }))
+        .collect::<BTreeSet<_>>();
+    native
+        .design_record_headers
+        .iter()
+        .filter(|header| {
+            prefixes.contains(&(
+                header.byte_offset,
+                header.class_tag.as_str(),
+                header.record_index,
+            ))
+        })
+        .map(|header| header.id.as_str())
+        .collect()
+}
+
+/// The record indices of the typed sketch records.
+pub(super) fn typed_sketch_indices(native: &F3dNative) -> BTreeSet<u32> {
+    native
+        .sketch_points
+        .iter()
+        .map(|record| record.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(native.sketch_texts.iter().map(|record| record.record_index))
+        .collect()
+}
+
+/// The Design record headers, other than the prefix of a typed sketch
+/// record, that use the record index of a typed sketch record. The typed
+/// record is written at that index.
+pub(super) fn shadowing_record_headers(native: &F3dNative) -> Option<Unwritable> {
+    let typed = typed_sketch_indices(native);
+    let own = own_record_headers(native);
+    Unwritable::of(
+        "of Design record headers that use the record index of a typed sketch record (the Design stream writes the typed record at that index)",
+        native
+            .design_record_headers
+            .iter()
+            .filter(|header| {
+                typed.contains(&header.record_index) && !own.contains(header.id.as_str())
+            })
             .map(|header| header.id.clone())
             .collect(),
     )
@@ -376,27 +462,48 @@ pub(super) fn sketch_records_naming(
 /// The sketch-curve links and body visibilities the B-rep and Design
 /// streams cannot hold, the first family that holds one.
 pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
-    let coedges = target
-        .geometry
+    let geometry = &target.geometry;
+    let edges = geometry
+        .edges
+        .iter()
+        .map(|edge| &edge.id)
+        .collect::<HashSet<_>>();
+    let coedges = geometry
         .coedges
         .iter()
         .map(|coedge| &coedge.id)
         .collect::<HashSet<_>>();
+    let vertices = geometry
+        .vertices
+        .iter()
+        .map(|vertex| &vertex.id)
+        .collect::<HashSet<_>>();
     let mut unresolved = BTreeSet::new();
+    let mut other_owner = BTreeSet::new();
     for link in &native.sketch_curve_links {
-        // Only a coedge-owned link is regenerated; a link on any other owner is
-        // reported as a source-fidelity loss instead of refusing the write.
-        let AttributeTarget::Coedge(coedge) = &link.target else {
-            continue;
+        let held = match &link.target {
+            AttributeTarget::Edge(edge) => edges.contains(edge),
+            AttributeTarget::Coedge(coedge) => coedges.contains(coedge),
+            AttributeTarget::Vertex(vertex) => vertices.contains(vertex),
+            _ => {
+                other_owner.insert(link.id.clone());
+                continue;
+            }
         };
-        if !coedges.contains(coedge) {
+        if !held {
             unresolved.insert(link.id.clone());
         }
     }
     if let Some(unwritable) = Unwritable::of(
-        "of sketch-curve links that name a coedge the document does not hold",
-        unresolved,
-    ) {
+        "of sketch-curve links whose owner is not an edge, a coedge or a vertex (the ASM sketch attribute has one of these owners)",
+        other_owner,
+    )
+    .or_else(|| {
+        Unwritable::of(
+            "of sketch-curve links that name an edge, a coedge or a vertex the document does not hold",
+            unresolved,
+        )
+    }) {
         return Some(unwritable);
     }
     let bodies = target
@@ -567,13 +674,31 @@ pub(super) fn replaced_by_stamp(native: &F3dNative, mark: StampMark) -> Option<U
     )
 }
 
-/// The records of the groups that hold more than one record.
-fn shared<K>(groups: BTreeMap<K, Vec<String>>) -> BTreeSet<String> {
-    groups
-        .into_values()
-        .filter(|records| records.len() > 1)
-        .flatten()
-        .collect()
+/// The records of the groups that hold more than one record, as the ids
+/// of the groups whose records differ and the ids of each record after the
+/// first in a group of equal records. The writer writes the first record of
+/// each entity.
+fn shared<K, T: Clone + PartialEq>(
+    groups: BTreeMap<K, Vec<&T>>,
+    id: impl Fn(&T) -> String,
+    renumbered: impl Fn(&T, &T) -> T,
+) -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut differing = BTreeSet::new();
+    let mut repeated = BTreeSet::new();
+    for records in groups.into_values() {
+        let Some((first, rest)) = records.split_first() else {
+            continue;
+        };
+        if rest
+            .iter()
+            .all(|record| renumbered(first, record) == **record)
+        {
+            repeated.extend(rest.iter().map(|record| id(record)));
+        } else if !rest.is_empty() {
+            differing.extend(records.iter().map(|record| id(record)));
+        }
+    }
+    (differing, repeated)
 }
 
 /// Whether the decoder reads `range`, moved onto the knot domain of `curve`,
@@ -599,7 +724,7 @@ pub(super) fn unwritable_tolerant_coedges(
     target: &CadIr,
     native: &F3dNative,
 ) -> Option<Unwritable> {
-    use cadmpeg_asm::brep::records::TolerantCoedgeExtension;
+    use cadmpeg_asm::brep::records::{TolerantCoedgeExtension, TolerantCoedgeParameters};
 
     let coedges = target
         .geometry
@@ -614,7 +739,7 @@ pub(super) fn unwritable_tolerant_coedges(
         .map(|curve| (&curve.id, curve))
         .collect::<HashMap<_, _>>();
     let mut missing = BTreeSet::new();
-    let mut by_coedge = BTreeMap::<_, Vec<String>>::new();
+    let mut by_coedge = BTreeMap::<_, Vec<&TolerantCoedgeParameters>>::new();
     let mut unwritable_curve = BTreeSet::new();
     let mut other_range = BTreeSet::new();
     let mut relocated = BTreeSet::new();
@@ -627,7 +752,7 @@ pub(super) fn unwritable_tolerant_coedges(
         by_coedge
             .entry(&parameters.coedge)
             .or_default()
-            .push(id.clone());
+            .push(parameters);
         match &parameters.extension {
             TolerantCoedgeExtension::None {} | TolerantCoedgeExtension::Empty { target: None } => {}
             TolerantCoedgeExtension::EmbeddedCurve {
@@ -664,14 +789,25 @@ pub(super) fn unwritable_tolerant_coedges(
             }
         }
     }
+    let (differing, repeated) = shared(by_coedge, TolerantCoedgeParameters::id, |first, record| {
+        TolerantCoedgeParameters {
+            source_namespace: record.source_namespace.clone(),
+            record_index: record.record_index,
+            ..first.clone()
+        }
+    });
     [
         (
             "of tolerant-coedge records that name a coedge the document does not hold",
             missing,
         ),
         (
+            "of tolerant-coedge records equal to an earlier record of their coedge (the coedge record holds one extension, which the earlier record writes)",
+            repeated,
+        ),
+        (
             "of tolerant-coedge records that share their coedge with another record (the coedge record holds one extension, and the records do not state which one it is)",
-            shared(by_coedge),
+            differing,
         ),
         (
             "of tolerant-coedge records whose coedge has no NURBS use curve for the embedded curve",
@@ -707,14 +843,14 @@ pub(super) fn unwritable_tolerant_tails(target: &CadIr, native: &F3dNative) -> O
         .map(|edge| (&edge.id, edge))
         .collect::<HashMap<_, _>>();
     let mut vertex_absent = BTreeSet::new();
-    let mut by_vertex = BTreeMap::<_, Vec<String>>::new();
+    let mut by_vertex = BTreeMap::<_, Vec<&TolerantVertexTail>>::new();
     let mut slot_disagrees = BTreeSet::new();
     for tail in &native.tolerant_vertex_tails {
         let Some(vertex) = vertices.get(&tail.vertex) else {
             vertex_absent.insert(tail.id());
             continue;
         };
-        by_vertex.entry(&tail.vertex).or_default().push(tail.id());
+        by_vertex.entry(&tail.vertex).or_default().push(tail);
         if vertex.tolerance.is_some()
             != matches!(
                 tail.evaluated_slot,
@@ -725,26 +861,45 @@ pub(super) fn unwritable_tolerant_tails(target: &CadIr, native: &F3dNative) -> O
         }
     }
     let mut edge_absent = BTreeSet::new();
-    let mut by_edge = BTreeMap::<_, Vec<String>>::new();
+    let mut by_edge = BTreeMap::<_, Vec<&TolerantEdgeTail>>::new();
     let mut no_tolerance = BTreeSet::new();
     for tail in &native.tolerant_edge_tails {
         let Some(edge) = edges.get(&tail.edge) else {
             edge_absent.insert(tail.id());
             continue;
         };
-        by_edge.entry(&tail.edge).or_default().push(tail.id());
+        by_edge.entry(&tail.edge).or_default().push(tail);
         if edge.tolerance.is_none() {
             no_tolerance.insert(tail.id());
         }
     }
+    let (vertex_differing, vertex_repeated) =
+        shared(by_vertex, TolerantVertexTail::id, |first, record| {
+            TolerantVertexTail {
+                source_namespace: record.source_namespace.clone(),
+                record_index: record.record_index,
+                ..first.clone()
+            }
+        });
+    let (edge_differing, edge_repeated) = shared(by_edge, TolerantEdgeTail::id, |first, record| {
+        TolerantEdgeTail {
+            source_namespace: record.source_namespace.clone(),
+            record_index: record.record_index,
+            ..first.clone()
+        }
+    });
     [
         (
             "of tolerant-vertex records that name a vertex the document does not hold",
             vertex_absent,
         ),
         (
+            "of tolerant-vertex records equal to an earlier record of their vertex (the vertex record holds one tolerance tail, which the earlier record writes)",
+            vertex_repeated,
+        ),
+        (
             "of tolerant-vertex records that share their vertex with another record (the vertex record holds one tolerance tail, and the records do not state which one it is)",
-            shared(by_vertex),
+            vertex_differing,
         ),
         (
             "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex (the written vertex record holds the vertex tolerance)",
@@ -755,8 +910,12 @@ pub(super) fn unwritable_tolerant_tails(target: &CadIr, native: &F3dNative) -> O
             edge_absent,
         ),
         (
+            "of tolerant-edge records equal to an earlier record of their edge (the edge record holds one tolerance tail, which the earlier record writes)",
+            edge_repeated,
+        ),
+        (
             "of tolerant-edge records that share their edge with another record (the edge record holds one tolerance tail, and the records do not state which one it is)",
-            shared(by_edge),
+            edge_differing,
         ),
         (
             "of tolerant-edge records on an edge with no tolerance (the written edge record holds the edge tolerance)",
@@ -767,73 +926,121 @@ pub(super) fn unwritable_tolerant_tails(target: &CadIr, native: &F3dNative) -> O
     .find_map(|(reason, records)| Unwritable::of(reason, records))
 }
 
-pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
-    let sketch_owners = native
-        .design_entity_headers
-        .iter()
-        .filter(|header| header.in_sketch_module())
-        .map(|header| header.entity_id.suffix())
-        .collect::<BTreeSet<_>>();
-    let root_indices = sketch_header_indices(native);
-    let mut typed_indices = BTreeMap::<u32, &str>::new();
-    let mut typed_records = Vec::new();
-    for (record_index, id, class_tag) in native
+/// The sketch records the source-less Design stream cannot write as they
+/// stand, the first group by reason that holds one. The stream writes a
+/// sketch point in the current version-11 form with its companion, a sketch
+/// curve in the current form of its geometry, and a relation or text that a
+/// sketch header names.
+pub(super) fn unwritable_sketch_records(native: &F3dNative) -> Option<Unwritable> {
+    let registered = |class_tag, record_index| {
+        source_less_design_record_type(native, class_tag, record_index, "sketch record").ok()
+    };
+    let mut unregistered = BTreeSet::new();
+    let mut other_form = BTreeSet::new();
+    let mut no_identity = BTreeSet::new();
+    let mut owner_types = BTreeSet::new();
+    let mut companions = BTreeSet::new();
+    let mut missing_curves = BTreeSet::new();
+    let mut unreachable = BTreeSet::new();
+    let mut other_owner = BTreeSet::new();
+    let typed = typed_sketch_indices(native);
+    let mut typed_uses = BTreeMap::<u32, usize>::new();
+    for record_index in native
         .sketch_points
         .iter()
-        .map(|record| (record.record_index, record.id.as_str(), &record.class_tag))
+        .map(|record| record.record_index)
         .chain(
             native
                 .sketch_curve_identities
                 .iter()
-                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+                .map(|record| record.record_index),
         )
         .chain(
             native
                 .sketch_relations
                 .iter()
-                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+                .map(|record| record.record_index),
+        )
+        .chain(native.sketch_texts.iter().map(|record| record.record_index))
+    {
+        *typed_uses.entry(record_index).or_default() += 1;
+    }
+    let shared = |record_index: u32| typed_uses.get(&record_index).is_some_and(|uses| *uses > 1);
+    let shared_records = native
+        .sketch_points
+        .iter()
+        .filter(|record| shared(record.record_index))
+        .map(|record| record.id.clone())
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .filter(|record| shared(record.record_index))
+                .map(|record| record.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .filter(|record| shared(record.record_index))
+                .map(|record| record.id.clone()),
         )
         .chain(
             native
                 .sketch_texts
                 .iter()
-                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+                .filter(|record| shared(record.record_index))
+                .map(|record| record.id.clone()),
         )
-    {
-        if let Some(before) = typed_indices.insert(record_index, id) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch records {before} and {id} share record index {record_index}"
-            )));
-        }
-        typed_records.push((record_index, class_tag));
+        .collect::<BTreeSet<_>>();
+    let own = own_record_headers(native);
+    let stubs = native
+        .design_record_headers
+        .iter()
+        .filter(|header| !own.contains(header.id.as_str()))
+        .collect::<Vec<_>>();
+    let mut stub_uses = BTreeMap::<u32, usize>::new();
+    for header in &stubs {
+        *stub_uses.entry(header.record_index).or_default() += 1;
     }
-    for (record_index, class_tag) in typed_records {
-        source_less_design_record_type(native, class_tag, record_index, "sketch record")?;
-    }
-    let mut geometry_owners = BTreeMap::new();
-    let mut point_companions = BTreeSet::new();
+    let shared_headers = stubs
+        .iter()
+        .filter(|header| stub_uses[&header.record_index] > 1)
+        .map(|header| header.id.clone())
+        .collect::<BTreeSet<_>>();
     let curve_indices = native
         .sketch_curve_identities
         .iter()
         .map(|curve| curve.record_index)
         .collect::<BTreeSet<_>>();
+    let registrations = |index: u32, matches: &dyn Fn(&SegmentType) -> bool| {
+        native
+            .design_types
+            .iter()
+            .filter(|design_type| {
+                design_type
+                    .entities
+                    .values()
+                    .any(|registered| *registered == u64::from(index))
+                    && matches(design_type)
+            })
+            .count()
+    };
+    let mut paired = BTreeMap::<u32, usize>::new();
     for point in &native.sketch_points {
-        let point_type = source_less_design_record_type(
-            native,
-            &point.class_tag,
-            point.record_index,
-            "sketch point",
-        )?;
+        *paired.entry(point.paired_reference).or_default() += 1;
+    }
+    let mut geometry_owners = BTreeMap::new();
+    for point in &native.sketch_points {
+        let id = point.id.clone();
+        let Some(point_type) = registered(&point.class_tag, point.record_index) else {
+            unregistered.insert(id);
+            continue;
+        };
         if !design_type_matches(
             point_type,
             crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE,
-        ) {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D sketch point {} requires the current point record type",
-                point.id
-            )));
-        }
-        if point.record_form().class_version() != point_type.version
+        ) || point.record_form().class_version() != point_type.version
             || !matches!(
                 point.record_form(),
                 crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
@@ -842,190 +1049,145 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 }
             )
         {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D sketch point {} requires the version-11 member sequence",
-                point.id
-            )));
+            other_form.insert(id);
+            continue;
         }
         if point
             .persistent_id()
             .is_none_or(|persistent_id| persistent_id == 0)
         {
-            return Err(CodecError::InvalidInput(format!(
-                "source-less F3D sketch point {} has no persistent identity",
-                point.id
-            )));
+            no_identity.insert(id);
+            continue;
         }
-        let owner_reference = point.owner_reference.ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D sketch point {} has no direct sketch owner",
-                point.id
-            ))
-        })?;
-        if !sketch_owners.contains(&u64::from(owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch point {} references missing sketch owner {owner_reference}",
-                point.id
-            )));
-        }
-        let owner_type_count = native
-            .design_types
-            .iter()
-            .filter(|design_type| {
+        if let Some(owner) = point.owner_reference {
+            geometry_owners.insert(point.record_index, owner);
+            let containers = registrations(owner, &|design_type: &SegmentType| {
                 design_type
-                    .entities
-                    .values()
-                    .any(|registered| *registered == u64::from(owner_reference))
-                    && design_type.type_guid.as_str().eq_ignore_ascii_case(
-                        crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
-                    )
-            })
-            .count();
-        if owner_type_count != 1 {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch point {} owner {owner_reference} does not have one sketch-container type registration",
-                point.id
-            )));
-        }
-        if point.paired_reference == point.record_index
-            || typed_indices.contains_key(&point.paired_reference)
-            || !point_companions.insert(point.paired_reference)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch point {} has a conflicting companion record {}",
-                point.id, point.paired_reference
-            )));
-        }
-        let companion_type = native
-            .design_types
-            .iter()
-            .filter(|design_type| {
-                design_type
-                    .entities
-                    .values()
-                    .any(|registered| *registered == u64::from(point.paired_reference))
-                    && design_type_matches(
-                        design_type,
-                        crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE,
-                    )
-            })
-            .count();
-        if companion_type != 1 {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch point {} companion {} does not have one current companion type registration",
-                point.id, point.paired_reference
-            )));
-        }
-        let companion = point.companion();
-        for curve in companion.incident_curves {
-            if !curve_indices.contains(curve) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D sketch point {} companion references missing curve {curve}",
-                    point.id
-                )));
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID)
+            });
+            if containers != 1 {
+                owner_types.insert(id);
+                continue;
             }
         }
-        geometry_owners.insert(point.record_index, owner_reference);
+        let companion = point.paired_reference;
+        if companion == point.record_index
+            || typed.contains(&companion)
+            || paired.get(&companion) != Some(&1)
+            || registrations(companion, &|design_type: &SegmentType| {
+                design_type_matches(
+                    design_type,
+                    crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE,
+                )
+            }) != 1
+        {
+            companions.insert(id);
+            continue;
+        }
+        if point
+            .companion()
+            .incident_curves
+            .iter()
+            .any(|curve| !curve_indices.contains(curve))
+        {
+            missing_curves.insert(id);
+        }
     }
     for curve in &native.sketch_curve_identities {
-        let curve_type = source_less_design_record_type(
-            native,
-            &curve.class_tag,
-            curve.record_index,
-            "sketch curve",
-        )?;
-        let expected_type = match curve.geometry.as_ref() {
+        let id = curve.id.clone();
+        let Some(curve_type) = registered(&curve.class_tag, curve.record_index) else {
+            unregistered.insert(id);
+            continue;
+        };
+        let expected = match curve.geometry.as_ref() {
             Some(SketchCurveGeometry::Line { .. }) => {
-                crate::design::decode::sketch::CURRENT_SKETCH_LINE_TYPE
+                Some(crate::design::decode::sketch::CURRENT_SKETCH_LINE_TYPE)
             }
             Some(SketchCurveGeometry::Arc { .. }) => {
-                crate::design::decode::sketch::CURRENT_SKETCH_CIRCULAR_TYPE
+                Some(crate::design::decode::sketch::CURRENT_SKETCH_CIRCULAR_TYPE)
             }
             Some(SketchCurveGeometry::Nurbs { .. }) => {
-                crate::design::decode::sketch::CURRENT_SKETCH_NURBS_TYPE
+                Some(crate::design::decode::sketch::CURRENT_SKETCH_NURBS_TYPE)
             }
-            None => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D sketch curve {} has no writable geometry",
-                    curve.id
-                )));
-            }
+            None => None,
         };
-        if !design_type_matches(curve_type, expected_type) {
-            return Err(CodecError::NotImplemented(format!(
-                "source-less F3D sketch curve {} requires its current geometry record type",
-                curve.id
-            )));
+        if !expected.is_some_and(|expected| design_type_matches(curve_type, expected)) {
+            other_form.insert(id);
+            continue;
         }
-        let owner_reference = curve.owner_reference.ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D sketch curve {} has no direct sketch owner",
-                curve.id
-            ))
-        })?;
-        if !sketch_owners.contains(&u64::from(owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch curve {} references missing sketch owner {owner_reference}",
-                curve.id
-            )));
+        if let Some(owner) = curve.owner_reference {
+            geometry_owners.insert(curve.record_index, owner);
         }
-        geometry_owners.insert(curve.record_index, owner_reference);
     }
+    let roots = sketch_header_indices(native);
     for relation in &native.sketch_relations {
-        if !root_indices.contains(&relation.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch relation {} is not reachable from a sketch header",
-                relation.id
-            )));
-        }
-        if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch relation {} references missing sketch owner {}",
-                relation.id, relation.owner_reference
-            )));
-        }
-        for member in relation.all_member_indices() {
-            if geometry_owners
+        let id = relation.id.clone();
+        if registered(&relation.class_tag, relation.record_index).is_none() {
+            unregistered.insert(id);
+        } else if !roots.contains(&relation.record_index) {
+            unreachable.insert(id);
+        } else if relation.all_member_indices().any(|member| {
+            geometry_owners
                 .get(&member)
                 .is_some_and(|owner| *owner != relation.owner_reference)
-            {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D sketch relation {} owner disagrees with geometry record {member}",
-                    relation.id
-                )));
-            }
+        }) {
+            other_owner.insert(id);
         }
     }
     for text in &native.sketch_texts {
-        if !root_indices.contains(&text.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch text {} is not reachable from a sketch header",
-                text.id
-            )));
-        }
-        if !sketch_owners.contains(&u64::from(text.owner_reference)) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch text {} references missing sketch owner {}",
-                text.id, text.owner_reference
-            )));
+        let id = text.id.clone();
+        if registered(&text.class_tag, text.record_index).is_none() {
+            unregistered.insert(id);
+        } else if !roots.contains(&text.record_index) {
+            unreachable.insert(id);
         }
     }
-    let mut explicit_headers = BTreeSet::new();
-    for header in &native.design_record_headers {
-        if !explicit_headers.insert(header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "multiple F3D Design record headers use index {}",
-                header.record_index
-            )));
-        }
-        if typed_indices.contains_key(&header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design record header {} shadows a typed sketch record",
-                header.id
-            )));
-        }
-    }
-    Ok(())
+    [
+        (
+            "of sketch records that the Design type registration of their class tag does not name",
+            unregistered,
+        ),
+        (
+            "of sketch records in a form other than the current record form of their kind (the source-less Design stream writes the current form)",
+            other_form,
+        ),
+        (
+            "of sketch points with no persistent identity (the written point record stores one)",
+            no_identity,
+        ),
+        (
+            "of sketch points whose sketch owner does not have one sketch-container type registration",
+            owner_types,
+        ),
+        (
+            "of sketch points whose companion record is another record, is shared, or does not have one current companion type registration (the written point holds one companion of its own)",
+            companions,
+        ),
+        (
+            "of sketch points whose companion names a sketch curve the document does not hold",
+            missing_curves,
+        ),
+        (
+            "of sketch relations and texts that no sketch header names (the source-less Design stream writes the records a sketch header names)",
+            unreachable,
+        ),
+        (
+            "of sketch relations whose sketch owner differs from the owner of a member record",
+            other_owner,
+        ),
+        (
+            "of sketch records that share their record index with another sketch record (the Design stream holds one record at each index)",
+            shared_records,
+        ),
+        (
+            "of Design record headers that share their record index with another record header (the Design stream holds one record at each index)",
+            shared_headers,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(reason, records)| Unwritable::of(reason, records))
 }
 
 pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
@@ -1661,5 +1823,58 @@ mod tests {
         let unwritable =
             unwritable_tolerant_tails(&target, &native).expect("the tail is unwritable");
         assert_eq!(unwritable.records, std::collections::BTreeSet::from([id]));
+    }
+
+    fn unset_tail(
+        vertex: &cadmpeg_ir::ids::VertexId,
+        record_index: u32,
+        leading: f64,
+    ) -> TolerantVertexTail {
+        TolerantVertexTail {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index,
+            vertex: vertex.clone(),
+            leading_tolerances: [
+                cadmpeg_ir::scalar::FiniteReal::new(leading).unwrap(),
+                cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
+            ],
+            evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
+        }
+    }
+
+    #[test]
+    fn a_tolerant_vertex_tail_equal_to_an_earlier_tail_of_its_vertex_is_dropped_alone() {
+        let target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+        let vertex = &target.geometry.vertices[0].id;
+        let native = F3dNative {
+            tolerant_vertex_tails: vec![unset_tail(vertex, 0, -1.0), unset_tail(vertex, 1, -1.0)],
+            ..F3dNative::default()
+        };
+        let unwritable =
+            unwritable_tolerant_tails(&target, &native).expect("the repeated tail is unwritable");
+        assert_eq!(
+            unwritable.records,
+            std::collections::BTreeSet::from([native.tolerant_vertex_tails[1].id()])
+        );
+    }
+
+    #[test]
+    fn tolerant_vertex_tails_that_differ_on_one_vertex_are_all_dropped() {
+        let target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+        let vertex = &target.geometry.vertices[0].id;
+        let native = F3dNative {
+            tolerant_vertex_tails: vec![unset_tail(vertex, 0, -1.0), unset_tail(vertex, 1, 0.5)],
+            ..F3dNative::default()
+        };
+        let unwritable = unwritable_tolerant_tails(&target, &native)
+            .expect("the differing tails are unwritable");
+        assert_eq!(
+            unwritable.records,
+            native
+                .tolerant_vertex_tails
+                .iter()
+                .map(TolerantVertexTail::id)
+                .collect()
+        );
     }
 }

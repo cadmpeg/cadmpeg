@@ -25,7 +25,7 @@ struct Projection {
 }
 
 fn project(fixture: &MoveFaceFixture) -> Projection {
-    crate::test_support::zip_test::with_scan(&fixture.archive(), |scan| {
+    crate::test_support::zip_fixture::with_scan(&fixture.archive(), |scan| {
         let types = decode_types(scan).unwrap();
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut decoded = decode_parameter_scopes(
@@ -606,7 +606,7 @@ fn archive_move_face_keeps_the_selected_header_when_the_table_omits_its_transfor
         ..Default::default()
     };
     let decoded = super::decode(fixture.archive());
-    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
     let scope = native.design_parameter_scopes.first().unwrap();
     let motion = scope.move_operation().unwrap();
     let header = native

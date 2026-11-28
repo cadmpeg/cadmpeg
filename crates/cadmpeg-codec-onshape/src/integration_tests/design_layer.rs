@@ -153,14 +153,16 @@ fn variable_depth() -> Vec<u8> {
             "3 mm",
         )],
         |response| {
-            for parameter in response["features"][1]["parameters"]
+            let parameters = response["features"][1]["parameters"]
                 .as_array_mut()
-                .unwrap()
-            {
-                if parameter["parameterId"] == "depth" {
-                    parameter["expression"] = json!("#width * 2");
-                }
-            }
+                .unwrap();
+            let index = parameters
+                .iter()
+                .position(|parameter| parameter["parameterId"] == "depth")
+                .unwrap();
+            let mut depth = parameters.remove(index);
+            depth["expression"] = json!("#width * 2");
+            parameters.insert(2, depth);
         },
     )
 }
@@ -182,6 +184,7 @@ fn variables_and_owned_dimensions_are_design_parameters() {
     let width = parameter(None);
     assert_eq!(width["id"], id("parameter", "width-variable"));
     assert_eq!(width["name"], "width");
+    assert_eq!(width["position"], 0);
     assert_eq!(
         width["definition"],
         json!({"kind":"expression","value":{"kind":"neutral","value":{"text":"3[mm]","refs":[],"measures":[]}}})
@@ -189,6 +192,7 @@ fn variables_and_owned_dimensions_are_design_parameters() {
     assert!(width.get("value").is_none());
     let plate = id("feature", "Plate");
     let depth = parameter(Some(&plate));
+    assert_eq!(depth["position"], 2);
     assert_eq!(
         depth["definition"]["value"]["value"],
         json!({"text":"$0 * 2","refs":[{"target":{"kind":"parameter","value":id("parameter", "width-variable")}}],"measures":[]})
@@ -216,10 +220,7 @@ fn a_cadir_write_carries_the_restated_parameters() {
         result.ir().model.parameters.len()
     );
     let evaluated = id("parameter", "Base sketch/length");
-    let cuts = omitted(&losses, &evaluated);
-    assert!(cuts
-        .iter()
-        .any(|loss| loss.message.contains(&format!("{evaluated} (value)"))));
+    assert!(omitted(&losses, &evaluated).is_empty());
 }
 
 #[test]

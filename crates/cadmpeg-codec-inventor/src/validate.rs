@@ -129,6 +129,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "body_wrapper_links",
     "composite_member_links",
     "feature_history_states",
+    "history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "pm_dc_sheet_metal_faces",
@@ -301,8 +302,11 @@ fn design_v11_findings(
         ir,
         &features,
         &sketches,
-        &data.pm_dc_parameters,
-        &data.pm_dc_units,
+        crate::design_v11::ParameterRecords {
+            parameters: &data.pm_dc_parameters,
+            units: &data.pm_dc_units,
+            tables: &data.pm_dc_parameter_tables,
+        },
     )?;
     findings.extend(crate::design_v11::validate_states(ir, &ctx.policy().limits));
     Ok(findings)

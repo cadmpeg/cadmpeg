@@ -20,6 +20,7 @@ use crate::feature::edge_selection::historical::{self, SelectedEdge};
 use crate::feature::{history_states, FeatureFamily, FeatureInventory};
 use crate::kernel::{ActiveCarrierState, KernelFamily};
 
+// resource-cap: MAX_PLATE_INPUT_WORK = 4
 const MAX_PLATE_INPUT_WORK: usize = 1 << 21;
 
 /// The plates whose selected sources lack a stored input revision.

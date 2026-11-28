@@ -28,12 +28,12 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
-use cadmpeg_ir::unknown::part::GivenUpPart;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 fn instance_members_are_unique(members: &[crate::wire::Uuid]) -> bool {
@@ -144,6 +144,9 @@ impl From<crate::history::ProjectionError> for CandidateError {
 #[derive(Debug)]
 enum ReferenceFailure {
     Semantic(String),
+    /// The reference payload does not parse; the product install gives up
+    /// its object record.
+    GivenUp,
     Codec(cadmpeg_core::CodecError),
 }
 
@@ -156,6 +159,16 @@ impl From<String> for ReferenceFailure {
 impl From<cadmpeg_core::CodecError> for ReferenceFailure {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         Self::Codec(error)
+    }
+}
+
+impl std::fmt::Display for ReferenceFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Semantic(message) => formatter.write_str(message),
+            Self::GivenUp => formatter.write_str("the reference payload does not parse"),
+            Self::Codec(error) => error.fmt(formatter),
+        }
     }
 }
 
@@ -174,8 +187,8 @@ struct ClassOutcome<'a> {
     retained: usize,
     native: Option<(RhinoLossCode, NonZeroUsize)>,
     attribute_degraded: usize,
-    /// Source orders of the framed records the decoder gave up.
-    failed_framed: Vec<usize>,
+    /// Source orders of the framed records the decoder gave up, and why.
+    failed_framed: Vec<(usize, Failure)>,
     first_object: &'a ObjectRecord,
 }
 
@@ -190,11 +203,18 @@ enum ObjectReference {
     Ambiguous,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum GeometryOutcome {
     NativeRetained(RhinoLossCode),
     Decoded,
-    Failed,
+    Failed(Failure),
+}
+
+/// Why the decoder gave up a framed object record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Failure {
+    cause: Cause,
+    reason: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -227,14 +247,18 @@ impl ReportBuckets {
     }
 }
 
+// resource-cap: MAX_INSTANCE_REFERENCES = 4
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 
+// resource-cap: MAX_INSTANCE_MEMBERS = 4
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
+// resource-cap: MAX_INSTANCE_ENTITIES = 4
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
 /// Member visits, copied entities, and the points, control points, mesh
 /// vertices and triangles, and cage vertices that instance expansion copies in
 /// one document. Rejected expansions stay charged, so the copy work of the
 /// document is bounded even when every reference is rolled back.
+// resource-cap: MAX_INSTANCE_COPY_ELEMENTS = 4
 const MAX_INSTANCE_COPY_ELEMENTS: usize = 1 << 26;
 const ENTITY_BUDGET_EXCEEDED: &str =
     "document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)";
@@ -414,7 +438,7 @@ pub(crate) struct DecodeContext<'a> {
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
     /// Definition members that failed to decode in a rejected expansion.
-    failed_members: BTreeSet<usize>,
+    failed_members: BTreeMap<usize, Failure>,
     /// The mesh objects committed, by tessellation id: each is a mesh body of
     /// the root, stated with its own name, colour, and visibility once the
     /// root exists.
@@ -473,7 +497,7 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
-            failed_members: BTreeSet::new(),
+            failed_members: BTreeMap::new(),
             mesh_bodies: HashMap::new(),
             object_presentations: HashMap::new(),
         };
@@ -736,9 +760,21 @@ impl<'a> DecodeContext<'a> {
         self.transition(source_order, GeometryOutcome::Decoded)
     }
 
-    /// Marks one framed object as failed after a skippable payload error.
-    fn mark_failed(&mut self, source_order: usize) -> bool {
-        self.transition(source_order, GeometryOutcome::Failed)
+    /// Marks one framed object as given up for `cause` after a skippable
+    /// payload error, which `reason` states.
+    fn mark_failed(
+        &mut self,
+        source_order: usize,
+        cause: Cause,
+        reason: std::fmt::Arguments<'_>,
+    ) -> bool {
+        self.transition(
+            source_order,
+            GeometryOutcome::Failed(Failure {
+                cause,
+                reason: reason.to_string(),
+            }),
+        )
     }
 
     /// Marks one object as read but retained as native passthrough.
@@ -933,25 +969,23 @@ impl<'a> DecodeContext<'a> {
                         if !proxy_transferred && self.commit_mesh(source_order, mesh)? {
                             self.mark_decoded(source_order);
                         } else if !proxy_transferred {
-                            self.mark_failed(source_order);
+                            self.mark_failed(
+                                source_order,
+                                Cause::Undecoded,
+                                format_args!("mesh candidate was not committed"),
+                            );
                         }
                     }
                     Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
+                    Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
+                        self.scan_warning(source_order, format_args!("mesh retained: {error}"));
+                    }
                     Err(error) => {
-                        let future = matches!(
-                            error,
-                            crate::curves::GeometryError::UnsupportedVersion { .. }
-                        );
-                        self.scan_warning(
+                        self.mark_failed(
                             source_order,
-                            format_args!(
-                                "mesh {}: {error}",
-                                if future { "retained" } else { "failed" }
-                            ),
+                            error.cause(),
+                            format_args!("mesh failed: {error}"),
                         );
-                        if !future {
-                            self.mark_failed(source_order);
-                        }
                     }
                 }
                 continue;
@@ -976,7 +1010,11 @@ impl<'a> DecodeContext<'a> {
                         );
                         self.commit_unknown_surface(source_order)?;
                     } else {
-                        self.mark_failed(source_order);
+                        self.mark_failed(
+                            source_order,
+                            Cause::Undecoded,
+                            format_args!("simple geometry candidate was not committed"),
+                        );
                     }
                 }
                 Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
@@ -985,23 +1023,27 @@ impl<'a> DecodeContext<'a> {
                         error,
                         crate::curves::GeometryError::UnsupportedVersion { .. }
                     );
-                    self.scan_warning(
-                        source_order,
-                        format_args!(
-                            "simple geometry {}: {error}",
-                            if procedural_surface {
-                                "degraded and retained"
-                            } else if future {
-                                "retained"
-                            } else {
-                                "failed"
-                            }
-                        ),
-                    );
+                    if procedural_surface || future {
+                        self.scan_warning(
+                            source_order,
+                            format_args!(
+                                "simple geometry {}: {error}",
+                                if procedural_surface {
+                                    "degraded and retained"
+                                } else {
+                                    "retained"
+                                }
+                            ),
+                        );
+                    }
                     if procedural_surface {
                         self.commit_unknown_surface(source_order)?;
                     } else if !future {
-                        self.mark_failed(source_order);
+                        self.mark_failed(
+                            source_order,
+                            error.cause(),
+                            format_args!("simple geometry failed: {error}"),
+                        );
                     }
                 }
             }
@@ -1135,8 +1177,11 @@ impl<'a> DecodeContext<'a> {
                     return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
                 }
                 Err(error) => {
-                    self.scan_warning(source_order, format_args!("dimension retained: {error}"));
-                    self.mark_failed(source_order);
+                    self.mark_failed(
+                        source_order,
+                        error.cause(),
+                        format_args!("dimension retained: {error}"),
+                    );
                 }
             }
         }
@@ -1163,21 +1208,16 @@ impl<'a> DecodeContext<'a> {
         ) {
             Ok(hatch) => hatch,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
+                self.scan_warning(source_order, format_args!("hatch retained: {error}"));
+                return Ok(());
+            }
             Err(error) => {
-                let future = matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                );
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
-                    format_args!(
-                        "hatch {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    error.cause(),
+                    format_args!("hatch failed: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
                 return Ok(());
             }
         };
@@ -1221,11 +1261,11 @@ impl<'a> DecodeContext<'a> {
             {
                 Ok(transform) => transform,
                 Err(error) => {
-                    self.scan_warning(
+                    self.mark_failed(
                         source_order,
+                        Cause::Undecoded,
                         format_args!("hatch placement failed: {error}"),
                     );
-                    self.mark_failed(source_order);
                     return Ok(());
                 }
             };
@@ -1233,12 +1273,12 @@ impl<'a> DecodeContext<'a> {
             match transform_decoded_curve(self.expand.ctx(), &mut hatch_loop.curve, transform) {
                 Ok(()) => {}
                 Err(ReferenceFailure::Codec(error)) => return Err(error),
-                Err(ReferenceFailure::Semantic(error)) => {
-                    self.scan_warning(
+                Err(failure) => {
+                    self.mark_failed(
                         source_order,
-                        format_args!("hatch loop placement failed: {error}"),
+                        Cause::Undecoded,
+                        format_args!("hatch loop placement failed: {failure}"),
                     );
-                    self.mark_failed(source_order);
                     return Ok(());
                 }
             }
@@ -1341,11 +1381,11 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("hatch candidate rejected: {error}"),
                 );
-                self.mark_failed(source_order);
             }
         }
         Ok(())
@@ -1369,8 +1409,11 @@ impl<'a> DecodeContext<'a> {
                 return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
             }
             Err(error) => {
-                self.scan_warning(source_order, format_args!("polyedge retained: {error}"));
-                self.mark_failed(source_order);
+                self.mark_failed(
+                    source_order,
+                    error.cause(),
+                    format_args!("polyedge retained: {error}"),
+                );
                 return Ok(());
             }
         };
@@ -1465,21 +1508,16 @@ impl<'a> DecodeContext<'a> {
         ) {
             Ok(detail) => detail,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
+                self.scan_warning(source_order, format_args!("detail retained: {error}"));
+                return Ok(());
+            }
             Err(error) => {
-                let future = matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                );
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
-                    format_args!(
-                        "detail {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    error.cause(),
+                    format_args!("detail failed: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
                 return Ok(());
             }
         };
@@ -1566,11 +1604,11 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("detail candidate rejected: {error}"),
                 );
-                self.mark_failed(source_order);
             }
         }
         Ok(())
@@ -1596,21 +1634,16 @@ impl<'a> DecodeContext<'a> {
         ) {
             Ok(cage) => cage,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
+                self.scan_warning(source_order, format_args!("NURBS cage retained: {error}"));
+                return Ok(());
+            }
             Err(error) => {
-                let future = matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                );
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
-                    format_args!(
-                        "NURBS cage {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    error.cause(),
+                    format_args!("NURBS cage failed: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
                 return Ok(());
             }
         };
@@ -1699,11 +1732,11 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("NURBS cage candidate rejected: {error}"),
                 );
-                self.mark_failed(source_order);
             }
         }
         Ok(())
@@ -1727,21 +1760,19 @@ impl<'a> DecodeContext<'a> {
         ) {
             Ok(morph) => morph,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
-            Err(error) => {
-                let future = matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                );
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
                 self.scan_warning(
                     source_order,
-                    format_args!(
-                        "morph control {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    format_args!("morph control retained: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
+                return Ok(());
+            }
+            Err(error) => {
+                self.mark_failed(
+                    source_order,
+                    error.cause(),
+                    format_args!("morph control failed: {error}"),
+                );
                 return Ok(());
             }
         };
@@ -1761,8 +1792,11 @@ impl<'a> DecodeContext<'a> {
             Ok(feature) => feature,
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, format_args!("morph control failed: {error}"));
-                self.mark_failed(source_order);
+                self.mark_failed(
+                    source_order,
+                    Cause::Undecoded,
+                    format_args!("morph control failed: {error}"),
+                );
                 return Ok(());
             }
         };
@@ -1777,11 +1811,11 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("morph candidate rejected: {error}"),
                 );
-                self.mark_failed(source_order);
             }
         }
         Ok(())
@@ -1809,21 +1843,19 @@ impl<'a> DecodeContext<'a> {
         ) {
             Ok(value) => value,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
-            Err(error) => {
-                let future = matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                );
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
                 self.scan_warning(
                     source_order,
-                    format_args!(
-                        "curve-on-surface {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    format_args!("curve-on-surface retained: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
+                return Ok(());
+            }
+            Err(error) => {
+                self.mark_failed(
+                    source_order,
+                    error.cause(),
+                    format_args!("curve-on-surface failed: {error}"),
+                );
                 return Ok(());
             }
         };
@@ -1966,11 +1998,11 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("curve-on-surface candidate rejected: {error}"),
                 );
-                self.mark_failed(source_order);
             }
         }
         Ok(())
@@ -2001,11 +2033,11 @@ impl<'a> DecodeContext<'a> {
         match IdentityKey::try_new(value) {
             Ok(key) => Some(key),
             Err(error) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("object identity key is invalid: {error}"),
                 );
-                self.mark_failed(source_order);
                 None
             }
         }
@@ -2130,10 +2162,15 @@ impl<'a> DecodeContext<'a> {
                     Ok(report) => validation_findings(&report),
                     Err(error) => format!("{error}"),
                 };
-                format!("instance expansion rejected atomically by IR admission: {findings}")
+                Some(format!(
+                    "instance expansion rejected atomically by IR admission: {findings}"
+                ))
             }
             Err(ReferenceFailure::Codec(error)) => return Err(error),
-            Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),
+            Err(ReferenceFailure::Semantic(message)) => {
+                Some(format!("instance retained: {message}"))
+            }
+            Err(ReferenceFailure::GivenUp) => None,
         };
 
         original_model.discard_appended(self.session.edit_appended_model(&original_model)?)?;
@@ -2146,7 +2183,9 @@ impl<'a> DecodeContext<'a> {
             copied_elements: self.expansion_budget.copied_elements,
             ..original_expansion_budget
         };
-        self.scan_warning(source_order, format_args!("{rejection_warning}"));
+        if let Some(warning) = rejection_warning {
+            self.scan_warning(source_order, format_args!("{warning}"));
+        }
         Ok(false)
     }
 
@@ -2173,9 +2212,10 @@ impl<'a> DecodeContext<'a> {
         }
         for source_order in undo.outcomes {
             if let Some(status) = self.statuses.get_mut(source_order) {
-                if *status == Some(GeometryOutcome::Failed) && !undo.capped.contains(&source_order)
-                {
-                    self.failed_members.insert(source_order);
+                if let Some(GeometryOutcome::Failed(failure)) = status.take() {
+                    if !undo.capped.contains(&source_order) {
+                        self.failed_members.insert(source_order, failure);
+                    }
                 }
                 *status = None;
             }
@@ -2190,6 +2230,7 @@ impl<'a> DecodeContext<'a> {
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, ReferenceFailure> {
+        // resource-cap: MAX_INSTANCE_DEPTH = 4
         const MAX_INSTANCE_DEPTH: usize = 64;
         let _nested = self.expand.ctx().enter_nested("rhino_instance_nesting")?;
         self.expansion_budget.reference()?;
@@ -2212,7 +2253,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let reference =
             crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| ReferenceFailure::GivenUp)?;
         if self
             .scan
             .definitions
@@ -2293,7 +2334,14 @@ impl<'a> DecodeContext<'a> {
                 .class_uuid()
                 .is_some_and(crate::instances::is_reference_class)
             {
-                let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
+                let nested = self
+                    .expand_reference_inner(member_order, transform, path, stack)
+                    .map_err(|failure| match failure {
+                        ReferenceFailure::GivenUp => ReferenceFailure::Semantic(format!(
+                            "definition member {member_id} did not decode"
+                        )),
+                        other => other,
+                    })?;
                 self.append_links(member_order, &nested)?;
                 self.mark_decoded(member_order);
 
@@ -2533,28 +2581,32 @@ impl<'a> DecodeContext<'a> {
                 )? {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(
+                    self.mark_failed(
                         source_order,
+                        Cause::Undecoded,
                         format_args!("SubD candidate rejected atomically by IR validation"),
                     );
-                    self.mark_failed(source_order);
                 }
             }
             Err(crate::subd::SubdError::Resource(limit)) => {
                 return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
             }
-            Err(error) => {
-                let future = matches!(error, crate::subd::SubdError::UnsupportedVersion { .. });
-                self.scan_warning(
+            Err(error @ crate::subd::SubdError::UnsupportedVersion { .. }) => {
+                self.scan_warning(source_order, format_args!("SubD retained: {error}"));
+            }
+            Err(error @ crate::subd::SubdError::Undecoded { .. }) => {
+                self.mark_failed(
                     source_order,
-                    format_args!(
-                        "SubD {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    Cause::Undecoded,
+                    format_args!("SubD failed: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
+            }
+            Err(error) => {
+                self.mark_failed(
+                    source_order,
+                    Cause::Unreadable,
+                    format_args!("SubD failed: {error}"),
+                );
             }
         }
         Ok(())
@@ -2700,29 +2752,28 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Gives up the framed object record at `source_order`, of class
-    /// `class`, that no decoder transferred.
+    /// `class`, that no decoder transferred, for `failure`.
     fn give_up_object(
         &self,
         source_order: usize,
         class: &str,
+        failure: &Failure,
     ) -> Result<GivenUpPart, cadmpeg_core::CodecError> {
         let record = crate::container::object_record_id(source_order);
-        let why = RhinoLossCode::ObjectFramingUndecodable.note(format_args!(
-            "framed object record {record} of class {class} could not be decoded"
-        ));
         crate::container::give_up_object_record(
             self.expand.ctx(),
             self.scan.data,
             source_order,
             self.scan.objects[source_order].range(),
-            &why,
+            failure.cause,
+            format_args!("object {record} of class {class}: {}", failure.reason),
         )
     }
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
-        for source_order in std::mem::take(&mut self.failed_members) {
-            self.mark_failed(source_order);
+        for (source_order, failure) in std::mem::take(&mut self.failed_members) {
+            self.transition(source_order, GeometryOutcome::Failed(failure));
         }
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
@@ -2744,10 +2795,11 @@ impl<'a> DecodeContext<'a> {
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        let (product_losses, product_given_up) =
-            crate::product::install(ctx, self.scan, self.session.document_mut()?)?;
-        self.report.typed_losses.extend(product_losses);
-        given_up.extend(product_given_up);
+        given_up.extend(crate::product::install(
+            ctx,
+            self.scan,
+            self.session.document_mut()?,
+        )?);
         let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(views.losses);
         given_up.extend(views.given_up);
@@ -2781,7 +2833,12 @@ impl<'a> DecodeContext<'a> {
         )?);
         document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
-        let outcomes = self.class_outcomes()?;
+        let given_up_objects = given_up
+            .iter()
+            .filter(|part| part.kind() == crate::container::OBJECT_RECORD_PART)
+            .map(|part| part.retained().offset())
+            .collect::<HashSet<_>>();
+        let outcomes = self.class_outcomes(&given_up_objects)?;
         let decoded = outcomes
             .iter()
             .map(|(_, outcome)| outcome.decoded)
@@ -2822,33 +2879,24 @@ impl<'a> DecodeContext<'a> {
                         .with_provenance(loss_provenance(class, outcome)),
                 );
             }
-            if !outcome.failed_framed.is_empty() {
-                losses.push(
-                    RhinoLossCode::ObjectFramingUndecodable
-                        .note(format_args!(
-                            "{} framed object record(s) for class {class} could not be decoded",
-                            outcome.failed_framed.len()
-                        ))
-                        .with_provenance(loss_provenance(class, outcome)),
-                );
-                for source_order in &outcome.failed_framed {
-                    given_up.push(self.give_up_object(*source_order, class)?);
-                }
+            for (source_order, failure) in &outcome.failed_framed {
+                given_up.push(self.give_up_object(*source_order, class, failure)?);
             }
         }
 
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
             let loss = diagnostic.to_loss();
-            if let Some(record) = &diagnostic.given_up {
-                given_up.push(crate::container::give_up_table_record(
+            match &diagnostic.given_up {
+                Some((record, cause)) => given_up.push(crate::container::give_up_table_record(
                     ctx,
                     self.scan.data,
                     record,
-                    &loss,
-                )?);
+                    *cause,
+                    format_args!("{}: {}", loss.code, loss.message),
+                )?),
+                None => losses.push(loss),
             }
-            losses.push(loss);
         }
 
         losses.append(&mut self.report.typed_losses);
@@ -2980,13 +3028,17 @@ impl<'a> DecodeContext<'a> {
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
             let range = object.range();
-            let degraded = object.is_degraded();
             let id = crate::container::object_record_id(source_order);
             let record = self.source_record(id, range)?;
 
             records.push(record);
-            self.statuses
-                .push(degraded.then_some(GeometryOutcome::Failed));
+            self.statuses.push(match object {
+                ObjectRecord::Degraded { warning, .. } => Some(GeometryOutcome::Failed(Failure {
+                    cause: Cause::Unreadable,
+                    reason: warning.clone(),
+                })),
+                ObjectRecord::Framed(_) => None,
+            });
         }
         self.session.replace_unknowns(records)?;
         Ok(())
@@ -3675,11 +3727,11 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
+                    Cause::Undecoded,
                     format_args!("unknown surface validation rejected candidate: {findings}"),
                 );
-                self.mark_failed(source_order);
             }
         }
         Ok(())
@@ -3794,21 +3846,16 @@ impl<'a> DecodeContext<'a> {
         let parsed = match parsed {
             Ok(value) => value,
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
+                self.scan_warning(source_order, format_args!("Brep retained: {error}"));
+                return Ok(());
+            }
             Err(error) => {
-                let future = matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                );
-                self.scan_warning(
+                self.mark_failed(
                     source_order,
-                    format_args!(
-                        "Brep {}: {error}",
-                        if future { "retained" } else { "failed" }
-                    ),
+                    error.cause(),
+                    format_args!("Brep failed: {error}"),
                 );
-                if !future {
-                    self.mark_failed(source_order);
-                }
                 return Ok(());
             }
         };
@@ -3901,12 +3948,11 @@ impl<'a> DecodeContext<'a> {
                     Err(ENTITY_BUDGET_EXCEEDED.to_string())
                 };
                 if let Err(error) = committed {
-                    self.scan_warning(
-                        source_order,
-                        format_args!("Brep draft rejected before commit: {error}"),
-                    );
+                    let reason = format!("Brep draft rejected before commit: {error}");
                     if admitted {
-                        self.mark_failed(source_order);
+                        self.mark_failed(source_order, Cause::Undecoded, format_args!("{reason}"));
+                    } else {
+                        self.scan_warning(source_order, format_args!("{reason}"));
                     }
                 } else {
                     self.expansion_budget = budget;
@@ -3947,17 +3993,18 @@ impl<'a> DecodeContext<'a> {
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
-            Err(error) => {
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
                 self.scan_warning(
                     source_order,
                     format_args!("Brep geometry/topology degraded: {error}"),
                 );
-                if !matches!(
-                    error,
-                    crate::curves::GeometryError::UnsupportedVersion { .. }
-                ) {
-                    self.mark_failed(source_order);
-                }
+            }
+            Err(error) => {
+                self.mark_failed(
+                    source_order,
+                    error.cause(),
+                    format_args!("Brep geometry/topology degraded: {error}"),
+                );
             }
         }
         Ok(())
@@ -3974,7 +4021,12 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn class_outcomes(&self) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
+    /// The outcome of each object class. An object record at an offset in
+    /// `given_up` is given up as a part, and no outcome counts it.
+    fn class_outcomes(
+        &self,
+        given_up: &HashSet<u64>,
+    ) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
         let mut outcomes = HashMap::new();
         for (source_order, (object, status)) in
             self.scan.objects.iter().zip(&self.statuses).enumerate()
@@ -3998,9 +4050,13 @@ impl<'a> DecodeContext<'a> {
                 outcome.attribute_degraded += 1;
             }
             match status {
+                None if given_up
+                    .contains(&cadmpeg_core::decode::u64_from_index(object.range().start)) => {}
                 None => outcome.retained += 1,
                 Some(GeometryOutcome::Decoded) => outcome.decoded += 1,
-                Some(GeometryOutcome::Failed) => outcome.failed_framed.push(source_order),
+                Some(GeometryOutcome::Failed(failure)) => {
+                    outcome.failed_framed.push((source_order, failure.clone()));
+                }
                 Some(GeometryOutcome::NativeRetained(code)) => {
                     let count = outcome
                         .native
@@ -4920,9 +4976,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                     .then(index),
             ))
         }?;
-        let position = crate::wire::scaled_point(vertex.point.get(), scale).ok_or_else(|| {
-            crate::curves::GeometryError::unpositioned("scaled Brep vertex coordinate is invalid")
-        })?;
+        let position =
+            crate::wire::scaled_point(vertex.point.get(), scale).map_err(|unscaled| {
+                unscaled.charge(crate::curves::GeometryError::unpositioned(
+                    "scaled Brep vertex coordinate is invalid",
+                ))
+            })?;
         staged.draft.geometry_mut().points.push(Point::new(
             point_id.clone(),
             position,
@@ -5856,8 +5915,11 @@ fn scaled_tolerance(
     let Some(source) = value.positive() else {
         return Ok(None);
     };
-    let scaled = crate::wire::scaled_coordinate(source.get(), scale)
-        .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
+    let scaled = crate::wire::scaled_coordinate(source.get(), scale).map_err(|unscaled| {
+        unscaled.charge(crate::curves::GeometryError::unpositioned(
+            "scaled tolerance is invalid",
+        ))
+    })?;
     Ok(Some(
         cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scaled).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned(
@@ -6647,7 +6709,7 @@ pub(crate) fn seal_for_test(
     struct TestBackend(Decoded);
 
     impl CodecBackend for TestBackend {
-        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+        const FORMAT: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
         fn detect_impl(
             &self,

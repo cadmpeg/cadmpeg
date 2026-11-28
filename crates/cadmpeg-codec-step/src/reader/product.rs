@@ -5,7 +5,6 @@ use crate::ids::{key_word, kind};
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashSet};
 
 use super::{named_parameter, RecordExt, ValueExt};
-use crate::reader::give_up_instance;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -15,6 +14,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::{Transform, TransformError};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -29,6 +29,7 @@ mod bodies;
 
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
+// resource-cap: MAX_OCCURRENCES = 4
 pub(super) const MAX_OCCURRENCES: usize = 100_000;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_FORMATION",
@@ -382,13 +383,13 @@ pub(super) fn decode(
             continue;
         }
         let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 definition,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Undecoded,
+                &StepLossCode::DecodeWarning.note(format!(
                     "PRODUCT_DEFINITION #{definition} has no local product prototype"
                 )),
-            ));
+            );
             continue;
         };
         roots.push((definition, prototype));
@@ -477,12 +478,20 @@ pub(super) fn decode(
             "occurrence-owned mapped"
         };
 
-        losses.extend(give_up_instance(exchange, usage_id, StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"))));
+        exchange.lost().give_up(
+            usage_id,
+            Cause::Undecoded,
+            format!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"),
+        );
     }
     for (&usage_id, source_ids) in &competing_placements {
         let records = join_product_references(source_ids.iter().copied());
 
-        losses.extend(give_up_instance(exchange, usage_id, StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"))));
+        exchange.lost().give_up(
+            usage_id,
+            Cause::Undecoded,
+            format!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"),
+        );
     }
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
@@ -521,13 +530,13 @@ pub(super) fn decode(
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up_for(
                     usage_id,
-                    StepLossCode::DecodeWarning.note(format!(
+                    Cause::Undecoded,
+                    &StepLossCode::DecodeWarning.note(format!(
                         "NAUO #{usage_id} references an unresolved child definition"
                     )),
-                ));
+                );
                 continue;
             };
             if u64_from_index(parent_length) >= depth_limit {
@@ -535,13 +544,13 @@ pub(super) fn decode(
                 continue;
             }
             if reached.get(&usage.child_definition) == Some(&Reached::OnPath) {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up_for(
                     usage_id,
-                    StepLossCode::DecodeWarning.note(format!(
+                    Cause::Unreadable,
+                    &StepLossCode::DecodeWarning.note(format!(
                         "NAUO #{usage_id} closes an assembly definition cycle"
                     )),
-                ));
+                );
                 continue;
             }
             let Some(owner) = definition_prototypes.get(&parent_definition).cloned() else {
@@ -592,21 +601,20 @@ pub(super) fn decode(
              {start} and the usages after it are not decoded"
         ));
         match usage {
-            Some(usage) => losses.extend(give_up_instance(exchange, usage, why)),
+            Some(usage) => exchange.lost().give_up_for(usage, Cause::Undecoded, &why),
             // The occurrence of a root definition has no source record.
             None => losses.push(why),
         }
     }
-    if let Some(first) = depth_truncated.first() {
-        let why = StepLossCode::OccurrenceExpansionDepthTruncated.note(format!(
-            "product definition paths stop at the recursion depth limit of {depth_limit} levels; \
-             {} usage(s) from NAUO #{first} are not decoded",
-            depth_truncated.len()
-        ));
-        for &usage in &depth_truncated {
-            exchange.lost().give_up_for(usage, &why);
-        }
-        losses.push(why);
+    for &usage in &depth_truncated {
+        exchange.lost().give_up(
+            usage,
+            Cause::Undecoded,
+            format!(
+                "NAUO #{usage} is past the recursion depth limit of {depth_limit} \
+                 product definition levels"
+            ),
+        );
     }
     if !had_roots && !usages.is_empty() {
         losses.push(

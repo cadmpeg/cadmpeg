@@ -9,7 +9,7 @@ use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::Tessellation;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::{NonZeroU64, NonZeroUsize};
 
@@ -32,10 +32,12 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 
 /// Elements one restored link array may contain. A larger count is malformed.
+// resource-cap: MAX_LINK_ARRAY_ELEMENTS = 2
 const MAX_LINK_ARRAY_ELEMENTS: usize = 1_000_000;
 
 /// Records a give-up names, such as the occurrences it leaves with no
 /// transform; the rest are counted.
+// resource-cap: MAX_NAMED_RECORDS = 4
 const MAX_NAMED_RECORDS: usize = 8;
 
 /// The product records of a document, and the product objects among them
@@ -160,7 +162,11 @@ fn given_up(
         return Err(error);
     }
     let record = Identity::try_from(property.id.as_str()).map_err(CodecError::malformed)?;
-    let given_up = GivenUpRecord::new(record, format_args!("object {}: {error}", property.owner));
+    let given_up = GivenUpRecord::new(
+        record,
+        Cause::Unreadable.of(&error),
+        format_args!("object {}: {error}", property.owner),
+    );
     Ok(match dropped {
         Some(dropped) => {
             given_up.dropping([Identity::try_from(dropped).map_err(CodecError::malformed)?])
@@ -1065,6 +1071,7 @@ fn project(
             object: record.object.clone(),
             record: GivenUpRecord::new(
                 Identity::try_from(record.object.as_str()).map_err(CodecError::malformed)?,
+                Cause::Unreadable,
                 "its chain of links that follow their linked objects returns to it",
             ),
         });
@@ -1210,6 +1217,7 @@ fn project(
                             losses.push(
                                 GivenUpRecord::new(
                                     record,
+                                    Cause::Undecoded,
                                     format_args!("its placement does not compose: {error}"),
                                 )
                                 .loss(),
@@ -1615,6 +1623,7 @@ fn linked_prototype_transform(
                     record: GivenUpRecord::new(
                         Identity::try_from(record.object.as_str())
                             .map_err(CodecError::malformed)?,
+                        Cause::Undecoded,
                         format_args!(
                             "the placement of its linked object {prototype} does not compose: \
                              {error}"

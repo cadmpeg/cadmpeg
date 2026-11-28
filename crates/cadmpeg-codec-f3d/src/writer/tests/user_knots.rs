@@ -9,8 +9,8 @@ use std::io::Cursor;
 
 #[test]
 fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
-    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_form(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let source = crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_form(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
     );
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -81,8 +81,8 @@ fn the_patch_reads_the_archive_in_the_write_session() {
     };
     use cadmpeg_core::CodecError;
 
-    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_form(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let source = crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_form(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
     );
     let (mut edited, _, _) = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -107,6 +107,7 @@ fn the_patch_reads_the_archive_in_the_write_session() {
             &ctx,
             &edited,
             &source,
+            None,
             &mut Vec::new(),
             &mut Vec::new(),
             &mut Vec::new(),
@@ -117,6 +118,9 @@ fn the_patch_reads_the_archive_in_the_write_session() {
     };
     assert_eq!(limit.scope, LimitScope::Session);
     assert_eq!(limit.dimension, ResourceDimension::InputBytes);
-    assert_eq!(limit.operation, "F3D patch source archive");
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (length, length, length)
+    );
     patch(2 * length).expect("a session with room for the archive patches it");
 }

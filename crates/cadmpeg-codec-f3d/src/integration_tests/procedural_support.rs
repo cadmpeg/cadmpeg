@@ -2,7 +2,7 @@
 
 use super::decode;
 use crate::test_support::procedural_support::revolution_intersection;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
 #[test]

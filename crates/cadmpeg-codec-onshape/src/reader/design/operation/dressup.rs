@@ -49,22 +49,75 @@ pub(super) fn fillet(
     {
         return Err("filletType or crossSection is outside the circular edge form".into());
     }
+    source.usage.ignore_false(&[
+        "isVariable",
+        "isPartial",
+        "allowEdgeOverflow",
+        "smoothCorners",
+        "smoothTransition",
+    ]);
+    source
+        .usage
+        .account(&["defaultsChanged", "nonCircularRadius", "rho", "magnitude"]);
+    if source.peek_flag("isVariable") == Ok(false) {
+        source.usage.account(&[
+            "vertexSettings",
+            "pointOnEdgeSettings",
+            "pointSettings.edge",
+            "pointSettings.pointRadius",
+            "smoothTransition",
+        ]);
+    }
+    if source.peek_flag("isPartial") == Ok(false) {
+        source.usage.account(&[
+            "startPartialType",
+            "startPartialEntity",
+            "startPartialOffset",
+            "partialFirstEdgeTotalParameter",
+            "partialOppositeParameter",
+            "secondBound",
+            "endPartialType",
+            "endPartialEntity",
+            "endPartialOffset",
+            "partialSecondEdgeTotalParameter",
+        ]);
+    }
+    if source.peek_flag("allowEdgeOverflow") == Ok(false) {
+        source.usage.account(&["keepEdges"]);
+    }
+    if source.peek_flag("smoothCorners") == Ok(false) {
+        source.usage.account(&["smoothCornerExceptions"]);
+    }
     let input = context.input(model);
-    let ids = picks::ids(source.record, "entities")?;
+    let ids = picks::ids(source, "entities")?;
     let seeds = picks::edge_picks(&ids, input)?;
     if seeds.is_empty() {
         return Err("entities names no edges".into());
     }
     let length = |key, role| {
         signed(
+            source,
+            key,
             context.owned(model, &[role]),
-            || source.quantity(key, PositiveLength::new),
+            || source.quantity_value(key, PositiveLength::new),
             false,
         )
     };
-    let size = if source.tag("blendControlType") == Some("WIDTH") {
+    let blend = source.peek_tag("blendControlType");
+    let size = if blend == Some("WIDTH") {
+        source.usage.account(&[
+            "blendControlType",
+            "radius",
+            "isAsymmetric",
+            "otherRadius",
+            "flipAsymmetric",
+        ]);
         FilletSize::Chord(length("width", "Width")?)
     } else {
+        source.usage.account(&["width"]);
+        if blend == Some("RADIUS") {
+            source.usage.account(&["blendControlType"]);
+        }
         let radius = length("radius", "Radius")?;
         if source.flag("isAsymmetric")? {
             let other = length("otherRadius", "OtherRadius")?;
@@ -75,6 +128,7 @@ pub(super) fn fillet(
             };
             FilletSize::Offsets { first, second }
         } else {
+            source.usage.account(&["otherRadius", "flipAsymmetric"]);
             FilletSize::Radius(radius)
         }
     };
@@ -108,24 +162,41 @@ pub(super) fn chamfer(
 ) -> SourceMapping<(FeatureOperation, bool)> {
     let length = |key, role| {
         signed(
+            source,
+            key,
             context.owned(model, &[role]),
-            || source.quantity(key, PositiveLength::new),
+            || source.quantity_value(key, PositiveLength::new),
             false,
         )
     };
     let size = match source.tag("chamferType") {
-        None | Some("EQUAL_OFFSETS") => ChamferSize::Distance(length("width", "Distance")?),
-        Some("TWO_OFFSETS") => ChamferSize::Distances {
-            first: length("width1", "FirstDistance")?,
-            second: length("width2", "SecondDistance")?,
-        },
-        Some("OFFSET_ANGLE" | "DISTANCE_ANGLE") => ChamferSize::DistanceAngle {
-            distance: length("width", "Distance")?,
-            angle: bound(
-                context.owned(model, &["Angle"]),
-                source.quantity("angle", InteriorAngle::new)?,
-            ),
-        },
+        None | Some("EQUAL_OFFSETS") => {
+            source.usage.account(&[
+                "width1",
+                "width2",
+                "angle",
+                "oppositeDirection",
+                "directionOverrides",
+            ]);
+            ChamferSize::Distance(length("width", "Distance")?)
+        }
+        Some("TWO_OFFSETS") => {
+            source.usage.account(&["width", "angle"]);
+            ChamferSize::Distances {
+                first: length("width1", "FirstDistance")?,
+                second: length("width2", "SecondDistance")?,
+            }
+        }
+        Some("OFFSET_ANGLE" | "DISTANCE_ANGLE") => {
+            source.usage.account(&["width1", "width2"]);
+            ChamferSize::DistanceAngle {
+                distance: length("width", "Distance")?,
+                angle: bound(
+                    context.owned(model, &["Angle"]),
+                    source.quantity("angle", InteriorAngle::new)?,
+                ),
+            }
+        }
         _ => {
             return Err(
                 "chamferType is outside the equal, two-offset and offset-angle forms".into(),
@@ -135,17 +206,25 @@ pub(super) fn chamfer(
     let sided = !matches!(size, ChamferSize::Distance(_));
     let measure = match source.tag("chamferMethod") {
         None | Some("FACE_OFFSET") => ChamferMeasure::OffsetFaces,
-        Some(other) => ChamferMeasure::Native(text(other)?),
+        Some(other) => {
+            let reason = if other == "APEX_RANGE" {
+                "keeps APEX_RANGE as a native measure with no neutral equivalent"
+            } else {
+                "keeps a native measure with no neutral equivalent"
+            };
+            source.usage.partial("chamferMethod", reason);
+            ChamferMeasure::Native(text(other)?)
+        }
     };
     let input = context.input(model);
-    let ids = picks::ids(source.record, "entities")?;
+    let ids = picks::ids(source, "entities")?;
     if ids.is_empty() {
         return Err("entities names no edges".into());
     }
     let tangent = source.flag("tangentPropagation")?;
     let flip = sided && source.flag("oppositeDirection")?;
     let overridden = if sided && features::parameter(source.record, "directionOverrides").is_ok() {
-        picks::ids(source.record, "directionOverrides")?
+        picks::ids(source, "directionOverrides")?
     } else {
         Vec::new()
     };
@@ -221,12 +300,14 @@ pub(super) fn shell(
         WallSide::Inside
     };
     let (bodies, removed) = if hollow {
+        source.usage.account(&["entities"]);
         (
-            Some(picks::selected(source.record, "parts")?),
+            Some(picks::selected(source, "parts")?),
             picks::selection(Vec::new())?,
         )
     } else {
-        (None, picks::selected(source.record, "entities")?)
+        source.usage.account(&["parts"]);
+        (None, picks::selected(source, "entities")?)
     };
     Ok(FeatureOperation::Shell(Box::new(ShellFeature {
         bodies,
@@ -256,10 +337,41 @@ pub(super) fn hole(
     if source.flag("isTapped")? && !tapped {
         return Err("isTapped selects a thread with no readable standard".into());
     }
-    if source.flag("isV2")? || source.tag("holeVersion") == Some("V3") {
+    if source.flag("isV2")? || source.peek_tag("holeVersion") == Some("V3") {
         return Err(
             "the versioned hole dimensions and standard table are not supported yet".into(),
         );
+    }
+    source.usage.ignore_false(&[
+        "isMultiple",
+        "hasClearance",
+        "offset",
+        "showTappedDepth",
+        "showThreadClass",
+        "tapClearance",
+        "toleranceMatching",
+        "oppositeDirection",
+    ]);
+    source
+        .usage
+        .ignore_value(&["holeVersion"], &Value::from("LEGACY"));
+    source
+        .usage
+        .ignore_value(&["threadStandard"], &Value::from("UNSET"));
+    source
+        .usage
+        .ignore_value(&["featureName"], &Value::from(""));
+    source
+        .usage
+        .account(&["standardBlindInLast", "styleV2", "endStyleV2"]);
+    source
+        .usage
+        .ignore_value(&["standardTappedOrClearance"], &Value::Null);
+    source.usage.ignore_empty_queries(&["initEntities"]);
+    if source.peek_flag("offset") == Ok(false) {
+        source
+            .usage
+            .account(&["offsetDistance", "oppositeOffsetDirection"]);
     }
     let points = super::source_profile(
         source,
@@ -271,19 +383,38 @@ pub(super) fn hole(
         context,
     )?;
     let start = match source.tag("startStyle") {
-        None | Some("PART" | "SKETCH") => None,
-        Some("PLANE") => Some(picks::selected(source.record, "startBoundEntity")?),
+        None | Some("PART") => {
+            source.usage.account(&["startBoundEntity"]);
+            None
+        }
+        Some("SKETCH") => {
+            source.usage.account(&["startBoundEntity"]);
+            source
+                .usage
+                .partial("startStyle", "uses SKETCH as the hole depth reference");
+            None
+        }
+        Some("PLANE") => Some(picks::selected(source, "startBoundEntity")?),
         _ => return Err("startStyle does not name a supported hole start".into()),
     };
     let owned = |role| context.owned(model, &[role]);
     let length = |key, role| {
         signed(
+            source,
+            key,
             owned(role),
-            || source.quantity(key, PositiveLength::new),
+            || source.quantity_value(key, PositiveLength::new),
             false,
         )
     };
-    let head = match source.tag("style") {
+    let style = source.tag("style");
+    if style != Some("C_BORE") {
+        source.usage.account(&["cBoreDiameter", "cBoreDepth"]);
+    }
+    if style != Some("C_SINK") {
+        source.usage.account(&["cSinkDiameter", "cSinkAngle"]);
+    }
+    let head = match style {
         Some("SIMPLE") => HoleHead::Plain,
         Some("C_BORE") => HoleHead::Counterbore {
             diameter: Some(length("cBoreDiameter", "CounterboreDiameter")?),
@@ -300,15 +431,39 @@ pub(super) fn hole(
         _ => return Err("style does not name a simple, counterbored or countersunk hole".into()),
     };
     let (extent, bottom) = match source.tag("endStyle") {
-        Some("THROUGH" | "THROUGH_ALL") => (Limit::ThroughAll, None),
+        Some("THROUGH" | "THROUGH_ALL") => {
+            source.usage.account(&[
+                "holeDepth",
+                "tipAngleStyle",
+                "tipAngle",
+                "depthToTip",
+                "useTipDepth",
+            ]);
+            (Limit::ThroughAll, None)
+        }
         Some("BLIND") => {
             let preset = features::tip_angle_preset(source.record);
             let tip = match preset {
-                Some(tip) => tip,
-                None => source.quantity("tipAngle", Some)?,
+                Some(tip) => {
+                    source.usage.account(&["tipAngleStyle", "tipAngle"]);
+                    tip
+                }
+                None => {
+                    source
+                        .usage
+                        .ignore_value(&["tipAngleStyle"], &Value::from("CUSTOM"));
+                    source.quantity("tipAngle", Some)?
+                }
             };
             let bottom = if (tip - std::f64::consts::PI).abs() < features::DRILL_TIP_ANGLE_TOLERANCE
             {
+                if preset.is_none() && owned("TipAngle").is_some() {
+                    source.usage.partial(
+                        "tipAngle",
+                        "keeps an evaluated flat bottom and omits its angle formula binding",
+                    );
+                }
+                source.usage.account(&["depthToTip", "useTipDepth"]);
                 HoleBottom::Flat
             } else {
                 HoleBottom::DrillPoint {
@@ -319,6 +474,7 @@ pub(super) fn hole(
                     )),
                     depth_to: Some(
                         if source.flag("depthToTip")? || source.flag("useTipDepth")? {
+                            source.usage.account(&["useTipDepth"]);
                             DepthTo::Tip
                         } else {
                             DepthTo::Shoulder
@@ -337,7 +493,7 @@ pub(super) fn hole(
         _ => return Err("endStyle is outside the blind and through hole forms".into()),
     };
     let targets = if features::parameter(source.record, "scope").is_ok() {
-        let ids = picks::ids(source.record, "scope")?;
+        let ids = picks::ids(source, "scope")?;
         if ids.is_empty() {
             None
         } else {
@@ -351,9 +507,24 @@ pub(super) fn hole(
     let mut native_options = NativeOptions::new();
     let (standard, thread) = match source_standard {
         None => (None, None),
-        Some(table) => standard(source, table, model, context, &mut native_options)?,
+        Some(table) => {
+            let dimensions = standard(source, table, model, context, &mut native_options)?;
+            source.usage.account(&["standardTappedOrClearance"]);
+            dimensions
+        }
     };
+    if !tapped {
+        source.usage.account(&[
+            "majorDiameter",
+            "tapDrillDiameter",
+            "tappedDepth",
+            "isTappedThrough",
+            "tappedAngle",
+            "tapClearance",
+        ]);
+    }
     let diameter_key = if tapped && features::parameter(source.record, "tapDrillDiameter").is_ok() {
+        source.usage.account(&["holeDiameter"]);
         "tapDrillDiameter"
     } else {
         "holeDiameter"
@@ -390,7 +561,7 @@ fn text(value: &str) -> Mapping<NonBlankString> {
 
 fn option(options: &mut NativeOptions, key: &str, value: NativeOption) -> Mapping<()> {
     let name = cadmpeg_ir::design::names::CodecName::new(
-        &cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+        &cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
         key,
     )
     .ok_or("a native option name is invalid")?;
@@ -445,8 +616,10 @@ fn standard(
             let owned = |role| context.owned(model, &[role]);
             let length = |key, role| {
                 signed(
+                    source,
+                    key,
                     owned(role),
-                    || source.quantity(key, PositiveLength::new),
+                    || source.quantity_value(key, PositiveLength::new),
                     false,
                 )
             };
@@ -459,7 +632,12 @@ fn standard(
                 .is_ok()
                 .then(|| length("majorDiameter", "MajorDiameter"))
                 .transpose()?;
-            let depth = if features::tap_through(source.record)? {
+            let through = features::through_hole(source.record);
+            if !through {
+                source.usage.account(&["isTappedThrough"]);
+            }
+            let depth = if through && source.flag("isTappedThrough")? {
+                source.usage.account(&["tappedDepth"]);
                 ThreadLength::Full
             } else {
                 ThreadLength::Blind(length("tappedDepth", "TappedDepth")?)

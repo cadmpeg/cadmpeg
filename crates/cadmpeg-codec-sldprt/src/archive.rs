@@ -87,6 +87,7 @@ const MIN_MOVE_SUPPORT: usize = 3;
 /// The winning index's recurrences outnumber the runner-up's by this factor.
 const MOVE_DOMINANCE: usize = 2;
 /// Occurrences of a body opening read for one declaration.
+// resource-cap: MAX_OPENING_OCCURRENCES = 4
 const MAX_OPENING_OCCURRENCES: usize = 20_000;
 /// First body offset an anchor can lie at.
 const FIRST_ANCHOR_OFFSET: usize = 4;

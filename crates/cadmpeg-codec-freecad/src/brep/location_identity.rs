@@ -7,7 +7,9 @@ use cadmpeg_ir::transform::Transform;
 
 use super::{location_transform_error, transform_power, Tables, TextLocation};
 
+// resource-cap: MAX_LOCATION_TERMS = 4
 const MAX_LOCATION_TERMS: usize = 65_536;
+// resource-cap: MAX_LOCATION_WORK = 4
 const MAX_LOCATION_WORK: usize = 16_777_216;
 
 /// A local canonicalization bound or a decode failure.

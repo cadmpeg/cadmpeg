@@ -279,6 +279,7 @@ def main() -> None:
     results = []
     failures = []
     for path in files:
+        print(f"checking {path.name}", flush=True)
         expectation = expectations.get(path.name) if expectations is not None else None
         metrics = None
         try:

@@ -33,12 +33,14 @@ const SEED_SEGMENTS_PER_SPAN: usize = 4;
 /// Midpoint bisections applied to one seed segment. A segment still
 /// outside the fit tolerance at this depth is kept, and the sampled fit
 /// tolerance states its midpoint departure.
+// resource-cap: MAX_DEPTH = 4
 const MAX_DEPTH: u32 = 12;
 
 /// Points one sampled polyline may hold. A segment still outside the fit
 /// tolerance at the limit is kept, and the sampled fit tolerance states its
 /// midpoint departure. A seeding that alone needs more points leaves the edge
 /// without a sampled carrier.
+// resource-cap: MAX_SAMPLE_POINTS = 4
 const MAX_SAMPLE_POINTS: usize = 16_384;
 
 /// The fewest seed segments.

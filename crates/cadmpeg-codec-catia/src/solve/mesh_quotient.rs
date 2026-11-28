@@ -81,25 +81,32 @@ fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<us
         .checked_add(usize::from(if end { !reversed } else { reversed }))
 }
 
+// resource-cap: MAX_FACE_EQUATION_CACHE_ENTRIES = N
 const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 
 /// Caps the optional exact-state memo without turning it into a search refusal.
+// resource-cap: MAX_SELECTION_STATE_MEMO_ENTRIES = N
 const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
 
 /// Bounds reuse of deterministic endpoint-resolution results across incidence
 /// assignments without retaining an unbounded set of complete topologies.
+// resource-cap: MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES = N
 const MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES: usize = 256;
 
+// resource-cap: MAX_FACE_ENDPOINT_CONFIGURATION_WORK = 4
 pub(super) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
 
+// resource-cap: MAX_FACE_DOMAIN_ASSIGNMENTS = 4
 const MAX_FACE_DOMAIN_ASSIGNMENTS: usize = 4_096;
 
 /// Bounds one complete mesh-constraint phase, including exhaustive endpoint
 /// orientation selection.
+// resource-cap: MAX_MESH_CONSTRAINT_OPERATIONS = 4
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 
 /// The relation walk and its endpoint materialization proof are independent
 /// bounded phases and each uses the complete mesh-constraint allowance.
+// resource-cap: MAX_MESH_TOPOLOGY_OPERATIONS = 4
 pub(crate) const MAX_MESH_TOPOLOGY_OPERATIONS: usize = MAX_MESH_CONSTRAINT_OPERATIONS * 2;
 
 pub(super) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);

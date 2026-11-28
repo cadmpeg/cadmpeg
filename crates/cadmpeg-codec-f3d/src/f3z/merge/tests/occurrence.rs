@@ -154,7 +154,7 @@ fn merged_member_in(
 #[test]
 fn saved_edge_loss_counts_final_archive_ownership_once() {
     use crate::loss::F3dLossCode;
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_ir::codec::DecodeBody;
     use cadmpeg_ir::report::decode::DecodeTransfer;
@@ -204,12 +204,13 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             decoded: &mut std::collections::BTreeMap::new(),
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
-            failed: std::collections::BTreeMap::new(),
+            failed: std::collections::BTreeSet::new(),
             scene_sources: &mut crate::scene::Sources::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
             component_path_tables: Vec::new(),
             instance_scopes: &mut crate::f3z::merge::InstanceScopes::new(),
+            joint_roots: crate::design_v11::joint::RootOperands::new(),
         }
         .merge(
             &mut ir,
@@ -966,7 +967,7 @@ fn imported_definition_bodies_keep_their_definition_frame() {
 
 #[test]
 fn shared_members_check_cycles_for_each_instance_path() {
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive};
     use cadmpeg_ir::codec::DecodeOptions;
     use std::io::Cursor;
 
@@ -1101,9 +1102,17 @@ fn a_repeated_member_states_its_joints_once() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let first_parent = OccurrenceId::mint("f3d:model:occurrence#first").unwrap();
     let second_parent = OccurrenceId::mint("f3d:model:occurrence#second").unwrap();
-    let first = member.instantiate(&ctx, "first", &first_parent).unwrap();
+    let mut joint_roots = crate::design_v11::joint::RootOperands::new();
+    let first = member
+        .instantiate(&ctx, "first", &first_parent, &mut joint_roots)
+        .unwrap();
     let second = member
-        .instantiate(&ctx, "second/instance-child", &second_parent)
+        .instantiate(
+            &ctx,
+            "second/instance-child",
+            &second_parent,
+            &mut joint_roots,
+        )
         .unwrap();
     assert_eq!(
         second.occurrences[0].id.as_str(),
@@ -1114,6 +1123,10 @@ fn a_repeated_member_states_its_joints_once() {
         "f3d:first@model:joint#group"
     );
     assert!(second.assembly_joints.is_empty());
+    assert_eq!(joint_roots.len(), 1);
+    let roots = &joint_roots[&first.assembly_joints[0].id];
+    assert_eq!(roots.definition, definition);
+    assert_eq!(roots.connectors, [true, false]);
     for instance in [&first, &second] {
         assert!(instance.product_definitions.is_empty());
         assert_eq!(instance.occurrences[0].prototype, definition);
@@ -1203,9 +1216,9 @@ fn a_joint_one_placement_of_a_repeated_member_binds_names_the_others() {
     );
     assert_eq!(
         losses[0].message,
-        "joint f3d:first@model:joint#bound names an operand of the root of member \
+        "legacy assembly joint f3d:first@model:joint#bound names an operand of the root of member \
          f3d:xref:product-definition#first through placement f3d:model:occurrence#first; \
-         placement(s) f3d:model:occurrence#second of that member do not state it"
+         placement(s) f3d:model:occurrence#second of that member have no corresponding legacy joint"
     );
 
     model.occurrences.retain(|row| row.id != second.id);
@@ -1220,7 +1233,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         DesignComponentOccurrence, DesignComponentOccurrenceDraft,
         DesignComponentOccurrencePlacement,
     };
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{
@@ -1446,12 +1459,13 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 decoded: &mut std::collections::BTreeMap::new(),
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
-                failed: std::collections::BTreeMap::new(),
+                failed: std::collections::BTreeSet::new(),
                 scene_sources: &mut crate::scene::Sources::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
                 component_path_tables: Vec::new(),
                 instance_scopes: &mut crate::f3z::merge::InstanceScopes::new(),
+                joint_roots: crate::design_v11::joint::RootOperands::new(),
             }
             .merge(
                 &mut ir,

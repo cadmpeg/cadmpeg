@@ -18,9 +18,11 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 /// The deepest JSON a CADIR document holds, the root object included.
+// resource-cap: MAX_DOCUMENT_DEPTH = 1
 pub const MAX_DOCUMENT_DEPTH: usize = 128;
 
 /// The deepest expression tree a CADIR document holds, a leaf being one level.
+// resource-cap: MAX_EXPRESSION_DEPTH = 1
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 
 /// The least nesting the decode wrapper's digest walk admits: twice
@@ -189,6 +191,21 @@ pub(crate) fn note_expression_past() {
 
 pub(crate) fn take_expression_past() -> bool {
     EXPRESSION_PAST.with(|past| past.replace(false))
+}
+
+thread_local! {
+    static EXPRESSION_REFUSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Notes that the text of an expression deeper than
+/// [`MAX_EXPRESSION_DEPTH`] was refused. The CADIR reader gives up the record
+/// that holds it as undecoded (§3.3).
+pub(crate) fn note_expression_refused() {
+    EXPRESSION_REFUSED.with(|refused| refused.set(true));
+}
+
+pub(crate) fn take_expression_refused() -> bool {
+    EXPRESSION_REFUSED.with(|refused| refused.replace(false))
 }
 
 /// The depth bound of §2.5 that a record or a document passes.

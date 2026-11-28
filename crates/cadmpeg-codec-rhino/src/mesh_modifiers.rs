@@ -491,7 +491,7 @@ fn parse_xml_userdata(
             text.to_owned()
         }
         version => {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 payload_range.start,
                 format!("XML userdata version {version} is unsupported"),
             ));

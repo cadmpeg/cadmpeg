@@ -42,7 +42,7 @@ fn part(angle: f64) -> (CadIr, SldprtNative, FeatureId) {
             ("moCirPattern_c", "CirPattern1", 30),
         ],
     );
-    let native = SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,

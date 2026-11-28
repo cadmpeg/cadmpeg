@@ -42,6 +42,7 @@ const SIDE_DECISION: f64 = 0.1;
 /// Floor of the derived-search work of one stream: containment tests in
 /// face region nesting, charged per polygon sample, and coincident-edge
 /// candidate tests.
+// resource-cap: MAX_TOPOLOGY_WORK = 4
 pub(crate) const MAX_TOPOLOGY_WORK: usize = 1 << 24;
 /// Derived-search work allowed per face, loop, coedge, and edge record.
 const TOPOLOGY_WORK_PER_RECORD: usize = 1 << 10;

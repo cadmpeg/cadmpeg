@@ -594,7 +594,7 @@ pub(crate) fn collect_cached_design_primary_frames(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<CachedDesignPrimaryFrame>, CodecError> {
-    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new(), &mut Vec::new())
+    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())
         .map(|(_, cached)| cached)
 }
 
@@ -608,7 +608,7 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new(), &mut Vec::new())
+    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())
         .map(|(frames, _)| frames)
 }
 
@@ -641,13 +641,12 @@ pub(super) fn scan_design_primary_frames<'a>(
 }
 
 /// Resolve the frames as `design_primary_frames` does, and give up each frame
-/// whose header is unread. A caller that discards `losses` and `given_up`
-/// leaves the charge to the prerequisite pass, which reports each frame once.
+/// whose header is unread. A caller that discards `given_up` leaves the
+/// give-up to the prerequisite pass, which gives up each frame once.
 fn collect_design_primary_frames_with_cache<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     stream: &str,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<(Vec<DesignPrimaryFrame<'a>>, Vec<CachedDesignPrimaryFrame>), CodecError> {
     let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
@@ -662,9 +661,8 @@ fn collect_design_primary_frames_with_cache<'a>(
     for frame in indexed {
         if let Some((type_ordinal, primary_frame)) = super::record::recover_frame(
             design_primary_frame(bytes, meta, &registered_entities, &frame),
-            losses,
             given_up,
-            crate::loss::F3dLossCode::PrimaryRecordUndecoded,
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
             super::record::RecordFrame::new(stream, frame.start, frame.end),
             format_args!(
                 "Design primary record {} at byte {} in {stream}",
@@ -752,18 +750,10 @@ fn design_primary_frame<'a>(
     ))
 }
 
-/// The losses of the primary frames whose header is unread, and the frames
-/// the decode gives up for them.
-pub(crate) fn decode_primary_frame_losses(
+/// The primary frames whose header is unread, which the decode gives up.
+pub(crate) fn primary_frames_given_up(
     scan: &ContainerScan,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-        Vec<super::record::GivenUpFrame>,
-    ),
-    CodecError,
-> {
-    let mut losses = Vec::new();
+) -> Result<Vec<super::record::GivenUpFrame>, CodecError> {
     let mut given_up = Vec::new();
     for entry in scan
         .entries
@@ -775,19 +765,15 @@ pub(crate) fn decode_primary_frame_losses(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         // Keep structural index errors with the reader that needs this stream.
-        if let Err(error) = collect_design_primary_frames_with_cache(
-            bytes,
-            &meta,
-            &entry.name,
-            &mut losses,
-            &mut given_up,
-        ) {
+        if let Err(error) =
+            collect_design_primary_frames_with_cache(bytes, &meta, &entry.name, &mut given_up)
+        {
             if super::record::is_fatal(&error) {
                 return Err(error);
             }
         }
     }
-    Ok((losses, given_up))
+    Ok(given_up)
 }
 
 #[cfg(test)]
@@ -1323,8 +1309,8 @@ impl TimelineStream<'_> {
             ));
         }
         if !is_supported_feature_timeline_type(design_type) {
-            return Err(CodecError::malformed(
-                "Design feature-timeline type has incompatible registration metadata",
+            return Err(CodecError::NotImplemented(
+                "Design feature-timeline type has incompatible registration metadata".into(),
             ));
         }
         let expected_class_tag = u32::try_from(type_ordinal)
@@ -1378,7 +1364,7 @@ impl TimelineStream<'_> {
             self.type_guids_by_entity,
         )
         .ok_or_else(|| {
-            CodecError::Malformed(
+            CodecError::NotImplemented(
                 "Design feature-timeline record does not match its exact frame".into(),
             )
         })
@@ -1454,7 +1440,7 @@ pub(crate) fn decode_feature_timelines(
                 let Some((timeline, interior_null)) = super::record::recover(
                     stream.timeline(type_ordinal, design_type, *entity_id, entity_source_ordinal),
                     &mut pending_losses,
-                    crate::loss::F3dLossCode::FeatureTimelineUndecoded,
+                    cadmpeg_ir::unknown::part::Cause::Unreadable,
                     super::record::DesignRecord::entity(bulk_name, *entity_id),
                     format_args!("Feature timeline record {entity_id} in {bulk_name}"),
                 )?

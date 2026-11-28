@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::native_test::f3d_native;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::test_support::native_fixture::f3d_native;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::Codec;

@@ -18,7 +18,7 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
 /// `offset`.
 fn unread_part(offset: usize) -> String {
     cadmpeg_ir::unknown::part::Part::at(
-        crate::FORMAT,
+        crate::registry_ids::FORMAT,
         crate::decode::UNREAD_PART,
         cadmpeg_core::decode::u64_from_index(offset),
         &[],
@@ -28,6 +28,35 @@ fn unread_part(offset: usize) -> String {
     .unwrap()
     .as_str()
     .to_owned()
+}
+
+/// Asserts that one loss names the unread remainder of a text stream that
+/// starts at `offset`: the give-up of `cause`, whose text states `code`, and
+/// that no loss of `code` stands beside it.
+fn assert_unread_given_up(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    offset: usize,
+    cause: cadmpeg_ir::unknown::part::Cause,
+    code: SatLossCode,
+) {
+    let record = format!("record={}: ", unread_part(offset));
+    let named = losses
+        .iter()
+        .filter(|loss| loss.message.contains(&record))
+        .collect::<Vec<_>>();
+    let [loss] = named.as_slice() else {
+        panic!("one loss names the unread part: {losses:?}");
+    };
+    assert_eq!(loss.code, cause.kind());
+    assert!(
+        loss.message.contains(&code.kind().to_string()),
+        "{}",
+        loss.message
+    );
+    assert!(
+        losses.iter().all(|loss| loss.code != code.kind()),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -119,11 +148,12 @@ fn concatenated_sat_different_save_format_retains_the_later_stream_unread() {
         let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
         assert_eq!(result.ir().geometry.bodies.len(), 1);
         assert_eq!(result.ir().geometry.faces.len(), 1);
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == SatLossCode::SourceStreamLayoutUnprojected.kind()));
+        assert_unread_given_up(
+            &result.report().losses,
+            first.len(),
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
+            SatLossCode::SourceStreamLayoutUnprojected,
+        );
         assert_eq!(
             result
                 .source_fidelity()
@@ -150,14 +180,11 @@ fn rejected_later_stream_retains_intervening_descriptive_lines() {
             let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
             assert_eq!(result.ir().geometry.bodies.len(), 1);
             assert_eq!(result.ir().geometry.faces.len(), 1);
-            assert!(
-                result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code == SatLossCode::SourceStreamLayoutUnprojected.kind()),
-                "terminator {terminator:?}, unread {unread:?}, losses {:?}",
-                result.report().losses
+            assert_unread_given_up(
+                &result.report().losses,
+                first.len(),
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
+                SatLossCode::SourceStreamLayoutUnprojected,
             );
             assert_eq!(
                 result
@@ -171,36 +198,55 @@ fn rejected_later_stream_retains_intervening_descriptive_lines() {
     }
 }
 
+/// A later stream whose header selects no native layout is undecoded: one
+/// `record.undecoded` names it, and a pinned decode accepts it.
 #[test]
-fn a_pinned_decode_refuses_an_unreadable_later_stream() {
+fn a_pinned_decode_accepts_an_undecoded_later_stream() {
     let mut source = crate::test_support::test_streams::text_sphere_stream(1.0);
     let offset = source.len();
     let unread = b"9999999999 5 0 0\n";
     source.extend(unread);
-    let part = unread_part(offset);
     let admitted = decode_bytes(&source);
-    let losses = &admitted.report().losses;
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == SatLossCode::SourceStreamLayoutUnprojected.kind()));
-    let head = format!(
-        "part {} stream=\"\" offset={offset} length={} record={part}: ",
-        crate::decode::UNREAD_PART,
-        unread.len()
+    assert_unread_given_up(
+        &admitted.report().losses,
+        offset,
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        SatLossCode::SourceStreamLayoutUnprojected,
     );
-    assert!(
-        losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(&head)
-        }),
-        "{losses:?}"
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    let pinned = SatCodec
+        .decode(&mut std::io::Cursor::new(source), &options)
+        .expect("a pinned decode accepts an undecoded stream");
+    assert_eq!(pinned.ir().geometry.faces.len(), 1);
+}
+
+/// A record that the end of input cuts before its `#` terminator is
+/// unreadable: one `record.unreadable` names it, and a pinned decode refuses
+/// it.
+#[test]
+fn a_pinned_decode_refuses_a_record_cut_by_the_end_of_input() {
+    let mut source = String::from_utf8(crate::test_support::test_streams::text_sphere_stream(1.0))
+        .unwrap()
+        .replace("End-of-ASM-data\n", "")
+        .into_bytes();
+    let offset = source.len();
+    source.extend(b"point $-1 -1 $-1 0 0 ");
+    let admitted = decode_bytes(&source);
+    assert_eq!(admitted.ir().geometry.faces.len(), 1);
+    assert_unread_given_up(
+        &admitted.report().losses,
+        offset,
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
+        SatLossCode::FramingRecordsUnread,
     );
 
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
     options.strictness.pinned = true;
     let failure = SatCodec
         .decode(&mut std::io::Cursor::new(source), &options)
-        .expect_err("a pinned decode refuses a given-up stream");
+        .expect_err("a pinned decode refuses an unreadable record");
     let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
         panic!("expected a strict rejection, got {failure:?}");
     };
@@ -208,23 +254,43 @@ fn a_pinned_decode_refuses_an_unreadable_later_stream() {
         rejection.loss().code,
         cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
-    assert!(rejection.loss().message.starts_with(&head));
+    assert!(rejection
+        .loss()
+        .message
+        .contains(&format!("record={}: ", unread_part(offset))));
 }
 
 #[test]
 fn concatenated_sat_unreadable_later_header_keeps_the_first_model() {
     let first = crate::test_support::test_streams::text_sphere_stream(1.0);
-    for second in [b"23200 5 0 0\n".as_slice(), b"9999999999 5 0 0\n"] {
+    // A save format past the reader's range is a well-formed header the
+    // reader has no layout for; a header cut before its product line breaks
+    // the header framing.
+    for (second, cause, code) in [
+        (
+            b"23200 5 0 0\n".as_slice(),
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
+            SatLossCode::FramingRecordsUnread,
+        ),
+        (
+            b"9999999999 5 0 0\n",
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
+            SatLossCode::SourceStreamLayoutUnprojected,
+        ),
+    ] {
         let mut source = first.clone();
         source.extend(second);
         let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
         assert_eq!(result.ir().geometry.bodies.len(), 1);
         assert_eq!(result.ir().geometry.faces.len(), 1);
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == SatLossCode::SourceStreamLayoutUnprojected.kind()));
+        assert_unread_given_up(&result.report().losses, first.len(), cause, code);
+        let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+        options.strictness.pinned = true;
+        let pinned = SatCodec.decode(&mut std::io::Cursor::new(source), &options);
+        assert_eq!(
+            pinned.is_err(),
+            cause == cadmpeg_ir::unknown::part::Cause::Unreadable
+        );
         assert_eq!(
             result
                 .source_fidelity()
@@ -268,13 +334,8 @@ End-of-ACIS-data\n";
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .unwrap()
         .is_ok());
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
             && loss.message.starts_with("part face ")
             && loss
                 .message

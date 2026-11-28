@@ -638,6 +638,7 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
 
 /// Bounds the face assignments the duplicate-face completion tries across both
 /// of its passes.
+// resource-cap: MAX_DUPLICATE_FACE_OPERATIONS = 4
 const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
 
 /// Complete the second face slot of every edge whose two slots name one face.

@@ -67,6 +67,7 @@ pub(super) fn projection(
 pub(super) fn reconciled(
     projection: Projection,
     features: &mut [Feature],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
 ) -> Result<Projection, CodecError> {
     if !projection
         .configurations
@@ -77,11 +78,11 @@ pub(super) fn reconciled(
     }
     let mut configurations = projection.configurations.clone();
     let mut reconciled = features.to_vec();
-    let undecided = features
-        .iter()
-        .filter(|feature| feature.suppressed.is_none())
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
+    let undecided = crate::design::configurations::undecided_suppression(
+        features,
+        scopes,
+        &crate::design::configurations::body_producers(features),
+    );
     match crate::design::configurations::reconcile_active_configurations(
         &mut reconciled,
         &mut configurations,
@@ -108,6 +109,7 @@ pub(super) fn decoded_configurations(
     reconciled(
         projection(documents, targets)?,
         &mut targets.neutral_features.to_vec(),
+        targets.scopes,
     )
 }
 
@@ -414,29 +416,11 @@ pub(crate) fn validate_assembly_projection(
     );
     let mut selected = target.model.assembly_joints.clone();
     let parents = crate::tree::parent_ids(&expanded.definitions, &expanded.occurrences);
-    let keys = native
-        .design_component_occurrences
-        .iter()
-        .map(|carrier| (carrier.id.as_str(), carrier.occurrence_guid.as_str()))
-        .chain(native.xref_references.iter().filter_map(|reference| {
-            Some((
-                reference.id.as_str(),
-                reference
-                    .placement_source
-                    .as_ref()?
-                    .occurrence_guid
-                    .as_ref()?
-                    .as_str(),
-            ))
-        }))
-        .chain(native.design_parameter_scopes.iter().filter_map(|scope| {
-            let key = scope
-                .component_insert_construction()?
-                .occurrence_key
-                .as_ref()?;
-            Some((scope.id.as_str(), key.value.as_str()))
-        }))
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let keys = crate::design::assembly::operand_keys::OperandKeys::new(
+        &native.design_component_occurrences,
+        &native.xref_references,
+        &native.design_parameter_scopes,
+    );
     for connector in selected
         .iter_mut()
         .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors_mut)
@@ -446,25 +430,7 @@ pub(crate) fn validate_assembly_projection(
             occurrence_path,
         } = &mut connector.operand.container
         {
-            let mut consumed = 0;
-            for key in occurrence_path.iter() {
-                let mut children = expanded.occurrences.iter().filter(|child| {
-                    parents.get(&child.id) == Some(occurrence)
-                        && child
-                            .native_ref
-                            .as_deref()
-                            .and_then(|id| keys.get(id))
-                            .is_some_and(|native_key| native_key.eq_ignore_ascii_case(key))
-                });
-                match (children.next(), children.next()) {
-                    (Some(child), None) => {
-                        *occurrence = child.id.clone();
-                        consumed += 1;
-                    }
-                    _ => break,
-                }
-            }
-            occurrence_path.drain(..consumed);
+            keys.descend(&expanded.occurrences, &parents, occurrence, occurrence_path);
         }
     }
     if selected != projected.joints {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::{F3dCodec, F3zDecodedMember, F3zMemberKind, F3zSession};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -144,8 +144,10 @@ fn archive_session_open_lists_stable_paths_roles_sizes_and_references() {
 
 #[test]
 fn archive_session_reference_error_keeps_the_member_decode_loss() {
-    let root =
-        crate::test_support::assembly_test::f3d_with_redirections_json("part-design", b"{invalid}");
+    let root = crate::test_support::assembly_fixture::f3d_with_redirections_json(
+        "part-design",
+        b"{invalid}",
+    );
     let bytes = f3z_archive("root.f3d", &[("root.f3d", &root)]);
     let arena = DecodeArena::new();
     let (ctx, view) =
@@ -158,7 +160,7 @@ fn archive_session_reference_error_keeps_the_member_decode_loss() {
         .body
         .losses
         .iter()
-        .any(|loss| loss.code == crate::F3dLossCode::XrefTableUndecoded.kind()));
+        .any(crate::test_support::xref_table_given_up));
 }
 
 mod memory;
@@ -167,8 +169,8 @@ mod preparation;
 
 #[test]
 fn archive_session_expanded_member_traces_avoid_reexecution() {
-    let leaf = crate::test_support::zip_test::f3d_with_smbh_and_protein(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let leaf = crate::test_support::zip_fixture::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
     );
     let root = f3d_without_brep(
         "assembly-design",
@@ -263,7 +265,7 @@ fn archive_session_formatted_space_diagnostic_reexecutes_after_relocation() {
     body.notes
         .push("truncated input at space 7 offset 11".to_owned());
     body.losses
-        .push(crate::F3dLossCode::XrefTableUndecoded.note("stored slice escapes parent space 7"));
+        .push(crate::F3dLossCode::XrefMemberUndecoded.note("stored slice escapes parent space 7"));
     ctx.register_slice(view, range).unwrap();
     let mut results = std::collections::BTreeMap::from([("leaf.f3d".to_owned(), member)]);
     let (decoded, _, _) = session.take_member(&ctx, "leaf.f3d", &mut results).unwrap();

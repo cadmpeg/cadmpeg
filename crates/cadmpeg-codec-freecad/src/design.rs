@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDequ
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::binders::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
@@ -59,20 +60,35 @@ use cadmpeg_ir::units::FinitePoint2;
 
 use crate::layout::fillet_edge_item;
 
+use self::v11::sketches::{
+    OperandTarget, StoredConstraint, StoredExternal, StoredOperand, StoredSketches,
+};
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod cell_content;
 mod first_feature;
+mod offset_parameters;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
 pub(crate) mod v11;
 
+// resource-cap: MAX_SKETCH_RECORDS = 2
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 /// Endpoint relations that profile chaining may examine in one
 /// sketch. A sketch whose chaining passes it keeps no profiles and reports
 /// `sketch.profile-matching-bounded`; later sketches start a new count.
+// resource-cap: MAX_PROFILE_ENDPOINT_CANDIDATES = 4
 const MAX_PROFILE_ENDPOINT_CANDIDATES: usize = 1 << 24;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
+/// `ExternalGeometryExtension` flag: the external geometry builds the
+/// sketch's shape.
+const EXTERNAL_GEOMETRY_DEFINING_FLAG: u64 = 1;
+/// `ExternalGeometryExtension` flag: the external geometry keeps its shape
+/// when its source changes.
+const EXTERNAL_GEOMETRY_FROZEN_FLAG: u64 = 1 << 1;
+/// `ExternalGeometryExtension` flag: the source of the external geometry is
+/// missing.
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
 const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
 const DEFAULT_PART_SPIRAL_SEGMENT_TURNS: f64 = 1.0;
@@ -108,7 +124,15 @@ pub(crate) fn transfer(
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
     program_version: Option<&str>,
-) -> Result<(BTreeSet<String>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+) -> Result<
+    (
+        BTreeSet<String>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        StoredSketches,
+    ),
+    CodecError,
+> {
+    let mut stored_sketches = StoredSketches::default();
     let DesignObjects {
         objects,
         extensions,
@@ -252,6 +276,10 @@ pub(crate) fn transfer(
             ir.model.sketch_entities.extend(decoded.entities);
             ir.model.sketch_constraints.extend(decoded.constraints);
             ir.model.parameters.extend(decoded.parameters);
+            stored_sketches
+                .constraints
+                .extend(decoded.stored.constraints);
+            stored_sketches.externals.extend(decoded.stored.externals);
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
             })
@@ -575,6 +603,7 @@ pub(crate) fn transfer(
         objects,
         &properties_by_owner,
     )?;
+    offset_parameters::append(&mut ir.model.parameters, objects, &properties_by_owner)?;
     let parameter_cycle_features = bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,
@@ -603,7 +632,7 @@ pub(crate) fn transfer(
             feature.dependencies.clear();
         }
     }
-    Ok((cycle_affected, losses))
+    Ok((cycle_affected, losses, stored_sketches))
 }
 
 pub(crate) fn body_membership_property<'a>(
@@ -1093,23 +1122,35 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
         })
 }
 
-/// The value a spreadsheet cell states by itself: a `'`-quoted string, or a
-/// number with an optional length or angle unit, written directly or as the
-/// whole `=` expression. A cell computed from other cells or functions has no
-/// stated value.
+/// The value a spreadsheet cell states by itself: the text of a text cell,
+/// the length, angle, or real of a value cell (`cell_content`), or a number
+/// with an optional length or angle unit written as the whole `=` formula. A
+/// cell computed from other cells or functions, and a value of another
+/// quantity, has no stated value.
 const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
 const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
 
 fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
-    let (expression, text) = match content.strip_prefix('=') {
-        Some(text) => (true, text),
-        None => (false, content),
-    };
-    if !expression {
-        if let Some(text) = text.strip_prefix('\'') {
-            return Some(ParameterValue::String(text.to_owned()));
+    use cadmpeg_ir::design::units::Quantity;
+    use cell_content::{CellContent, CellKind};
+    let text = match cell_content::read(content) {
+        CellContent::Formula(formula) => formula,
+        CellContent::Text(text) => return Some(ParameterValue::String(text.to_owned())),
+        CellContent::Value(value) => {
+            return match value.kind {
+                CellKind::Quantity(Quantity::LENGTH) => {
+                    Length::new(value.number).map(ParameterValue::Length)
+                }
+                CellKind::Quantity(Quantity::ANGLE) => {
+                    cadmpeg_ir::scalar::Angle::new(value.number).map(ParameterValue::Angle)
+                }
+                CellKind::Quantity(Quantity::REAL) => {
+                    cadmpeg_ir::scalar::FiniteReal::new(value.number).map(ParameterValue::Real)
+                }
+                CellKind::Quantity(_) | CellKind::Native(_) => None,
+            }
         }
-    }
+    };
     let text = text.trim();
     let number_end = text
         .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))
@@ -1174,7 +1215,7 @@ fn append_spreadsheet(
             };
             CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
         })?;
-    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
+    let cells = direct_spreadsheet_value(xml.tree(), "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -1333,7 +1374,7 @@ fn spreadsheet_dimensions(
                 property.id
             ))
         })?;
-    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
+    let root = direct_spreadsheet_value(xml.tree(), container, &property.id)?;
     let found = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -1506,55 +1547,77 @@ fn append_operation_parameters(
         let Some(value) = scalar_value(ctx, property)? else {
             continue;
         };
-        let expression = expression_binding(properties, &property.name);
-        let is_angle = property.type_name.contains("Angle");
-        let mut retained = BTreeMap::new();
-        if let Some((native_ref, _)) = &expression {
-            retained.insert(
-                cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                native_ref.to_owned(),
-            );
-        }
-        let expression = match expression {
-            Some((_, expression)) => expression,
+        let binding = expression_binding(properties, &property.name);
+        let (engine, expression) = match binding {
+            Some((engine, expression)) => (Some(engine), expression),
             None => match scalar_text(ctx, property, str::to_owned)? {
-                Some(text) => text,
-                None => format!("{}", value.get()),
+                Some(text) => (None, text),
+                None => (None, format!("{}", value.get())),
             },
         };
-        parameters.push(DesignParameter {
-            product_definition: None,
-            id: ParameterId::mint(design_identity_text(
-                "parameter",
-                object,
-                format_args!(
-                    ":{}",
-                    cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
-                ),
-            ))
-            .map_err(CodecError::malformed)?,
-            owner: Some(owner.clone()),
-            ordinal: u32::try_from(property.order).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "FreeCAD ordinal {} exceeds u32",
-                    property.order
-                ))
-            })?,
-            name: property.name.clone(),
+        parameters.push(property_parameter(
+            object,
+            owner.clone(),
+            property,
+            value,
             expression,
-            display: None,
-            value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
-            } else {
-                Some(ParameterValue::Length(Length::from_assigned_real(value)))
-            },
-            dependencies: DistinctMembers::default(),
-            properties: retained,
-            pmi: None,
-            native_ref: Some(property.id.clone()),
-        });
+            engine,
+        )?);
     }
     Ok(())
+}
+
+/// The parameter of scalar property `property` of `object`, owned by
+/// `owner`: its stored value `value`, a length or, for an angle carrier, an
+/// angle stored in degrees, and its expression `expression`, which the
+/// `ExpressionEngine` property `engine` binds where it is `Some`.
+fn property_parameter(
+    object: &ObjectRecord,
+    owner: FeatureId,
+    property: &PropertyRecord,
+    value: FiniteReal,
+    expression: String,
+    engine: Option<String>,
+) -> Result<DesignParameter, CodecError> {
+    let is_angle = property.type_name.contains("Angle");
+    let mut retained = BTreeMap::new();
+    if let Some(native_ref) = engine {
+        retained.insert(
+            cadmpeg_core::nonblank_literal!("expression_native_ref"),
+            native_ref,
+        );
+    }
+    Ok(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint(design_identity_text(
+            "parameter",
+            object,
+            format_args!(
+                ":{}",
+                cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
+            ),
+        ))
+        .map_err(CodecError::malformed)?,
+        owner: Some(owner),
+        ordinal: u32::try_from(property.order).map_err(|_| {
+            CodecError::malformed(format_args!(
+                "FreeCAD ordinal {} exceeds u32",
+                property.order
+            ))
+        })?,
+        name: property.name.clone(),
+        expression,
+        display: None,
+        value: if is_angle {
+            cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
+        } else {
+            Some(ParameterValue::Length(Length::from_assigned_real(value)))
+        },
+        dependencies: DistinctMembers::default(),
+        properties: retained,
+        pmi: None,
+        native_ref: Some(property.id.clone()),
+    })
 }
 
 struct SketchTransfer {
@@ -1562,6 +1625,7 @@ struct SketchTransfer {
     entities: Vec<SketchEntity>,
     constraints: Vec<SketchConstraint>,
     parameters: Vec<DesignParameter>,
+    stored: StoredSketches,
 }
 
 fn sketch_carrier<'a, 'input>(
@@ -1609,10 +1673,14 @@ fn validate_sketch_carrier(
     )))
 }
 
+/// An external geometry's reference, its reference index, and its
+/// `ExternalGeometryExtension` flags.
+type ExternalGeometryMetadata = (Option<String>, Option<usize>, Option<u64>);
+
 fn external_geometry_metadata(
     node: roxmltree::Node<'_, '_>,
     ordinal: usize,
-) -> Result<(Option<String>, Option<usize>, bool), CodecError> {
+) -> Result<ExternalGeometryMetadata, CodecError> {
     let mut extensions = node
         .children()
         .filter(|child| child.has_tag_name("GeoExtensions"))
@@ -1697,11 +1765,10 @@ fn external_geometry_metadata(
             )));
         }
     }
-    let flags = extension_flags.or(geometry_flags).unwrap_or_default();
     Ok((
         reference,
         reference_index,
-        flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0,
+        extension_flags.or(geometry_flags),
     ))
 }
 
@@ -1856,6 +1923,7 @@ fn parse_sketch(
     let id = SketchId::mint(design_identity_text("sketch", object, format_args!("")))
         .map_err(CodecError::malformed)?;
     let mut entities = Vec::new();
+    let mut stored = StoredSketches::default();
     let mut matched_references = BTreeSet::new();
     if let Some(geometry) = property(properties, "Geometry") {
         if geometry.type_name != "Part::PropertyGeometryList" {
@@ -1875,7 +1943,7 @@ fn parse_sketch(
                     geometry.id
                 ))
             })?;
-        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
+        let records = direct_counted_records(xml.tree(), "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -1924,6 +1992,7 @@ fn parse_sketch(
         ) {
             Ok(cache) => {
                 entities.extend(cache.entities);
+                stored.externals.extend(cache.externals);
                 matched_references = cache.matched_references;
                 losses.extend(cache.losses);
             }
@@ -1954,14 +2023,22 @@ fn parse_sketch(
             } else {
                 "external"
             };
+            let entity_id = SketchEntityId::mint(design_identity_text(
+                "sketch-entity",
+                object,
+                format_args!(":{entity_kind}:{external_index}"),
+            ))
+            .map_err(CodecError::malformed)?;
+            stored.externals.insert(
+                entity_id.clone(),
+                StoredExternal {
+                    flags: None,
+                    link: Some((target_object.to_owned(), reference.subelements().to_vec())),
+                },
+            );
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::mint(design_identity_text(
-                        "sketch-entity",
-                        object,
-                        format_args!(":{entity_kind}:{external_index}"),
-                    ))
-                    .map_err(CodecError::malformed)?,
+                    entity_id,
                     id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(ToOwned::to_owned),
@@ -2040,8 +2117,15 @@ fn parse_sketch(
             .with_native_ref(Some(object.id().to_owned())),
         );
     }
-    let (constraints, parameters) =
-        parse_constraints(ctx, object, properties, &id, &entities, losses)?;
+    let (constraints, parameters) = parse_constraints(
+        ctx,
+        object,
+        properties,
+        &id,
+        &entities,
+        &mut stored.constraints,
+        losses,
+    )?;
     let profiles = build_profiles(&entities, &constraints, profile_work).unwrap_or_else(|| {
         losses.push(
             crate::loss::FreecadLossCode::SketchProfileMatchingBounded.note(format!(
@@ -2073,6 +2157,7 @@ fn parse_sketch(
         entities,
         constraints,
         parameters,
+        stored,
     })
 }
 
@@ -2535,6 +2620,7 @@ fn parse_constraints(
     properties: &[&PropertyRecord],
     sketch: &SketchId,
     entities: &[SketchEntity],
+    stored: &mut BTreeMap<SketchConstraintId, StoredConstraint>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<SketchConstraint>, Vec<DesignParameter>), CodecError> {
     let Some(property) = property(properties, "Constraints") else {
@@ -2557,21 +2643,13 @@ fn parse_constraints(
                 property.id
             ))
         })?;
-    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
-    let mut name_counts = BTreeMap::<&str, usize>::new();
-    for node in &records {
+    let records = direct_counted_records(xml.tree(), "ConstraintList", "Constrain", &property.id)?;
+    // `FreeCAD` resolves a constraint name to the first constraint of the
+    // list that stores it.
+    let mut first_named = BTreeMap::<&str, usize>::new();
+    for (index, node) in records.iter().enumerate() {
         if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
-            *name_counts.entry(name).or_default() += 1;
-        }
-    }
-    for (name, count) in &name_counts {
-        if *count > 1 {
-            losses.push(
-                crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous.note(format!(
-                    "{} has {count} constraints named {name}",
-                    property.id
-                )),
-            );
+            first_named.entry(name).or_insert(index);
         }
     }
     let mut constraints = Vec::new();
@@ -2646,7 +2724,7 @@ fn parse_constraints(
                     let indexed = expression_binding(properties, &path);
                     let named = node
                         .attribute("Name")
-                        .filter(|name| name_counts.get(name) == Some(&1))
+                        .filter(|name| first_named.get(name) == Some(&index))
                         .and_then(|name| {
                             expression_binding(properties, &format!(".Constraints.{name}"))
                         });
@@ -2671,8 +2749,18 @@ fn parse_constraints(
                     );
                     if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
                         parameter_properties.insert(
-                            cadmpeg_core::nonblank_literal!("source_name"),
+                            if first_named.get(name) == Some(&index) {
+                                cadmpeg_core::nonblank_literal!("source_name")
+                            } else {
+                                cadmpeg_core::nonblank_literal!("shadowed_name")
+                            },
                             name.to_owned(),
+                        );
+                    }
+                    if !parameter_properties.contains_key("source_name") {
+                        parameter_properties.insert(
+                            cadmpeg_core::nonblank_literal!("generated_name"),
+                            "1".to_owned(),
                         );
                     }
                     if let Some((native_ref, _)) = &expression {
@@ -2846,17 +2934,43 @@ fn parse_constraints(
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
                 entities,
-                parameter,
+                parameter: parameter.clone(),
                 operands: native_operands,
             }
         };
+        let id = SketchConstraintId::mint(design_identity_text(
+            "sketch-constraint",
+            object,
+            format_args!(":{}", index + 1),
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut stored_operands = Vec::new();
+        for (entity, position) in &operands {
+            let target = match (type_code, *entity, *position) {
+                (Some(9), -1, _) | (_, -1, 0) => OperandTarget::Frame(PrincipalEntity::XAxis),
+                (Some(9), -2, _) | (_, -2, 0) => OperandTarget::Frame(PrincipalEntity::YAxis),
+                (_, -1 | -2, 1) => OperandTarget::Frame(PrincipalEntity::Origin),
+                _ => resolve_operand(*entity, *position, entities)?
+                    .map_or(OperandTarget::Unresolved(*entity), OperandTarget::Locus),
+            };
+            stored_operands.push(StoredOperand {
+                position: *position,
+                target,
+            });
+        }
+        stored.insert(
+            id.clone(),
+            StoredConstraint {
+                code: type_code,
+                operands: stored_operands,
+                parameter: parameter.clone(),
+                value: node
+                    .attribute("Value")
+                    .and_then(|value| value.parse::<f64>().ok()),
+            },
+        );
         constraints.push(SketchConstraint {
-            id: SketchConstraintId::mint(design_identity_text(
-                "sketch-constraint",
-                object,
-                format_args!(":{}", index + 1),
-            ))
-            .map_err(CodecError::malformed)?,
+            id,
             sketch: sketch.clone(),
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -3240,40 +3354,34 @@ fn bind_parameter_dependencies(
     for object in objects {
         object_names.insert(feature_id(object)?, object.name().as_str());
     }
-    let mut constraint_names = HashMap::new();
-    for property in properties
+    let constraint_lists = properties
         .iter()
         .filter(|property| property.type_name == "Sketcher::PropertyConstraintList")
-    {
-        let mut counts = HashMap::<&str, usize>::new();
-        for value in property
-            .values()
-            .iter()
-            .filter(|value| value.tag == "Constrain")
-        {
-            if let Some(name) = value.attributes.get("Name").filter(|name| !name.is_empty()) {
-                *counts.entry(name).or_default() += 1;
-            }
-        }
-        constraint_names.insert(property.id.as_str(), counts);
-    }
+        .map(|property| property.id.as_str())
+        .collect::<HashSet<_>>();
     let mut candidates = Vec::new();
     for parameter in parameters.iter() {
         let source_name = parameter.properties.get("source_name");
         let mut names = Vec::new();
         names.push(parameter.name.clone());
+        // An expression names an aliased cell by its alias or its address.
+        if let Some(address) = parameter
+            .properties
+            .get("address")
+            .filter(|address| **address != parameter.name)
+        {
+            names.push(address.to_owned());
+        }
         if let Some(source_name) = source_name {
-            let constraint = parameter
+            if source_name != &parameter.name {
+                names.push(source_name.to_owned());
+            }
+            if parameter
                 .native_ref
                 .as_deref()
-                .and_then(|id| constraint_names.get(id));
-            if constraint.is_none_or(|counts| counts.get(source_name.as_str()) == Some(&1)) {
-                if source_name != &parameter.name {
-                    names.push(source_name.to_owned());
-                }
-                if constraint.is_some() {
-                    names.push(format!("Constraints.{source_name}"));
-                }
+                .is_some_and(|id| constraint_lists.contains(id))
+            {
+                names.push(format!("Constraints.{source_name}"));
             }
         }
         candidates.push((parameter.id.clone(), parameter.owner.clone(), names));
@@ -3464,6 +3572,10 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
     let bytes = expression.as_bytes();
     let mut identifiers = Vec::new();
     let mut cursor = 0;
+    let identifier_len = |text: &str| {
+        text.find(|character: char| !character.is_alphanumeric() && !matches!(character, '_' | '.'))
+            .unwrap_or(text.len())
+    };
     while cursor < bytes.len() {
         if matches!(bytes[cursor], b'\'' | b'"') {
             let quote = bytes[cursor];
@@ -3493,27 +3605,20 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
             cursor = end + 2;
             if bytes.get(cursor) == Some(&b'.') {
                 cursor += 1;
-                while cursor < bytes.len()
-                    && (bytes[cursor].is_ascii_alphanumeric()
-                        || matches!(bytes[cursor], b'_' | b'.'))
-                {
-                    cursor += 1;
-                }
+                cursor += identifier_len(&expression[cursor..]);
             }
             continue;
         }
-        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+        let Some(character) = expression[cursor..].chars().next() else {
+            break;
+        };
+        if character.is_alphabetic() || character == '_' {
             let start = cursor;
-            cursor += 1;
-            while cursor < bytes.len()
-                && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'_' | b'.'))
-            {
-                cursor += 1;
-            }
+            cursor += identifier_len(&expression[cursor..]);
             identifiers.push(&expression[start..cursor]);
             continue;
         }
-        cursor += 1;
+        cursor += character.len_utf8();
     }
     identifiers
 }

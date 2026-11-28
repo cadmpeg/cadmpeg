@@ -65,8 +65,9 @@ pub(crate) struct Configurations {
     pub(crate) active: BTreeMap<ProductDefinitionId, ConfigurationId>,
 }
 
-/// A document in `hosted`, or one `scopes` does not key, has no scope of its
-/// own. `features` holds the ids of the scopes' features and `parameters`
+/// Each row takes its place in the one table that holds rows. A document in
+/// `hosted`, or one `scopes` does not key, has no scope of its own.
+/// `features` holds the ids of the scopes' features and `parameters`
 /// their parameters. Each class of row or cell the design omits charges one
 /// loss to `losses`.
 pub(crate) fn project(
@@ -107,6 +108,7 @@ pub(crate) fn project(
             id: row.id.clone(),
             scope: scope.clone(),
             name: row.name.clone().unwrap_or_default(),
+            position: Some(row.ordinal),
             parent: None,
             comment: None,
             overrides,
@@ -290,10 +292,8 @@ pub(crate) struct RestatedRows {
     pub(crate) active: BTreeSet<ConfigurationId>,
     /// The cells of active rows that the design configurations state.
     pub(crate) stated: StatedCells,
-    /// One `<kept> active in place of <document>` per scope whose stored
-    /// active row the rows keep in place of the active configuration of the
-    /// document ([`ActiveRows::Stored`]).
-    pub(crate) kept: Vec<String>,
+    /// Distinct activity requests discarded on the retained path.
+    pub(crate) kept: BTreeSet<Option<ConfigurationId>>,
 }
 
 /// The cells written into active rows from what their configurations
@@ -302,6 +302,8 @@ pub(crate) struct RestatedRows {
 pub(crate) struct StatedCells {
     pub(crate) parameters: BTreeSet<(ConfigurationId, ParameterId)>,
     pub(crate) features: BTreeSet<(ConfigurationId, FeatureId)>,
+    pub(crate) part_numbers: BTreeMap<ConfigurationId, PartNumber>,
+    pub(crate) expressions: BTreeMap<(ConfigurationId, ParameterId), Expression>,
 }
 
 /// Which rows [`restate`] makes active.
@@ -381,9 +383,10 @@ struct Scoped<'a> {
 /// restates the rows of its documents where they name an active row or
 /// there are none. A row of such a scope that the stored tables hold and no
 /// configuration states is removed. A configuration with no row becomes a
-/// new row after the others, in arena order, unless the stored tables hold
-/// its row and it states what that row projects. The rows are numbered
-/// again in their order. `history` holds the v10 features whose states the
+/// new row unless the stored tables hold its row and it states what that
+/// row projects. A changed design position orders the rows by position and
+/// identity. Otherwise new rows follow the stored rows in arena order. The
+/// rows are numbered again in their order. `history` holds the v10 features whose states the
 /// rows set, and `own` the v10 parameters; a cache agrees with its
 /// expression's value within the tolerances of `target`. `which` selects
 /// the active rows.
@@ -438,10 +441,7 @@ pub(crate) fn restate(
             .collect(),
         ActiveRows::Design => BTreeSet::new(),
     };
-    let (mut moved, mut kept) = (BTreeSet::new(), Vec::new());
-    let shown = |id: Option<&ConfigurationId>| {
-        id.map_or("no configuration".to_owned(), ToString::to_string)
-    };
+    let (mut moved, mut kept) = (BTreeSet::new(), BTreeSet::new());
     for scope in &design.scopes {
         let held = stored
             .iter()
@@ -457,11 +457,7 @@ pub(crate) fn restate(
             }
             ActiveRows::Stored => {
                 if stated != held {
-                    kept.push(format!(
-                        "{} active in place of {}",
-                        shown(held),
-                        shown(stated)
-                    ));
+                    kept.insert(stated.cloned());
                 }
             }
         }
@@ -504,6 +500,7 @@ pub(crate) fn restate(
             && !present.contains(&row.id)
     });
     let mut held = BTreeSet::new();
+    let mut positions = BTreeMap::new();
     for row in rows.iter().chain(retained) {
         let Some(scope) = scope_of(row).filter(|scope| restates(scope)) else {
             out.rows.rows.push(row.clone());
@@ -526,6 +523,9 @@ pub(crate) fn restate(
         held.insert(&row.id);
         let mut restated = row.clone();
         if record.scope == scope {
+            if let Some(position) = record.position {
+                positions.insert(&record.id, position);
+            }
             overlay(
                 &mut restated,
                 record,
@@ -580,12 +580,29 @@ pub(crate) fn restate(
             &mut out.charges,
             &mut out.rows.stated,
         );
+        if let Some(position) = record.position {
+            positions.insert(&record.id, position);
+        }
         added.push(row);
     }
     out.rows
         .rows
         .sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
     out.rows.rows.extend(added);
+    if positions
+        .iter()
+        .any(|(id, position)| stored.get(id).is_none_or(|row| row.ordinal != *position))
+    {
+        out.rows.rows.sort_by(|left, right| {
+            let left_position = positions.get(&left.id);
+            let right_position = positions.get(&right.id);
+            (left_position.is_none(), left_position, &left.id).cmp(&(
+                right_position.is_none(),
+                right_position,
+                &right.id,
+            ))
+        });
+    }
     for (at, row) in (0_u32..).zip(&mut out.rows.rows) {
         row.ordinal = at;
     }
@@ -824,6 +841,11 @@ fn overlay(
             },
         };
         row.parameter_overrides.insert(id.clone(), text);
+        if let Some(expression) = &stated.expression {
+            stated_cells
+                .expressions
+                .insert((record.id.clone(), id.clone()), expression.clone());
+        }
         if active {
             stated_cells
                 .parameters
@@ -902,7 +924,7 @@ fn overlay(
             row.feature_states.remove(id);
         }
     }
-    identities(
+    if let Some(part_number) = identities(
         row,
         &chain,
         &resolved,
@@ -910,7 +932,11 @@ fn overlay(
         input,
         active,
         &mut charges.unstated,
-    );
+    ) {
+        stated_cells
+            .part_numbers
+            .insert(record.id.clone(), part_number);
+    }
     for (stated, field, why) in [
         (
             record.parent.is_some(),
@@ -1062,7 +1088,7 @@ fn identities(
     input: &Scoped<'_>,
     active: bool,
     unstated: &mut Vec<String>,
-) {
+) -> Option<PartNumber> {
     let record = chain[0];
     let scope = input.scope;
     let path = |field: &str| format!("design.configurations[{}].{field}", record.id);
@@ -1090,11 +1116,11 @@ fn identities(
             "{field}: a row's property cells set only the part number and the description"
         ));
     }
-    let part_number = match written_part_number(chain, input) {
-        Ok(part_number) => part_number,
+    let (part_number, expected) = match written_part_number(chain, input) {
+        Ok(part_number) => (part_number.clone(), part_number),
         Err(why) => {
             unstated.push(format!("{field}.part_number: {why}"));
-            base.part_number.clone()
+            (base.part_number.clone(), None)
         }
     };
     if part_number != base.part_number {
@@ -1107,6 +1133,7 @@ fn identities(
     if stated.description != base.description {
         set_property(row, "property:Description", stated.description.clone());
     }
+    expected
 }
 
 /// The part number that `chain[0]` resolves for the scope, as a row's cell
@@ -1183,7 +1210,10 @@ fn set_property(row: &mut LegacyConfiguration, key: &str, text: Option<String>) 
 
 /// The Fusion text of `expression`, with each reference spelled by its
 /// parameter's name in `names`; `None` where it has none.
-fn spelled(expression: &Expression, names: &HashMap<&ParameterId, &str>) -> Option<String> {
+pub(crate) fn spelled(
+    expression: &Expression,
+    names: &HashMap<&ParameterId, &str>,
+) -> Option<String> {
     let name = |reference: &ParameterRef| match (&reference.target, &reference.through) {
         (RefTarget::Parameter(id), None) => names.get(id).map(|name| (*name).to_owned()),
         _ => None,

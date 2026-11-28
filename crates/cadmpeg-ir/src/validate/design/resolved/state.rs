@@ -20,7 +20,6 @@ use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
 use crate::ids::{BodyId, ProductDefinitionId};
-use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 use crate::report::check::Finding;
 use crate::transform::Transform;
@@ -45,8 +44,12 @@ impl Closure<'_, '_, '_, '_> {
         let mut outside = None;
         located.visit_references(self.ctx, &mut |target| {
             if outside.is_none()
-                && !records.contains_key(target)
-                && (self.topology.contains(target) || !IdentitySet::contains(self.ids, target))
+                && super::leaves_state(
+                    records.contains_key(target),
+                    target,
+                    self.topology,
+                    self.ids,
+                )
             {
                 outside = Some(target.to_owned());
             }

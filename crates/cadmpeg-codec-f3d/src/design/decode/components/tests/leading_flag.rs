@@ -178,7 +178,9 @@ fn registered(rows: &[(&str, u32, u64)]) -> crate::metastream::MetaStream {
     }
 }
 
-/// Discover and admit the occurrences of one stream as the decoder does.
+/// Discover and admit the occurrences of one stream as the decoder does. The
+/// losses end with the give-up loss of each frame that the admission leaves
+/// out.
 fn discover(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
@@ -187,6 +189,7 @@ fn discover(
     Vec<cadmpeg_ir::report::loss::LossNote>,
     usize,
 ) {
+    const DESIGN: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let key = |entity: u64, start: usize| (entity, u64::try_from(start).unwrap());
     let frames = crate::metastream::primary_record_frames(meta, bytes.len()).unwrap();
     let typed = super::super::occurrence_frames(bytes, meta).unwrap();
@@ -202,18 +205,31 @@ fn discover(
         .iter()
         .map(|frame| (frame.start, frame.member_end))
         .collect();
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        super::super::admitted_stream_occurrences(
-            ctx,
-            bytes,
-            "Design/BulkStream.dat",
-            &frame_ends,
-            &super::super::occurrence_source_entities(meta),
-            &primary,
-            &typed_primary,
-        )
-    });
-    (admitted.occurrences, admitted.losses, admitted.superseded)
+    let archive = crate::test_support::body_map_fixture::f3d_with_breps_and_design(&[], bytes, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let admitted = super::super::admitted_stream_occurrences(
+        &ctx,
+        scan.entry_bytes(DESIGN).unwrap(),
+        DESIGN,
+        &frame_ends,
+        &super::super::occurrence_source_entities(meta),
+        &primary,
+        &typed_primary,
+    )
+    .expect("the stream admits its occurrences");
+    let mut losses = admitted.losses;
+    let frames = crate::design::decode::record::give_up_frames(&ctx, &scan, admitted.given_up)
+        .expect("each dropped frame gives up its source part");
+    losses.extend(
+        frames
+            .iter()
+            .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
+    );
+    (admitted.occurrences, losses, admitted.superseded)
 }
 
 const OWNER_TYPE: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
@@ -250,17 +266,58 @@ fn a_leading_flag_frame_under_another_type_is_kept_with_a_registration_loss() {
     }
 }
 
-fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<crate::loss::F3dLossCode> {
-    use crate::loss::F3dLossCode;
+/// Why the decoder admits no occurrence from a frame: a loss it charges, or
+/// the reason of a frame it gives up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refusal {
+    TypeUnregistered,
+    YieldedToRegistered,
+    KeyRepeated,
+    FirstMatrix,
+    IdentityOrdinal,
+}
+
+/// The refusals among `losses`, in [`Refusal`] order. Each given-up frame
+/// has one give-up loss whose text states its reason: `record.unreadable`
+/// for a class-256 matrix at ordinal one, which f3d.md §3.1 forbids, and
+/// `record.undecoded` for the others.
+fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<Refusal> {
+    let charged = |kind: cadmpeg_ir::report::loss::LossKind, phrase: &str| {
+        losses
+            .iter()
+            .any(|loss| loss.code == kind && loss.message.contains(phrase))
+    };
+    let given_up =
+        |phrase: &str| charged(cadmpeg_ir::unknown::part::record_undecoded_kind(), phrase);
     [
-        F3dLossCode::LocalOccurrenceTypeUnregistered,
-        F3dLossCode::LocalOccurrenceYieldedToRegistered,
-        F3dLossCode::LocalOccurrenceKeyRepeated,
-        F3dLossCode::LocalOccurrenceFirstMatrixRefused,
-        F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved,
+        (
+            Refusal::TypeUnregistered,
+            losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::LocalOccurrenceTypeUnregistered.kind()
+            }),
+        ),
+        (
+            Refusal::YieldedToRegistered,
+            given_up("yield to a registered frame of the same occurrence"),
+        ),
+        (
+            Refusal::KeyRepeated,
+            given_up("state an occurrence key that another frame"),
+        ),
+        (
+            Refusal::FirstMatrix,
+            charged(
+                cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "store a matrix at ordinal one",
+            ),
+        ),
+        (
+            Refusal::IdentityOrdinal,
+            given_up("has identity flag 1 and ordinal"),
+        ),
     ]
     .into_iter()
-    .filter(|code| losses.iter().any(|loss| loss.code == code.kind()))
+    .filter_map(|(refusal, present)| present.then_some(refusal))
     .collect()
 }
 
@@ -274,7 +331,6 @@ fn two_frames(first: Vec<u8>, second: &[u8]) -> (Vec<u8>, u64) {
 
 #[test]
 fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registered_one() {
-    use crate::loss::F3dLossCode;
     let mut registered_frame = frame(false);
     header(&mut registered_frame, b"256", 253);
     let mut unregistered = frame(false);
@@ -288,10 +344,13 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].byte_offset(), 0);
     assert_eq!(superseded, 0);
-    assert_eq!(
-        codes(&losses),
-        [F3dLossCode::LocalOccurrenceYieldedToRegistered]
-    );
+    assert_eq!(codes(&losses), [Refusal::YieldedToRegistered]);
+    let [loss] = losses.as_slice() else {
+        panic!("one dropped-frame charge: {losses:?}");
+    };
+    assert!(loss.message.starts_with(&format!(
+        "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset={second} "
+    )));
 
     let mut upper = unregistered.clone();
     let guid_at = 51 + 76 + 4;
@@ -303,10 +362,7 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     let (bytes, _) = two_frames(lower, &upper);
     let (occurrences, losses, _) = discover(&bytes, &meta);
     assert_eq!(occurrences.len(), 1);
-    assert_eq!(
-        codes(&losses),
-        [F3dLossCode::LocalOccurrenceYieldedToRegistered]
-    );
+    assert_eq!(codes(&losses), [Refusal::YieldedToRegistered]);
 
     let mut unproven = frame(false);
     header(&mut unproven, b"256", 253);
@@ -317,10 +373,7 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     assert_eq!(occurrences[0].record_index, 254);
     assert_eq!(
         codes(&losses),
-        [
-            F3dLossCode::LocalOccurrenceTypeUnregistered,
-            F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved
-        ]
+        [Refusal::TypeUnregistered, Refusal::IdentityOrdinal]
     );
 
     let mut first = frame(false);
@@ -330,7 +383,7 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     let (occurrences, losses, superseded) = discover(&bytes, &both_unregistered);
     assert!(occurrences.is_empty());
     assert_eq!(superseded, 0);
-    assert_eq!(codes(&losses), [F3dLossCode::LocalOccurrenceKeyRepeated]);
+    assert_eq!(codes(&losses), [Refusal::KeyRepeated]);
     assert!(losses[0].message.contains("#0, "));
 
     let mut first = frame(false);
@@ -342,7 +395,7 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     ]);
     let (occurrences, losses, _) = discover(&bytes, &both_registered);
     assert!(occurrences.is_empty());
-    assert_eq!(codes(&losses), [F3dLossCode::LocalOccurrenceKeyRepeated]);
+    assert_eq!(codes(&losses), [Refusal::KeyRepeated]);
 }
 
 #[test]
@@ -371,17 +424,13 @@ fn a_leading_flag_frame_is_read_only_at_a_primary_record_start() {
 
 #[test]
 fn a_class_256_leading_flag_frame_stores_a_matrix_only_after_ordinal_one() {
-    use crate::loss::F3dLossCode;
     let placement = registered(&[(super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0)]);
     let mut first = frame(true);
     header(&mut first, b"256", 253);
     let (occurrences, losses, superseded) = discover(&first, &placement);
     assert!(occurrences.is_empty());
     assert_eq!(superseded, 0);
-    assert_eq!(
-        codes(&losses),
-        [F3dLossCode::LocalOccurrenceFirstMatrixRefused]
-    );
+    assert_eq!(codes(&losses), [Refusal::FirstMatrix]);
     assert!(losses[0].message.contains("#0."));
 
     let mut later = first.clone();

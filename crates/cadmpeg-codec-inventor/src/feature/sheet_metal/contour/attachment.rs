@@ -15,6 +15,7 @@ use crate::kernel::ActiveCarrierState;
 use crate::pmdc::PmDcReference;
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 
+// resource-cap: MAX_ATTACHMENT_WORK = 4
 const MAX_ATTACHMENT_WORK: usize = 1 << 21;
 
 pub(super) fn read(

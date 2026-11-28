@@ -8,7 +8,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -16,6 +15,7 @@ use cadmpeg_ir::draft::CommitSession;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::Cause;
 
 use self::angles::AngleUnits;
 use self::brep::{Axis, SolidBuilder};
@@ -288,11 +288,15 @@ pub(super) fn decode(
                     },
                 );
             }
-            Err(message) => losses.extend(give_up_instance(
-                exchange,
-                id,
-                StepLossCode::CsgItemUnresolved.note(format!("{entity} #{id}: {message}")),
-            )),
+            Err(message) => {
+                if !super::drop_with_lost_reference(exchange, id, record, ctx)? {
+                    exchange.lost().give_up(
+                        id,
+                        Cause::Unreadable,
+                        format!("{entity} #{id}: {message}"),
+                    );
+                }
+            }
         }
     }
     for (id, record) in exchange.entities("BOOLEAN_RESULT") {
@@ -310,13 +314,11 @@ pub(super) fn decode(
                     },
                 );
             }
-            None => losses.extend(give_up_instance(
-                exchange,
+            None => exchange.lost().give_up(
                 id,
-                StepLossCode::CsgItemUnresolved.note(format!(
-                    "BOOLEAN_RESULT #{id} has no operator or no operands"
-                )),
-            )),
+                Cause::Unreadable,
+                format!("BOOLEAN_RESULT #{id} has no operator or no operands"),
+            ),
         }
     }
     let solids = csg_solid_roots(exchange);
@@ -326,7 +328,7 @@ pub(super) fn decode(
             *operands = operands.map(resolve);
         }
     }
-    let refused = refuse_cycles(exchange, &items, &mut losses);
+    let refused = refuse_cycles(exchange, &items);
     for (item, frame) in plant_orientations(exchange, geometry, &items, &solids, &mut losses) {
         if let Some(item) = items.get_mut(&item) {
             item.orientation = Some(frame);
@@ -606,14 +608,10 @@ fn collect_tree(
 }
 
 /// The Boolean results that lie on an operand cycle or have one in their
-/// operand graph. A Boolean tree is acyclic (ISO 10303-42 §6.4.6); each
-/// cycle found and each Boolean that uses one has a `csg.item-unresolved`
-/// loss.
-fn refuse_cycles(
-    exchange: &Exchange,
-    items: &BTreeMap<u64, Item>,
-    losses: &mut Vec<LossNote>,
-) -> BTreeSet<u64> {
+/// operand graph. A Boolean tree is acyclic (ISO 10303-42 §6.4.6): the
+/// reader gives up each Boolean on a cycle, and drops each Boolean that uses
+/// one with the operand that reaches it.
+fn refuse_cycles(exchange: &Exchange, items: &BTreeMap<u64, Item>) -> BTreeSet<u64> {
     let operands_of = |id: u64| match items.get(&id).map(|item| &item.shape) {
         Some(Shape::Boolean { operands, .. }) => Some(*operands),
         _ => None,
@@ -621,7 +619,8 @@ fn refuse_cycles(
     let mut finished = BTreeSet::new();
     let mut on_path = BTreeSet::new();
     let mut refused = BTreeSet::new();
-    let mut dependents = BTreeSet::new();
+    let mut cycles = BTreeMap::new();
+    let mut dependents = BTreeMap::new();
     for &start in items.keys() {
         let Some(pair) = operands_of(start) else {
             continue;
@@ -637,9 +636,12 @@ fn refuse_cycles(
                 path.pop();
                 on_path.remove(&id);
                 finished.insert(id);
-                if !refused.contains(&id) && pair.iter().any(|operand| refused.contains(operand)) {
-                    refused.insert(id);
-                    dependents.insert(id);
+                if !refused.contains(&id) {
+                    if let Some(needs) = pair.into_iter().find(|operand| refused.contains(operand))
+                    {
+                        refused.insert(id);
+                        dependents.insert(id, needs);
+                    }
                 }
                 continue;
             };
@@ -662,11 +664,14 @@ fn refuse_cycles(
                     .map(|member| format!("#{member}"))
                     .collect::<Vec<_>>()
                     .join(" -> ");
-                losses.push(StepLossCode::CsgItemUnresolved.note(format!(
-                    "BOOLEAN_RESULT #{operand} is its own operand through {chain}; \
-                     a Boolean tree is acyclic (ISO 10303-42 §6.4.6), so the cycle has \
-                     no feature"
-                )));
+                for &member in &cycle {
+                    cycles.entry(member).or_insert_with(|| {
+                        format!(
+                            "BOOLEAN_RESULT #{member} lies on the operand cycle {chain}; \
+                             a Boolean tree is acyclic (ISO 10303-42 §6.4.6)"
+                        )
+                    });
+                }
                 refused.extend(cycle);
                 continue;
             }
@@ -674,13 +679,11 @@ fn refuse_cycles(
             on_path.insert(operand);
         }
     }
-    for id in dependents {
-        losses.push(StepLossCode::CsgItemUnresolved.note(format!(
-            "BOOLEAN_RESULT #{id} has an operand cycle in its tree, so it has no feature"
-        )));
+    for (id, message) in cycles {
+        exchange.lost().give_up(id, Cause::Unreadable, message);
     }
-    for &id in &refused {
-        exchange.lost().give_up(id, "Boolean operand cycle");
+    for (id, needs) in dependents {
+        exchange.lost().drop_with(id, needs);
     }
     refused
 }

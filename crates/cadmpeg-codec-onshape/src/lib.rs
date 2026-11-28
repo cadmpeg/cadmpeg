@@ -31,7 +31,7 @@ impl OnshapeCodec {
     }
 }
 impl CodecBackend for OnshapeCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
     fn detect_impl(
         &self,
         ctx: &DecodeContext<'_>,

@@ -25,14 +25,19 @@ use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 
 /// Largest patch count along one parameter axis.
+// resource-cap: MAX_PATCHES = N
 const MAX_PATCHES: usize = 1024;
 /// Stored approximation poles one export may write.
+// resource-cap: MAX_POLES = N
 const MAX_POLES: usize = 1 << 20;
 /// Point evaluations one export may spend on sampling and residual probes.
+// resource-cap: MAX_SAMPLES = N
 const MAX_SAMPLES: usize = 1 << 23;
 /// Model evaluation work one export may spend.
+// resource-cap: MAX_EVALUATION_WORK = N
 const MAX_EVALUATION_WORK: usize = 1 << 31;
 /// Model evaluation work one export may spend on exact curves, which can fall back to their charts.
+// resource-cap: MAX_EXACT_CURVE_WORK = N
 const MAX_EXACT_CURVE_WORK: usize = 1 << 26;
 /// Share of the model linear tolerance that one sampled carrier may use.
 const TOLERANCE_FRACTION: f64 = 0.25;
