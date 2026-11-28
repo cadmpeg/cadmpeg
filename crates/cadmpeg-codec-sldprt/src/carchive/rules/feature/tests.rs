@@ -1,5 +1,5 @@
 use super::{
-    at_cut_list_tail, axistail, cut_list_sort_head, is_turn_block, scaled_bodies,
+    at_cut_list_tail, axistail, cut_list_sort_head, is_turn_block, scaled_bodies, solidfolder,
     turn_block_after_zeros, M12345,
 };
 use crate::carchive::reader::Reader;
@@ -269,6 +269,44 @@ fn a_cut_list_sort_head_with_a_nonzero_byte_is_not_a_head() {
 fn twelve_zero_bytes_are_not_a_cut_list_sort_head() {
     let bytes = sort_head(0, [0; 6], &[0, 0, 0x01, 0x80]);
     assert_eq!(with_reader(&bytes, cut_list_sort_head), None);
+}
+
+/// A `moSolidBodyFolder_c` feature with an empty block: an inline `moNodeName_c`
+/// name, the named fields, the block head, twelve zero bytes, the 35 fixed bytes,
+/// the empty +55 string and its 64-byte tail, the block u32 and the folder u32 0.
+fn solid_body_folder_feature() -> Vec<u8> {
+    let mut bytes = b"\xff\xff\x01\x00\x0c\x00moNodeName_c\xff\xfe\xff\x01A\x00".to_vec();
+    bytes.extend([0; 4]);
+    bytes.extend([0, 0, 0, 0]);
+    bytes.extend(7u32.to_le_bytes());
+    bytes.extend([0; 4]);
+    bytes.extend([0xff, 0xfe, 0xff, 0x00]);
+    bytes.extend([0; 8]);
+    bytes.extend([0; 12 + 35]);
+    bytes.extend([0xff, 0xfe, 0xff, 0x00]);
+    let mut tail = vec![0; 64];
+    tail[..5].copy_from_slice(&[0x00, 0xff, 0xff, 0x00, 0x00]);
+    tail[54..56].copy_from_slice(&[0x02, 0x00]);
+    bytes.extend(tail);
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend(0u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn a_solid_body_folder_reads_its_cut_list_sort_head_and_sort_options() {
+    for word in [0, 1] {
+        let mut bytes = solid_body_folder_feature();
+        bytes.extend(sort_head(word, [0; 6], SORT_OPTIONS));
+        bytes.extend([0; 10]);
+        let arena = DecodeArena::new();
+        let (ctx, _root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::desktop())
+            .expect("context");
+        let mut reader = Reader::new(&ctx, &bytes, 0, HashMap::new(), 0, None);
+        let folder = solidfolder(&mut reader).expect("folder");
+        assert_eq!(folder.get("sort_word").as_int(), Some(i64::from(word)));
+        assert_eq!(reader.p, bytes.len());
+    }
 }
 
 #[test]
