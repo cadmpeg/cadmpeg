@@ -2968,32 +2968,29 @@ fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<P
     })
 }
 
-/// The timeline state offsets of a fixed tail that the plain grammar does not
-/// match: the item stores the no-result and rolled-back flags 15 bytes before
-/// the end of its frame, ahead of the record-timestamp reference and two zero
-/// bytes, and its three state bytes at tail offset 16 after an empty label.
 pub(super) fn end_anchored_scope_tail(
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
 ) -> Option<TailStateAt> {
-    /// Bytes from the no-result flag to the end of the frame: both flags, the
-    /// eleven-byte reference and two zero bytes.
-    const FLAGS_TO_END: usize = 15;
+    use crate::layout::end_anchored_scope_tail_suffix as suffix;
     let bytes = bytes.get(..paired_at)?;
-    let no_result_at = paired_at.checked_sub(FLAGS_TO_END)?;
+    let no_result_at = paired_at.checked_sub(suffix::LEN)?;
     let state_at = kind_end.checked_add(named_tail::STATE_BYTES)?;
     let state = bytes.get(state_at..state_at.checked_add(3)?)?;
     if no_result_at < state_at.checked_add(3)?
+        || View::u32_le_at(bytes, kind_end)? == 0
+        || View::u32_le_at(bytes, kind_end.checked_add(named_tail::ZERO_WORD)?)? != 0
+        || View::u32_le_at(bytes, kind_end.checked_add(named_tail::ASSOCIATED_COUNT)?)? != 0
         || View::u32_le_at(bytes, kind_end.checked_add(named_tail::LABEL_LENGTH)?)? != 0
     {
         return None;
     }
     let flag = |at: usize| bytes.get(at).is_some_and(|flag| *flag <= 1);
-    let mut cursor = no_result_at.checked_add(2)?;
+    let mut cursor = no_result_at.checked_add(suffix::TIMESTAMP_REFERENCE)?;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     (flag(no_result_at)
-        && flag(no_result_at + 1)
+        && flag(no_result_at + suffix::ROLLED_BACK)
         && bytes.get(cursor..)? == [0; 2]
         && (bytes.get(no_result_at) == Some(&1) || state == [0; 3]))
         .then(|| TailStateAt {

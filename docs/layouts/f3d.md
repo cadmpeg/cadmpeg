@@ -16337,6 +16337,22 @@ Parsed by:
 | 157 | 60 | `repeated_target` | `bytes[60]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
 | 217 | 1 | `identity_flag` | `u8` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
 
+## `end_anchored_scope_tail_suffix`
+
+Spec §Records of a sketch-and-extrude design · layout: byte offsets · size: 15 B
+
+Relative to frame end minus 15. Admission requires a nonzero ordinal, zero prefix word, empty label and zero associated count. Flags are Boolean; state at tail offset 16 is zero when s0 is zero. The reference is untyped local with a nonzero target.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `no_result` | `bool8` | little | spec | `s0` at offset 0 |
+| 1 | 1 | `rolled_back` | `bool8` | little | spec | `s1` at offset 1 |
+| 2 | 11 | `timestamp_reference` | `bytes[11]` | little | spec | the reference at offset 2 |
+| 13 | 2 | `zero_bytes` | `bytes[2]` | little | spec | two zero bytes at offset 13 · value `[0, 0]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
