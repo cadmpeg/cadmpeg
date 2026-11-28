@@ -562,12 +562,12 @@ fn a_parameter_only_design_stream_decodes_as_an_empty_design() {
         "{codes:?}"
     );
     for absent in [
-        F3dLossCode::GeometryNotTransferred,
-        F3dLossCode::TopologyNotTransferred,
-        F3dLossCode::DesignRecordsUntransferred,
-        F3dLossCode::PrimaryRecordUndecoded,
+        F3dLossCode::GeometryNotTransferred.kind(),
+        F3dLossCode::TopologyNotTransferred.kind(),
+        F3dLossCode::DesignRecordsUntransferred.kind(),
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
     ] {
-        assert!(!codes.contains(&absent.kind()), "{absent:?}: {codes:?}");
+        assert!(!codes.contains(&absent), "{absent:?}: {codes:?}");
     }
     assert!(decoded.report().geometry_transferred());
 }
