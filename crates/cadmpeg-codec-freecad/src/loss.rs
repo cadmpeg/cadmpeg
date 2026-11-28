@@ -19,6 +19,7 @@ use cadmpeg_ir::report::{
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.fcstd` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -125,14 +126,14 @@ pub(crate) enum FreecadLossCode {
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
     SketchNurbsNative,
-    /// Cached sketch geometry has no matching live external reference.
-    SketchExternalReferenceUnresolved,
-    /// Optional external sketch cache cannot be projected; live links remain authoritative.
-    SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
     /// A sketch constraint has both index and name expression bindings.
     SketchConstraintBindingConflict,
+    /// Cached sketch geometry has no matching live external reference.
+    SketchExternalReferenceUnresolved,
+    /// Optional external sketch cache cannot be projected; live links remain authoritative.
+    SketchExternalCacheUnresolved,
     /// Sketch profiles are not chained because endpoint matching reached its work cap.
     SketchProfileMatchingBounded,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -197,85 +198,9 @@ pub(crate) enum FreecadLossCode {
     /// does not store.
     DesignSketchLocusUnplaced,
 }
+}
 
 impl FreecadLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [FreecadLossCode] = &[
-        Self::TemplateNotTransferred,
-        Self::DrawingViewAxisNotTransferred,
-        Self::ViewGeometryNotStored,
-        Self::ViewGeometryNotTransferred,
-        Self::DimensionAnchorsNotTransferred,
-        Self::DrawingStyleNotTransferred,
-        Self::CaptionNotTransferred,
-        Self::DrawingSheetNotTransferred,
-        Self::DrawingTitleBlockNotTransferred,
-        Self::DrawingCosmeticEdgeNotTransferred,
-        Self::DrawingCosmeticVertexNotTransferred,
-        Self::DrawingCenterLineNotTransferred,
-        Self::DrawingGeometryFormatNotTransferred,
-        Self::DrawingDimensionKindNotTransferred,
-        Self::DrawingDimensionGeometryNotTransferred,
-        Self::DrawingDimensionToleranceNotTransferred,
-        Self::MeshPlacementNotTransferred,
-        Self::MeshPlacementBounded,
-        Self::PersistencePayloadUnresolved,
-        Self::PersistenceSideEntryUnresolved,
-        Self::PersistenceCountNoncanonical,
-        Self::PersistencePropertyRepeated,
-        Self::FeatureCyclicHistory,
-        Self::FeatureNativeKindRetained,
-        Self::FeatureRevolutionNotTransferred,
-        Self::FeatureRemovalWithoutBase,
-        Self::FeaturePrimitivePlacementUnresolved,
-        Self::FeatureLinkPlacementUnresolved,
-        Self::FeatureJointUnresolved,
-        Self::FeatureJointDistanceUnresolved,
-        Self::FeatureJointDistanceUnsatisfiable,
-        Self::FeatureJointValueUnbound,
-        Self::FeatureJointFlagUnread,
-        Self::AssemblyPlacementAliasNoncanonical,
-        Self::ParameterExpressionEmpty,
-        Self::ParameterQuantityAssumed,
-        Self::ParameterIntegerAssumed,
-        Self::ParameterValueNonFinite,
-        Self::ParameterDependencyDropped,
-        Self::SketchNativeGeometry,
-        Self::SketchNurbsNative,
-        Self::SketchNativeConstraint,
-        Self::SketchConstraintBindingConflict,
-        Self::SketchExternalReferenceUnresolved,
-        Self::SketchExternalCacheUnresolved,
-        Self::SketchProfileMatchingBounded,
-        Self::AppearanceTopologyColorCountMismatch,
-        Self::AppearancePrimitiveSizeNotTransferred,
-        Self::AppearanceStateNotTransferred,
-        Self::SourceDialectUnverified,
-        Self::SourceGuiSchemaUnverified,
-        Self::SourceGuiPropertyKeyBlank,
-        Self::SourceGuiMetadataUnresolved,
-        Self::ElementMapMetadataUnresolved,
-        Self::ElementMapStringReferenceDangling,
-        Self::PcurveNotTransferred,
-        Self::PcurveLocationAmbiguous,
-        Self::TopologyLocationIdentityBounded,
-        Self::TopologyNonBoundaryIncidenceRetained,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::TopologyRecordRepeated,
-        Self::ProgramVersionNoncanonical,
-        Self::FileVersionNoncanonical,
-        Self::FileVersionUnverified,
-        Self::ElementMapVersionUnresolved,
-        Self::DesignSketchSupportUnread,
-        Self::DesignSketchSourceUnread,
-        Self::DesignSketchOffsetUnstated,
-        Self::DesignSketchOffsetUnbound,
-        Self::DesignSketchEntityNative,
-        Self::DesignSketchRelationNative,
-        Self::DesignSketchLocusUnplaced,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
