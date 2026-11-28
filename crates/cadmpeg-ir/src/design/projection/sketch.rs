@@ -29,8 +29,8 @@ use crate::sketches::{
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 
 /// The planar curve of a decoded sketch geometry, where the geometry is a
-/// point, a line, a circle, an arc, an ellipse, or a NURBS curve whose
-/// directions have a length.
+/// point, a line, a circle, an arc, an ellipse, a hyperbola, a parabola, or
+/// a NURBS curve whose directions have a length.
 #[must_use]
 pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
     Some(match geometry.definition() {
@@ -76,10 +76,37 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
                 range: *bounds,
             }
         }
+        SketchGeometryDefinition::Hyperbola {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            bounds,
+        } => {
+            let (sin, cos) = major_angle.get().portable_sin_cos();
+            PlanarCurve::Hyperbola {
+                center: *center,
+                major: UnitVector2::new([cos, sin])?,
+                radii: [*major_radius, *minor_radius],
+                range: *bounds,
+            }
+        }
+        SketchGeometryDefinition::Parabola {
+            vertex,
+            axis_angle,
+            focal_length,
+            bounds,
+        } => {
+            let (sin, cos) = axis_angle.get().portable_sin_cos();
+            PlanarCurve::Parabola {
+                vertex: *vertex,
+                axis: UnitVector2::new([cos, sin])?,
+                focal: *focal_length,
+                range: *bounds,
+            }
+        }
         SketchGeometryDefinition::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        SketchGeometryDefinition::Hyperbola { .. }
-        | SketchGeometryDefinition::Parabola { .. }
-        | SketchGeometryDefinition::Text { .. }
+        SketchGeometryDefinition::Text { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => return None,
     })
@@ -1039,6 +1066,28 @@ impl LocusPoints {
         entities: &[&crate::sketches::SketchEntity],
         stored: &StoredPoints,
     ) -> Result<Self, ResourceLimit> {
+        Self::of_loci(
+            ctx,
+            kinds
+                .into_iter()
+                .flat_map(point_loci)
+                .map(|(locus, _)| locus),
+            entities,
+            stored,
+        )
+    }
+
+    /// The points of `loci`, the start, end, and center loci that the
+    /// relations of a sketch whose entities are `entities` and whose stored
+    /// points are `stored` name. An `Entity` locus names its entity and
+    /// mints no point. The decode session's resource refusal ends the
+    /// search.
+    pub fn of_loci<'k>(
+        ctx: &DecodeContext<'_>,
+        loci: impl IntoIterator<Item = &'k SketchLocus>,
+        entities: &[&crate::sketches::SketchEntity],
+        stored: &StoredPoints,
+    ) -> Result<Self, ResourceLimit> {
         let mut out = Self::default();
         let position = |id: &SketchEntityId| {
             entities
@@ -1049,7 +1098,10 @@ impl LocusPoints {
                     _ => None,
                 })
         };
-        for (locus, at) in kinds.into_iter().flat_map(point_loci) {
+        for (locus, at) in loci
+            .into_iter()
+            .filter_map(|locus| Some((locus, CurvePoint::of(locus)?)))
+        {
             if out.points.iter().any(|point| &point.locus == locus) || out.unplaced.contains(locus)
             {
                 continue;
