@@ -3,6 +3,8 @@
 //!
 //! This crate is `publish = false`. Production crates must not depend on it.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 

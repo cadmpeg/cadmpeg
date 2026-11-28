@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic REST bundles only; fixture provenance and generator live in fixtures/.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 
 use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};

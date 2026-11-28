@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP writer handling of an edge collapsed to one vertex.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;

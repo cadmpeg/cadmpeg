@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic Fusion manifest ZIP entries.
-#![allow(clippy::unwrap_used)]
 
 use std::io::{Seek, Write};
 

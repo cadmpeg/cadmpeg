@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
 //! [`FcstdCodec`] implements [`cadmpeg_ir::codec::Codec`] and

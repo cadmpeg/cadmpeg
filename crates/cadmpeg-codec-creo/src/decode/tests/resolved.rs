@@ -4,7 +4,6 @@
 //! No external CAD file is used; every fixture is a hand-built PSB byte image
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::wire;
 

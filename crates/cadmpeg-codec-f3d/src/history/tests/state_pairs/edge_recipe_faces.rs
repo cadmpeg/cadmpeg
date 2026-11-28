@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scope history binding through the faces of a scope's edge recipes.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::scope_histories::bind_scope_histories;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};

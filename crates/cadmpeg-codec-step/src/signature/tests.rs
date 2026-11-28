@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 use super::validate_detached_cms;
 use base64::{engine::general_purpose::STANDARD, Engine as _};

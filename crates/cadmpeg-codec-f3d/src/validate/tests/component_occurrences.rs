@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Component-occurrence identity and placement validation.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::native_fixture::f3d_native_mut;
 

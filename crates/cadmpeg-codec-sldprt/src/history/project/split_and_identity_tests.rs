@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Split-face, body-modifier, and operation-identity projection tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;

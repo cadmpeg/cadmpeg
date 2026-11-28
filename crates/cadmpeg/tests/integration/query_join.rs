@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `cadmpeg query join` integration tests.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_core::serde_erase::json;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;

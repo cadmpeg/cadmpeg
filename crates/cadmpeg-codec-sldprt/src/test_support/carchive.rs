@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic MFC `CArchive` streams and a part that carries them.
-#![allow(clippy::unwrap_used)]
 
 use super::container::{make_block, outer_header};
 

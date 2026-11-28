@@ -66,7 +66,6 @@ fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12>
 
 #[test]
 // These checked constructors must accept the explicit test fixtures.
-#[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tolerant edge and vertex tails through a write and decode cycle.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

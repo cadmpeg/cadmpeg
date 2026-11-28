@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Metadata-only fallback and retained-source-image decode tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::EditableDecodeResult;
 

@@ -9,7 +9,6 @@
 //! fixed tail whose preceding history-state identity is at tail offset 31.
 //! Its 57-byte relation names a carrier that stores an LP-UTF16 role GUID, two
 //! zero bytes and the same transform.
-#![allow(clippy::unwrap_used)]
 
 use super::streams_fixture::design_metastream_with_records;
 use crate::test_support::lp_utf16;

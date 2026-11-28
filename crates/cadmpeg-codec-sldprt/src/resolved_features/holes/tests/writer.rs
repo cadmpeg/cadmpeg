@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole construction and placement semantic-writer round-trips.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

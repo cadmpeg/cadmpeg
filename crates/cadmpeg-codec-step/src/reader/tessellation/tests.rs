@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! AP242 indexed tessellation tests.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use std::fmt::Write as _;

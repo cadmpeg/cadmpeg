@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

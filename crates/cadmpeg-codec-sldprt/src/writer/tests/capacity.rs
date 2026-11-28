@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Texts cut to their field's width, and material records the writer skips.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeMap;
 use std::io::Cursor;

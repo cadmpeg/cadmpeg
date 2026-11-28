@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-input lanes re-emitted by the writer keep the bytes it does not edit.
-#![allow(clippy::unwrap_used)]
 
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 

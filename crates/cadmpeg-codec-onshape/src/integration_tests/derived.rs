@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Derived Part Studio references and the Booleans that consume their bodies.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 
 use super::bundle::{changed, kinds, read, timeline};
 use crate::test_support::{fixture, Charge};

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Material-payload fixtures for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use super::container::{make_block, sldprt_with_body};
 

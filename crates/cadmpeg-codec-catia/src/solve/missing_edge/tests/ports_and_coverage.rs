@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Trim-mesh port, coverage, and quotient tests over synthetic topology streams.
 
-#![allow(clippy::unwrap_used)]
-
 use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, standard_quad_topology_stream,
 };

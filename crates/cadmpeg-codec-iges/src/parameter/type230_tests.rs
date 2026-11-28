@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Type 230 parameter-table boundary tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::parameter::tests::directory_target_with_form;
 use std::collections::BTreeMap;

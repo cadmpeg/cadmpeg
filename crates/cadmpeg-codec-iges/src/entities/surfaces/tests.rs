@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;

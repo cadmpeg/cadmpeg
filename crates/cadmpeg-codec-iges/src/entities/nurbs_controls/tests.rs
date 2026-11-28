@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact tensor-product restriction keeps the original parameter chart.
-#![allow(clippy::unwrap_used)]
 use super::{
     homogeneous_bezier_extraction, insert_homogeneous_knot, trim_surface, BlendCheck,
     InsertedKnotNet, RefiningNet,

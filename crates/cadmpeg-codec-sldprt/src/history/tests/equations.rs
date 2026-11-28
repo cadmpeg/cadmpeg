@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter, equation, and configuration-local scalar decode tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sampled procedural carrier tests.
 
-#![allow(clippy::unwrap_used)]
-
 use std::f64::consts::TAU;
 use std::io::Cursor;
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native ownership and precedence regressions.
-#![allow(clippy::unwrap_used)]
 
 use super::{body_identity, merge, Choice};
 use crate::appearance::AppearanceDefinition;

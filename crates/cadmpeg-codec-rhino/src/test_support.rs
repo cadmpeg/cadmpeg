@@ -2,7 +2,6 @@
 //! Shared synthetic 3DM byte-fixture builders for `#[cfg(test)]` suites.
 //!
 //! Helpers hand-build archive bytes only; owner suites own the assertions.
-#![allow(clippy::unwrap_used)]
 
 pub(crate) mod test_archive;
 pub(crate) mod test_dump;

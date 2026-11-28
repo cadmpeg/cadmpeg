@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! vertex identity tests.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use super::{
     a5_native_edge_identity_stream, a5_native_edge_run_stream, a5_sphere_bound_edge_stream,

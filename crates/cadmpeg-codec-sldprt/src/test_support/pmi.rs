@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic PMI semantic-map byte builders for crate tests.
-#![allow(clippy::unwrap_used)]
 
 /// Append a msgpack fixstr header and its bytes.
 pub(crate) fn fixstr(bytes: &mut Vec<u8>, value: &str) {

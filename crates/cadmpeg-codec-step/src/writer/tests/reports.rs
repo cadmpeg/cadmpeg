@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP writer loss, schema, and strict-mode tests.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use cadmpeg_test_support::edit;

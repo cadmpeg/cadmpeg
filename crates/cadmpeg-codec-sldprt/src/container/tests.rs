@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer-container detect, scan, inspect, and partition-selection tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::container::ContainerRole;
 

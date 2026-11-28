@@ -1748,7 +1748,6 @@ mod tests {
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.
-    #[allow(clippy::unwrap_used)]
     fn scales_procedural_model_lengths_and_cache_tolerances() {
         let mut ir = CadIr::empty();
         let mut source_carriers =
@@ -1917,7 +1916,6 @@ mod tests {
     /// payload refuses it with the construction's own text.
     #[test]
     // These checked constructors must accept the explicit test fixtures.
-    #[allow(clippy::unwrap_used)]
     fn scaled_procedural_vectors_that_overflow_are_refused() {
         let directrix = cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
             .expect("identity grammar");

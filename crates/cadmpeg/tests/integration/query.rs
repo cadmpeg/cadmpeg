@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `cadmpeg query` integration tests.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_core::serde_erase::json;
 use std::fs;
 

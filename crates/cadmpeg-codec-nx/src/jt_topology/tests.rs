@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unit tests for JT topological dual-mesh reconstruction.
 
-#![allow(clippy::unwrap_used)]
-
 #[test]
 fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
     crate::test_support::with_decode_context(|ctx| {

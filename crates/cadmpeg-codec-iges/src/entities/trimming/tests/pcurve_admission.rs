@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::super::{restricted_pcurve_spans, split_homogeneous_pcurve};
 use crate::entities::nurbs_controls::{BlendCheck, RefiningNet};

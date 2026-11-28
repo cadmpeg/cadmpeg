@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 use std::collections::HashSet;
 
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};

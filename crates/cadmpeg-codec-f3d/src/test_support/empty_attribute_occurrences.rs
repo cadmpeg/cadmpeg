@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic local occurrence carriers with empty or typed attributes.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::component_body_fixture::{append_body_owners, body_type, container_type};
 use crate::test_support::streams_fixture::design_metastream_with_records;

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 use crate::test_support::build_prt;
 use crate::test_support::push_generated_plane_row;
 use crate::test_support::push_generated_topology_row;

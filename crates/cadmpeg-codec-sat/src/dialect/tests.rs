@@ -2,8 +2,6 @@
 //! The registry is the oracle for the pinned ids, so the test reads it rather
 //! than a second copy of the list.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_test_support::wire;
 
 use super::{

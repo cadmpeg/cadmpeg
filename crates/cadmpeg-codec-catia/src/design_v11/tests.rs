@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The v11 design layer of decoded CATIA parts.
 
-#![allow(clippy::unwrap_used)]
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};

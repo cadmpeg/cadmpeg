@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ASM record-token writers for synthetic SMBH fixtures.
-#![allow(clippy::unwrap_used)]
 
 pub(crate) fn push_u8_string(b: &mut Vec<u8>, s: &str) {
     let length = u8::try_from(s.len()).expect("test string fits its one-byte length");

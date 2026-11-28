@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion projection and adjacent-profile binding decode tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
