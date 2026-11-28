@@ -81,7 +81,7 @@ const EPS_SWEEP_EXTENT_ABSOLUTE_MM: f64 = 1.0e-6;
 const EPS_SWEEP_EXTENT_RELATIVE: f64 = 1.0e-3;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Brep {
     pub(crate) approximations: super::approximation::ApproximationCounts,
     /// Source locations for decoded entities.
@@ -541,7 +541,7 @@ struct ShellRecord {
 }
 
 /// Transfer limitations found while building a [`Brep`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Stats {
     /// Framed top-level model entity records across the selected stream site.
     pub(crate) source_entity_records: usize,

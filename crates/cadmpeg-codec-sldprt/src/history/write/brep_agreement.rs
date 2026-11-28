@@ -126,8 +126,8 @@ pub(crate) fn agreement(
     let baseline = match source {
         Source::Decoded(baseline) => baseline,
         Source::Image(input) => {
-            decoded = crate::writer::decode_source_root(hash_ctx, input.root(hash_ctx)?)?;
-            &decoded.ir
+            decoded = input.baseline(hash_ctx)?;
+            &decoded.decoded.ir
         }
     };
     let mut out = Agreement::default();

@@ -203,10 +203,10 @@ impl<'f> SldprtWriteSession<'f> {
 /// session of the write keeps the source decoded again, and the source image
 /// as input of the encode. Without records the write synthesizes the document.
 #[derive(Clone, Copy, Default)]
-struct RetainedRecords<'r, 'f> {
+struct RetainedRecords<'r, 'f, 'i> {
     records: &'r [SourceRecord<'f>],
     decoded: Option<&'r OnceLock<Arc<writer::RetainedSource>>>,
-    input: Option<&'r writer::SourceInput<'f>>,
+    input: Option<&'r writer::SourceInput<'i>>,
 }
 
 /// A joined native-record reference whose retained payload stays owned by the
@@ -230,11 +230,11 @@ impl SldprtCodec {
     /// from CADIR JSON whose history arenas the retained source did not
     /// restore is written as the stored part, and `export:edit.dropped` names
     /// the file.
-    fn write_preserved_with_annotations<'f>(
+    fn write_preserved_with_annotations(
         ir: &CadIr,
         fidelity: &SourceFidelity,
-        records: &[SourceRecord<'f>],
-        input: Option<&writer::SourceInput<'f>>,
+        records: &[SourceRecord<'_>],
+        input: Option<&writer::SourceInput<'_>>,
         ctx: &DecodeContext<'_>,
         session: &SldprtWriteSession<'_>,
         writer: &mut dyn Write,
@@ -313,7 +313,7 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         digests: &CodecDigests,
-        retained: RetainedRecords<'_, '_>,
+        retained: RetainedRecords<'_, '_, '_>,
         shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
         ctx: &DecodeContext<'_>,
@@ -342,25 +342,28 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
         let own_input;
-        let input = match input {
-            Some(input) => Some(input),
-            None => {
-                own_input = writer::SourceInput::of(records);
-                own_input.as_ref()
-            }
+        let image_source = if let Some(input) = input {
+            Some(input.image(ctx)?)
+        } else {
+            own_input = writer::SourceInput::of(records);
+            own_input
+                .as_ref()
+                .map(|input| input.image(ctx))
+                .transpose()?
         };
-        let opened = writer::RetainedImage::open(ctx, input)?;
-        let image_source = opened.as_ref();
         let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(
             decoded,
             ctx.policy().limits,
         ));
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
-            let mut cache = writer::SemanticWriteCache {
-                source_baseline: shared_cache.borrow().source_baseline.clone(),
-                native: writer::CachedNative::Unloaded,
-                saved_properties: None,
+            let mut cache = {
+                let shared = shared_cache.borrow();
+                writer::SemanticWriteCache {
+                    source_baseline: shared.source_baseline.clone(),
+                    native: writer::CachedNative::Unloaded,
+                    saved_properties: std::rc::Rc::clone(&shared.saved_properties),
+                }
             };
             let source_digests = if source.source_fidelity.codec_digests.is_empty() {
                 digests
@@ -750,15 +753,19 @@ impl EncoderBackend for SldprtCodec {
         .map(|(body, _)| body)
     }
 
-    fn restore(
+    fn plan_prepared(
         &self,
         ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
-        target: &ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<cadmpeg_ir::codec::write::RestoredDocument>, CodecError> {
-        writer::saved::restore(ctx, input, target, notes, losses).map(|ir| ir.map(Into::into))
+        target: ResolvedWrite<'_>,
+    ) -> Result<(ExportBody, Option<CadIr>), CodecError> {
+        writer::target::plan_prepared(
+            ctx,
+            input,
+            &target,
+            &SldprtWriteSession::new(input.fidelity),
+        )
+        .map(|(body, restored, _)| (body, restored))
     }
 }
 

@@ -147,6 +147,18 @@ impl SchemaCatalog {
         protein: View<'a>,
     ) -> Result<Option<Self>, CodecError> {
         let archive = ArchiveSnapshot::new(ctx, protein)?;
+        Self::load_indexed(ctx, &archive, |name| {
+            archive.open(ctx, name).map(View::window)
+        })
+    }
+
+    /// Parse schemas using the admitted member names and a loader for their
+    /// validated views.
+    pub fn load_indexed<'a, Payload: AsRef<[u8]>>(
+        ctx: &DecodeContext<'a>,
+        archive: &ArchiveSnapshot<'a>,
+        mut open: impl FnMut(&str) -> Result<Payload, CodecError>,
+    ) -> Result<Option<Self>, CodecError> {
         let mut schemas = HashMap::new();
         for entry in archive.entries() {
             if !is_schema_entry(&entry.name) {
@@ -155,8 +167,8 @@ impl SchemaCatalog {
             if entry.uncompressed_size > MAX_SCHEMA_BYTES {
                 return Err(schema_too_large(entry.uncompressed_size));
             }
-            let xml = archive.open(ctx, &entry.name)?;
-            parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)?;
+            let xml = open(&entry.name)?;
+            parse_schema_document(ctx, &entry.name, xml.as_ref(), &mut schemas)?;
         }
         if schemas.is_empty() {
             return Ok(None);

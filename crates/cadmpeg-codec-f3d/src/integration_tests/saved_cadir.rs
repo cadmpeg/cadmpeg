@@ -171,31 +171,9 @@ fn a_saved_design_patches_from_the_archive_its_restore_read() {
         max_input_bytes,
         ..cadmpeg_core::decode::ResourceLimits::default()
     };
-    let decodes = |max_input_bytes: u64| {
-        let options = DecodeOptions {
-            policy: cadmpeg_core::decode::DecodePolicy {
-                limits: within(max_input_bytes),
-            },
-            ..DecodeOptions::default()
-        };
-        F3dCodec
-            .decode(&mut Cursor::new(source.clone()), &options)
-            .is_ok()
-    };
-    let (mut refused, mut admitted) = (0, 1 << 32);
-    assert!(decodes(admitted));
-    while admitted - refused > 1 {
-        let middle = refused + (admitted - refused) / 2;
-        if decodes(middle) {
-            admitted = middle;
-        } else {
-            refused = middle;
-        }
-    }
-
     let plan = F3dCodec
         .plan(EncodeInput {
-            limits: within(admitted),
+            limits: within(cadmpeg_core::decode::u64_from_index(source.len())),
             ..EncodeInput::new(&read, Some(decoded.source_fidelity()))
         })
         .expect("the write reads the archive once");

@@ -473,12 +473,9 @@ fn a_configuration_carrier_charges_only_its_edited_property_and_unit_mirror() {
     losses.assert_uncharged(&properties[0]);
 }
 
-/// One encode is one session: the retained image and the saved-property
-/// carriers the write reads are input of the same session, so a ceiling that
-/// holds each alone and not both refuses the encode.
 #[test]
-fn the_image_and_the_carriers_charge_one_input_ceiling() {
-    use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+fn saved_properties_from_the_retained_image_fit_the_images_input_ceiling() {
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     let mut decoded = fixture();
     let mut ir = decoded.ir_mut();
     let property = ir
@@ -493,26 +490,89 @@ fn the_image_and_the_carriers_charge_one_input_ceiling() {
         .source_fidelity()
         .retained_record(crate::SOURCE_IMAGE_ID)
         .and_then(|record| record.data())
-        .unwrap()
-        .len();
+        .unwrap();
     let limits = cadmpeg_core::decode::ResourceLimits {
-        max_input_bytes: u64::try_from(image).unwrap(),
+        max_input_bytes: cadmpeg_core::decode::u64_from_index(image.len()),
         ..cadmpeg_core::decode::ResourceLimits::desktop()
     };
-    let refused = crate::SldprtCodec.plan(EncodeInput {
-        limits,
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput {
+            limits,
+            ..EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+        })
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    let restored = decode(output);
+    assert!(restored.ir().model.attributes.iter().any(|row| {
+        crate::metadata::default_properties::is_attribute(row)
+            && row.name == "bounding_envelope"
+            && row.values == [Some(AttributeValue::String(String::new()))]
+    }));
+}
+
+#[test]
+fn a_separately_supplied_property_carrier_consumes_more_input() {
+    use cadmpeg_core::decode::{u64_from_index, LimitScope, ResourceDimension, ResourceLimits};
+    use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+    use cadmpeg_ir::RetainedSourceRecord;
+
+    let mut decoded = fixture();
+    let fidelity = decoded.source_fidelity_mut();
+    let image_len = fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap()
+        .len();
+    let image = fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap();
+    let scan = crate::test_support::container::scan(image);
+    let member = scan
+        .sections()
+        .find(|member| member.name() == Some(MEMBER))
+        .unwrap();
+    let id = member.native_id();
+    let mut distinct = member.payload().to_vec();
+    distinct.push(b' ');
+    fidelity.remove_retained_record(id.as_str()).unwrap();
+    fidelity
+        .insert_retained_record(
+            id,
+            RetainedSourceRecord::whole(
+                cadmpeg_ir::stream_name!("docProps/ISolidWorksInformation.xml"),
+                distinct,
+            ),
+        )
+        .unwrap();
+    let mut ir = decoded.ir_mut();
+    let row = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|row| crate::metadata::default_properties::is_attribute(row))
+        .unwrap();
+    row.values = vec![Some(AttributeValue::String("edited".into()))];
+    drop(ir);
+    let plan = crate::SldprtCodec.plan(EncodeInput {
+        limits: ResourceLimits {
+            max_input_bytes: u64_from_index(image_len),
+            ..ResourceLimits::desktop()
+        },
         ..EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
     });
-    let Err(EncodeError::ResourceLimit(limit)) = refused else {
-        panic!("expected a resource refusal: {:?}", refused.map(drop));
+    let Err(EncodeError::ResourceLimit(limit)) = plan else {
+        panic!("the independently supplied carrier exceeds the remaining input budget");
     };
     assert_eq!(
-        (limit.dimension, limit.scope, limit.operation),
-        (
-            cadmpeg_core::decode::ResourceDimension::InputBytes,
-            cadmpeg_core::decode::LimitScope::Session,
-            "SLDPRT saved-property carriers"
-        )
+        (limit.dimension, limit.scope),
+        (ResourceDimension::InputBytes, LimitScope::Session)
     );
-    assert!(write(&decoded).is_ok());
 }

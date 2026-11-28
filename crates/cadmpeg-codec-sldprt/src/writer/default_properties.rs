@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
+use std::rc::Rc;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::Annotations;
 
 use super::Held;
@@ -22,29 +25,72 @@ const BLOCK_PREFIX: &str = "sldprt:file:block#";
 /// records store, as the full decoder reads them, and the source offsets of
 /// those carriers.
 pub(crate) struct StoredProperties {
-    attributes: Vec<SourceAttribute>,
+    attributes: Rc<crate::metadata::SavedPropertyProjection>,
     carriers: HashSet<usize>,
 }
 
-impl StoredProperties {
-    /// Reads the carriers among `records`, in `ctx`, which charges them as
-    /// input.
+type AdmittedMember = (String, String, Sha256Digest);
+
+#[derive(Default)]
+pub(crate) struct PropertyReads {
+    admitted: RefCell<HashSet<AdmittedMember>>,
+    projections: crate::metadata::PropertyReads,
+}
+
+impl PropertyReads {
+    pub(super) fn admit_member(
+        &self,
+        ctx: &DecodeContext<'_>,
+        image: Option<&super::RetainedImage<'_>>,
+        id: &str,
+        stream: &str,
+        payload: &[u8],
+    ) -> Result<(), CodecError> {
+        if image.is_some_and(|image| image.has_member(id, stream, payload)) {
+            return Ok(());
+        }
+        let key = (
+            id.to_owned(),
+            stream.to_owned(),
+            Sha256Digest::digest(payload),
+        );
+        let mut admitted = self.admitted.borrow_mut();
+        if !admitted.contains(&key) {
+            ctx.charge_input(
+                u64_from_index(payload.len()),
+                "SLDPRT retained member payload",
+            )?;
+            admitted.insert(key);
+        }
+        Ok(())
+    }
+
     pub(super) fn read(
+        &self,
         records: &[crate::SourceRecord<'_>],
         annotations: &Annotations,
+        image: Option<&super::RetainedImage<'_>>,
         ctx: &DecodeContext<'_>,
-    ) -> Result<Self, CodecError> {
+    ) -> Result<StoredProperties, CodecError> {
         let scan = carrier_scan(records, annotations);
-        let input = scan.blocks.iter().map(|block| block.payload.len()).sum();
         let arena = DecodeArena::new();
         let attributes = ctx.with_arena(&arena, |ctx| {
-            ctx.charge_input(u64_from_index(input), "SLDPRT saved-property carriers")?;
-            crate::metadata::saved_property_rows(ctx, &scan)
+            for block in &scan.blocks {
+                let member = Section::Block(block);
+                self.admit_member(
+                    ctx,
+                    image,
+                    member.native_id().as_str(),
+                    member.source_stream().as_str(),
+                    member.payload(),
+                )?;
+            }
+            let projections = image.map_or(&self.projections, |image| &image.properties);
+            projections.read(ctx, &scan)
         })?;
-        let carriers = scan.blocks.iter().map(|block| block.offset).collect();
-        Ok(Self {
+        Ok(StoredProperties {
             attributes,
-            carriers,
+            carriers: scan.blocks.iter().map(|block| block.offset).collect(),
         })
     }
 }
@@ -55,7 +101,11 @@ impl StoredProperties {
 /// holds bytes of as stored, so the output holds the properties a decode
 /// reads from those bytes, `stored`.
 pub(super) fn unwritten(ir: &CadIr, stored: &StoredProperties) -> BTreeMap<String, Held> {
-    changed(&ir.model.attributes, &stored.attributes, &stored.carriers)
+    changed(
+        &ir.model.attributes,
+        &stored.attributes.rows,
+        &stored.carriers,
+    )
 }
 
 /// The saved-property carriers among `records`: each retained block with

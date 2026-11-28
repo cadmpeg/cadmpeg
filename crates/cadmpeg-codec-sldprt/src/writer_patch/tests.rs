@@ -28,7 +28,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::test_support::parasolid::vertex_use;
 use crate::test_support::parasolid::world_point;
 use crate::test_support::parasolid::DIRTY_TERMINAL_KNOT;
-use crate::writer::{RetainedImage, SourceInput};
+use crate::writer::SourceInput;
 use crate::SldprtCodec;
 
 #[test]
@@ -940,17 +940,16 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         .unwrap();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let input = SourceInput::new(image);
-    let source = RetainedImage::open(&ctx, Some(&input)).unwrap();
+    let source = Some(input.image(&ctx).unwrap());
     assert!(
-        super::patch_partition(decoded.ir(), annotations, source.as_ref(), 0.001, &ctx)
+        super::patch_partition(decoded.ir(), annotations, source, 0.001, &ctx)
             .unwrap()
             .is_some()
     );
     let mut changed = decoded.ir().clone();
     changed.geometry.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
-    let error =
-        super::patch_partition(&changed, annotations, source.as_ref(), 0.001, &ctx).unwrap_err();
+    let error = super::patch_partition(&changed, annotations, source, 0.001, &ctx).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
@@ -980,8 +979,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                 native_ref: None,
             });
     }
-    let error =
-        super::patch_partition(&changed, annotations, source.as_ref(), 0.001, &ctx).unwrap_err();
+    let error = super::patch_partition(&changed, annotations, source, 0.001, &ctx).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed pcurve geometry or metadata"));
@@ -1015,10 +1013,10 @@ fn every_pass_of_a_write_patches_against_one_partition_decode() {
             cadmpeg_core::decode::DecodeDepth::Full,
         );
         let input = SourceInput::of(&records);
-        let source = RetainedImage::open(&ctx, input.as_ref())?;
+        let source = input.as_ref().map(|input| input.image(&ctx)).transpose()?;
         (0..count)
             .map(|_| {
-                super::patch_partition(decoded.ir(), annotations, source.as_ref(), 0.001, &ctx)
+                super::patch_partition(decoded.ir(), annotations, source, 0.001, &ctx)
                     .map(|patched| patched.is_some())
             })
             .collect::<Result<Vec<_>, _>>()

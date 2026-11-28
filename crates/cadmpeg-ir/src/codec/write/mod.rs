@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use crate::codec::{DecodeResult, FormatId};
+use crate::codec::FormatId;
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::products::{ProductDefinition, Storage};
@@ -117,15 +117,8 @@ pub trait EncoderBackend {
         target: <Self::Target as TargetDomain>::Resolved<'_>,
     ) -> Result<ExportBody, CodecError>;
 
-    /// The document [`Encoder::plan`] writes in place of `input`'s: one read
-    /// from CADIR JSON with the arenas the wire omits restored, for a writer
-    /// that reads them ([`saved::restore_history`]). `None` writes `input`'s
-    /// document; `notes` takes why a restore that was attempted left it, and
-    /// `losses` the edits a restored document leaves out.
-    ///
-    /// # Errors
-    ///
-    /// The refusal of the write.
+    /// Restores the arenas that CADIR omits before planning an output. The
+    /// restored document supplies the report's arena and native coverage.
     fn restore(
         &self,
         _ctx: &DecodeContext<'_>,
@@ -133,39 +126,27 @@ pub trait EncoderBackend {
         _target: &<Self::Target as TargetDomain>::Resolved<'_>,
         _notes: &mut Vec<String>,
         _losses: &mut Vec<LossNote>,
-    ) -> Result<Option<RestoredDocument>, CodecError> {
+    ) -> Result<Option<CadIr>, CodecError> {
         Ok(None)
     }
 
-    /// Plans a write as [`Self::plan_resolved`] does, from a document
-    /// [`Self::restore`] restored from `source`, the retained source as the
-    /// restore decoded it in `ctx`. A writer that compares the document with
-    /// its retained source reads `source` in place of a second decode.
-    fn plan_restored(
+    /// Plans the output and optionally returns the restored document used to
+    /// determine report coverage.
+    fn plan_prepared(
         &self,
         ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: <Self::Target as TargetDomain>::Resolved<'_>,
-        _source: &DecodeResult,
-    ) -> Result<ExportBody, CodecError> {
-        self.plan_resolved(ctx, input, target)
-    }
-}
-
-/// The document [`EncoderBackend::restore`] restores for a write, and the
-/// retained source decoded in the encode's session that it restored from.
-#[derive(Debug)]
-pub struct RestoredDocument {
-    /// The document the write plans from.
-    pub ir: CadIr,
-    /// The retained source decoded, which [`EncoderBackend::plan_restored`]
-    /// plans with.
-    pub source: Option<DecodeResult>,
-}
-
-impl From<CadIr> for RestoredDocument {
-    fn from(ir: CadIr) -> Self {
-        Self { ir, source: None }
+    ) -> Result<(ExportBody, Option<CadIr>), CodecError> {
+        let (mut notes, mut losses) = (Vec::new(), Vec::new());
+        let restored = self.restore(ctx, input, &target, &mut notes, &mut losses)?;
+        let effective = restored
+            .as_ref()
+            .map_or(input, |ir| EncodeInput { ir, ..input });
+        let mut body = self.plan_resolved(ctx, effective, target)?;
+        body.notes.append(&mut notes);
+        body.losses.append(&mut losses);
+        Ok((body, restored))
     }
 }
 
@@ -297,25 +278,13 @@ fn plan_output<E: EncoderBackend>(
     let target = E::TARGET
         .resolve(input.ir, input.target, E::FORMAT)
         .map_err(EncodeError::from_backend)?;
-    let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
-    let restored = encoder
-        .restore(ctx, input, &target, &mut restore_notes, &mut restore_losses)
+    let (body, restored) = encoder
+        .plan_prepared(ctx, input, target.clone())
         .map_err(EncodeError::from_backend)?;
     let input = match &restored {
-        Some(restored) => EncodeInput {
-            ir: &restored.ir,
-            ..input
-        },
+        Some(ir) => EncodeInput { ir, ..input },
         None => input,
     };
-    let body = match restored
-        .as_ref()
-        .and_then(|restored| restored.source.as_ref())
-    {
-        Some(source) => encoder.plan_restored(ctx, input, target.clone(), source),
-        None => encoder.plan_resolved(ctx, input, target.clone()),
-    }
-    .map_err(EncodeError::from_backend)?;
     let ExportBody {
         bytes,
         census,
@@ -343,8 +312,6 @@ fn plan_output<E: EncoderBackend>(
         .iter()
         .any(|loss| loss.code.local_code() == target::SOURCE_DIALECT_DISPLACED);
     losses.extend(body_losses);
-    notes.extend(restore_notes);
-    losses.extend(restore_losses);
     losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
     losses.extend(native.omission_losses(input.ir, E::NAME));
     losses.extend(placed_definition_loss(

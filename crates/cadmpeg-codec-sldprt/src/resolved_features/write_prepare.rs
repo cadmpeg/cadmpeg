@@ -51,6 +51,7 @@ pub(crate) fn prepare_sketches_for_write(
     native: &mut Option<crate::native::SldprtNative>,
     edits: &crate::history::write::edits::SourceEdits<'_>,
     cut: &mut Vec<String>,
+    source: Option<&crate::container::ContainerScan<'_>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let hash_ctx = edits.ctx();
 
@@ -99,7 +100,7 @@ pub(crate) fn prepare_sketches_for_write(
         )
     })?;
     patch_spatial_sketches(ir, retained)?;
-    patch_line_profiles(ir, retained, hash_ctx)
+    patch_line_profiles(ir, retained, hash_ctx, source)
 }
 
 /// The source's neutral and native sketch digests, where the decoder recorded

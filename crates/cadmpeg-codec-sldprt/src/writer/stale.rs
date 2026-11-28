@@ -131,7 +131,7 @@ pub(super) fn mark(
     let Some(text) = crate::container::xml_text(payload) else {
         return Ok(None);
     };
-    match ctx.parse_input_xml(&text, "SLDPRT stale configuration mark") {
+    match ctx.parse_xml(&text, "SLDPRT stale configuration mark") {
         Ok(document) => Ok(marked(&document, &text, payload, names)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(_) => Ok(None),

@@ -45,16 +45,16 @@ impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
         Ok(body)
     }
 
-    fn restore(
+    fn plan_prepared(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
-        target: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<cadmpeg_ir::codec::write::RestoredDocument>, CodecError> {
-        crate::writer::saved::restore(ctx, input, target, notes, losses)
-            .map(|ir| ir.map(Into::into))
+        target: cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+    ) -> Result<(cadmpeg_ir::codec::write::ExportBody, Option<CadIr>), CodecError> {
+        let (body, restored, read_back) =
+            crate::writer::target::plan_prepared(ctx, input, &target, self.session)?;
+        self.read_back.set(read_back);
+        Ok((body, restored))
     }
 }
 
@@ -493,10 +493,8 @@ pub(crate) fn write_in_native_envelope(
         &policy,
         cadmpeg_core::decode::DecodeDepth::Full,
     );
-    let source = crate::writer::RetainedImage::open(
-        &ctx,
-        crate::writer::SourceInput::of(&records).as_ref(),
-    )?;
+    let input = crate::writer::SourceInput::of(&records);
+    let source = input.as_ref().map(|input| input.image(&ctx)).transpose()?;
     crate::writer::write_semantic_with_records_cached(
         &ir,
         &fidelity.annotations,
@@ -506,7 +504,7 @@ pub(crate) fn write_in_native_envelope(
             withheld: &[],
             shaped: &[],
             ctx: &ctx,
-            source: source.as_ref(),
+            source,
         },
         &mut crate::writer::SemanticWriteCache::default(),
         writer,

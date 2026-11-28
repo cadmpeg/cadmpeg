@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{DecodeFailure, DecodeResult};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -50,13 +49,6 @@ use records::{
     patch_tolerant_coedge_parameters, patch_transform_hints, patch_wire_topologies,
 };
 
-/// The source image a patch compares the document with: decoded by the
-/// restore of the write, or opened as input of the session.
-enum Baseline<'a, 'v> {
-    Decoded(&'a DecodeResult),
-    Opened(cadmpeg_core::decode::View<'v>),
-}
-
 /// Apply supported semantic edits to a retained F3D archive.
 ///
 /// `source_image` must match the F3D source represented by `target`. The
@@ -79,7 +71,7 @@ pub(crate) fn write_semantic(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     source_image: &[u8],
-    restored: Option<&DecodeResult>,
+    restored: Option<&super::RetainedArchive<'_>>,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
@@ -92,27 +84,19 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
-    // The archive is input of the write's one session, so the caller's
-    // ceilings bound every read of it (cadir-v11.md §2.5).
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let opened;
     let source = match restored {
-        Some(decoded) => Baseline::Decoded(decoded),
-        None => Baseline::Opened(ctx.open_input(source_image, "F3D patch source archive")?),
-    };
-    let mut table_losses = Vec::new();
-    let decoded;
-    let baseline = match source {
-        Baseline::Decoded(baseline) => baseline,
-        Baseline::Opened(source) => {
-            decoded =
-                super::decode_retained_source(ctx, source).map_err(|failure| match failure {
-                    DecodeFailure::Codec(error) => error,
-                    other => CodecError::malformed(format!(
-                        "the salvage decode of the source image refused: {other}"
-                    )),
-                })?;
-            &decoded
+        Some(source) => source,
+        None => {
+            opened = ctx.with_arena(&arena, |ctx| {
+                super::RetainedArchive::read(ctx, source_image)
+            })?;
+            &opened
         }
     };
+    let baseline = &source.decoded;
+    let mut table_losses = Vec::new();
     if baseline
         .report()
         .losses
@@ -683,47 +667,39 @@ pub(crate) fn write_semantic(
     let mut zip = zip::ZipWriter::new(output);
     let mut patched_protein_appearances = BTreeSet::new();
     for index in 0..archive.len() {
-        // `zip` cannot expand or write a Zstandard member: it is read raw and expanded by
-        // `cadmpeg-core`, and written back by `write_zstd_member` below.
-        let zstd = crate::zip_write::is_zstd_member(&mut archive, index)?;
-        let (name, options, mut bytes) = {
-            let mut entry = if zstd {
-                archive.by_index_raw(index)
-            } else {
-                archive.by_index(index)
-            }
+        let entry = archive.by_index_raw(index).map_err(|error| {
+            CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
+        })?;
+        let name = entry
+            .name()
             .map_err(|error| {
-                CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
-            })?;
-            let name = entry
-                .name()
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
-                })?
-                .into_owned();
-            let options = crate::zip_write::file_options(entry.compression());
-            if entry.is_dir() {
-                drop(entry);
-                if zstd {
-                    crate::zip_write::write_zstd_member(
-                        &mut zip,
-                        &mut archive,
-                        index,
-                        &[],
-                        &[],
-                        notes,
-                    )?;
-                } else {
-                    zip.add_directory(name, options).map_err(|error| {
-                        CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
-                    })?;
-                }
-                continue;
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?
+            .into_owned();
+        let compression = entry.compression();
+        let options = crate::zip_write::file_options(compression);
+        let expanded = source
+            .scan
+            .rewrite_member(&name, &entry, ctx.per_expand_allowance())?;
+        if entry.is_dir() {
+            if !expanded.is_empty() {
+                return Err(CodecError::NotImplemented(format!(
+                    "ZIP directory {name} carries a payload"
+                )));
             }
-            let bytes = crate::zip_write::expand_member(ctx, &mut entry, &name, zstd)?;
-            (name, options, bytes)
-        };
-        let expanded = zstd.then(|| bytes.clone());
+            if compression == zip::CompressionMethod::ZSTD {
+                zip.raw_copy_file(entry).map_err(|error| {
+                    CodecError::malformed(format_args!("cannot copy ZIP directory {name}: {error}"))
+                })?;
+            } else {
+                zip.add_directory(name, options).map_err(|error| {
+                    CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
+                })?;
+            }
+            continue;
+        }
+        drop(entry);
+        let mut bytes = expanded.to_vec();
         if let Some(cage) = user_knot_edits.remove(&name) {
             bytes = crate::tsm::user_knots::rewrite(ctx, &name, &bytes, &cage)?;
         }
@@ -771,8 +747,9 @@ pub(crate) fn write_semantic(
             }
         } else {
             if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
-                let (patched_bytes, patched_guids) = crate::materials::patch_protein_appearances(
-                    &bytes,
+                let protein = source.scan.protein_source(ctx, &name)?;
+                let (patched_bytes, patched_guids) = crate::materials::patch_protein_source(
+                    &protein,
                     &protein_appearance_edits,
                     notes,
                     ctx,
@@ -826,12 +803,12 @@ pub(crate) fn write_semantic(
                 patch_act_entities(&mut bytes, edits)?;
             }
         }
-        if let Some(expanded) = expanded {
+        if compression == zip::CompressionMethod::ZSTD {
             crate::zip_write::write_zstd_member(
                 &mut zip,
                 &mut archive,
                 index,
-                &expanded,
+                expanded,
                 &bytes,
                 notes,
             )?;

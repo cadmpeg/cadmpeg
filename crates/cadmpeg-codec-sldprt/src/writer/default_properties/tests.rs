@@ -7,7 +7,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{AttributeId, UnknownId};
 use cadmpeg_ir::Annotations;
 
-use super::{carrier_scan, changed, same_attribute, Held, StoredProperties};
+use super::{carrier_scan, changed, same_attribute, Held, PropertyReads};
 
 /// Each saved-property attribute of `ir` that the write does not write as
 /// `ir` states it, against the carriers among `records`.
@@ -19,7 +19,7 @@ fn unwritten(
 ) -> Result<std::collections::BTreeMap<String, Held>, cadmpeg_core::CodecError> {
     Ok(super::unwritten(
         ir,
-        &StoredProperties::read(records, notes, ctx)?,
+        &PropertyReads::default().read(records, notes, None, ctx)?,
     ))
 }
 

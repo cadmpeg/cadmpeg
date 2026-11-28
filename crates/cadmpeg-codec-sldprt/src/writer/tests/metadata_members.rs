@@ -513,6 +513,8 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
             active_configuration: false,
             edited_parameters: &HashSet::new(),
             native: None,
+            source: None,
+            member_reads: &crate::writer::default_properties::PropertyReads::default(),
             stale: &std::collections::BTreeSet::new(),
             ctx: &ctx,
         },

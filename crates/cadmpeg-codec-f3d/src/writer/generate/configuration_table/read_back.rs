@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeArena, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::value_unwritable;
 use cadmpeg_ir::design::configuration::PartNumber;
@@ -125,17 +125,11 @@ impl Witness {
         #[cfg(test)]
         let archive = corrupted.as_deref().unwrap_or(archive);
         let arena = DecodeArena::new();
-        let back = ctx.with_arena(&arena, |local| {
-            let root = View::over_retained(archive);
-            let root = local.register_slice(
-                root,
-                ByteRange {
-                    start: 0,
-                    end: u64_from_index(archive.len()),
-                },
-            )?;
-            self.verify(local, root, target, expected_parameters)
-        });
+        let local = DecodeContext::new(&arena, ctx.policy(), ctx.depth());
+        let back = local
+            .open_input(archive, "F3D written configuration ZIP")
+            .and_then(|root| self.verify(&local, root, target, expected_parameters));
+        local.finish_session()?;
         match back {
             Ok(notes) => losses.extend(notes),
             Err(error) if crate::design::decode::record::is_fatal(&error) => return Err(error),

@@ -12,7 +12,7 @@ use cadmpeg_ir::math::Point3;
 use super::stored_losses;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::triangle_body;
-use crate::writer::{retained_source_baseline, RetainedImage, SourceInput};
+use crate::writer::SourceInput;
 use crate::SldprtCodec;
 
 /// The losses of a part written as stored name the same records whether
@@ -30,24 +30,36 @@ fn stored_losses_read_the_held_source_as_a_full_decode_does() {
         .set_position(FinitePoint3::new(Point3::new(at.x + 1.0, at.y, at.z)).unwrap());
     let moved = edited.geometry.points[0].id.as_str().to_owned();
 
+    let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits: ResourceLimits::desktop(),
     };
-    let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let input = SourceInput::new(&image);
-    let fresh = stored_losses(&ctx, &edited, &input, None, "the test").unwrap();
+    input.baseline(&ctx).unwrap();
+    let Err(CodecError::ResourceLimit(count)) =
+        ctx.charge_entities(u64::MAX, "measure source baseline")
+    else {
+        panic!("the measurement charge must exceed the entity ceiling")
+    };
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_entities: count.used,
+            max_input_bytes: cadmpeg_core::decode::u64_from_index(image.len()),
+            ..ResourceLimits::desktop()
+        },
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let input = SourceInput::new(&image);
+    let held = input.baseline(&ctx).unwrap();
+    let losses = stored_losses(&ctx, &edited, &input, None, "the test").unwrap();
     assert!(
-        fresh.iter().any(|loss| loss.message.contains(&moved)),
-        "{fresh:?}"
+        losses.iter().any(|loss| loss.message.contains(&moved)),
+        "{losses:?}"
     );
-    let opened = RetainedImage::open(&ctx, Some(&input)).unwrap();
-    let mut held = None;
-    retained_source_baseline(&mut held, &ctx, opened.as_ref()).unwrap();
-    assert!(held.is_some());
     assert_eq!(
-        stored_losses(&ctx, &edited, &input, held.as_ref(), "the test").unwrap(),
-        fresh
+        stored_losses(&ctx, &edited, &input, Some(held), "the test").unwrap(),
+        losses
     );
 
     let policy = DecodePolicy {

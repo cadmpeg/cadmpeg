@@ -8,8 +8,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
-use cadmpeg_ir::codec::write::{EncodeInput, RestoredDocument};
-use cadmpeg_ir::codec::DecodeFailure;
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
@@ -28,37 +27,24 @@ use crate::loss::F3dLossCode;
 /// `notes`, and charges it as `f3d:writer.history-unrestored` to `losses`.
 /// A restored document comes with the decode of the archive, which the patch
 /// compares it with.
-pub(crate) fn restore(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    input: EncodeInput<'_>,
+pub(crate) fn restore<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'a>,
+    input: EncodeInput<'a>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<RestoredDocument>, CodecError> {
+) -> Result<Option<(CadIr, super::RetainedArchive<'a>)>, CodecError> {
     let replays = target.entry().is_none() || target.preserves_source();
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let restored = ctx
-        .open_input(image, "F3D retained source archive")
-        .map_err(DecodeFailure::from)
-        .and_then(|root| super::decode_retained_source(ctx, root))
-        .map_err(|failure| match failure {
-            DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format!(
-                "the retained F3D archive cannot be decoded: {other}"
-            )),
-        })
-        .and_then(|decoded| {
-            let mut restored = restore_history(input.ir, decoded.ir(), &FusionText)?;
-            restored.ir.model.configurations = reproject(ctx, &restored.ir)?;
-            Ok((restored, decoded))
-        });
+    let restored = super::RetainedArchive::read(ctx, image).and_then(|source| {
+        let mut restored = restore_history(input.ir, source.decoded.ir(), &FusionText)?;
+        restored.ir.model.configurations = reproject(ctx, &restored.ir)?;
+        Ok((restored, source))
+    });
     match restored {
-        Ok((restored, decoded)) if restored.unwritten.is_empty() => Ok(Some(RestoredDocument {
-            ir: restored.ir,
-            source: Some(decoded),
-        })),
+        Ok((restored, source)) if restored.unwritten.is_empty() => Ok(Some((restored.ir, source))),
         Ok((restored, _)) => {
             let reason = format!(
                 "the document was read from CADIR, and its history arenas cannot state these \

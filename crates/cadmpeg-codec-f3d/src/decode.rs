@@ -4409,11 +4409,18 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 /// Decode an F3D or F3Z reader.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = crate::f3z::observer::scan(ctx, root)?;
+    decode_scanned(ctx, &scan)
+}
+
+pub(crate) fn decode_scanned(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Decoded, CodecError> {
     match &scan.kind {
-        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
+        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, scan),
         container::F3dContainerKind::Document { .. } => {
             let mut decoded =
-                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+                decode_scanned_document(ctx, scan, crate::report::ReportScope::Standalone)?;
             crate::f3z::merge::bind_standalone_joints(
                 ctx,
                 &mut decoded.ir,
@@ -4422,7 +4429,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
-                &scan,
+                scan,
                 &decoded.ir,
                 &mut decoded.body.losses,
             )?;
@@ -4434,9 +4441,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.body.losses,
             )?;
             let has_scene =
-                crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
+                crate::scene::collect(ctx, scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
-                let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
+                let sources = crate::scene::sources(ctx, scan, &decoded.ir)?;
                 crate::scene::bind(
                     ctx,
                     &mut decoded.ir,

@@ -4,19 +4,18 @@
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_dropped, edit_dropped_note, edit_unverified,
     target::{ResolvedWrite, WrittenRow},
     EncodeInput, ExportBody, WritePath,
 };
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeResult};
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::diff::ArenaKind;
 use cadmpeg_ir::document::{ArenaName, CadIr};
 use cadmpeg_ir::report::export::SynthesisCause;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::report::strictness::Strictness;
 use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::Annotations;
@@ -63,6 +62,53 @@ pub(crate) fn plan(
     ),
     CodecError,
 > {
+    let source = source_input(input);
+    plan_with_source(ctx, input, resolved, session, source.as_ref())
+}
+
+fn source_input(input: EncodeInput<'_>) -> Option<SourceInput<'_>> {
+    input
+        .fidelity
+        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
+        .and_then(|record| record.data())
+        .map(SourceInput::new)
+}
+
+type PreparedWrite = (ExportBody, Option<CadIr>, Option<Arc<DecodeResult>>);
+
+pub(crate) fn plan_prepared(
+    ctx: &DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+    session: &SldprtWriteSession<'_>,
+) -> Result<PreparedWrite, CodecError> {
+    let source = source_input(input);
+    let (mut notes, mut losses) = (Vec::new(), Vec::new());
+    let restored = super::saved::restore(
+        ctx,
+        input,
+        source.as_ref(),
+        resolved,
+        &mut notes,
+        &mut losses,
+    )?;
+    let effective = restored
+        .as_ref()
+        .map_or(input, |ir| EncodeInput { ir, ..input });
+    let (mut body, read_back) =
+        plan_with_source(ctx, effective, resolved, session, source.as_ref())?;
+    body.notes.append(&mut notes);
+    body.losses.append(&mut losses);
+    Ok((body, restored, read_back))
+}
+
+fn plan_with_source(
+    ctx: &DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+    session: &SldprtWriteSession<'_>,
+    source: Option<&SourceInput<'_>>,
+) -> Result<(ExportBody, Option<Arc<DecodeResult>>), CodecError> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
@@ -75,13 +121,7 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let source = input
-        .fidelity
-        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
-        .and_then(|record| record.data())
-        .map(SourceInput::new);
-    let (mut written, bytes, declined) =
-        write(ctx, input, resolved, digests, session, source.as_ref())?;
+    let (mut written, bytes, declined) = write(ctx, input, resolved, digests, session, source)?;
     let read_back = match &mut written {
         Written::Semantic { read_back, .. } => read_back.take(),
         Written::Replayed | Written::Stored { .. } => None,
@@ -110,13 +150,13 @@ pub(crate) fn plan(
 /// Without a retained image the first write's result stands. The third value
 /// is why the patch declined the document a synthesis wrote. `source` is the
 /// retained source image as input of the encode.
-fn write<'a>(
+fn write(
     ctx: &DecodeContext<'_>,
-    input: EncodeInput<'a>,
+    input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
     session: &SldprtWriteSession<'_>,
-    source: Option<&SourceInput<'a>>,
+    source: Option<&SourceInput<'_>>,
 ) -> Result<(Written, Vec<u8>, Option<String>), CodecError> {
     let target = resolved.target_id();
     let preserves = resolved.preserves_source();
@@ -177,16 +217,11 @@ fn stored_losses(
         "keeps the edits of these records as stored ({}): {why}",
         crate::SOURCE_IMAGE_ID
     );
-    let arena = DecodeArena::new();
-    let source = ctx.with_arena(&arena, |ctx| match held {
-        Some(held) => DecodeResult::from_decoded(
-            ctx,
-            held.decoded.clone(),
-            <SldprtCodec as cadmpeg_ir::codec::CodecBackend>::FORMAT,
-            &Strictness::default(),
-        ),
-        None => SldprtCodec.decode_with_context(ctx, image.root(ctx)?, &Strictness::default()),
-    });
+    let source = match held {
+        Some(held) => Ok(held),
+        None => image.baseline(ctx),
+    }
+    .and_then(|source| source.comparison(ctx));
     let losses = match source {
         Ok(source) => cadmpeg_ir::diff::diff(source.ir(), ir)
             .per_arena
@@ -211,7 +246,7 @@ fn stored_losses(
                 )
             })
             .collect::<Vec<_>>(),
-        Err(DecodeFailure::Codec(error @ CodecError::ResourceLimit(_))) => return Err(error),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => Vec::new(),
     };
     if !losses.is_empty() {
@@ -315,13 +350,13 @@ fn shaping_edits(
 
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
-fn write_first<'a>(
+fn write_first(
     ctx: &DecodeContext<'_>,
-    input: EncodeInput<'a>,
+    input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
     session: &SldprtWriteSession<'_>,
-    source: Option<&SourceInput<'a>>,
+    source: Option<&SourceInput<'_>>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
     match input.fidelity {

@@ -7,12 +7,17 @@ pub(crate) mod default_properties;
 pub(crate) mod mass_properties;
 pub(crate) mod part;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{DecodeParts as _, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 
@@ -24,6 +29,7 @@ use crate::layout::{
 pub(crate) fn attributes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    properties: Option<&PropertyReads>,
     annotations: &mut Annotations,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<GivenUpPart>,
@@ -57,45 +63,113 @@ pub(crate) fn attributes(
         scan_part(section, &mut out, annotations, losses)?;
         configuration_manager::append(section, &mut out, annotations, losses)?;
         scan_transformed_reference_plane(section, &mut out, annotations)?;
-        scan_units_xml(ctx, section, &mut out, annotations)?;
+        if properties.is_none() || !is_saved_property_owner(section) {
+            scan_units_xml(ctx, section, &mut out, annotations)?;
+        }
         scan_length_user_units(ctx, section, &mut out, annotations)?;
     }
-    default_properties::append(ctx, scan, &mut out, annotations, losses, given_up)?;
-    configuration_properties::append(ctx, scan, &mut out, annotations, losses, given_up)?;
+    if let Some(properties) = properties {
+        let saved = properties.read(ctx, scan)?;
+        out.extend(saved.rows.iter().cloned());
+        annotations
+            .append(saved.annotations.clone())
+            .map_err(CodecError::malformed)?;
+        losses.extend(saved.losses.iter().cloned());
+        given_up.extend(saved.given_up.iter().cloned());
+    } else {
+        default_properties::append(ctx, scan, &mut out, annotations, losses, given_up)?;
+        configuration_properties::append(ctx, scan, &mut out, annotations, losses, given_up)?;
+    }
     Ok(out)
 }
 
-/// The saved-property attributes and unit mirrors a decode reads from the
-/// saved-property owners of `scan`.
+#[derive(PartialEq, Eq)]
+struct CarrierIdentity {
+    id: cadmpeg_ir::ids::UnknownId,
+    stream: cadmpeg_ir::StreamName,
+    stored: Sha256Digest,
+    payload: Sha256Digest,
+}
+
+impl CarrierIdentity {
+    fn of(section: Section<'_>) -> Self {
+        let payload = Sha256Digest::digest(section.payload());
+        let stored = if std::ptr::eq(section.payload(), section.stored_payload()) {
+            payload.clone()
+        } else {
+            Sha256Digest::digest(section.stored_payload())
+        };
+        Self {
+            id: section.native_id(),
+            stream: section.source_stream().clone(),
+            stored,
+            payload,
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct PropertyReads {
+    projections: RefCell<Vec<(Vec<CarrierIdentity>, Rc<SavedPropertyProjection>)>>,
+}
+
+impl PropertyReads {
+    pub(crate) fn read(
+        &self,
+        ctx: &DecodeContext<'_>,
+        scan: &ContainerScan<'_>,
+    ) -> Result<Rc<SavedPropertyProjection>, CodecError> {
+        let roster = scan
+            .sections()
+            .filter(|section| is_saved_property_owner(*section))
+            .map(CarrierIdentity::of)
+            .collect::<Vec<_>>();
+        let mut reads = self.projections.borrow_mut();
+        if let Some((_, projection)) = reads.iter().find(|(held, _)| held == &roster) {
+            return Ok(Rc::clone(projection));
+        }
+        let projection = Rc::new(saved_property_projection(ctx, scan)?);
+        reads.push((roster, Rc::clone(&projection)));
+        Ok(projection)
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SavedPropertyProjection {
+    pub(crate) rows: Vec<SourceAttribute>,
+    annotations: Annotations,
+    losses: Vec<LossNote>,
+    given_up: Vec<GivenUpPart>,
+}
+
+#[cfg(test)]
 pub(crate) fn saved_property_rows(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
 ) -> Result<Vec<SourceAttribute>, CodecError> {
-    let (mut out, mut annotations, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
-    let mut given_up = Vec::new();
+    saved_property_projection(ctx, scan).map(|projection| projection.rows)
+}
+
+fn saved_property_projection(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<SavedPropertyProjection, CodecError> {
+    let mut projection = SavedPropertyProjection::default();
+    let SavedPropertyProjection {
+        rows,
+        annotations,
+        losses,
+        given_up,
+    } = &mut projection;
     for section in scan
         .sections()
         .filter(|section| is_saved_property_owner(*section))
     {
-        scan_units_xml(ctx, section, &mut out, &mut annotations)?;
+        scan_units_xml(ctx, section, rows, annotations)?;
     }
-    default_properties::append(
-        ctx,
-        scan,
-        &mut out,
-        &mut annotations,
-        &mut losses,
-        &mut given_up,
-    )?;
-    configuration_properties::append(
-        ctx,
-        scan,
-        &mut out,
-        &mut annotations,
-        &mut losses,
-        &mut given_up,
-    )?;
-    Ok(out)
+    default_properties::append(ctx, scan, rows, annotations, losses, given_up)?;
+    configuration_properties::append(ctx, scan, rows, annotations, losses, given_up)?;
+    Ok(projection)
 }
 
 /// The part a saved-property carrier is when none of its properties is read.

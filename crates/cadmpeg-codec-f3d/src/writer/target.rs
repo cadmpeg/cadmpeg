@@ -6,7 +6,6 @@ use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
     ExportBody, NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
-use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -36,7 +35,7 @@ pub(crate) fn plan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
-    restored: Option<&DecodeResult>,
+    restored: Option<&super::RetainedArchive<'_>>,
 ) -> Result<ExportBody, CodecError> {
     let off_catalog = target.entry().is_none();
     if off_catalog || target.preserves_source() {
@@ -83,7 +82,7 @@ enum Preservation {
 fn preserve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
-    restored: Option<&DecodeResult>,
+    restored: Option<&super::RetainedArchive<'_>>,
 ) -> Result<Preservation, CodecError> {
     let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
         sidecar

@@ -3,8 +3,8 @@
 
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceLimits};
-use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -74,31 +74,9 @@ fn declared_member_total(archive: &[u8]) -> u64 {
 }
 
 #[test]
-fn a_patch_refuses_when_its_source_decode_and_member_expansions_pass_the_ceiling_together() {
+fn a_patch_reuses_the_deflated_members_read_by_its_baseline() {
     let source = deflated_source();
     let ceiling = least_decompressed_total(&source).max(declared_member_total(&source));
-    let limits = with_decompressed_total(ceiling);
-    let (ir, fidelity) = renamed_link(decode_within(&source, limits).unwrap());
-
-    let error = F3dCodec
-        .plan(EncodeInput {
-            limits,
-            ..EncodeInput::new(&ir, Some(&fidelity))
-        })
-        .unwrap_err();
-
-    let EncodeError::ResourceLimit(limit) = error else {
-        panic!("expected a resource refusal: {error}")
-    };
-    assert_eq!(limit.scope, LimitScope::Session);
-    assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
-    assert_eq!(limit.limit, ceiling);
-}
-
-#[test]
-fn a_patch_writes_when_the_ceiling_holds_its_source_decode_and_member_expansions() {
-    let source = deflated_source();
-    let ceiling = 2 * (least_decompressed_total(&source) + declared_member_total(&source));
     let limits = with_decompressed_total(ceiling);
     let (ir, fidelity) = renamed_link(decode_within(&source, limits).unwrap());
 
@@ -113,6 +91,11 @@ fn a_patch_writes_when_the_ceiling_holds_its_source_decode_and_member_expansions
         plan.report().write_path(),
         WritePath::Patched { .. }
     ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let read = decode_within(&bytes, ResourceLimits::default()).unwrap();
+    let written = crate::test_support::native_test::f3d_native(read.ir());
+    assert_eq!(written.act_component_links[0].references.tracked_entity, 5);
 }
 
 /// A writer that holds the members of `archive`, each stored with `method`.
@@ -181,10 +164,10 @@ fn a_member_that_does_not_inflate_declines_the_patch() {
 
 /// `archive` with a Deflate member of `size` bytes that the decoder does not
 /// read.
-fn with_unread_member(archive: &[u8], size: usize) -> Vec<u8> {
+fn with_unread_member(archive: &[u8], name: &str, size: usize) -> Vec<u8> {
     let mut out = repacked(archive, CompressionMethod::Stored);
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
-    out.start_file(UNREAD_MEMBER, deflated).unwrap();
+    out.start_file(name, deflated).unwrap();
     out.write_all(&vec![0x5a; size]).unwrap();
     out.finish().unwrap().into_inner()
 }
@@ -206,7 +189,11 @@ fn largest_member(archive: &[u8]) -> u64 {
 fn a_member_past_the_per_expansion_allowance_declines_the_patch() {
     let base = f3d_with_act_component_links(&[(4, 0)]);
     let allowance = largest_member(&base);
-    let source = with_unread_member(&base, usize::try_from(allowance).unwrap() + 1);
+    let source = with_unread_member(
+        &base,
+        UNREAD_MEMBER,
+        usize::try_from(allowance).unwrap() + 1,
+    );
     let limits = ResourceLimits {
         max_decompressed_bytes_per_expand: allowance,
         ..ResourceLimits::default()
@@ -230,4 +217,29 @@ fn a_member_past_the_per_expansion_allowance_declines_the_patch() {
             && reason.contains("-byte per-expansion allowance"),
         "{reason}"
     );
+}
+
+#[test]
+fn an_unreadable_zip_directory_payload_declines_the_patch() {
+    const DIRECTORY: &str = "FusionAssetName[Active]/Unread/";
+    let base = f3d_with_act_component_links(&[(4, 0)]);
+    let allowance = largest_member(&base);
+    let source = with_unread_member(&base, DIRECTORY, usize::try_from(allowance).unwrap() + 1);
+    let limits = ResourceLimits {
+        max_decompressed_bytes_per_expand: allowance,
+        ..ResourceLimits::default()
+    };
+    let (ir, fidelity) = renamed_link(decode_within(&source, limits).unwrap());
+    let plan = F3dCodec
+        .plan(EncodeInput {
+            limits,
+            ..EncodeInput::new(&ir, Some(&fidelity))
+        })
+        .unwrap();
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        plan.report().synthesis_cause()
+    else {
+        panic!("the directory payload must be named in the fallback")
+    };
+    assert!(reason.contains(DIRECTORY), "{reason}");
 }

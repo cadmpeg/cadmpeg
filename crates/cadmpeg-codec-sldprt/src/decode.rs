@@ -177,16 +177,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     decode_inner(ctx, root, true)
 }
 
-/// Decodes a retained `.sldprt` source image without stamping local SHA-256
-/// digests, for internal writer baselines that compare against the caller's
-/// recorded digests.
-pub(crate) fn decode_without_digests(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-) -> Result<Decoded, CodecError> {
-    decode_inner(ctx, root, false)
-}
-
 /// Decodes a written SLDPRT byte slice under `limits` for read-back
 /// comparison, skipping local-digest and canonical-JSON digest calculation
 /// that read-back ignores.
@@ -225,7 +215,47 @@ fn decode_inner(
     root: View<'_>,
     stamp_digests: bool,
 ) -> Result<Decoded, CodecError> {
-    let scan = container::scan(ctx, root)?;
+    let mut scan = container::scan(ctx, root)?;
+    decode_scanned(ctx, ScannedPart::Owned(&mut scan), stamp_digests)
+}
+
+pub(crate) fn decode_retained(
+    ctx: &DecodeContext<'_>,
+    source: &crate::writer::RetainedImage<'_>,
+) -> Result<Decoded, CodecError> {
+    decode_scanned(ctx, ScannedPart::Retained(source), false)
+}
+
+enum ScannedPart<'s, 'a> {
+    Owned(&'s mut ContainerScan<'a>),
+    Retained(&'s crate::writer::RetainedImage<'a>),
+}
+
+impl<'a> std::ops::Deref for ScannedPart<'_, 'a> {
+    type Target = ContainerScan<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Owned(scan) => scan,
+            Self::Retained(source) => &source.scan,
+        }
+    }
+}
+
+impl ScannedPart<'_, '_> {
+    fn property_reads(&self) -> Option<&crate::metadata::PropertyReads> {
+        match self {
+            Self::Owned(_) => None,
+            Self::Retained(source) => Some(&source.properties),
+        }
+    }
+}
+
+fn decode_scanned(
+    ctx: &DecodeContext<'_>,
+    scan: ScannedPart<'_, '_>,
+    stamp_digests: bool,
+) -> Result<Decoded, CodecError> {
     let assembly = crate::assembly::read(ctx, &scan)?;
     let placed_virtual = assembly
         .as_ref()
@@ -277,7 +307,7 @@ fn decode_inner(
 /// `part` states that the document is a part, whose design the decode states.
 fn decode_scan(
     ctx: &DecodeContext<'_>,
-    mut scan: container::ContainerScan<'_>,
+    mut scan: ScannedPart<'_, '_>,
     placed_virtual: &BTreeSet<String>,
     part: bool,
 ) -> Result<Decoded, CodecError> {
@@ -361,13 +391,6 @@ fn decode_scan(
             );
         }
     }
-    scan.given_up.extend(
-        given_up
-            .iter()
-            .filter(|part| part.kind() == PARASOLID_SITE_PART)
-            .cloned(),
-    );
-
     let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_metadata_ir(
         ctx,
         &scan,
@@ -375,6 +398,7 @@ fn decode_scan(
         form_padding,
         &mut admitted_entities,
         part,
+        &given_up,
     )?;
     retention.give_up(given_up);
     let display_meshes = ir.model.tessellations.len();
@@ -2654,6 +2678,11 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
             });
         }
     }
+    order_partition_streams(&mut streams);
+    streams
+}
+
+pub(crate) fn order_partition_streams(streams: &mut [ActiveParasolidSite<'_>]) {
     streams.sort_by(|left, right| {
         let key = |stream: &ActiveParasolidSite<'_>| {
             (
@@ -2663,7 +2692,6 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         };
         key(left).cmp(&key(right))
     });
-    streams
 }
 
 /// Test whether a section holds the bodies of imported features (spec §3.3).
@@ -2886,7 +2914,7 @@ fn imported_bodies_loss(
 /// it must not be mistaken for a metadata-only document.
 fn try_decode_brep(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ScannedPart<'_, '_>,
     streams: &[ActiveParasolidSite<'_>],
     placed_virtual: &BTreeSet<String>,
     classification: &crate::dialect::LayerClassification,
@@ -2897,18 +2925,29 @@ fn try_decode_brep(
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
     }
+    let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let bodies = indices
-            .iter()
-            .map(|index| (streams[*index].payload, streams[*index].header))
-            .collect::<Vec<_>>();
-        match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
-            Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
-            Err(error) => {
-                given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
+        let decode = || {
+            if let ScannedPart::Retained(source) = scan {
+                if active_site.as_ref() == Some(site) {
+                    let group = indices
+                        .iter()
+                        .map(|&index| streams[index])
+                        .collect::<Vec<_>>();
+                    return source.partition(ctx, &group).map(|graph| (*graph).clone());
+                }
             }
+            let bodies = indices
+                .iter()
+                .map(|index| (streams[*index].payload, streams[*index].header))
+                .collect::<Vec<_>>();
+            decode_bodies(ctx, &bodies, streams[first].source_stream())
+        };
+        match ctx.run_part(decode)? {
+            Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
+            Err(error) => given_up.push(ctx.give_up_part(site_part(streams, indices), error)?),
         }
     }
     let given_up_partitions = partitions_given_up(given_up);
@@ -2936,7 +2975,6 @@ fn try_decode_brep(
             report,
         )));
     }
-    let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let resolved_active_site = active_site
         .as_ref()
         .and_then(|active| decoded_sites.iter().position(|(site, _, _)| site == active));
@@ -3777,7 +3815,7 @@ fn push_display_meshes(
 
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
-    scan: &mut ContainerScan<'_>,
+    scan: &mut ScannedPart<'_, '_>,
     classification: &crate::dialect::LayerClassification,
     decoded: DecodedBrep,
     form_padding: Option<usize>,
@@ -4124,6 +4162,7 @@ fn build_geometry_ir(
     let mut attributes = crate::metadata::attributes(
         ctx,
         scan,
+        scan.property_reads(),
         &mut annotations,
         &mut pmi_losses,
         &mut carriers_given_up,
@@ -4706,30 +4745,47 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(&id, "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
-    for source_block in &mut scan.blocks {
-        let member = container::Section::Block(source_block);
-        let id = member.native_id();
-        if unknowns.iter().any(|record| record.id() == &id) {
-            continue;
+    match scan {
+        ScannedPart::Owned(scan) => {
+            for source_block in &mut scan.blocks {
+                let member = container::Section::Block(source_block);
+                let id = member.native_id();
+                if unknowns.iter().any(|record| record.id() == &id) {
+                    continue;
+                }
+                crate::annotations::note_member_record(&mut annotations, member)?;
+                unknowns.push(UnknownRecord::retained(
+                    id,
+                    0,
+                    std::mem::take(&mut source_block.payload),
+                    Vec::new(),
+                ));
+            }
+            for source_stream in &mut scan.compound_streams {
+                let member = container::Section::Compound(source_stream);
+                let id = member.native_id();
+                crate::annotations::note_member_record(&mut annotations, member)?;
+                unknowns.push(UnknownRecord::retained(
+                    id,
+                    0,
+                    std::mem::take(&mut source_stream.payload),
+                    Vec::new(),
+                ));
+            }
         }
-        crate::annotations::note_member_record(&mut annotations, member)?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            0,
-            std::mem::take(&mut source_block.payload),
-            Vec::new(),
-        ));
-    }
-    for source_stream in &mut scan.compound_streams {
-        let member = container::Section::Compound(source_stream);
-        let id = member.native_id();
-        crate::annotations::note_member_record(&mut annotations, member)?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            0,
-            std::mem::take(&mut source_stream.payload),
-            Vec::new(),
-        ));
+        ScannedPart::Retained(source) => {
+            for member in source.scan.sections() {
+                let id = member.native_id();
+                if matches!(member, container::Section::Block(_))
+                    && unknowns.iter().any(|record| record.id() == &id)
+                {
+                    continue;
+                }
+                crate::annotations::note_member_record(&mut annotations, member)?;
+                let bytes = retained_copy(ctx, member.stored_payload(), "retain SLDPRT member")?;
+                unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+            }
+        }
     }
     let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
     for surface in &ir.geometry.surfaces {
@@ -5447,11 +5503,12 @@ fn build_container_ir(
 
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ScannedPart<'_, '_>,
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
     part: bool,
+    given_up: &[GivenUpPart],
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
     let equation_managers = crate::design_v11::equation_managers(scan);
@@ -5524,6 +5581,7 @@ fn build_metadata_ir(
     let mut model_attributes = crate::metadata::attributes(
         ctx,
         scan,
+        scan.property_reads(),
         &mut annotations,
         &mut pmi_losses,
         &mut carriers_given_up,
@@ -5975,7 +6033,7 @@ fn build_metadata_ir(
             .map(|body| body.id.clone())
             .collect();
         let given_up_configurations =
-            configurations_given_up(&ir, scan, &partitions_given_up(&scan.given_up));
+            configurations_given_up(&ir, scan, &partitions_given_up(given_up));
         project_design(
             ctx,
             &mut ir,
