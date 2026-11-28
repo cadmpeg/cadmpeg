@@ -1682,9 +1682,9 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
     let off_nurbs = bulk.len();
     bulk.extend_from_slice(&nurbs_record);
 
-    let zip_bytes = crate::test_support::body_reference_tail_test::archive(
+    let zip_bytes = crate::test_support::body_reference_tail_fixture::archive(
         &bulk,
-        &crate::test_support::streams_test::design_metastream(&[]),
+        &crate::test_support::streams_fixture::design_metastream(&[]),
     );
 
     let placement = DesignSketchPlacement {
@@ -1785,7 +1785,7 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
     ];
 
     crate::test_support::with_decode_context(|decode_ctx| {
-        crate::test_support::zip_test::with_scan(&zip_bytes, |scan| {
+        crate::test_support::zip_fixture::with_scan(&zip_bytes, |scan| {
             let (sketches, entities) = project_sketch_design(
                 decode_ctx,
                 &SketchProjectInputs::new(&[placement.clone()], &[], &curves, &[], &[])
@@ -1838,9 +1838,9 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
         make_line_record([0.0, 0.0, 1.0], 0),
     ]
     .concat();
-    let square_zip = crate::test_support::body_reference_tail_test::archive(
+    let square_zip = crate::test_support::body_reference_tail_fixture::archive(
         &square_bulk,
-        &crate::test_support::streams_test::design_metastream(&[]),
+        &crate::test_support::streams_fixture::design_metastream(&[]),
     );
 
     let square_curves = vec![
@@ -1863,7 +1863,7 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
     ];
 
     crate::test_support::with_decode_context(|decode_ctx| {
-        crate::test_support::zip_test::with_scan(&square_zip, |scan| {
+        crate::test_support::zip_fixture::with_scan(&square_zip, |scan| {
             let (sketches, _) = project_sketch_design(
                 decode_ctx,
                 &SketchProjectInputs::new(&[placement.clone()], &[], &square_curves, &[], &[])
@@ -1889,13 +1889,13 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
         make_line_record([0.0, 0.0, 1.0], 0),
     ]
     .concat();
-    let square_zip_with_const = crate::test_support::body_reference_tail_test::archive(
+    let square_zip_with_const = crate::test_support::body_reference_tail_fixture::archive(
         &square_bulk_with_const,
-        &crate::test_support::streams_test::design_metastream(&[]),
+        &crate::test_support::streams_fixture::design_metastream(&[]),
     );
 
     crate::test_support::with_decode_context(|decode_ctx| {
-        crate::test_support::zip_test::with_scan(&square_zip_with_const, |scan| {
+        crate::test_support::zip_fixture::with_scan(&square_zip_with_const, |scan| {
             let (sketches, entities) = project_sketch_design(
                 decode_ctx,
                 &SketchProjectInputs::new(&[placement], &[], &square_curves, &[], &[])

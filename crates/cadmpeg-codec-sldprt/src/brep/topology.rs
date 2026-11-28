@@ -62,6 +62,7 @@ fn frames_on_tolerance(buf: &[u8], at: usize, stored: bool) -> bool {
         })
 }
 
+// resource-cap: MAX_SHORT_POINTER_INDEX = 1
 const MAX_SHORT_POINTER_INDEX: u32 = 0x7fff;
 
 /// The lowest count whose high u16 is non-zero, which is how the null pointer
@@ -1125,6 +1126,7 @@ fn face_front_tail(buf: &[u8], p: usize, sense_end: usize) -> Option<(usize, [u3
 
 /// Framing window for the stated text length of a string node in the scope
 /// pass.
+// resource-cap: MAX_STRING_NODE_BYTES = 1
 const MAX_STRING_NODE_BYTES: usize = 4096;
 
 fn string_node_end(buf: &[u8], p: usize, tag: u8) -> Option<usize> {

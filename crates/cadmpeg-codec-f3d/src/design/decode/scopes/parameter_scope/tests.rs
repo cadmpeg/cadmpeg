@@ -817,8 +817,8 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
 
     use crate::records::entity_header::SegmentType;
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::zip_fixture::with_scan;
 
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());

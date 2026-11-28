@@ -133,6 +133,7 @@ impl<'a> IntoIterator for &'a Diagnostics {
     }
 }
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -279,69 +280,9 @@ pub(crate) enum RhinoLossCode {
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
 }
+}
 
 impl RhinoLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [RhinoLossCode] = &[
-        Self::ContainerScanDiagnostic,
-        Self::IntegrityFailure,
-        Self::PresentationRecordDropped,
-        Self::FreeGeometryVisibilityNotStated,
-        Self::AnnotationUserdataDropped,
-        Self::ViewportUserdataDropped,
-        Self::MeshNgonGroupingDropped,
-        Self::EnumerationValueDegraded,
-        Self::RedundantFieldRepaired,
-        Self::BrepMeshCacheDegraded,
-        Self::DuplicateRecordResolved,
-        Self::MeshQuadTopologyTriangulated,
-        Self::HistoryEmbeddedGeometryDropped,
-        Self::DimensionOverrideDropped,
-        Self::HistoryDependencyDropped,
-        Self::ContainerInstanceDefinitionDegraded,
-        Self::ObjectRecordCensus,
-        Self::ObjectFamilyNotTransferred,
-        Self::ObjectAttributesDegraded,
-        Self::ObjectDecodeDiagnostic,
-        Self::PolycurveJoinGap,
-        Self::TrimPcurveDropped,
-        Self::TopologyBrepFallback,
-        Self::HatchFillNotTransferred,
-        Self::PolyedgeReferencesNotResolved,
-        Self::DetailViewNotTransferred,
-        Self::CageLatticeNotTransferred,
-        Self::MorphDeformationNotApplied,
-        Self::CurveOnSurfaceBindingNotTransferred,
-        Self::DimensionStyleUnresolved,
-        Self::DimensionDetailReferenceUnresolved,
-        Self::ReferenceMemberUnresolved,
-        Self::ReferenceMemberAmbiguous,
-        Self::HistoryGeometryNotTransferred,
-        Self::MeshVertexPrecisionReduced,
-        Self::MeshNormalPrecisionReduced,
-        Self::WriterSupportGeometryWithheld,
-        Self::WriterBodyMeshWithheld,
-        Self::WriterSourceAssociationOmitted,
-        Self::WriterRecordOmitted,
-        Self::WriterMeshDataOmitted,
-        Self::WriterBodySplit,
-        Self::WriterEdgeUnjoined,
-        Self::WriterCurveSplit,
-        Self::WriterEdgeGapJoined,
-        Self::WriterEdgeSplit,
-        Self::WriterSubdControlMesh,
-        Self::WriterTsplineReduced,
-        Self::WriterSubdContentOmitted,
-        Self::WriterValueOmitted,
-        Self::WriterAttributesOmitted,
-        Self::EdgePcurveAgreementSampled,
-        Self::EdgePcurveSampledToBspline,
-        Self::SourceWriterStampUnverified,
-        Self::SourceDialectUnverified,
-        Self::TopologyBodyKindGaugeSubstituted,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     pub(crate) const fn code(self) -> &'static str {

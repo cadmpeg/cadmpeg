@@ -80,7 +80,7 @@ pub(crate) fn metadata(frame: PrimaryRecordFrame, version: u32) -> Vec<u8> {
 pub(crate) fn archive(bytes: &[u8], meta: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, options);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
         .unwrap();
     zip.write_all(bytes).unwrap();
@@ -92,7 +92,7 @@ pub(crate) fn archive(bytes: &[u8], meta: &[u8]) -> Vec<u8> {
         options,
     )
     .unwrap();
-    zip.write_all(&super::smbh_geometry_test::synthetic_geometry_smbh())
+    zip.write_all(&super::smbh_geometry_fixture::synthetic_geometry_smbh())
         .unwrap();
     zip.finish().unwrap().into_inner()
 }

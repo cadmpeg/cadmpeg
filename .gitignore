@@ -34,3 +34,5 @@ crates/cadmpeg-fuzz/artifacts/
 
 
 *.pyc
+# Merge conflict backups
+*.premerge

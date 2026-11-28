@@ -74,9 +74,9 @@ fn decoded(
         record_index: None,
     };
     let scope = fixture_scope(DesignFeatureKind::SplitFace);
-    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
+    let archive = crate::test_support::body_reference_tail_fixture::archive(&bytes, &meta);
     let operands = crate::test_support::with_decode_context(|ctx| {
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::decode::operands::face_operands::decode_face_operands(
                 ctx,
                 scan,
@@ -108,13 +108,13 @@ fn frame_findings(
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     ir.fragment = true;
     {
-        let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+        let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
         native.design_parameter_scopes = vec![scope];
         native.design_record_headers = headers;
         native.construction_recipes = vec![recipe];
         native.design_face_operands = vec![operand];
     }
-    let loaded = crate::test_support::native_test::f3d_native(&ir);
+    let loaded = crate::test_support::native_fixture::f3d_native(&ir);
     assert_eq!(loaded.design_face_operands.len(), 1);
     let findings = crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &ir).unwrap()

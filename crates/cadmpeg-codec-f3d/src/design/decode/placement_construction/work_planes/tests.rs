@@ -330,8 +330,8 @@ fn build_work_plane_test_archive(
     form: PlaneEntityForm,
 ) -> Vec<u8> {
     use crate::test_support::lp_ascii;
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
     use cadmpeg_core::decode::u64_from_index;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
@@ -398,7 +398,7 @@ fn build_work_plane_test_archive(
 
 #[test]
 fn work_plane_feature_name_decodes_cleanly() {
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
 
     for form in [WITHOUT_PROPERTIES, EMPTY_PROPERTIES, ENTITY_GENESIS] {
         let archive = build_work_plane_test_archive(
@@ -431,7 +431,7 @@ fn work_plane_feature_name_decodes_cleanly() {
 
 #[test]
 fn work_plane_feature_name_reads_the_entity_id_after_the_property_block() {
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
 
     let misplaced: [PlaneEntityForm; 4] = [
         (WITHOUT_PROPERTIES.0, 186),
@@ -461,7 +461,7 @@ fn work_plane_feature_name_reads_the_entity_id_after_the_property_block() {
 
 #[test]
 fn work_plane_feature_name_conflicts_fail_closed_and_emit_loss() {
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let archive = build_work_plane_test_archive(
@@ -491,9 +491,9 @@ fn work_plane_feature_name_conflicts_fail_closed_and_emit_loss() {
 #[test]
 fn work_plane_feature_name_supports_typed_references_and_skips_origin_planes() {
     use crate::test_support::lp_ascii;
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::streams_test::design_metastream_with_records;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
+    use crate::test_support::zip_fixture::with_scan;
     use cadmpeg_core::decode::u64_from_index;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
@@ -562,7 +562,7 @@ fn work_plane_feature_name_supports_typed_references_and_skips_origin_planes() {
 
 #[test]
 fn work_plane_feature_name_isolated_by_stream() {
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
 
     let archive = build_work_plane_test_archive(
         &[
@@ -611,7 +611,7 @@ fn work_plane_feature_name_isolated_by_stream() {
 
 #[test]
 fn work_plane_feature_name_rejects_corrupt_marker_safely() {
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
 
     let archive = build_work_plane_test_archive(
         &[(
@@ -636,9 +636,9 @@ fn work_plane_feature_name_rejects_corrupt_marker_safely() {
 
 #[test]
 fn work_plane_bind_feature_names_handles_metadata_mismatch_without_failing() {
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::streams_test::design_metastream_with_records;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
+    use crate::test_support::zip_fixture::with_scan;
     use cadmpeg_core::decode::u64_from_index;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
@@ -695,9 +695,9 @@ fn work_plane_bind_feature_names_handles_metadata_mismatch_without_failing() {
 
 #[test]
 fn work_plane_bind_feature_names_reports_undecoded_loss_on_corrupt_entry() {
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::streams_test::design_metastream_with_records;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
+    use crate::test_support::zip_fixture::with_scan;
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 

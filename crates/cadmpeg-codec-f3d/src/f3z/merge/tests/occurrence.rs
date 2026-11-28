@@ -142,7 +142,7 @@ fn merged_member_in(
 #[test]
 fn saved_edge_loss_counts_final_archive_ownership_once() {
     use crate::loss::F3dLossCode;
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_ir::codec::DecodeBody;
     use cadmpeg_ir::report::decode::DecodeTransfer;
@@ -984,7 +984,7 @@ fn imported_definition_bodies_keep_their_definition_frame() {
 
 #[test]
 fn shared_members_check_cycles_for_each_instance_path() {
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive};
     use cadmpeg_ir::codec::DecodeOptions;
     use std::io::Cursor;
 
@@ -1250,7 +1250,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         DesignComponentOccurrence, DesignComponentOccurrenceDraft,
         DesignComponentOccurrencePlacement,
     };
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{

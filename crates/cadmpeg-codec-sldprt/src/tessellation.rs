@@ -36,6 +36,7 @@ const EXTENDED_FORM_WORDS: [u32; 4] = [0x0020_1296, 0x0020_1a96, 0x0020_1b96, 0x
 const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
 const EPS_POLE_BOX_ROUNDING: f64 = 1.0e-9;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
+// resource-cap: MAX_PLANAR_TRIM_ARC_SEGMENTS = 4
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 /// Floor of the work one surface-owner pass may spend on trims, containment
@@ -3496,6 +3497,7 @@ fn crossings_odd(
 /// Polygons with fewer edges are scanned whole.
 const MIN_BANDED_POLYGON_EDGES: usize = 16;
 /// Band listings per edge past which [`EdgeBands`] tries fewer bands.
+// resource-cap: MAX_BAND_LISTINGS_PER_EDGE = N
 const MAX_BAND_LISTINGS_PER_EDGE: usize = 8;
 /// Fewest bands worth keeping; a polygon that needs fewer is scanned whole.
 const MIN_EDGE_BANDS: usize = 4;
@@ -3574,6 +3576,7 @@ impl TrimPolygon {
 
 /// Polygons whose coordinates reach this are not boxed, so no product in
 /// [`crossings_odd`] overflows.
+// resource-cap: MAX_BOXED_POLYGON_SCALE = N
 const MAX_BOXED_POLYGON_SCALE: f64 = 1.0e150;
 
 /// A finite polygon's box. A point beyond it by more than the reach of

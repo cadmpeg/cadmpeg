@@ -49,6 +49,7 @@ const LZMA_DICTIONARY_BYTES: u32 = 1 << 22;
 /// Raw-stream selector following the common properties byte.
 const RAW_STREAM_MODE: u8 = 0xfe;
 /// Largest stream this decoder inflates.
+// resource-cap: MAX_STREAM_BYTES = 2
 const MAX_STREAM_BYTES: u32 = 64 * 1024 * 1024;
 /// Registry field that declares one vertex-domain attribute channel.
 const REGISTRY_VERTEX_CHANNEL: u64 = 4;

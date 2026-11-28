@@ -29,7 +29,7 @@ fn an_assemble_scope_with_associated_tail_references_projects_its_joint() {
 
     // The associated references name the scope and its second connector's
     // construction.
-    let native = crate::test_support::native_test::f3d_native(result.ir());
+    let native = crate::test_support::native_fixture::f3d_native(result.ir());
     let mut joints = native.design_parameter_scopes.iter().filter_map(|scope| {
         scope.assembly_alignment().and_then(|alignment| {
             alignment

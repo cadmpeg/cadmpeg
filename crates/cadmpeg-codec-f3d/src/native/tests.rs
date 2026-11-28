@@ -13,30 +13,30 @@ use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
-use crate::test_support::smbh_blocks_test::{
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut, update_f3d_native};
+use crate::test_support::smbh_blocks_fixture::{
     generated_curve_block, generated_pcurve_block, generated_surface_block,
 };
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::smbh_curves_fixture::{
     push_solved_cache_first_head, stamped_law_curve_subtype,
     synthetic_geometry_with_cache_first_curve_smbh, synthetic_geometry_with_law_curve_smbh,
     synthetic_geometry_with_stamped_law_curve_smbh,
 };
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::smbh_geometry_fixture::{
     append_generated_record_tail, replace_generated_record_head, synthetic_geometry_smbh,
 };
-use crate::test_support::smbh_header_test::with_save_format;
-use crate::test_support::smbh_revision_test::{
+use crate::test_support::smbh_header_fixture::with_save_format;
+use crate::test_support::smbh_revision_fixture::{
     assert_parameterized_tail, decoded_revision_loft_member,
     push_parameterized_revision_surface_tail, push_revision_loft_body, push_revision_surface_tail,
     regenerated_procedural_surface_span, synthetic_revision_surface_smbh,
     synthetic_revision_surface_subtype_span,
 };
-use crate::test_support::tokens_test::{
+use crate::test_support::tokens_fixture::{
     t_dbl, t_ident, t_long, t_pos, t_ref, t_str, t_subident, t_vec,
 };
-use crate::test_support::zip_test::{
+use crate::test_support::zip_fixture::{
     assert_revision_surface_round_trip, f3d_with_deflated_smbh, f3d_with_smbh,
     f3d_with_smbh_and_protein, set_zip_entry_uncompressed_size,
 };

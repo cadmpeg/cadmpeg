@@ -17,6 +17,7 @@ use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("edrawings");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one eDrawings transfer loss.
 ///
 /// The string form (via [`EdrawingsLossCode::code`]) is the stable contract.
@@ -65,31 +66,9 @@ pub(crate) enum EdrawingsLossCode {
     /// An instance left no occurrence because none of its bodies was built.
     StructureOccurrenceDropped,
 }
+}
 
 impl EdrawingsLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [EdrawingsLossCode] = &[
-        Self::SourceDialectUnverified,
-        Self::ContainerDirectoryRecovered,
-        Self::StreamTrailingBytes,
-        Self::ModelNoGeometry,
-        Self::ModelObjectInvalid,
-        Self::ModelShellInvalid,
-        Self::GeometryReconstructedFromMesh,
-        Self::GeometryOpenBody,
-        Self::GeometryBodyReversed,
-        Self::GeometryDegenerateTriangles,
-        Self::StructurePlacementInvalid,
-        Self::AppearanceFaceColourReduced,
-        Self::AppearanceOverrideDropped,
-        Self::StructureVisibilityInferred,
-        Self::AnnotationNotTransferred,
-        Self::StructureSubassemblyPlacementAssumed,
-        Self::StructureDisplayStatesDropped,
-        Self::StructureOccurrenceDropped,
-    ];
-
     /// The stable `family.detail` string of this code.
     #[must_use]
     pub(crate) const fn code(self) -> &'static str {

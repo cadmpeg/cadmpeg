@@ -133,7 +133,9 @@ pub(crate) fn bounded_rotation_parameter_bounds(
     .then_some(())?;
     let u = frame.frame().ref_direction();
     let n = frame.frame().axis();
-    let v = crate::vecmath::cross(n, u);
+    let v = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(n).cross(cadmpeg_ir::math::Vector3::from(u)),
+    );
     let o = frame.frame().origin();
     let slots = cadmpeg_ir::units::FiniteVector::new([
         u[0], v[0], n[0], u[1], v[1], n[1], u[2], v[2], n[2], o[0], o[1], o[2],
@@ -2040,7 +2042,9 @@ fn rotation_cylinder_envelope_agrees(
     let origin = frame.frame().origin();
     let axis = frame.frame().axis();
     let u = frame.frame().ref_direction();
-    let v = crate::vecmath::cross(axis, u);
+    let v = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(u)),
+    );
     u.into_iter()
         .chain(v)
         .all(|value| matches!(value, -1.0 | 0.0 | 1.0))
@@ -2108,7 +2112,9 @@ pub(super) fn decode_rotation_cylinder_body(
         view.seek(close)?;
         (view.u8() == Some(psb::token::COMPOUND_CLOSE)).then_some(())?;
         let [u, _, v, origin] = local_system_lanes(slots);
-        let axis = crate::vecmath::cross(u, v);
+        let axis = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(u).cross(cadmpeg_ir::math::Vector3::from(v)),
+        );
         let frame = PositionalCylinderFrame::new(
             origin,
             axis,

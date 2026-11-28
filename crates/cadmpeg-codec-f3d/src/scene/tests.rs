@@ -228,8 +228,8 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
 
 #[test]
 fn scene_absence_and_empty_scene_produce_empty_arena_without_loss() {
-    let absent = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let absent = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
     );
     let empty = crate::test_support::scene::archive(b"WorldSerializerEndMark");
     for bytes in [absent, empty] {

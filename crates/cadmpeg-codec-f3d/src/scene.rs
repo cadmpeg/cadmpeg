@@ -26,7 +26,9 @@ const COUNTED_VISIBILITY: &[u8] =
 const COUNTED_OVERRIDE_VISIBILITY: &[u8] =
     b"\x26\0\0\0O\0v\0e\0r\0r\0i\0d\0e\0I\0n\0A\0c\0t\0i\0v\0a\0t\0e\0d\0V\0i\0s\0i\0b\0i\0l\0i\0t\0y\0A\0t\0t\0r\0i\0b\0u\0t\0e\0";
 const PATH_CLASS: &str = "PersistentPassiveNodePath";
+// resource-cap: MAX_PATH_ELEMENTS = 2
 const MAX_PATH_ELEMENTS: usize = 1024;
+// resource-cap: MAX_STRING_UNITS = 2
 const MAX_STRING_UNITS: u32 = 128;
 const EPS_SCENE_ORTHONORMAL: f64 = 1e-6;
 const EPS_SCENE_DETERMINANT: f64 = 1e-6;
