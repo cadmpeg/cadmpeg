@@ -35,8 +35,10 @@ const MODEL_POINT_TOLERANCE: cadmpeg_ir::scalar::PositiveLength =
     };
 
 /// Minimum allowance for validating source-bound endpoint contributors.
+// resource-cap: MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS = 4
 const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
 /// Comparison allowance per native support occurrence.
+// resource-cap: MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT = 4
 const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT: usize = 256;
 
 fn push_vertex_point(

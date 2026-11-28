@@ -15,6 +15,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::loss::FreecadLossCode;
 use crate::native::{ProductNode, ProductNodeRecord, PropertyRecord};
 
+// resource-cap: MAX_MESH_PLACEMENT_WORK = 4
 const MAX_MESH_PLACEMENT_WORK: usize = 65_536;
 
 /// `parents` names the container occurrence each occurrence sits in.

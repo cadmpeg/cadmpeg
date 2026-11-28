@@ -893,7 +893,9 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
     Explicit(InlineLocalSystemFrame),
 }
 
+// resource-cap: MAX_INLINE_EXPLICIT_FRAME_CANDIDATES = 4
 pub(crate) const MAX_INLINE_EXPLICIT_FRAME_CANDIDATES: usize = 16;
+// resource-cap: MAX_INLINE_ORIGIN_CANDIDATES = 4
 pub(crate) const MAX_INLINE_ORIGIN_CANDIDATES: usize = 8;
 
 /// Decode the bounded local-system prefix used by inline non-plane rows.
@@ -1559,12 +1561,14 @@ fn decode_support_frame_productions(
     })
 }
 
+// resource-cap: MAX_PLANE_SUPPORT_LANE_VARIANTS = 4
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
 
 /// Search steps one plane-support lane search may take. A stored slot can
 /// branch up to four ways, so the walk is exponential in the number of
 /// ambiguous slots, and the frames it keeps depend on every value taken on
 /// the way, so steps from the same body position cannot share results.
+// resource-cap: MAX_PLANE_SUPPORT_LANE_VISITS = 4
 const MAX_PLANE_SUPPORT_LANE_VISITS: usize = 4096;
 
 /// The bound that stopped a plane-support lane search early.

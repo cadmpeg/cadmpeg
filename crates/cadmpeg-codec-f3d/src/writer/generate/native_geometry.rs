@@ -4739,6 +4739,7 @@ fn native_increasing_interval_curve(
 
 /// Quarter-turn spans one generated conic NURBS may carry. Each span adds two
 /// control points, so this bounds the generated curve before it is built.
+// resource-cap: MAX_GENERATED_CONIC_SPANS = N
 const MAX_GENERATED_CONIC_SPANS: usize = 1 << 16;
 
 fn native_conic_interval_curve(

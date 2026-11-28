@@ -662,6 +662,7 @@ fn named_conic_local_system(
     cache: &ScalarCache,
 ) -> Option<(usize, Option<cadmpeg_ir::units::FiniteVector<12>>)> {
     const TERMINATOR: &[u8] = &[0xf2, crate::psb::token::ENTITY_REF];
+    // resource-cap: MAX_FRAME_BYTES = 1
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let mut marker_count = 0;
     let mut only_marker = 0;
@@ -895,6 +896,7 @@ fn positional_conic_local_system(
     local_start: usize,
     cache: &ScalarCache,
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
+    // resource-cap: MAX_FRAME_BYTES = 1
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
     let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());

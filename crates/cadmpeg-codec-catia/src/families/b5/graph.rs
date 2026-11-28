@@ -55,6 +55,7 @@ const EPS_B5_GRAPH_EXACT_GEOMETRY: f64 = 1.0e-12;
 /// operations admitted for one free-form object population. The allowance
 /// covers one indexed-frame pass, topology materialization, dependency
 /// closure, and one bounded graph-resolution pass.
+// resource-cap: MAX_OBJECT_STREAM_SELECTION_WORK = 4
 pub(in crate::families) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 2_000_000;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
@@ -2058,9 +2059,11 @@ fn merge_targeted_surface(
 
 /// Resolution calls for one requested surface. An analytic offset resolves
 /// both its carrier and its source, so shared offsets can branch.
+// resource-cap: MAX_TARGETED_SURFACE_RESOLUTION_STEPS = 4
 pub(crate) const MAX_TARGETED_SURFACE_RESOLUTION_STEPS: usize = 4_096;
 /// Analytic offsets one requested surface may resolve through before its
 /// resolution stops; each level holds two resolution frames on the stack.
+// resource-cap: MAX_TARGETED_SURFACE_OFFSET_DEPTH = 4
 pub(crate) const MAX_TARGETED_SURFACE_OFFSET_DEPTH: usize = 64;
 
 /// Resolve one requested surface through aliases, constructions and analytic
@@ -6262,6 +6265,7 @@ pub(in crate::families) fn select_object_stream_population(
 
 /// Attached isolated-geometry bytes the topology runs of one logical stream may
 /// copy into their populations, per stream byte.
+// resource-cap: MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE = 4
 pub(crate) const MAX_ATTACHED_GEOMETRY_PER_STREAM_BYTE: usize = 2;
 
 /// The topology populations of one logical stream: its object runs, its

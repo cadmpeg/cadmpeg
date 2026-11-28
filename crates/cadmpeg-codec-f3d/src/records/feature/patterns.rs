@@ -430,13 +430,16 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
 }
 
 /// Instances one rectangular-pattern instance search admits.
+// resource-cap: MAX_RECTANGULAR_PATTERN_INSTANCES = 4
 pub(crate) const MAX_RECTANGULAR_PATTERN_INSTANCES: usize = 4_096;
 
 /// Bytes one instance record may span in a rectangular-pattern instance search.
+// resource-cap: MAX_RECTANGULAR_PATTERN_RECORD_BYTES = 4
 pub(crate) const MAX_RECTANGULAR_PATTERN_RECORD_BYTES: usize = 1 << 20;
 
 /// Bytes the instance records of one rectangular-pattern instance search may
 /// span together.
+// resource-cap: MAX_RECTANGULAR_PATTERN_SCANNED_BYTES = 4
 pub(crate) const MAX_RECTANGULAR_PATTERN_SCANNED_BYTES: usize = 1 << 24;
 
 /// Transform comparisons one rectangular-pattern instance search may make

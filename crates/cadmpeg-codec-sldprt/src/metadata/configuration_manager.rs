@@ -10,6 +10,7 @@ use crate::layout::configuration_manager_scalar_prefix as prefix;
 
 const TOKEN: &[u8] = b"moConfigurationMgr_c";
 const MIN_FILETIME: u64 = 124_333_920_000_000_000;
+// resource-cap: MAX_FILETIME = 1
 const MAX_FILETIME: u64 = 157_469_184_000_000_000;
 
 pub(crate) fn values(payload: &[u8], offset: usize) -> Option<[i64; 3]> {

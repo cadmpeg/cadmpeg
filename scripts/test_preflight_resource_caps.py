@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for ``preflight_resource_caps.py``. These never run cargo."""
+"""Tests for resource-cap preflight dispatch."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
     "test_preflight", Path(__file__).with_name("test_preflight.py"))
@@ -16,66 +17,42 @@ harness = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = harness
 SPEC.loader.exec_module(harness)
 check = harness.load("preflight_resource_caps")
+CAPS_SPEC = importlib.util.spec_from_file_location(
+    "resource_caps_test_checker", Path(__file__).with_name("check-resource-caps.py"))
+assert CAPS_SPEC and CAPS_SPEC.loader
+caps = importlib.util.module_from_spec(CAPS_SPEC)
+sys.modules[CAPS_SPEC.name] = caps
+CAPS_SPEC.loader.exec_module(caps)
 
-# A stand-in census checker: each `| MAX_*` line of the census is one row.
-CHECKER = '''
-from pathlib import Path
-
-def census(root):
-    constants = sorted(line.split("const ")[1].split(":")[0] for path in (root / "crates").rglob("*.rs")
-                       for line in path.read_text().splitlines() if "const MAX_" in line)
-    rows = sorted(line.split()[1] for line in
-                  (root / "docs/decode-resource-caps.md").read_text().splitlines()
-                  if line.startswith("| MAX_"))
-    return constants, rows, [] if constants == rows else [f"rows {rows}, tree {constants}"]
-'''
-SOURCE = "crates/cadmpeg-codec-step/src/export.rs"
+SOURCE = "crates/demo/src/lib.rs"
+VALID = "// resource-cap: MAX_FOO = 2\nconst MAX_FOO: usize = 1;\n"
 
 
 class ResourceCapsCheck(harness.FixtureCase):
     def setUp(self) -> None:
         super().setUp()
-        self.repo.commit({check.CHECKER: CHECKER,
-                          check.CENSUS: "| MAX_SAMPLES | 2 |\n",
-                          SOURCE: "const MAX_SAMPLES: usize = 64;\n"})
+        self.repo.commit({check.CHECKER: "", "docs/decode-resource-caps.md": "# Resource caps\n",
+                          SOURCE: VALID})
         self.repo.branch()
 
     def results(self):
-        return harness.run_check(check, self.repo.context())
+        with patch.object(check, "load_checker", return_value=caps):
+            return harness.run_check(check, self.repo.context())
 
-    def test_no_new_constant_passes(self) -> None:
-        self.repo.commit({SOURCE: "const MAX_SAMPLES: usize = 128;\n"})
-        self.assertEqual(harness.statuses(self.results()), ["PASS"])
-
-    def test_constant_without_census_fails(self) -> None:
-        self.repo.commit({SOURCE: "const MAX_SAMPLES: usize = 64;\n"
-                                  "pub(crate) const MAX_WORK: usize = 9;\n"})
+    def test_marker_only_removal_fails(self) -> None:
+        self.repo.commit({SOURCE: "const MAX_FOO: usize = 1;\n"})
         results = self.results()
         self.assertEqual(harness.statuses(results), ["FAIL"])
-        self.assertIn(f"{SOURCE}:2: MAX_WORK", results[0].details)
-        self.assertIn("2 production MAX_* constants", results[0].summary)
+        self.assertTrue(any("missing resource-cap marker" in text for text in results[0].details))
 
-    def test_constant_with_census_passes(self) -> None:
-        self.repo.commit({SOURCE: "const MAX_SAMPLES: usize = 64;\nconst MAX_WORK: usize = 9;\n",
-                          check.CENSUS: "| MAX_SAMPLES | 2 |\n| MAX_WORK | 4 |\n"})
+    def test_valid_change_passes(self) -> None:
+        self.repo.commit({SOURCE: VALID.replace("= 2", "= 4")})
         self.assertEqual(harness.statuses(self.results()), ["PASS"])
 
-    def test_removed_constant_without_census_fails(self) -> None:
-        self.repo.commit({SOURCE: "const LIMIT: usize = 64;\n"})
-        results = self.results()
-        self.assertEqual(harness.statuses(results), ["FAIL"])
-        self.assertIn(f"{SOURCE}: MAX_SAMPLES removed", results[0].details)
-        self.assertIn("0 production MAX_* constants", results[0].summary)
-
-    def test_removed_constant_with_census_passes(self) -> None:
-        self.repo.commit({SOURCE: "const LIMIT: usize = 64;\n",
-                          check.CENSUS: ""})
-        self.assertEqual(harness.statuses(self.results()), ["PASS"])
-
-    def test_test_constants_are_ignored(self) -> None:
-        self.repo.commit({"crates/cadmpeg-codec-step/src/export/tests.rs":
-                          "const MAX_FIXTURE: usize = 1;\n"})
-        self.assertEqual(check.changed_constants(self.repo.context()), ([], []))
+    def test_unrelated_change_skips_scan(self) -> None:
+        self.repo.commit({"README.md": "change\n"})
+        with patch.object(check, "load_checker", side_effect=AssertionError("unexpected scan")):
+            self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
 
 
 if __name__ == "__main__":

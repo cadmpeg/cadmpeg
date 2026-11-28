@@ -42,6 +42,7 @@ use roster::{Member, RecordKey};
 
 const CHART_TOLERANCE: f64 = 1.0e-9;
 const GAP_MM: f64 = 0.001;
+// resource-cap: MAX_FIT_CANDIDATES_FLOOR = 4
 const MAX_FIT_CANDIDATES_FLOOR: usize = 512;
 const RECORDS_PER_FIT_CANDIDATE: usize = 8;
 

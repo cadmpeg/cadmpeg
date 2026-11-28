@@ -44,6 +44,7 @@ const I32_MINUS_TWO: [u8; 4] = [0xfe, 0xff, 0xff, 0xff];
 /// The length of the `sgSketch` header before the first point record.
 const SKETCH_HEADER_LEN: usize = 14;
 /// The largest point count read as an `sgSketch` header.
+// resource-cap: MAX_SKETCH_POINTS = 2
 const MAX_SKETCH_POINTS: usize = 4096;
 /// Where a record's fields start after a head with its eight zero bytes.
 const CURRENT_FIELDS: usize = arc::START;

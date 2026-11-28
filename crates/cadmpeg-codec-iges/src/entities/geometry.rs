@@ -29,6 +29,7 @@ use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+// resource-cap: MAX_TRANSFORM_DEPTH = 4
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
@@ -116,6 +117,7 @@ pub(super) fn closed_polyline_has_duplicate<T>(
 /// compare every pair of their points, and many items may name one boundary.
 /// An item whose pairs do not fit the remainder is not checked; its caller
 /// drops that item and reports a geometry loss naming this limit.
+// resource-cap: MAX_PLANAR_POINT_PAIRS = 4
 pub(super) const MAX_PLANAR_POINT_PAIRS: usize = 1 << 30;
 
 /// The caps a geometry projection applies: [`MAX_PLANAR_POINT_PAIRS`] and

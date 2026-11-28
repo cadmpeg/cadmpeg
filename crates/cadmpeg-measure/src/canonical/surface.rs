@@ -21,6 +21,7 @@ use crate::reason::UnavailableReason;
 use crate::tolerance::{INVERSION_PARAMETER_RESOLUTION, NURBS_SEAM_RATIO};
 
 /// Gauss–Newton steps refining one point inverted onto a NURBS carrier.
+// resource-cap: MAX_INVERSION_REFINEMENT_STEPS = 4
 const MAX_INVERSION_REFINEMENT_STEPS: usize = 16;
 const EXTRUSION_INVERSION_SEEDS: u32 = 16;
 

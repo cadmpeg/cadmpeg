@@ -6346,6 +6346,7 @@ enum RelationExpressionKey<'a> {
 /// Dependency text all relations may keep, per input byte. Many relations can
 /// share one expression and one symbol can bind many same-named parameters, so
 /// the copies grow with the product of those counts.
+// resource-cap: MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE = 4
 pub(crate) const MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE: usize = 4;
 
 /// Parameter dependencies of relation expressions.
