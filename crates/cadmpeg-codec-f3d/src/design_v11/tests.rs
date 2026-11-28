@@ -337,6 +337,61 @@ fn file_definition(id: &str) -> ProductDefinition {
 }
 
 #[test]
+fn projected_components_are_settled_before_operation_projection() {
+    let scope = "f3d:archive:product-definition#0";
+    let owner = "f3d:model:component#part";
+    let (mut ir, _, owners) = component_document(
+        scope,
+        vec![
+            file_definition(scope),
+            definition(owner, Storage::Embedded, &[]),
+        ],
+        &[("feature", owner)],
+    );
+    let occurrence = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#part").unwrap();
+    ir.model.product_definitions[0]
+        .occurrences
+        .push(occurrence.clone());
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            occurrence,
+            ProductDefinitionId::mint(owner).unwrap(),
+            None,
+        ));
+    let mut projected = crate::design_v11::timeline::Projected::default();
+    projected.features = std::mem::take(&mut ir.design.features);
+    projected.containers = std::mem::take(&mut ir.design.containers);
+    for feature in &mut projected.features {
+        feature.component = None;
+    }
+    ir.design.scopes.clear();
+    let mut scopes = BTreeMap::from([(
+        String::new(),
+        (ProductDefinitionId::mint(scope).unwrap(), projected),
+    )]);
+    super::settle_projected_components(
+        &mut ir,
+        &mut scopes,
+        &owners,
+        &BTreeSet::new(),
+        &mut Vec::new(),
+    );
+    assert!(ir.design.scopes.is_empty());
+    assert!(ir.design.features.is_empty());
+    assert!(ir.design.containers.is_empty());
+    assert_eq!(scopes[""].1.features.len(), 1);
+    assert_eq!(scopes[""].1.containers.len(), 1);
+    assert_eq!(
+        scopes[""].1.features[0]
+            .component
+            .as_ref()
+            .map(ProductDefinitionId::as_str),
+        Some(owner)
+    );
+}
+
+#[test]
 fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
     const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
     let scope = format!("{XREF}archive:product-definition#0");

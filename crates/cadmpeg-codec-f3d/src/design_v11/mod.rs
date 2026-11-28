@@ -306,6 +306,8 @@ pub(crate) fn project(
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .map(|(feature, owner)| (feature.clone(), owner.clone()))
         .collect::<HashMap<_, _>>();
+    let unstated = unstated_components(&scope_records);
+    settle_projected_components(ir, &mut scopes, &owners, &unstated, losses);
     let joints = joint_records.as_ref().map(|records| {
         records
             .inputs(&ir.model, &scope_records)
@@ -314,7 +316,6 @@ pub(crate) fn project(
     let mut restated = Vec::new();
     let mut root = None;
     let mut unwalked = Vec::new();
-    let mut scoped_features = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
         let Span { bodies } = spans.remove(&prefix).unwrap_or_default();
         if let Some(joints) = &joints {
@@ -390,14 +391,6 @@ pub(crate) fn project(
             losses,
         )?;
         ctx.charge_entities(1, "project F3D v11 design scope")?;
-        scoped_features.push((
-            definition.clone(),
-            projected
-                .features
-                .iter()
-                .map(|feature| feature.id.clone())
-                .collect::<BTreeSet<_>>(),
-        ));
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
             definition: definition.clone(),
@@ -424,8 +417,6 @@ pub(crate) fn project(
         }
     }
     joint::record(&mut ir.model, restated);
-    let unstated = unstated_components(&scope_records);
-    settle_components(ir, &scoped_features, &owners, &unstated, losses);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -668,6 +659,52 @@ fn unstated_components(
         })
         .map(|scope| scope.id.as_str())
         .collect()
+}
+
+fn settle_projected_components(
+    ir: &mut CadIr,
+    scopes: &mut BTreeMap<String, (ProductDefinitionId, timeline::Projected)>,
+    owners: &HashMap<FeatureId, ProductDefinitionId>,
+    unstated: &BTreeSet<&str>,
+    losses: &mut Vec<LossNote>,
+) {
+    let first_scope = ir.design.scopes.len();
+    let mut ranges = Vec::new();
+    let mut scoped = Vec::new();
+    for (definition, projected) in scopes.values_mut() {
+        ranges.push((ir.design.features.len(), ir.design.containers.len()));
+        scoped.push((
+            definition.clone(),
+            projected
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect(),
+        ));
+        ir.design.scopes.push(DesignScope {
+            definition: definition.clone(),
+            roots: projected
+                .containers
+                .iter()
+                .map(|container| container.id().clone())
+                .collect(),
+            active_configuration: None,
+            active_arrangements: BTreeSet::new(),
+            occurrences: BTreeMap::new(),
+            current: Vec::new(),
+            unproduced: BTreeSet::new(),
+        });
+        ir.design.features.append(&mut projected.features);
+        ir.design.containers.append(&mut projected.containers);
+    }
+    settle_components(ir, &scoped, owners, unstated, losses);
+    for ((_, projected), (features, containers)) in
+        scopes.values_mut().rev().zip(ranges.into_iter().rev())
+    {
+        projected.features = ir.design.features.split_off(features);
+        projected.containers = ir.design.containers.split_off(containers);
+    }
+    ir.design.scopes.truncate(first_scope);
 }
 
 fn settle_components(
