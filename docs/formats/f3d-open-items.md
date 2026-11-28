@@ -4324,3 +4324,15 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A save whose copy body stores key `-1`, with a Fusion readback of its body list. The forms above do not give that key, so the save needs another construction of the copy, for example a Mirror edited after a later feature or a design saved by an earlier Fusion version. Compare the body record keys, the body-map pairs, and the Body container entities with the bodies that the Fusion browser lists.
 
 **Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").
+
+### DR-1094. Default name of a construction feature
+
+**Question.** Which name does the timeline give a `WorkPlane`, `WorkAxis`, or `WorkPoint` feature whose scope stores no display name and no label?
+
+**Known.** The scope stores its kind spelling and its family-local feature ordinal. The type GUID selects the family, and the kind spelling is `WorkAxis`, `WorkPoint`, or a spelling in the authoring language such as `Plan de construction` or `Axe de construction`. A French application session shows `Plan1`, `Axe1`, and `Point1` for scopes of ordinal 1 with the spellings `Plan de construction`, `Axe de construction`, and `WorkPoint`, and `Axe1` for a scope of ordinal 1 that stores `WorkAxis`. Each shown name differs from the kind spelling followed by the ordinal.
+
+**Need.** Save one offset plane, one two-plane axis, and one three-plane point without renaming them, once in an English application session and once in a French session. Read the timeline names of each save in both sessions, and compare the scope records of the two saves.
+
+**Conflict.** None.
+
+**Note.** The decoder names the feature with the kind spelling directly followed by the ordinal and charges `feature.construction-name-composed`.
