@@ -396,12 +396,16 @@ fn feature_cut(
     if !definition_stated(ctx, design, model, &strings, facts)? {
         cut.extend(definition_cut(model));
     }
+    let stored = match &design.definition.operation {
+        FeatureOperation::Stored { bodies, .. } => bodies.as_deref().unwrap_or_default(),
+        _ => &[],
+    };
     let id = design.id.as_str();
     if model
         .evaluation
         .outputs()
         .iter()
-        .any(|body| !facts.produced.contains(&(body.as_str(), id)))
+        .any(|body| !stored.contains(body) && !facts.produced.contains(&(body.as_str(), id)))
     {
         cut.push(ModelFeatureField::Outputs.key());
     }
@@ -545,7 +549,7 @@ pub(crate) fn same_id_cuts<'ir>(
             }
         }
     }
-    for (id, cut) in parameters::parameter_cuts(ir, &compared)
+    for (id, cut) in parameters::parameter_cuts(ir, written, &compared)
         .into_iter()
         .chain(sketches::sketch_cuts(ir, &compared))
     {

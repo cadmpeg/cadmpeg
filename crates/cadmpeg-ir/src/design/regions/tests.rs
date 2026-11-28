@@ -2,14 +2,24 @@
 use std::f64::consts::{FRAC_1_SQRT_2, PI, TAU};
 
 use cadmpeg_core::nonblank_literal;
-use cadmpeg_ir::design::selection::{PickTarget, Picks};
-use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
-use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
-use cadmpeg_ir::scalar::{Angle, Length};
-use cadmpeg_ir::sketches::{EllipseRadii, SketchGeometry};
 
 use super::*;
-use crate::design_v11::operations::selections::{planar, SketchData};
+use crate::features::profiles::SketchProfileRegion;
+use crate::geometry::procedural_curves::DirectedParameterRange;
+use crate::scalar::{Angle, Length};
+use crate::sketches::{EllipseRadii, SketchGeometry};
+
+/// The region of the trimmed `region` of `sketch()` among `entities`.
+fn region_of(entities: &[SketchEntity], region: SketchProfileRegion) -> Projected<SketchRegion> {
+    let SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    } = region
+    else {
+        panic!("a trimmed region");
+    };
+    Arrangement::new(entities, &sketch())?.region(&outer_boundary, &hole_boundaries)
+}
 
 /// Agreement of two parameters that the same arithmetic reaches.
 const EPS_TEST_PARAMETER: f64 = 1.0e-9;
@@ -467,9 +477,9 @@ fn an_unread_curve_cuts_only_the_curves_its_box_can_reach() {
     let region = |extra: SketchEntity| {
         let mut entities = square_and_cut();
         entities.push(extra);
-        let profile = PlanarProfileRef::sketch_regions(
-            sketch(),
-            vec![SketchProfileRegion::trimmed(
+        region_of(
+            &entities,
+            SketchProfileRegion::trimmed(
                 vec![
                     stored("bottom", [0.0, 0.5], false),
                     stored("cut", [0.25, 0.75], false),
@@ -478,15 +488,9 @@ fn an_unread_curve_cuts_only_the_curves_its_box_can_reach() {
                 ],
                 Vec::new(),
             )
-            .expect("region")],
+            .expect("region"),
         )
-        .expect("regions");
-        let data = SketchData {
-            sketches: &[],
-            entities: &entities,
-            arrangements: None,
-        };
-        planar(&profile, data).is_ok()
+        .is_ok()
     };
     // An ellipse far from the square is ignored; one inside it, and one that
     // only reaches the square's edge within the tolerance, cut it.
@@ -764,22 +768,7 @@ fn a_hole_ring_carries_fragments() {
         vec![clockwise_strip()],
     )
     .expect("region");
-    let profile = PlanarProfileRef::sketch_regions(sketch(), vec![region]).expect("regions");
-    let data = SketchData {
-        sketches: &[],
-        entities: &entities,
-        arrangements: None,
-    };
-    let value = planar(&profile, data).expect("selection");
-    let Picks::Named(picks) = value.picks else {
-        panic!("named picks");
-    };
-    let [picked] = picks.as_slice() else {
-        panic!("one region");
-    };
-    let PickTarget::SketchRegion { region, .. } = &picked.target else {
-        panic!("region pick");
-    };
+    let region = region_of(&entities, region).expect("region");
     assert_eq!(region.outer.len(), 4);
     let [hole] = region.holes.as_slice() else {
         panic!("one hole");
@@ -837,7 +826,7 @@ fn a_cache_builds_one_arrangement_per_sketch() {
 }
 
 #[test]
-fn a_trimmed_region_becomes_a_typed_sketch_region_pick() {
+fn a_trimmed_region_maps_onto_whole_pieces() {
     let entities = square_and_cut();
     let outer = vec![
         stored("bottom", [0.0, 0.5], false),
@@ -845,34 +834,18 @@ fn a_trimmed_region_becomes_a_typed_sketch_region_pick() {
         stored("top", [0.5, 1.0], false),
         stored("left", [0.0, 1.0], false),
     ];
-    let profile = PlanarProfileRef::sketch_regions(
-        sketch(),
-        vec![SketchProfileRegion::trimmed(outer, Vec::new()).expect("region")],
+    let region = region_of(
+        &entities,
+        SketchProfileRegion::trimmed(outer, Vec::new()).expect("region"),
     )
-    .expect("regions");
-    let data = SketchData {
-        sketches: &[],
-        entities: &entities,
-        arrangements: None,
-    };
-    let value = planar(&profile, data).expect("selection");
-    let Picks::Named(picks) = value.picks else {
-        panic!("named picks");
-    };
-    let [picked] = picks.as_slice() else {
-        panic!("one region");
-    };
-    let PickTarget::SketchRegion { region, .. } = &picked.target else {
-        panic!("region pick");
-    };
+    .expect("region");
     assert_eq!(region.outer.len(), 4);
     assert!(region.holes.is_empty());
-    // A use that ends away from a cut point keeps the whole feature native.
+    // A use that ends away from a cut point refuses the region.
     let bad = vec![stored("bottom", [0.0, 0.25], false)];
-    let profile = PlanarProfileRef::sketch_regions(
-        sketch(),
-        vec![SketchProfileRegion::trimmed(bad, Vec::new()).expect("region")],
+    assert!(region_of(
+        &entities,
+        SketchProfileRegion::trimmed(bad, Vec::new()).expect("region")
     )
-    .expect("regions");
-    assert!(planar(&profile, data).is_err());
+    .is_err());
 }

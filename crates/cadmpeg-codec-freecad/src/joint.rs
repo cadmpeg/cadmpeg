@@ -144,7 +144,7 @@ pub(crate) fn transfer_neutral(
     let mut occurrence_by_native = HashMap::new();
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
-            occurrence_by_native.insert(native, &occurrence.id);
+            occurrence_by_native.entry(native).or_insert(&occurrence.id);
         }
     }
     let mut output = Vec::new();

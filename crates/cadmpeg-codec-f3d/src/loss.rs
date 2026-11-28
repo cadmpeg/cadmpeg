@@ -861,6 +861,8 @@ pub(crate) enum F3dLossCode {
     FeatureNoResultActiveAssumed,
     /// A scope tail stores a state byte above `1`; the byte is read as set.
     FeatureStateByteAboveOne,
+    /// A reciprocal Hole stores conflicting suppression flags. Read it as suppressed.
+    FeatureHoleSuppressionConflict,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     FeatureProfileJoinEnvelopeCapped,
@@ -1991,6 +1993,7 @@ impl F3dLossCode {
         Self::FeatureUnevaluatedStateAssumed,
         Self::FeatureNoResultActiveAssumed,
         Self::FeatureStateByteAboveOne,
+        Self::FeatureHoleSuppressionConflict,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileJoinEnvelopeCapped,
         Self::FeatureProfileCrossingRunsCapped,
@@ -3045,6 +3048,7 @@ impl F3dLossCode {
             Self::FeatureUnevaluatedStateAssumed => "feature.unevaluated-state-assumed",
             Self::FeatureNoResultActiveAssumed => "feature.no-result-active-assumed",
             Self::FeatureStateByteAboveOne => "feature.state-byte-above-one",
+            Self::FeatureHoleSuppressionConflict => "feature.hole-suppression-conflict",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
             Self::FeatureExtrudeProfileGroupUnionAssumed => {
@@ -4159,6 +4163,7 @@ impl F3dLossCode {
             | Self::FeatureUnevaluatedStateAssumed
             | Self::FeatureNoResultActiveAssumed
             | Self::FeatureStateByteAboveOne
+            | Self::FeatureHoleSuppressionConflict
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -4945,6 +4950,7 @@ impl F3dLossCode {
             | Self::FeatureUnevaluatedStateAssumed
             | Self::FeatureNoResultActiveAssumed
             | Self::FeatureStateByteAboveOne
+            | Self::FeatureHoleSuppressionConflict
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -5940,6 +5946,7 @@ mod tests {
                 "feature.unevaluated-state-assumed",
                 "feature.no-result-active-assumed",
                 "feature.state-byte-above-one",
+                "feature.hole-suppression-conflict",
                 "feature.profile-arrangement-capped",
                 "feature.profile-join-envelope-capped",
                 "feature.profile-crossing-runs-capped",
