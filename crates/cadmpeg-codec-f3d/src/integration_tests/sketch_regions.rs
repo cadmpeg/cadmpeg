@@ -4,9 +4,9 @@
 
 use super::EditableDecodeResult;
 use crate::loss::F3dLossCode;
-use crate::test_support::body_map_test::f3d_with_breps_and_design;
-use crate::test_support::native_test::f3d_native;
-use crate::test_support::sketch_region_test::{
+use crate::test_support::body_map_fixture::f3d_with_breps_and_design;
+use crate::test_support::native_fixture::f3d_native;
+use crate::test_support::sketch_region_fixture::{
     snapshot_map_design, triangle_bodies_smbh, TriangleBody, MODEL_BODY, SKETCH_REGION,
     SKETCH_SURFACE,
 };

@@ -26,7 +26,10 @@ use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::native::NativeConvertError;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+
+use crate::loss::NxLossCode;
 
 /// The parameters of the scope of `definition`, one per decoded expression,
 /// each placed by the record order of the one expression table that holds
@@ -34,6 +37,7 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 pub(super) fn project(
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), NativeConvertError> {
     let places = match ir.native.namespace("nx") {
         Some(namespace) => crate::native::om::expression_places(namespace)?,
@@ -51,6 +55,10 @@ pub(super) fn project(
     let mut parameters = Vec::with_capacity(ir.model.parameters.len());
     for parameter in &ir.model.parameters {
         let Some(name) = NonBlankString::new(parameter.name.clone()) else {
+            losses.push(NxLossCode::ParameterUnnamed.note(format!(
+                "NX expression {} stores a blank name and has no design record.",
+                parameter.id
+            )));
             continue;
         };
         let declared = declared(parameter);

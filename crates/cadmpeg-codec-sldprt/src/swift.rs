@@ -45,6 +45,7 @@ const SWIFT_RENDERED_LENGTH_SCALES_MM: &[f64] = &[
 
 const ROOT_CLASS: &str = "PrizMetrik.GdtAnalysisSupport.GdtPart";
 const ENTITY_TOKEN: &[u8] = b"\x06Entity";
+// resource-cap: MAX_DEPTH = 2
 const MAX_DEPTH: usize = 32;
 /// Floor of the feature visits one projection may spend across all of its
 /// feature walks.

@@ -223,7 +223,7 @@ fn source_only_graph(
         states: Vec::new(),
     });
     let part = Part::at(
-        crate::dialect::FORMAT,
+        crate::dialect::registry_ids::FORMAT,
         "archive-entry",
         0,
         bytes,

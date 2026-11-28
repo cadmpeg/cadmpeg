@@ -4,9 +4,10 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::registry_ids::FORMAT;
 use super::{
     classify_layers, dialect_loss, kernel_dialect_loss, F3dDialect, DECLARED_ROOT_DOCUMENT_MEMBERS,
-    DECLARED_TOP_LEVEL_MANIFEST_VERSION, FORMAT,
+    DECLARED_TOP_LEVEL_MANIFEST_VERSION,
 };
 use crate::loss::F3dLossCode;
 use cadmpeg_core::dialect::{Admission, DialectMatch};
@@ -28,7 +29,7 @@ fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std
 
 #[test]
 fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
-    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let bytes = crate::test_support::zip_fixture::synthetic_f3d(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, root) =
@@ -42,7 +43,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     assert_eq!(
         layers
             .iter()
-            .filter(|layer| layer.format() == cadmpeg_asm::dialect::FORMAT)
+            .filter(|layer| layer.format() == cadmpeg_asm::dialect::registry_ids::FORMAT)
             .count(),
         2
     );
@@ -146,8 +147,10 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
 #[test]
 fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
     let matched = DialectMatch::unverified(
-        cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+        cadmpeg_asm::dialect::registry_ids::ACIS_TEXT_ACIS,
+        cadmpeg_core::dialect::Grammar::of(
+            &cadmpeg_asm::dialect::registry_ids::ACIS_SAVE_FORMAT_218,
+        ),
     )
     .with_declared(BTreeMap::from([(
         cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_CARRIER),
@@ -163,8 +166,10 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
 #[test]
 fn kernel_recovery_text_matches_shared_dialect_message() {
     let matched = DialectMatch::unverified(
-        cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
-        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+        cadmpeg_asm::dialect::registry_ids::ACIS_TEXT_ACIS,
+        cadmpeg_core::dialect::Grammar::of(
+            &cadmpeg_asm::dialect::registry_ids::ACIS_SAVE_FORMAT_218,
+        ),
     )
     .with_declared(BTreeMap::from([
         (

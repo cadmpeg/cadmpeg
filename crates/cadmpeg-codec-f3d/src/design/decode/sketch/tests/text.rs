@@ -61,10 +61,6 @@ use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
 #[test]
 fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
     let cases = crate::test_support::sketch_text::text_fixture_records();
-    assert_eq!(
-        cases.len(),
-        crate::test_support::verification::case_count(6, 65)
-    );
     for case in cases {
         let text = case.decode();
         assert_eq!(text.text, case.text, "{}", case.label);

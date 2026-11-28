@@ -146,7 +146,7 @@ mod tests {
             id: "f3d:native:fixed-fillet-group#0",
             value: &group,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || FIXED_FILLET_GROUP_CLONE_COUNT.with(|count| count.set(0)),

@@ -112,7 +112,7 @@ impl MemberKeys {
     /// placement scope that qualifies it. A member's `File` definition takes
     /// the member's key, and the key of the member that places it as its
     /// qualifier.
-    fn map(&self, id: &str) -> Option<String> {
+    pub(super) fn map(&self, id: &str) -> Option<String> {
         if let Some(read_at) = member_definition_key(id) {
             let key = self.keys.get(read_at)?;
             let placer = self.placers.get(read_at)?;
