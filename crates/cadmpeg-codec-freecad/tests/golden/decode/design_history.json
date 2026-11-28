@@ -4615,6 +4615,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Fillet"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4651,6 +4652,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 8,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4687,6 +4689,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4723,6 +4726,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#PadSketch"
           },
+          "position": 2,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4759,6 +4763,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#PadSketch"
           },
+          "position": 3,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4795,6 +4800,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pocket"
           },
+          "position": 8,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4831,6 +4837,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pocket"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -4867,6 +4874,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#PocketSketch"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {

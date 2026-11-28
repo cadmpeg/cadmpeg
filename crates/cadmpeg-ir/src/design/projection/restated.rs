@@ -377,12 +377,16 @@ fn feature_cut(
     if !definition_stated(ctx, design, model, &strings)? {
         cut.extend(definition_cut(model));
     }
+    let stored = match &design.definition.operation {
+        FeatureOperation::Stored { bodies, .. } => bodies.as_deref().unwrap_or_default(),
+        _ => &[],
+    };
     let id = design.id.as_str();
     if model
         .evaluation
         .outputs()
         .iter()
-        .any(|body| !facts.produced.contains(&(body.as_str(), id)))
+        .any(|body| !stored.contains(body) && !facts.produced.contains(&(body.as_str(), id)))
     {
         cut.push(ModelFeatureField::Outputs.key());
     }
@@ -526,7 +530,7 @@ pub(crate) fn same_id_cuts<'ir>(
             }
         }
     }
-    for (id, cut) in parameters::parameter_cuts(ir, &compared)
+    for (id, cut) in parameters::parameter_cuts(ir, written, &compared)
         .into_iter()
         .chain(sketches::sketch_cuts(ir, &compared))
     {
@@ -536,9 +540,26 @@ pub(crate) fn same_id_cuts<'ir>(
     let models = model_values(ir, &compared);
     let wanted = models.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
     let designs = design_values(ir, &wanted);
+    let configuration_positions = ir
+        .design
+        .configurations
+        .iter()
+        .filter_map(|design| Some((&design.id, design.position?)))
+        .collect::<HashMap<_, _>>();
+    let carried_ordinals = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|model| configuration_positions.get(&model.id) == Some(&model.ordinal))
+        .map(|model| model.id.as_str())
+        .collect::<HashSet<_>>();
     for (id, model) in models {
         if let (Some(model), Some(design)) = (model, designs.get(id)) {
-            cuts.insert(id, record_cut(&model, design));
+            let mut cut = record_cut(&model, design);
+            if carried_ordinals.contains(id) {
+                cut.remove("ordinal");
+            }
+            cuts.insert(id, cut);
         }
     }
     cuts

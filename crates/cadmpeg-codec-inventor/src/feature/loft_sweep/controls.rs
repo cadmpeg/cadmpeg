@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Positional solid-loft operand admission.
 
+use cadmpeg_ir::features::operation_settings::BooleanOp;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::design::PmDcParameter;
+use crate::feature::history_views::StateLimit;
 use crate::feature::{
     PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureProperty, PmDcFeaturePropertyKind,
     PmDcFeatureReferenceFamily,
@@ -25,8 +27,9 @@ pub(crate) enum NativeReason {
     SectionParameters,
     Profile,
     ResultTopology,
-    ResultStateBounded,
+    ResultStateBounded(StateLimit),
     ResultStateFailed,
+    ResultJoin,
     ResultIdentity,
 }
 
@@ -41,9 +44,10 @@ impl NativeReason {
             | Self::SectionRecord
             | Self::SectionCondition
             | Self::SectionOption => InventorLossCode::FeatureLoftOperandsNative,
-            Self::ResultTopology | Self::ResultStateBounded | Self::ResultStateFailed => {
-                InventorLossCode::FeatureLoftResultOperandsNative
-            }
+            Self::ResultTopology
+            | Self::ResultStateBounded(_)
+            | Self::ResultStateFailed
+            | Self::ResultJoin => InventorLossCode::FeatureLoftResultOperandsNative,
             Self::ResultCollection | Self::Profile | Self::ResultIdentity => {
                 InventorLossCode::FeatureLoftControlsUnresolved
             }
@@ -60,7 +64,9 @@ impl NativeReason {
             Self::Profile => "section selection does not resolve to one consumed planar profile".to_owned(),
             Self::ResultTopology => "complete generator-owned result does not prove ordered positional loft construction".to_owned(),
             Self::ResultStateFailed => "history state of the loft does not decode".to_owned(),
-            Self::ResultStateBounded => "history state of the loft passed the local work cap of state views".to_owned(),
+            Self::ResultJoin => "joined result body does not merge with a body of the preceding history state".to_owned(),
+            Self::ResultStateBounded(StateLimit::Work) => "history state of the loft passed the local work cap of state views".to_owned(),
+            Self::ResultStateBounded(limit) => format!("history state of the loft reached {limit}"),
             Self::ResultIdentity => "result body identity does not resolve".to_owned(),
         };
         code.note(format!("Retained Inventor solid loft natively: {reason}."))
@@ -81,20 +87,13 @@ pub(crate) struct AdmittedSection {
 /// The result and operation slots that distinguish the two loft classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Form {
-    /// Part operation value 1; slot 13 holds one result body.
+    /// Part operation value 1 or 3; slot 13 holds one result body.
     Solid,
     /// Part operation value 5; slot 6 holds the result surface-body wrapper.
     Surface,
 }
 
 impl Form {
-    fn operation_value(self) -> u16 {
-        match self {
-            Self::Solid => 1,
-            Self::Surface => 5,
-        }
-    }
-
     fn result_slot(self) -> usize {
         match self {
             Self::Solid => 13,
@@ -107,9 +106,9 @@ pub(crate) fn sections<'a>(
     source: &PmDcFeature,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
-) -> Result<[PmDcReference; 2], NativeReason> {
-    let admitted = admit(source, Form::Solid, property, parameter)?;
-    Ok(admitted.map(|section| section.entity_link))
+) -> Result<([PmDcReference; 2], BooleanOp), NativeReason> {
+    let (admitted, op) = admit(source, Form::Solid, property, parameter)?;
+    Ok((admitted.map(|section| section.entity_link), op))
 }
 
 /// The two sections of a positional surface loft: the section that selects a
@@ -128,7 +127,7 @@ pub(crate) fn surface_sections<'a>(
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
 ) -> Result<SurfaceSections, NativeReason> {
-    let [first, last] = admit(source, Form::Surface, property, parameter)?;
+    let ([first, last], _) = admit(source, Form::Surface, property, parameter)?;
     // A section whose own source index is 1 stores `source_value` 1 in both
     // forms, so the two forms cannot be told apart: the pair is refused.
     if first.source_index == 1 || last.source_index == 1 {
@@ -158,7 +157,7 @@ fn admit<'a>(
     form: Form,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
-) -> Result<[AdmittedSection; 2], NativeReason> {
+) -> Result<([AdmittedSection; 2], BooleanOp), NativeReason> {
     let slots = source.properties.references();
     let result_slot = form.result_slot();
     if slots.len() != 14
@@ -169,16 +168,18 @@ fn admit<'a>(
     {
         return Err(NativeReason::Controls);
     }
-    if !matches!(
-        property(slots[1]).ok_or(NativeReason::Slot(1))?.kind,
+    let op = match property(slots[1]).ok_or(NativeReason::Slot(1))?.kind {
         PmDcFeaturePropertyKind::Enumeration {
             family: PmDcFeatureEnumFamily::PartOperation,
             type_value: 5,
             value,
-        } if value == form.operation_value()
-    ) {
-        return Err(NativeReason::Slot(1));
-    }
+        } => match (form, value) {
+            (Form::Solid, 1) | (Form::Surface, 5) => BooleanOp::NewBody,
+            (Form::Solid, 3) => BooleanOp::Join,
+            _ => return Err(NativeReason::Slot(1)),
+        },
+        _ => return Err(NativeReason::Slot(1)),
+    };
     for slot in [2, 9] {
         if !matches!(
             property(slots[slot]).ok_or(NativeReason::Slot(slot))?.kind,
@@ -300,7 +301,7 @@ fn admit<'a>(
             return Err(NativeReason::SectionParameters);
         }
     }
-    Ok(admitted)
+    Ok((admitted, op))
 }
 
 fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16]) -> bool {
@@ -401,19 +402,19 @@ pub(crate) fn matches_surface_definition(definition: &FeatureDefinition) -> bool
     )
 }
 
-pub(crate) fn matches_definition(definition: &FeatureDefinition) -> bool {
+pub(crate) fn matches_definition(definition: &FeatureDefinition, expected: BooleanOp) -> bool {
     matches!(definition,
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
-            op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
+            op,
             closed: false,
             solid: true,
             ruled: false,
             linearize: false,
             max_degree: None,
             allow_multi_profile_faces: None,
-        }) if sections.len() == 2 && guides.is_empty()
+        }) if sections.len() == 2 && guides.is_empty() && *op == expected
     )
 }
 
@@ -423,7 +424,7 @@ pub(crate) fn validates<'a>(
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
 ) -> bool {
-    matches_definition(definition) && sections(source, property, parameter).is_ok()
+    sections(source, property, parameter).is_ok_and(|(_, op)| matches_definition(definition, op))
 }
 
 #[cfg(test)]

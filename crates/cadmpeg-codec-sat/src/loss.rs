@@ -13,7 +13,7 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 
@@ -43,10 +43,6 @@ pub(crate) enum SatLossCode {
     VertexToleranceUnresolved,
     /// Tolerant-edge tolerance cannot enter the positive neutral scalar.
     EdgeToleranceUnresolved,
-    /// A shell has no admissible member or owner.
-    TopologyShellUnprojected,
-    /// A standalone source face has no shell owner required by the IR.
-    TopologyFaceOwnerUnprojected,
     /// A face states no loop on a plane, cylinder, or cone; the face is
     /// stated partial.
     TopologyFaceBoundaryUnstated,
@@ -63,7 +59,8 @@ pub(crate) enum SatLossCode {
     /// The stream declares no usable length unit; lengths are read unscaled as
     /// millimetres.
     HeaderLengthUnitUnresolved,
-    /// The input ends without a terminator line after its last complete record.
+    /// The input of a save format that ends with a terminator line ends
+    /// without one after its last complete record.
     FramingTerminatorMissing,
     /// Bytes after the last framed record were not read as records.
     FramingRecordsUnread,
@@ -87,8 +84,6 @@ impl SatLossCode {
         Self::GeometrySupportChartUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
-        Self::TopologyShellUnprojected,
-        Self::TopologyFaceOwnerUnprojected,
         Self::TopologyFaceBoundaryUnstated,
         Self::TopologyWireOwnerUnprojected,
         Self::SourceRecordNameUnresolved,
@@ -114,8 +109,6 @@ impl SatLossCode {
             Self::GeometrySupportChartUnresolved => "geometry.support-chart-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
-            Self::TopologyShellUnprojected => "topology.shell-unprojected",
-            Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
             Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::TopologyWireOwnerUnprojected => "topology.wire-owner-unprojected",
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
@@ -142,8 +135,6 @@ impl SatLossCode {
             | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
-            | Self::TopologyShellUnprojected
-            | Self::TopologyFaceOwnerUnprojected
             | Self::TopologyFaceBoundaryUnstated
             | Self::TopologyWireOwnerUnprojected
             | Self::SourceRecordNameUnresolved
@@ -168,8 +159,6 @@ impl SatLossCode {
             | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
-            | Self::TopologyShellUnprojected
-            | Self::TopologyFaceOwnerUnprojected
             | Self::TopologyWireOwnerUnprojected
             | Self::HeaderLengthUnitUnresolved
             | Self::FramingRecordsUnread
@@ -185,10 +174,22 @@ impl SatLossCode {
         }
     }
 
+    /// The strict floor `asm.md` §7.3 states: a stream read past its absent
+    /// terminator line breaks the text format and keeps its records, so its
+    /// code pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::FramingTerminatorMissing => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -250,6 +251,7 @@ pub(crate) fn binary_header_losses(
 #[cfg(test)]
 mod tests {
     use super::SatLossCode;
+    use cadmpeg_ir::report::Severity;
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -266,8 +268,6 @@ mod tests {
                 "geometry.support-chart-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",
-                "topology.shell-unprojected",
-                "topology.face-owner-unprojected",
                 "topology.face-boundary-unstated",
                 "topology.wire-owner-unprojected",
                 "source.record-name-unresolved",
@@ -297,6 +297,29 @@ mod tests {
                 text.bytes()
                     .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
                 "code {text} is not lowercase kebab"
+            );
+        }
+    }
+
+    /// `asm.md` §7.3 states strict floor Warning for a stream read past its
+    /// absent terminator line, and no other SAT code has one, so a pinned
+    /// decode refuses that code alone.
+    #[test]
+    fn only_the_missing_terminator_pins_a_strict_floor() {
+        use cadmpeg_ir::report::strictness::Strictness;
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        for code in SatLossCode::ALL {
+            let floored = *code == SatLossCode::FramingTerminatorMissing;
+            let expected = floored.then_some(Severity::Warning);
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+            assert_eq!(
+                pinned.refuses(&code.note("x"), false),
+                floored,
+                "{}",
+                code.code()
             );
         }
     }

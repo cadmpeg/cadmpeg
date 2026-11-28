@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamEntry};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
@@ -21,7 +20,9 @@ use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{
+    dropped_with, Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+};
 use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -94,17 +95,24 @@ fn decode_container<'a>(
     let mut property_sections = Vec::new();
     let mut properties = Vec::new();
     let mut property_set_issues = Vec::new();
-    let mut unreadable_property_sets = Vec::new();
+    let mut malformed_property_set_count = 0;
     for descriptor in &container.property_sets {
         match &descriptor.state {
-            PropertySetState::Malformed(detail) => {
+            PropertySetState::Unread => {
+                let (_, detail) =
+                    container
+                        .streams
+                        .failure(descriptor.stream)
+                        .ok_or_else(|| {
+                            CodecError::malformed("unread OLE property set has no stream outcome")
+                        })?;
                 admit_native_items(ctx, 1)?;
                 let issue = project_property_set_issue(
                     descriptor.stream.directory_id(),
                     &descriptor.path,
                     detail,
                 );
-                unreadable_property_sets.push((descriptor.stream, detail.clone()));
+                malformed_property_set_count += 1;
                 property_set_issues.push(issue);
             }
             PropertySetState::Parsed(property_set) => {
@@ -118,10 +126,11 @@ fn decode_container<'a>(
                     system_identifier: property_set.system_identifier,
                     clsid: hex(&property_set.clsid),
                     section_count: cadmpeg_core::decode::u64_from_index(
-                        property_set.sections.len(),
+                        property_set.sections.iter().flatten().count(),
                     ),
                 });
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
+                    let Some(section) = section else { continue };
                     let set_name = property_set_name(section);
                     let identity_matches = set_name
                         .as_deref()
@@ -221,15 +230,11 @@ fn decode_container<'a>(
             }
         }
     }
-    let protein = project_protein_state(ctx, &container.protein)?;
-    let (protein_instances, protein_semantic_issue) = match &container.protein {
-        ProteinState::Package(package) => {
-            crate::protein::decode_instances_with_issue(ctx, package)?
-        }
-        ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
-            (Vec::new(), None)
-        }
-    };
+    let protein_state = project_protein_state(ctx, &container.protein)?;
+    let protein = container.protein.read_instances(ctx)?;
+    let protein_parts = protein.give_ups(ctx)?;
+    let protein_members_unread = !protein_parts.is_empty();
+    let protein_instances = protein.members;
     let material_catalog =
         crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
     let ProteinNativeRecords {
@@ -367,23 +372,9 @@ fn decode_container<'a>(
             .collect::<Result<Vec<_>, _>>()?,
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
-    let mut given_up = Vec::new();
+    let mut given_up = container.give_ups(ctx, false)?;
+    given_up.extend(protein_parts);
     let mut issue_records = std::collections::BTreeSet::new();
-    if !ctx.container_only() {
-        for descriptor in &container.rse.databases {
-            let Some(detail) = descriptor.issue_detail() else {
-                continue;
-            };
-            give_up_stream(
-                ctx,
-                &container.snapshot,
-                container.snapshot.stream_by_id(descriptor.stream),
-                ("rse-database", &[ArenaClass::Model]),
-                &detail,
-                &mut given_up,
-            )?;
-        }
-    }
     let registry_failure = match &container.rse.registry {
         ParsedState::Unavailable(detail) => Some(detail),
         ParsedState::Absent | ParsedState::Parsed(_) => None,
@@ -392,33 +383,13 @@ fn decode_container<'a>(
         ParsedState::Unavailable(detail) => Some(detail),
         ParsedState::Absent | ParsedState::Parsed(_) => None,
     };
-    for (scope, path, detail) in [
-        (
-            "segment_registry",
-            "RSeStorage/RSeSegInfo",
-            registry_failure,
-        ),
-        (
-            "revision_table",
-            "RSeStorage/RSeDbRevisionInfo",
-            revisions_failure,
-        ),
+    for (scope, detail) in [
+        ("segment_registry", registry_failure),
+        ("revision_table", revisions_failure),
     ] {
-        let Some(detail) = detail else {
-            continue;
-        };
-        let issue = structural_issue(ctx, scope, detail)?;
-        if !ctx.container_only() {
-            give_up_stream(
-                ctx,
-                &container.snapshot,
-                container.snapshot.stream(path),
-                ("rse-table", &[ArenaClass::Model, ArenaClass::Design]),
-                detail,
-                &mut given_up,
-            )?;
+        if let Some(detail) = detail {
+            structural_issues.push(structural_issue(ctx, scope, detail)?);
         }
-        structural_issues.push(issue);
     }
     let projection = rse_native_projection::project(ctx, container)?;
     structural_issues.extend(projection.identity_issues);
@@ -428,7 +399,8 @@ fn decode_container<'a>(
     let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
-    let mut drawing_inventory = crate::drawing::inventory(ctx, container, &rse_records)?;
+    let mut drawing_inventory = crate::drawing::inventory(ctx, container, Some(&rse_records))?;
+    given_up.extend(drawing_inventory.section_give_ups(ctx, false)?);
     given_up.append(&mut drawing_inventory.given_up);
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
@@ -527,7 +499,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "property_sections", &property_sections)?;
     namespace.set_arena(ctx, "properties", &properties)?;
     namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
-    protein.install(ctx, namespace)?;
+    protein_state.install(ctx, namespace)?;
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
@@ -664,19 +636,31 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     drawing_inventory.write(ctx, namespace)?;
-    let mut losses = crate::container::deviation_losses(&container.snapshot);
+    let unread_streams: Vec<_> = container.streams.damaged().collect();
+    let mut losses = crate::container::deviation_losses(&container.snapshot, &unread_streams);
     losses.extend(drawing_inventory.losses());
     let mut geometry_failure = None;
     let mut given_up_carrier = None;
+    let mut carrier_cause = Cause::Unreadable;
     let mut carrier_given_up = false;
     let mut history_chain = None;
+    let mut decoded_states = std::collections::BTreeMap::new();
+    let mut feature_history_states = Vec::new();
+    let mut state_unknowns = Vec::new();
     let mut empty_kernel_stream = false;
+    let mut kernel_withheld = Vec::new();
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => {
-                match ctx.run_part(|| crate::kernel::decode_kernel_carrier(ctx, carrier, header))? {
+                match ctx.run_part(|| {
+                    crate::kernel::decode_kernel_carrier(ctx, carrier, header).map_err(|failure| {
+                        carrier_cause = failure.cause;
+                        failure.error
+                    })
+                })? {
                     Ok(decoded) => {
                         empty_kernel_stream = decoded.model_records == 0;
+                        kernel_withheld = decoded.withheld;
                         apply_kernel_header(
                             &mut ir,
                             carrier.family,
@@ -686,15 +670,16 @@ fn decode_container<'a>(
                         Some(decoded.brep)
                     }
                     Err(error) => {
+                        carrier_cause = carrier_cause.of(&error);
                         geometry_failure = Some(format!("{error}"));
-                        given_up_carrier = Some(carrier_part(carrier)?);
+                        given_up_carrier = Some(carrier_part(carrier));
                         None
                     }
                 }
             }
             Err(detail) => {
                 geometry_failure = Some(detail.to_owned());
-                given_up_carrier = Some(carrier_part(carrier)?);
+                given_up_carrier = Some(carrier_part(carrier));
                 None
             }
         },
@@ -712,13 +697,14 @@ fn decode_container<'a>(
                     *payload_offset,
                     payload.window(),
                     ArenaClass::Model,
-                )?,
-                (segment_token.clone(), *record_ordinal),
+                ),
+                (segment_token.as_str().to_owned(), *record_ordinal),
             ));
             None
         }
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
     };
+    let active_geometry = kernel_brep.is_some();
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
     let body_keys = kernel_brep.body_native_keys.clone();
     let face_keys = kernel_brep
@@ -733,7 +719,7 @@ fn decode_container<'a>(
             stats: kernel_stats,
             annotation_records: kernel_annotations,
             unbounded_faces: kernel_unbounded_faces,
-            withheld: kernel_withheld,
+            withheld: _,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
     let history_framing = match &container.rse.active_carrier {
@@ -795,14 +781,17 @@ fn decode_container<'a>(
         needs_parameter = needs;
     }
     let mut stored_body_losses = Vec::new();
-    if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
+    if delivered >= DecodeDepth::Design && (!body_keys.is_empty() || result_states.is_some()) {
         let projection = crate::feature::base::project(
             ctx,
-            &container.rse,
-            &feature_inventory,
-            &design_inventory,
-            &sketch_inventory.transforms,
-            &body_keys,
+            &crate::feature::base::Inputs {
+                document: &container.rse,
+                inventory: &feature_inventory,
+                design: &design_inventory,
+                transforms: &sketch_inventory.transforms,
+                keys: &body_keys,
+                states: result_states,
+            },
             &mut ir,
         )?;
         unresolved.features = unresolved
@@ -897,25 +886,46 @@ fn decode_container<'a>(
                         .set_arena(ctx, "feature_history_states", &history.records)?;
                 }
                 losses.extend(crate::feature::history_states::losses(&history));
-                // A carrier given up whole is charged once, below.
-                let unread = match history.unread {
-                    Some(crate::feature::history_states::Unread::Unclosed) => Some((
-                        InventorLossCode::KernelHistoryUnclosed,
-                        "the history state chain does not close",
-                    )),
-                    Some(crate::feature::history_states::Unread::Bounded) => Some((
-                        InventorLossCode::KernelHistoryBounded,
-                        "the history state scan passed its work cap",
-                    )),
-                    None => None,
-                };
-                if let (Some((code, why)), None) = (unread, &given_up_carrier) {
-                    history_chain = Some((
-                        history_chain_part(carrier)?,
-                        CodecError::malformed(format_args!("{}: {why}", code.kind())),
-                    ));
+                if let Some(unread) = history.unread {
+                    let why = crate::feature::history_states::unread_note(unread.reason);
+                    // A carrier given up whole already holds the chain bytes;
+                    // the note records the history the chain held.
+                    if given_up_carrier.is_some() {
+                        losses.push(why);
+                    } else {
+                        let cause = match unread.reason {
+                            crate::feature::history_states::Unread::Unclosed => Cause::Unreadable,
+                            crate::feature::history_states::Unread::Bounded => Cause::Undecoded,
+                        };
+                        let chain =
+                            carrier.bytes.window().get(unread.start..).ok_or_else(|| {
+                                CodecError::malformed(
+                                    "Inventor history chain start is out of bounds",
+                                )
+                            })?;
+                        let part = crate::rse::bulk_record_part(
+                            "history-chain",
+                            (&carrier.segment_token, carrier.record_ordinal),
+                            carrier.stream_offset(unread.start)?,
+                            chain,
+                            ArenaClass::Design,
+                        )
+                        .costing("the features have no history states");
+                        history_chain = Some((
+                            part,
+                            cause,
+                            CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+                        ));
+                    }
                 }
+                feature_history_states = history.records;
                 ir.model.history_bodies = history.bodies.bodies;
+                decoded_states = history.bodies.states;
+                crate::feature::body_selection::name_states(
+                    &mut decoded_states,
+                    &joined,
+                    &feature_inventory,
+                );
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
@@ -979,37 +989,27 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    for face in &mut ir.geometry.faces {
-        if face.color.is_none() {
-            face.color = face_colors.get(&face.id).copied();
-        }
-    }
+    colour_faces(&mut ir.geometry, &mut decoded_states, &face_colors);
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
-    if let Some((part, error)) = history_chain {
+    if let Some((part, cause, error)) = history_chain {
         // The decode retains the whole carrier it read no geometry out of.
         let part = if carrier_read_no_geometry {
             part.digest_only()
         } else {
             part
         };
-        given_up.push(ctx.give_up_part(part, error)?);
+        given_up.push(ctx.give_up_part(part, cause, error)?);
     }
-    if !protein_issue_records.is_empty() {
-        let code = InventorLossCode::ProteinAssetRejected;
-        losses.push(code.note(format!(
-            "Rejected {} Protein native record(s); retained the remaining records.",
-            protein_issue_records.len()
-        )));
-        for (record, detail) in &protein_issue_records {
-            losses.push(
-                GivenUpRecord::new(
-                    cadmpeg_ir::ids::Identity::new(record)?,
-                    format_args!("{}: {detail}", code.kind()),
-                )
-                .loss(),
-            );
-        }
+    for (record, detail) in &protein_issue_records {
+        losses.push(
+            GivenUpRecord::new(
+                cadmpeg_ir::ids::Identity::new(record)?,
+                Cause::Undecoded,
+                format_args!("a Protein native record does not admit: {detail}"),
+            )
+            .loss(),
+        );
     }
     losses.extend(dialect_loss(&matched, &recovery));
     if let Some(kernel) = ir
@@ -1043,24 +1043,31 @@ fn decode_container<'a>(
                 }
             },
         };
-        let note = InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail);
-        if let Some((part, record)) = given_up_carrier {
-            if issue_records.insert(record) {
-                given_up.push(ctx.give_up_part(
-                    part,
-                    CodecError::malformed(format_args!("{}: {}", note.code, note.message)),
-                )?);
-                carrier_given_up = true;
+        // A carrier given up whole states the lost geometry in its give-up.
+        match given_up_carrier {
+            Some((part, record)) => {
+                if issue_records.insert(record) {
+                    given_up.push(ctx.give_up_part(
+                        part,
+                        carrier_cause,
+                        CodecError::Malformed(detail),
+                    )?);
+                    carrier_given_up = true;
+                }
             }
+            None => losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail)),
         }
-        losses.push(note);
     }
     if !ctx.container_only() {
         if let (ActiveCarrierState::Selected(carrier), false) =
             (&container.rse.active_carrier, carrier_given_up)
         {
-            for record in &kernel_withheld {
-                given_up.push(ctx.give_up_part(withheld_part(carrier, record)?, record.error())?);
+            for (offset, record) in &kernel_withheld {
+                given_up.push(ctx.give_up_part(
+                    withheld_part(carrier, *offset, record),
+                    record.cause,
+                    record.error(),
+                )?);
             }
         }
         losses.extend(kernel_stats_losses(&kernel_stats));
@@ -1078,93 +1085,34 @@ fn decode_container<'a>(
                 segment_pairs.len()
             )));
         }
-        if !segment_meta_issues.is_empty() {
-            losses.push(InventorLossCode::RseMetadataStreamMalformed.note(format!(
-                "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
-                segment_meta_issues.len()
-            )));
-            for issue in &segment_meta_issues {
-                give_up_stream(
-                    ctx,
-                    &container.snapshot,
-                    segment_stream(container, &issue.token, |pair| pair.metadata),
-                    ("rse-metadata", &[ArenaClass::Model, ArenaClass::Design]),
-                    &issue.detail,
-                    &mut given_up,
-                )?;
-            }
-        }
-        if !segment_bulk_issues.is_empty() {
-            losses.push(InventorLossCode::RseBulkStreamMalformed.note(format!(
-                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
-                segment_bulk_issues.len()
-            )));
-            for issue in &segment_bulk_issues {
-                give_up_stream(
-                    ctx,
-                    &container.snapshot,
-                    segment_stream(container, &issue.token, |pair| pair.bulk),
-                    ("rse-bulk", &[ArenaClass::Model, ArenaClass::Design]),
-                    &issue.detail,
-                    &mut given_up,
-                )?;
-            }
-        }
-        if !assembly_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::AssemblyRecordMalformed.note(format!(
-                "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
-                assembly_inventory.issues.len()
-            )));
-            give_up_issue_records(
-                ctx,
-                container,
-                &assembly_inventory.issues,
-                (InventorLossCode::AssemblyRecordMalformed, ArenaClass::Model),
-                (&mut issue_records, &mut given_up),
-            )?;
-        }
-        if !presentation_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
-                "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
-                presentation_inventory.issues.len()
-            )));
-            give_up_issue_records(
-                ctx,
-                container,
-                &presentation_inventory.issues,
-                (
-                    InventorLossCode::PresentationRecordMalformed,
-                    ArenaClass::Model,
-                ),
-                (&mut issue_records, &mut given_up),
-            )?;
-        }
-        if !design_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
-                "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
-                design_inventory.issues.len()
-            )));
-            give_up_issue_records(
-                ctx,
-                container,
-                &design_inventory.issues,
-                (InventorLossCode::DesignRecordMalformed, ArenaClass::Design),
-                (&mut issue_records, &mut given_up),
-            )?;
-        }
-        if !sketch_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
-                "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                sketch_inventory.issues.len()
-            )));
-            give_up_issue_records(
-                ctx,
-                container,
-                &sketch_inventory.issues,
-                (InventorLossCode::SketchRecordMalformed, ArenaClass::Design),
-                (&mut issue_records, &mut given_up),
-            )?;
-        }
+        give_up_issue_records(
+            ctx,
+            container,
+            &assembly_inventory.issues,
+            ("assembly", ArenaClass::Model),
+            (&mut issue_records, &mut given_up),
+        )?;
+        give_up_issue_records(
+            ctx,
+            container,
+            &presentation_inventory.issues,
+            ("presentation", ArenaClass::Model),
+            (&mut issue_records, &mut given_up),
+        )?;
+        give_up_issue_records(
+            ctx,
+            container,
+            &design_inventory.issues,
+            ("design", ArenaClass::Design),
+            (&mut issue_records, &mut given_up),
+        )?;
+        give_up_issue_records(
+            ctx,
+            container,
+            &sketch_inventory.issues,
+            ("sketch", ArenaClass::Design),
+            (&mut issue_records, &mut given_up),
+        )?;
         let unnamed_labels = feature_inventory
             .labels
             .iter()
@@ -1185,25 +1133,27 @@ fn decode_container<'a>(
                 "{replaced_names} feature label name(s) store unpaired UTF-16 surrogates; their neutral names replace each with U+FFFD, and their exact native code units are retained."
             )));
         }
-        if !feature_inventory.issues.is_empty() {
+        // A pattern whose suppression operand fails its check is kept.
+        let (kept, refused): (Vec<_>, Vec<_>) =
+            feature_inventory.issues.iter().partition(|issue| {
+                feature_inventory.pattern_features.iter().any(|pattern| {
+                    pattern.identity.segment_token == issue.segment_token
+                        && pattern.identity.record_ordinal == issue.record_ordinal
+                })
+            });
+        if !kept.is_empty() {
             losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
                 "{} typed Inventor feature record(s) could not be parsed exactly.",
-                feature_inventory.issues.len()
+                kept.len()
             )));
-            // A pattern whose suppression operand fails its check is kept.
-            give_up_issue_records(
-                ctx,
-                container,
-                feature_inventory.issues.iter().filter(|issue| {
-                    !feature_inventory.pattern_features.iter().any(|pattern| {
-                        pattern.identity.segment_token == issue.segment_token
-                            && pattern.identity.record_ordinal == issue.record_ordinal
-                    })
-                }),
-                (InventorLossCode::FeatureRecordMalformed, ArenaClass::Design),
-                (&mut issue_records, &mut given_up),
-            )?;
         }
+        give_up_issue_records(
+            ctx,
+            container,
+            refused,
+            ("feature", ArenaClass::Design),
+            (&mut issue_records, &mut given_up),
+        )?;
         give_up_annotation_records(
             ctx,
             container,
@@ -1326,6 +1276,7 @@ fn decode_container<'a>(
                 "Transferred {partial_shells} Inventor shell operation(s) with wall thickness and removed-face selections; construction controls remain native."
             )));
         }
+        losses.extend(unresolved.profile_losses);
         if unresolved.profile_bodies != 0 {
             losses.push(InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
                 "{} PmDc profile body record(s) did not decode; extrusions whose profiles select them keep their native profile selection.",
@@ -1405,44 +1356,14 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::spline::point_relation_loss(
             &sketch_inventory.constraints,
         ));
-        if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
-            losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
-                "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
-                container.rse.unpaired_metadata.len(),
-                container.rse.unpaired_bulk.len()
-            )));
-            let code = InventorLossCode::RseStreamUnpaired.kind();
-            for (unpaired, kind, missing) in [
-                (&container.rse.unpaired_metadata, "rse-metadata", "bulk"),
-                (&container.rse.unpaired_bulk, "rse-bulk", "metadata"),
-            ] {
-                for (token, stream) in unpaired {
-                    give_up_stream(
-                        ctx,
-                        &container.snapshot,
-                        container.snapshot.stream_by_id(*stream),
-                        (kind, &[ArenaClass::Model, ArenaClass::Design]),
-                        &format!("{code}: segment {} has no {missing} stream", token.as_str()),
-                        &mut given_up,
-                    )?;
-                }
-            }
-        }
-        if !property_set_issues.is_empty() {
-            losses.push(InventorLossCode::PropertySetStreamMalformed.note(format!(
-                "{} OLE property-set stream(s) are malformed.",
-                property_set_issues.len()
-            )));
-            for (stream, detail) in &unreadable_property_sets {
-                give_up_stream(
-                    ctx,
-                    &container.snapshot,
-                    container.snapshot.stream_by_id(*stream),
-                    ("property-set", &[ArenaClass::Model]),
-                    detail,
-                    &mut given_up,
-                )?;
-            }
+        // A property set whose stream does not read is given up; an issue
+        // of a set that reads keeps the set.
+        let kept = property_set_issues.len() - malformed_property_set_count;
+        if kept != 0 {
+            losses.push(
+                InventorLossCode::PropertySetStreamMalformed
+                    .note(format!("{kept} OLE property-set stream(s) are malformed.")),
+            );
         }
         if metadata.unmapped != 0 {
             losses.push(InventorLossCode::MetadataPropertyUnmapped.note(format!(
@@ -1451,50 +1372,32 @@ fn decode_container<'a>(
             )));
         }
         match &container.protein {
-            ProteinState::Package(package) => {
-                if let Some(detail) = &protein_semantic_issue {
-                    let code = InventorLossCode::ProteinCatalogUndecodable;
-                    losses.push(code.note(format!(
-                        "The Protein asset catalog could not be decoded: {detail}"
-                    )));
-                    give_up_stream(
-                        ctx,
-                        &container.snapshot,
-                        container.snapshot.stream_by_id(package.stream),
-                        ("protein-stream", &[ArenaClass::Model]),
-                        &format!("{}: {detail}", code.kind()),
-                        &mut given_up,
-                    )?;
-                } else {
-                    if !protein_rejections.is_empty() {
-                        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
-                            "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
-                            protein_rejections.len()
-                        )));
-                        let code = InventorLossCode::ProteinAssetRejected.kind();
-                        for rejection in &protein_rejections {
-                            losses.push(
-                                GivenUpRecord::new(
-                                    cadmpeg_ir::ids::Identity::new(rejection.asset_id())?,
-                                    format_args!("{code}: {}", rejection.detail()),
-                                )
-                                .loss(),
-                            );
-                        }
-                    }
-                    if ir.model.appearances.is_empty() {
-                        losses.push(
-                            InventorLossCode::ProteinAppearanceAbsent.note(
-                                "The Protein package contains no decoded appearance assets."
-                                    .to_string(),
+            ProteinState::Package(_) => {
+                for rejection in &protein_rejections {
+                    losses.push(
+                        GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::new(rejection.asset_id())?,
+                            Cause::Undecoded,
+                            format_args!(
+                                "a Protein asset record does not decode: {}",
+                                rejection.detail()
                             ),
-                        );
-                    } else if presentation_projection.unresolved_defaults != 0 {
-                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
-                            "Could not resolve {} PmApp document-default appearance assignment(s).",
-                            presentation_projection.unresolved_defaults
-                        )));
+                        )
+                        .loss(),
+                    );
+                }
+                if ir.model.appearances.is_empty() {
+                    if !protein_members_unread {
+                        losses
+                            .push(InventorLossCode::ProteinAppearanceAbsent.note(
+                                "The Protein package contains no decoded appearance assets.",
+                            ));
                     }
+                } else if presentation_projection.unresolved_defaults != 0 {
+                    losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
+                        "Could not resolve {} PmApp document-default appearance assignment(s).",
+                        presentation_projection.unresolved_defaults
+                    )));
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
                     losses.push(InventorLossCode::ProteinGuidAmbiguous.note(format!(
@@ -1509,21 +1412,7 @@ fn decode_container<'a>(
                     )));
                 }
             }
-            ProteinState::Malformed { stream, detail } => {
-                losses.push(
-                    InventorLossCode::ProteinStreamMalformed
-                        .note("The Inventor Protein stream is malformed.".to_string()),
-                );
-                give_up_stream(
-                    ctx,
-                    &container.snapshot,
-                    container.snapshot.stream_by_id(*stream),
-                    ("protein-stream", &[ArenaClass::Model]),
-                    detail,
-                    &mut given_up,
-                )?;
-            }
-            ProteinState::Absent | ProteinState::Empty { .. } => {}
+            ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
             losses.push(
@@ -1533,59 +1422,26 @@ fn decode_container<'a>(
                 )),
             );
         }
-        if ufrx_issue_count != 0 {
-            let code = InventorLossCode::UfrxTableMalformed;
-            losses.push(code.note(format!(
-                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
-            )));
-            for (record, detail) in &ufrx_issue_records {
-                losses.push(
-                    GivenUpRecord::new(
-                        cadmpeg_ir::ids::Identity::new(record)?,
-                        format_args!("{}: {detail}", code.kind()),
-                    )
-                    .loss(),
-                );
-            }
+        // A rejected part of a record the document keeps has no record id
+        // to give up.
+        let kept = ufrx_issue_count - ufrx_issue_records.len();
+        if kept != 0 {
+            losses.push(
+                InventorLossCode::UfrxTableMalformed
+                    .note(format!("Skipped {kept} invalid UFRxDoc native record(s).")),
+            );
+        }
+        for (record, detail) in &ufrx_issue_records {
+            losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(record)?,
+                    Cause::Undecoded,
+                    format_args!("a UFRxDoc native record does not admit: {detail}"),
+                )
+                .loss(),
+            );
         }
         match &container.ufrx {
-            UfrxState::Malformed { stream, detail } => {
-                losses.push(
-                    InventorLossCode::UfrxTableMalformed
-                        .note("The UFRxDoc external-reference table is malformed.".to_string()),
-                );
-                give_up_stream(
-                    ctx,
-                    &container.snapshot,
-                    container.snapshot.stream_by_id(*stream),
-                    ("ufrx-stream", &[ArenaClass::Model]),
-                    detail,
-                    &mut given_up,
-                )?;
-            }
-            UfrxState::Unsupported {
-                stream,
-                schema,
-                detail,
-                ..
-            } => {
-                let code = if matches!(document_kind, DocumentKind::Assembly) {
-                    InventorLossCode::UfrxSchemaUnsupportedAssembly
-                } else {
-                    InventorLossCode::UfrxSchemaUnsupported
-                };
-                losses.push(code.note(format!(
-                    "Retained unsupported UFRxDoc schema {schema} semantic branch without transfer."
-                )));
-                give_up_stream(
-                    ctx,
-                    &container.snapshot,
-                    container.snapshot.stream_by_id(*stream),
-                    ("ufrx-stream", &[ArenaClass::Model]),
-                    &format!("{}: schema {schema}: {detail}", code.kind()),
-                    &mut given_up,
-                )?;
-            }
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
                     losses.push(InventorLossCode::AssemblyComponentExternal.note(format!(
@@ -1594,7 +1450,20 @@ fn decode_container<'a>(
                     )));
                 }
                 losses.extend(nested_visibility_loss(assembly_projection.nested_hidden));
-                for (cause, count) in &assembly_projection.unresolved_placements {
+                // An occurrence given up below has its one loss there.
+                let mut kept = assembly_projection
+                    .unresolved_placements
+                    .iter()
+                    .map(|(cause, count)| (*cause, count.get()))
+                    .collect::<BTreeMap<_, _>>();
+                for (_, cause) in &assembly_projection.unbuilt_placements {
+                    if let Some(count) = kept.get_mut(&cause.unresolved()) {
+                        if let Some(left) = count.checked_sub(1) {
+                            *count = left;
+                        }
+                    }
+                }
+                for (cause, count) in kept.into_iter().filter(|(_, count)| *count != 0) {
                     losses.push(
                         InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
                             "Could not transfer {count} assembly occurrence placement(s): {}.",
@@ -1611,11 +1480,14 @@ fn decode_container<'a>(
                     if placed.contains(&placement.occurrence_id) {
                         continue;
                     }
-                    let part = rse_record_part(
+                    let Some(frame) = rse_record_frame(
                         container,
-                        (&placement.segment_token, placement.record_ordinal),
-                        ArenaClass::Model,
-                    )?;
+                        &placement.segment_token,
+                        placement.record_ordinal,
+                    ) else {
+                        continue;
+                    };
+                    let part = rse_record_part(frame, ArenaClass::Model);
                     rejected.push((placement.occurrence_id, part.id()?.into()));
                 }
                 losses.extend(crate::assembly::unbuilt_losses(
@@ -1623,7 +1495,10 @@ fn decode_container<'a>(
                     &rejected,
                 )?);
             }
-            UfrxState::Absent | UfrxState::Parsed(_) => {}
+            UfrxState::Absent
+            | UfrxState::Malformed { .. }
+            | UfrxState::Unsupported { .. }
+            | UfrxState::Parsed(_) => {}
         }
     }
     let preview_asset_count = ir.model.assets.len();
@@ -1659,27 +1534,7 @@ fn decode_container<'a>(
             }
         }
     }
-    if !kernel_unknowns.is_empty() {
-        // Topology-only vertex and edge records carry nothing the arenas lack.
-        let untyped = kernel_unknowns
-            .iter()
-            .filter(|record| {
-                let id = record.id().as_str();
-                !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
-            })
-            .map(|record| record.id().clone())
-            .collect::<Vec<_>>();
-        source_fidelity
-            .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "Inventor kernel unknown retention failed: {error}"
-                ))
-            })?;
-        for id in untyped {
-            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
-        }
-    }
+    retain_kernel_unknowns(ctx, &mut ir, &mut source_fidelity, kernel_unknowns)?;
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     for part in given_up {
         losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
@@ -1716,7 +1571,10 @@ fn decode_container<'a>(
         (crate::coverage::PROPERTY_SETS, property_sets.len()),
         (crate::coverage::PROPERTIES, properties.len()),
         (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
-        (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
+        (
+            crate::coverage::PROTEIN_ENTRIES,
+            protein_state.entries().len(),
+        ),
         (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
         (
             crate::coverage::PROTEIN_REJECTIONS,
@@ -1886,10 +1744,6 @@ fn decode_container<'a>(
             )),
         ),
         (
-            crate::coverage::KERNEL_UNKNOWN_RECORDS,
-            kernel_unknown_record_count,
-        ),
-        (
             crate::coverage::KERNEL_UNKNOWN_SURFACE_FACES,
             kernel_stats.unknown_surface_faces(),
         ),
@@ -1904,7 +1758,7 @@ fn decode_container<'a>(
             feature_inventory.sheet_metal_flanges.len(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+    let mut coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
         .into_iter()
         .chain(
             sheet_metal_coverage
@@ -1934,12 +1788,43 @@ fn decode_container<'a>(
                 ir,
                 &feature_inventory,
                 &sketch_inventory,
-                &design_inventory.parameters,
-                &design_inventory.units,
+                crate::design_v11::ParameterRecords {
+                    parameters: &design_inventory.parameters,
+                    units: &design_inventory.units,
+                    tables: &design_inventory.parameter_tables,
+                },
+                losses,
+            )?;
+            crate::design_v11::evaluations::project(
+                ctx,
+                ir,
+                crate::design_v11::evaluations::Evidence {
+                    active: if active_geometry {
+                        history_read.active_state()
+                    } else {
+                        None
+                    },
+                    features: &feature_history_states,
+                    states: &decoded_states,
+                },
+                &source_fidelity,
+                &mut state_unknowns,
                 losses,
             )
         })?;
     }
+    let state_unknown_record_count = state_unknowns.len();
+    retain_history_unknowns(
+        ctx,
+        &mut ir,
+        &mut source_fidelity,
+        &decoded_states,
+        state_unknowns,
+    )?;
+    coverage.record(
+        crate::coverage::KERNEL_UNKNOWN_RECORDS,
+        kernel_unknown_record_count + state_unknown_record_count,
+    );
     let mut body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -1980,6 +1865,7 @@ struct UnresolvedDesign {
     features: usize,
     feature_states: usize,
     profile_bodies: usize,
+    profile_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     sketch_construction: usize,
     sketch_axis_distances: usize,
     sketch_carrier_conflicts: usize,
@@ -2070,6 +1956,7 @@ fn project_design(
         features: features.unresolved_features,
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
+        profile_losses: profile_bodies.bounded,
         sketch_construction: sketches.unresolved_construction,
         sketch_axis_distances: sketches.native_axis_distances,
         sketch_carrier_conflicts: sketches.native_carrier_conflicts,
@@ -2128,16 +2015,18 @@ fn project_root_product(
     Ok(definition)
 }
 
-/// Gives up, as an `rse-record` part for `code`, the framed record of each
-/// issue that no earlier issue in `named` names, with the detail of its first
-/// issue. The part holds content of the class `holds`, its bytes are the
-/// record's payload in the expanded bulk stream of its segment, and its stub
-/// links to the `RSe` record that frames it.
+/// Gives up, as an `rse-record` part of a typed record of `family`, the
+/// framed record of each issue that no earlier issue in `named` names, with
+/// the detail of its first issue. The record frames, and the decoder does not
+/// tell a malformed payload from a form it does not read, so the give-up is
+/// [`Cause::Undecoded`]. The part holds content of the class `holds`, its
+/// bytes are the record's payload in the expanded bulk stream of its segment,
+/// and its stub links to the `RSe` record that frames it.
 fn give_up_issue_records<'a>(
     ctx: &DecodeContext<'_>,
     container: &InventorContainer<'_>,
     issues: impl IntoIterator<Item = &'a RecordIssue>,
-    (code, holds): (InventorLossCode, ArenaClass),
+    (family, holds): (&str, ArenaClass),
     (named, parts): (
         &mut std::collections::BTreeSet<(String, u32)>,
         &mut Vec<GivenUpPart>,
@@ -2148,10 +2037,17 @@ fn give_up_issue_records<'a>(
         if !named.insert((token.to_owned(), issue.record_ordinal)) {
             continue;
         }
-        let part = rse_record_part(container, (token, issue.record_ordinal), holds)?;
+        let Some(frame) = rse_record_frame(container, token, issue.record_ordinal) else {
+            continue;
+        };
+        let part = rse_record_part(frame, holds);
         parts.push(ctx.give_up_part(
             part,
-            CodecError::malformed(format_args!("{}: {}", code.kind(), issue.detail)),
+            Cause::Undecoded,
+            CodecError::malformed(format_args!(
+                "a typed {family} record does not parse: {}",
+                issue.detail
+            )),
         )?);
     }
     Ok(())
@@ -2174,58 +2070,66 @@ fn give_up_annotation_records(
     ),
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let code = InventorLossCode::PmiRecordMalformed.kind();
     for record in malformed {
         let token = record.segment_token.as_str();
-        let part = rse_record_part(container, (token, record.record_ordinal), ArenaClass::Model)?;
+        let Some(frame) = rse_record_frame(container, token, record.record_ordinal) else {
+            continue;
+        };
+        let part = rse_record_part(frame, ArenaClass::Model);
         if let Some(annotation) = &record.annotation {
             losses.push(dropped_with(annotation, part.id()?));
         }
         if named.insert((token.to_owned(), record.record_ordinal)) {
             parts.push(ctx.give_up_part(
                 part,
-                CodecError::malformed(format_args!("{code}: {}", record.detail)),
+                Cause::Undecoded,
+                CodecError::malformed(format_args!(
+                    "an annotation record is outside the established grammar: {}",
+                    record.detail
+                )),
             )?);
         }
     }
     for need in needs {
-        let part = rse_record_part(
-            container,
-            (need.segment_token.as_str(), need.parameter),
-            ArenaClass::Design,
-        )?;
+        let Some(frame) = rse_record_frame(container, need.segment_token.as_str(), need.parameter)
+        else {
+            continue;
+        };
+        let part = rse_record_part(frame, ArenaClass::Design);
         losses.push(dropped_with(&need.annotation, part.id()?));
     }
     Ok(())
 }
 
-/// The framed `RSe` record `ordinal` of the segment whose token is `token`, as
-/// an `rse-record` part that holds content of the class `holds`.
+/// The framed `RSe` record `frame` of the segment whose token is `key`, as an
+/// `rse-record` part that holds content of the class `holds`.
 fn rse_record_part<'s>(
-    container: &'s InventorContainer<'_>,
-    (token, ordinal): (&str, u32),
+    (key, frame): (
+        &'s cadmpeg_ir::ids::IdentityKey,
+        &'s crate::records::RseRecordFrame<'_>,
+    ),
     holds: ArenaClass,
-) -> Result<Part<'s>, CodecError> {
-    let frame = rse_record_frame(container, token, ordinal).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "Inventor record {token}-{ordinal} names no framed RSe record"
-        ))
-    })?;
+) -> Part<'s> {
     crate::rse::bulk_record_part(
         "rse-record",
-        (token, ordinal),
+        (key, frame.ordinal),
         frame.payload_offset,
         frame.payload.window(),
         holds,
     )
 }
 
-/// The framed `RSe` record `ordinal` of the segment whose token is `token`.
+/// The framed `RSe` record `ordinal` of the segment whose token is `token`,
+/// and that token as an identity key. A record that names no framed record
+/// has no bytes to give up.
 fn rse_record_frame<'s, 'a>(
     container: &'s InventorContainer<'a>,
     token: &str,
     ordinal: u32,
-) -> Option<&'s crate::records::RseRecordFrame<'a>> {
+) -> Option<(
+    &'s cadmpeg_ir::ids::IdentityKey,
+    &'s crate::records::RseRecordFrame<'a>,
+)> {
     let segment = container
         .rse
         .segments
@@ -2237,125 +2141,48 @@ fn rse_record_frame<'s, 'a>(
     let crate::rse::RecordFrameState::Framed(table) = &bulk.records else {
         return None;
     };
-    table
+    let frame = table
         .records
         .iter()
-        .find(|record| record.ordinal == ordinal)
-}
-
-/// Gives up the compound stream `entry` as a part of `kind` holding
-/// content of the classes `holds`, for `error`. A stream that is absent or
-/// does not open has no bytes to give up: the record that names the stream
-/// keeps its issue, and no record is dropped.
-fn give_up_stream<'a>(
-    ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
-    entry: Option<&CompoundStreamEntry>,
-    (kind, holds): (&'static str, &[ArenaClass]),
-    error: &str,
-    parts: &mut Vec<GivenUpPart>,
-) -> Result<(), CodecError> {
-    let Some(entry) = entry else {
-        return Ok(());
-    };
-    let Ok(opened) = ctx.run_part(|| snapshot.open(ctx, entry))? else {
-        return Ok(());
-    };
-    let part = Part::at("inventor", kind, 0, opened.window(), holds.iter().copied())
-        .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
-    parts.push(ctx.give_up_part(part, CodecError::Malformed(error.to_owned()))?);
-    Ok(())
-}
-
-/// The metadata or bulk stream, as `select` picks it, of the `RSe` segment
-/// whose token is `token`.
-fn segment_stream<'s>(
-    container: &'s InventorContainer<'_>,
-    token: &str,
-    select: impl Fn(&crate::rse::SegmentPair) -> cadmpeg_container::compound::CompoundStreamId,
-) -> Option<&'s CompoundStreamEntry> {
-    let segment = container
-        .rse
-        .segments
-        .iter()
-        .find(|segment| segment.pair.token.as_str() == token)?;
-    container.snapshot.stream_by_id(select(&segment.pair))
+        .find(|record| record.ordinal == ordinal)?;
+    Some((segment.pair.token.key(), frame))
 }
 
 /// The active kernel carrier as a `kernel-carrier` part of its `RSe` record, and
 /// the segment token and ordinal of that record.
-fn carrier_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-) -> Result<(Part<'a>, (String, u32)), CodecError> {
-    let record = (carrier.segment_token.as_str(), carrier.record_ordinal);
+fn carrier_part<'a>(carrier: &crate::kernel::ActiveCarrier<'a>) -> (Part<'a>, (String, u32)) {
     let part = crate::rse::bulk_record_part(
         "kernel-carrier",
-        record,
+        (&carrier.segment_token, carrier.record_ordinal),
         carrier.carrier_offset,
         carrier.bytes.window(),
         ArenaClass::Model,
-    )?;
-    Ok((part, (record.0.to_owned(), record.1)))
-}
-
-/// The `delta_state` chain of the active carrier as a `history-chain` part:
-/// the carrier bytes from its first `delta_state` record.
-fn history_chain_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-) -> Result<Part<'a>, CodecError> {
-    let bytes = carrier.bytes.window();
-    let start = cadmpeg_asm::history::delta_state_offsets(bytes)
-        .first()
-        .copied()
-        .ok_or_else(|| {
-            CodecError::malformed("an unread Inventor history chain has no delta_state record")
-        })?;
-    let chain = bytes
-        .get(start..)
-        .ok_or_else(|| CodecError::malformed("Inventor history chain start is out of bounds"))?;
-    let offset = carrier
-        .carrier_offset
-        .checked_add(cadmpeg_core::decode::u64_from_index(start))
-        .ok_or_else(|| CodecError::malformed("Inventor history chain offset overflows"))?;
-    Ok(crate::rse::bulk_record_part(
-        "history-chain",
-        (carrier.segment_token.as_str(), carrier.record_ordinal),
-        offset,
-        chain,
-        ArenaClass::Design,
-    )?
-    .costing("the features have no history states"))
+    );
+    (
+        part,
+        (
+            carrier.segment_token.as_str().to_owned(),
+            carrier.record_ordinal,
+        ),
+    )
 }
 
 /// The topology record `record` that the kernel decode of `carrier` read and
-/// left out, as a part over its bytes in the bulk stream.
-fn withheld_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-    record: &cadmpeg_asm::brep::given_up::WithheldRecord,
-) -> Result<Part<'a>, CodecError> {
-    let span = record
-        .offset
-        .checked_add(record.len)
-        .and_then(|end| carrier.bytes.window().get(record.offset..end))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Inventor kernel {} record at byte {} leaves its carrier",
-                record.kind, record.offset
-            ))
-        })?;
-    let offset = carrier
-        .carrier_offset
-        .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
-        .ok_or_else(|| CodecError::malformed("Inventor kernel record offset overflows"))?;
-    Ok(crate::rse::bulk_record_part(
+/// left out, as a part over its bytes at `offset` in the bulk stream.
+fn withheld_part<'r>(
+    carrier: &crate::kernel::ActiveCarrier<'_>,
+    offset: u64,
+    record: &'r cadmpeg_asm::brep::given_up::WithheldRecord,
+) -> Part<'r> {
+    crate::rse::bulk_record_part(
         record.kind,
-        (carrier.segment_token.as_str(), carrier.record_ordinal),
+        (&carrier.segment_token, carrier.record_ordinal),
         offset,
-        span,
+        &record.bytes,
         ArenaClass::Model,
-    )?
+    )
     .dropping(record.dropped.iter().cloned())
-    .marking(record.marked.iter().cloned()))
+    .marking(record.marked.iter().cloned())
 }
 
 fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {
@@ -2363,6 +2190,89 @@ fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {
         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
         carrier.segment_token.clone().dash(carrier.record_ordinal),
     )
+}
+
+/// Give each face of the current geometry and of the decoded history states
+/// that holds no colour the colour bound to its id.
+fn colour_faces(
+    geometry: &mut Topology,
+    states: &mut BTreeMap<u32, crate::feature::history_bodies::StateRecords>,
+    colours: &HashMap<cadmpeg_ir::ids::FaceId, cadmpeg_ir::topology::Color>,
+) {
+    let state_faces = states
+        .values_mut()
+        .flat_map(|state| state.geometry.faces.iter_mut());
+    for face in geometry.faces.iter_mut().chain(state_faces) {
+        if face.color.is_none() {
+            face.color = colours.get(&face.id).copied();
+        }
+    }
+}
+
+/// Retain the undecoded kernel records `records` in the document's unknown
+/// arena.
+fn retain_kernel_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    source_fidelity: &mut SourceFidelity,
+    records: Vec<UnknownRecord>,
+) -> Result<(), CodecError> {
+    if records.is_empty() {
+        return Ok(());
+    }
+    // Topology-only vertex and edge records carry nothing the arenas lack.
+    let untyped = records
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
+    source_fidelity
+        .attach_native_unknown_records(ir, "inventor", records, ctx)
+        .map_err(|error| {
+            CodecError::malformed(format_args!(
+                "Inventor kernel unknown retention failed: {error}"
+            ))
+        })?;
+    for id in untyped {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+    }
+    Ok(())
+}
+
+pub(crate) fn retain_history_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    source_fidelity: &mut SourceFidelity,
+    decoded_states: &BTreeMap<u32, crate::feature::history_bodies::StateRecords>,
+    state_unknowns: Vec<(u32, UnknownRecord)>,
+) -> Result<(), CodecError> {
+    if state_unknowns.is_empty() {
+        return Ok(());
+    }
+    let mut provenance = AnnotationBuilder::new();
+    for (ordinal, record) in &state_unknowns {
+        let located = decoded_states
+            .get(ordinal)
+            .into_iter()
+            .flat_map(|state| &state.provenance)
+            .filter(|located| located.id.as_str() == record.id().as_str());
+        for located in located {
+            admit_kernel_annotation(&mut provenance, located)?;
+        }
+    }
+    source_fidelity
+        .annotations
+        .provenance
+        .extend(provenance.build().provenance);
+    let records = state_unknowns
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect();
+    retain_kernel_unknowns(ctx, ir, source_fidelity, records)?;
+    Ok(())
 }
 
 fn admit_kernel_annotation(
@@ -2459,7 +2369,7 @@ fn project_protein_state(
                 .map(|(ordinal, entry)| -> Result<_, CodecError> {
                     admit_native_items(ctx, 1)?;
                     Ok(ProteinEntryRecord {
-                        id: format!("inventor:protein:entry#{ordinal}"),
+                        id: crate::protein::entry_id(ordinal),
                         ordinal: record_ordinal(ordinal, "Inventor Protein entry ordinal")?,
                         name: entry.name.clone(),
                         compression: entry.compression,

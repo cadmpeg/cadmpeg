@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::Unstated;
-use cadmpeg_ir::unknown::part::{record_unreadable_kind, DecodeParts};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts};
 
 use super::super::tests::CONE_WITH_POINT_APEX_SAT;
-use super::super::{decode_with_header, AsmBrep, DecodePurpose};
+use super::super::{
+    decode_with_header, inspect_with_header, inspect_with_source, AsmBrep, DecodePurpose,
+};
 use crate::ids::IdFormat;
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
@@ -19,10 +20,12 @@ fn cone() -> &'static str {
 }
 
 /// A part the decode must give up: its kind, the record line it frames,
-/// the cause its loss states, and the ids it drops and marks.
+/// the cause of its give-up and the reason its loss states, and the ids it
+/// drops and marks.
 struct Expected {
     kind: &'static str,
     line: &'static str,
+    given_up: Cause,
     cause: &'static str,
     dropped: &'static [&'static str],
     marked: &'static [&'static str],
@@ -53,13 +56,27 @@ fn decode_and_give_up(source: &str, purpose: DecodePurpose) -> (AsmBrep, Vec<Los
             .withheld
             .iter()
             .map(|record| {
-                let part = record.part("f3d", bytes).expect("record span in stream");
-                ctx.give_up_part(part, record.error())
+                ctx.give_up_part(record.part("f3d"), record.cause, record.error())
                     .expect("part given up")
                     .loss()
             })
             .collect();
         (brep, losses)
+    })
+    .expect("service decode context")
+}
+
+/// The decode of `source` on a scratch context.
+fn inspect(source: &str) -> AsmBrep {
+    let bytes = source.as_bytes();
+    crate::test_support::with_service_context(bytes, |ctx| {
+        let parsed = crate::sat::parse(ctx, bytes).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header();
+        ctx.scratch(bytes.len(), |scratch| {
+            inspect_with_header(scratch, &parsed.records, Some(&header), "stream", FORMAT)
+        })
+        .expect("synthetic cone decodes")
+        .expect("the graph fits the retained allowance")
     })
     .expect("service decode context")
 }
@@ -80,6 +97,8 @@ fn assert_given_up(source: &str, expected: &[Expected]) {
                 .unwrap_or_else(|| panic!("fixture holds {:?}", part.line));
             (
                 format!("part {} stream=\"\" offset={offset} ", part.kind),
+                part.given_up.kind(),
+                part.given_up.severity(),
                 part.cause,
                 if part.marked.is_empty() {
                     format!("; dropped=[{}]", part.dropped.join(", "))
@@ -93,11 +112,11 @@ fn assert_given_up(source: &str, expected: &[Expected]) {
             )
         })
         .collect::<Vec<_>>();
-    expected.sort();
+    expected.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(losses.len(), expected.len(), "{losses:#?}");
-    for (loss, (head, cause, tail)) in losses.iter().zip(&expected) {
-        assert_eq!(loss.code, record_unreadable_kind());
-        assert_eq!(loss.severity, Severity::Error);
+    for (loss, (head, code, severity, cause, tail)) in losses.iter().zip(&expected) {
+        assert_eq!(&loss.code, code);
+        assert_eq!(&loss.severity, severity);
         assert!(loss.message.starts_with(head.as_str()), "{}", loss.message);
         assert!(loss.message.contains(cause), "{}", loss.message);
         assert!(loss.message.ends_with(tail.as_str()), "{}", loss.message);
@@ -117,6 +136,7 @@ fn a_face_whose_surface_names_no_record_drops_its_loops_and_coedges() {
         &[Expected {
             kind: "face",
             line: face,
+            given_up: Cause::Unreadable,
             cause: "the face record's surface reference names no record",
             dropped: &[
                 "f3d:brep:entity#11",
@@ -126,6 +146,115 @@ fn a_face_whose_surface_names_no_record_drops_its_loops_and_coedges() {
             marked: &["f3d:brep:entity#2"],
         }],
     );
+}
+
+/// A withheld record keeps the bytes of its record in the stream, so its
+/// part reads them without the stream.
+#[test]
+fn a_withheld_record_keeps_the_bytes_of_its_record() {
+    let face = "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #";
+    let source = edited("face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #", face);
+    let brep = decode(&source, DecodePurpose::Model);
+    assert_eq!(brep.withheld.len(), 1);
+    let record = &brep.withheld[0];
+    assert_eq!(record.kind, "face");
+    let offset = source.find(&format!("{face}\n")).unwrap();
+    assert_eq!(record.offset, offset);
+    assert_eq!(record.bytes, face.as_bytes());
+}
+
+/// A record framed in other bytes than the ones the decode reads leaves
+/// those bytes, and the decode refuses it.
+#[test]
+fn a_withheld_record_whose_span_leaves_the_bytes_is_refused() {
+    let face = "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #";
+    let source = edited("face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #", face);
+    let offset = source.find(&format!("{face}\n")).unwrap();
+    let framed = source.as_bytes();
+    let read = &framed[..offset + face.len() - 1];
+    let result = crate::test_support::with_service_context(framed, |ctx| {
+        let parsed = crate::sat::parse(ctx, framed).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header();
+        decode_with_header(
+            ctx,
+            &parsed.records,
+            read,
+            Some(&header),
+            "stream",
+            FORMAT,
+            DecodePurpose::Model,
+        )
+    })
+    .expect("service decode context");
+    let Err(error) = result else {
+        panic!("the face record leaves the bytes the decode reads");
+    };
+    assert_eq!(
+        error.to_string(),
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "record 4 at byte {offset} declares {} bytes, beyond the {} the stream holds",
+            face.len(),
+            read.len()
+        ))
+        .to_string()
+    );
+}
+
+/// An inspecting decode withholds the same face, marks its shell, and lists
+/// no record.
+#[test]
+fn an_inspecting_decode_marks_the_shell_and_lists_no_record() {
+    let source = edited(
+        "face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #",
+        "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #",
+    );
+    let brep = inspect(&source);
+    assert!(brep.withheld.is_empty());
+    assert_eq!(brep.shells.len(), 1);
+    assert_eq!(brep.shells[0].id.as_str(), "f3d:brep:entity#2");
+    assert_eq!(brep.shells[0].unstated, Some(Unstated::Members));
+    assert_eq!(
+        brep.faces.len(),
+        decode(&source, DecodePurpose::Model).faces.len()
+    );
+    assert!(brep.annotation_records.is_empty());
+    assert!(brep.unknowns.is_empty());
+}
+
+#[test]
+fn a_state_inspection_keeps_undecoded_bytes_and_their_carrier_location() {
+    let orphan = "face $-1 -1 $-1 $-1 $-1 $-1 $-1 $8 forward single #";
+    let source = edited("End-of-ASM-data", &format!("{orphan}\nEnd-of-ASM-data"));
+    let bytes = source.as_bytes();
+    let brep = crate::test_support::with_service_context(bytes, |ctx| {
+        let parsed = crate::sat::parse(ctx, bytes).expect("cone with an orphan face");
+        let header = parsed.header.as_kernel_header();
+        ctx.scratch(bytes.len(), |scratch| {
+            inspect_with_source(
+                scratch,
+                &parsed.records,
+                bytes,
+                Some(&header),
+                "carrier",
+                FORMAT,
+            )
+        })
+        .expect("state decodes")
+        .expect("state fits the scratch allowance")
+    })
+    .expect("service decode context");
+    let [record] = brep.unknowns.as_slice() else {
+        panic!("one undecoded source record");
+    };
+    assert_eq!(record.data(), Some(orphan.as_bytes()));
+    let source = brep
+        .annotation_records
+        .iter()
+        .find(|annotation| annotation.id.as_str() == record.id().as_str())
+        .expect("source location");
+    assert_eq!(source.stream, "carrier");
+    assert_eq!(source.offset, record.offset());
+    assert!(brep.withheld.is_empty());
 }
 
 /// The cone's face 3 stands on a surface reference that names no record.
@@ -141,6 +270,7 @@ fn a_face_whose_surface_names_no_record_drops_what_only_it_reaches_and_marks_its
         &[Expected {
             kind: "face",
             line: face,
+            given_up: Cause::Unreadable,
             cause: "the face record's surface reference names no record",
             dropped: &[
                 "f3d:brep:entity#10",
@@ -190,6 +320,7 @@ fn assert_sheet_face_given_up(source: &str, dropped: &'static [&'static str]) {
         &[Expected {
             kind: "face",
             line: SHEET_FACE,
+            given_up: Cause::Unreadable,
             cause: "the face record's surface reference names no record",
             dropped,
             marked: &[],
@@ -259,6 +390,7 @@ fn an_edge_whose_vertex_reference_names_a_point_is_given_up() {
         &[Expected {
             kind: "edge",
             line: edge,
+            given_up: Cause::Unreadable,
             cause: "the edge record's vertex reference names no vertex record",
             dropped: &["f3d:brep:entity#14"],
             marked: &[],
@@ -278,6 +410,7 @@ fn a_coedge_on_no_kept_loop_gives_up_it_and_its_emptied_loop() {
             Expected {
                 kind: "coedge",
                 line: coedge,
+                given_up: Cause::Unreadable,
                 cause: "the coedge record's loop is no loop of a kept face",
                 dropped: &["f3d:brep:entity#12"],
                 marked: &[],
@@ -285,6 +418,7 @@ fn a_coedge_on_no_kept_loop_gives_up_it_and_its_emptied_loop() {
             Expected {
                 kind: "loop",
                 line: "loop $-1 -1 $-1 $-1 $12 $3 #",
+                given_up: Cause::Undecoded,
                 cause: "the loop record's coedge ring holds no coedge the loop owns",
                 dropped: &["f3d:brep:entity#9"],
                 marked: &[],
@@ -301,6 +435,7 @@ fn a_vertex_with_no_point_is_given_up() {
         &[Expected {
             kind: "vertex",
             line: vertex,
+            given_up: Cause::Unreadable,
             cause: "the vertex record states no point",
             dropped: &["f3d:brep:entity#16"],
             marked: &[],
@@ -316,6 +451,7 @@ fn a_point_with_no_position_is_given_up() {
         &[Expected {
             kind: "point",
             line: point,
+            given_up: Cause::Unreadable,
             cause: "the point record states no position",
             dropped: &["f3d:brep:entity#19"],
             marked: &[],
@@ -331,6 +467,7 @@ fn a_region_with_no_body_is_given_up() {
         &[Expected {
             kind: "region",
             line: lump,
+            given_up: Cause::Unreadable,
             cause: "the region record names no body",
             dropped: &["f3d:brep:entity#1"],
             marked: &[],

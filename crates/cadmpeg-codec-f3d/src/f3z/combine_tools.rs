@@ -14,7 +14,9 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
 use crate::records::bodies::BodyVisibility;
-use crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity;
+use crate::records::feature::combine::{
+    DesignCombineLegacyExternalBodyIdentity, DesignCombineOperation,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::xref::XrefReference;
 
@@ -61,17 +63,23 @@ pub(super) fn bind(
         let Some((native, bodies)) = local_tools(feature.evaluation.definition()) else {
             continue;
         };
-        let Some(scope) = scopes.get(native) else {
+        let Some(operation) = scopes.get(native).and_then(|scope| {
+            scope
+                .combine_operation()
+                .filter(|operation| {
+                    operation
+                        .tools
+                        .iter()
+                        .any(|tool| tool.legacy_external_identity.is_some())
+                })
+                .map(|operation| (scope, operation))
+        }) else {
             continue;
         };
-        let Some(binding) = joins.scope_tools(scope) else {
-            continue;
-        };
-        let expected = scope_tool_bodies(scope);
-        if expected.as_deref() != Some(bodies) {
-            continue;
+        match joins.scope_tools(operation, bodies) {
+            Ok(binding) => rewrites.push((index, native.to_owned(), binding)),
+            Err(reason) => losses.push(unbound(feature, &reason)),
         }
-        rewrites.push((index, native.to_owned(), binding));
     }
     for (index, native, binding) in rewrites {
         let feature = &mut ir.model.features[index];
@@ -90,10 +98,19 @@ pub(super) fn bind(
             if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
                 definition
             {
-                edited = operands.try_edit(|_, tools| *tools = selection);
+                edited = operands
+                    .try_edit(|_, tools| *tools = selection)
+                    .map_err(std::string::ToString::to_string);
             }
         });
-        if edited.is_err() {
+        if let Err(error) = edited {
+            losses.push(unbound(
+                feature,
+                &format!(
+                    "its operands refuse the tools of occurrence {}: {error}",
+                    binding.occurrence.as_str()
+                ),
+            ));
             continue;
         }
         losses.push(F3dLossCode::FeatureCombineToolExternalFinalStateAssumed.note(format!(
@@ -109,6 +126,13 @@ pub(super) fn bind(
         )));
     }
     Ok(())
+}
+
+fn unbound(feature: &cadmpeg_ir::features::Feature, reason: &str) -> LossNote {
+    F3dLossCode::FeatureCombineToolExternalBodyUnbound.note(format!(
+        "Combine {}: {reason}; its legacy cross-document tools stay local",
+        feature.id.as_str()
+    ))
 }
 
 /// The native scope identity of every `Combine` whose tools are
@@ -130,26 +154,6 @@ fn local_tools(definition: &FeatureDefinition) -> Option<(&str, &[String])> {
         BodySelection::Local { bodies, native } => Some((native.as_str(), bodies.as_slice())),
         _ => None,
     }
-}
-
-/// The feature-input-local bodies that the legacy selectors of `scope` give.
-fn scope_tool_bodies(scope: &DesignParameterScope) -> Option<Vec<String>> {
-    scope
-        .combine_operation()?
-        .tools
-        .iter()
-        .map(|tool| {
-            tool.legacy_external_identity
-                .as_ref()
-                .filter(|_| tool.external_identity.is_none())
-                .map(|identity| {
-                    qualify_like(
-                        &crate::ids::neutral_combine_legacy_external_body_id(identity),
-                        &scope.id,
-                    )
-                })
-        })
-        .collect()
 }
 
 /// The archive scope that qualifies an `f3d:` identity, if any.
@@ -175,14 +179,42 @@ struct Joins<'a> {
 
 impl Joins<'_> {
     /// The one occurrence that every tool of `scope` names, and the distinct
-    /// bodies of the tools in tool order.
-    fn scope_tools(&self, scope: &DesignParameterScope) -> Option<ToolBinding> {
-        let mut binding: Option<ToolBinding> = None;
-        for tool in scope.combine_operation()?.tools.iter() {
-            if tool.external_identity.is_some() {
-                return None;
+    /// bodies of the tools in tool order, when `bodies` are the local bodies
+    /// of the tool selectors.
+    fn scope_tools(
+        &self,
+        (scope, operation): (&DesignParameterScope, &DesignCombineOperation),
+        bodies: &[String],
+    ) -> Result<ToolBinding, String> {
+        let mut identities = Vec::new();
+        for tool in operation.tools.iter() {
+            match (&tool.external_identity, &tool.legacy_external_identity) {
+                (None, Some(identity)) => identities.push(identity),
+                _ => {
+                    return Err(format!(
+                    "tool record {} stores a selector other than a legacy cross-document selector",
+                    tool.record_index
+                ))
+                }
             }
-            let (occurrence, body) = self.tool(scope, tool.legacy_external_identity.as_ref()?)?;
+        }
+        let expected = identities
+            .iter()
+            .map(|identity| {
+                qualify_like(
+                    &crate::ids::neutral_combine_legacy_external_body_id(identity),
+                    &scope.id,
+                )
+            })
+            .collect::<Vec<_>>();
+        if expected != bodies {
+            return Err(
+                "its local tools differ from the bodies that its legacy selectors name".to_owned(),
+            );
+        }
+        let mut binding: Option<ToolBinding> = None;
+        for identity in identities {
+            let (occurrence, body) = self.tool(scope, identity)?;
             match &mut binding {
                 None => {
                     binding = Some(ToolBinding {
@@ -190,40 +222,61 @@ impl Joins<'_> {
                         bodies: vec![body],
                     });
                 }
-                Some(found) if found.occurrence == occurrence && !found.bodies.contains(&body) => {
-                    found.bodies.push(body);
+                Some(found) if found.occurrence != occurrence => {
+                    return Err(format!(
+                        "its tools name the occurrences {} and {}",
+                        found.occurrence.as_str(),
+                        occurrence.as_str()
+                    ));
                 }
-                Some(_) => return None,
+                Some(found) if found.bodies.contains(&body) => {
+                    return Err(format!("two tools name the body {}", body.as_str()));
+                }
+                Some(found) => found.bodies.push(body),
             }
         }
-        binding
+        binding.ok_or_else(|| "its scope stores no tool".to_owned())
     }
 
     fn tool(
         &self,
         scope: &DesignParameterScope,
         identity: &DesignCombineLegacyExternalBodyIdentity,
-    ) -> Option<(OccurrenceId, BodyId)> {
+    ) -> Result<(OccurrenceId, BodyId), String> {
         let archive_scope = qualifier(&scope.id);
-        let reference = unique(self.references.iter().filter(|reference| {
-            qualifier(&reference.id) == archive_scope
-                && reference
-                    .placement_source
-                    .as_ref()
-                    .and_then(|source| crate::xref::legacy_placement_target(&source.frame_bytes))
-                    .is_some_and(|(_, source_occurrence)| {
-                        source_occurrence == identity.source_occurrence_identity
+        let reference = one(
+            self.references.iter().filter(|reference| {
+                qualifier(&reference.id) == archive_scope
+                    && reference.placement_source.as_ref().is_some_and(|source| {
+                        crate::xref::legacy_source_occurrence_identity(&source.frame_bytes)
+                            == Some(identity.source_occurrence_identity)
                     })
-        }))?;
-        let occurrence =
-            unique(self.model.occurrences.iter().filter(|occurrence| {
+            }),
+            |count| {
+                format!(
+                    "{count} occurrence placements of its document store the source occurrence identity {}",
+                    identity.source_occurrence_identity
+                )
+            },
+        )?;
+        let occurrence = one(
+            self.model.occurrences.iter().filter(|occurrence| {
                 occurrence.native_ref.as_deref() == Some(reference.id.as_str())
-            }))?;
-        let definition = unique(
+            }),
+            |count| format!("{count} occurrences project the reference {}", reference.id),
+        )?;
+        let definition = one(
             self.model
                 .product_definitions
                 .iter()
                 .filter(|definition| definition.id == occurrence.prototype),
+            |count| {
+                format!(
+                    "{count} product definitions have the identity {} of the prototype of occurrence {}",
+                    occurrence.prototype.as_str(),
+                    occurrence.id.as_str()
+                )
+            },
         )?;
         let bodies = self
             .visibilities
@@ -234,14 +287,29 @@ impl Joins<'_> {
             })
             .map(|visibility| &visibility.body)
             .collect::<BTreeSet<_>>();
-        let body = unique(bodies.into_iter())?;
-        Some((occurrence.id.clone(), body.clone()))
+        let body = one(bodies.into_iter(), |count| {
+            format!(
+                "{count} bodies of {} have the browser-node entity {}",
+                definition.id.as_str(),
+                identity.browser_node_entity
+            )
+        })?;
+        Ok((occurrence.id.clone(), body.clone()))
     }
 }
 
-fn unique<T>(mut items: impl Iterator<Item = T>) -> Option<T> {
-    let first = items.next()?;
-    items.next().is_none().then_some(first)
+/// The sole item of `items`, or the `reason` for their count.
+fn one<T>(
+    items: impl Iterator<Item = T>,
+    reason: impl FnOnce(usize) -> String,
+) -> Result<T, String> {
+    let mut items = items.collect::<Vec<_>>();
+    if items.len() == 1 {
+        if let Some(item) = items.pop() {
+            return Ok(item);
+        }
+    }
+    Err(reason(items.len()))
 }
 
 #[cfg(test)]

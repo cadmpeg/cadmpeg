@@ -453,7 +453,7 @@ projection.
 
 **Question.** Which native records own a SAT shell with no admissible member or owner, a standalone face, and a body-owned wire?
 
-**Known.** The SAT decoder omits a shell with no admissible member or owner, a standalone face with no shell owner, and a body-owned wire, and retains each source record. These behaviours carry the loss codes `TopologyShellUnprojected`, `TopologyFaceOwnerUnprojected`, and `TopologyWireOwnerUnprojected`.
+**Known.** The SAT decoder omits a shell with no admissible member or owner and a standalone face with no shell owner, and charges each one `record.undecoded` with the source record retained. It omits a body-owned wire, retains its source record, and charges `TopologyWireOwnerUnprojected`.
 
 **Need.** Native specimens or an authoritative ownership rule must give each record its neutral owner or confirm the ownerless case. Until then these records stay unprojected.
 

@@ -15,7 +15,7 @@ use super::report_losses::{coverage_count, push_report_loss};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 
 struct CountBreakdown<'a>(&'a [(&'a str, usize)]);
 
@@ -128,7 +128,8 @@ pub(in crate::decode) fn give_up_unread_section_rows(
                     run.bytes,
                     [ArenaClass::Design],
                 ),
-                CodecError::malformed(cause),
+                Cause::Undecoded,
+                super::super::give_up_error(Cause::Undecoded, cause),
             )
         })
         .collect()
@@ -774,7 +775,7 @@ mod tests {
         }
         assert!(losses
             .iter()
-            .all(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
+            .all(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()));
         // Each part runs from the first unread row to the next table label or
         // to the end of the definition.
         let expected = [

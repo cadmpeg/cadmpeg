@@ -7,7 +7,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{ParameterInterval, Sense};
 use cadmpeg_ir::transform::Transform;
 
@@ -35,7 +35,6 @@ use cadmpeg_ir::ids::CurveId;
 pub struct AsmEditSet {
     records: Vec<Record>,
     ref_width: RefWidth,
-    header_scale: Option<PositiveReal>,
 }
 
 /// Writable values for one solved NURBS surface cache.
@@ -166,17 +165,12 @@ impl AsmEditSet {
                     CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
                 })
             })?;
-        let header_scale = header.metadata.scale.unwrap_or(1.0);
-        Ok(Self::from_framed(records, ref_width, header_scale))
+        Ok(Self::from_framed(records, ref_width))
     }
 
     /// Build a context from an already framed record partition.
-    pub fn from_framed(records: Vec<Record>, ref_width: RefWidth, header_scale: f64) -> Self {
-        Self {
-            records,
-            ref_width,
-            header_scale: PositiveReal::new(header_scale),
-        }
+    pub fn from_framed(records: Vec<Record>, ref_width: RefWidth) -> Self {
+        Self { records, ref_width }
     }
 
     /// The framed solved records in record-table order.
@@ -823,7 +817,7 @@ impl AsmEditSet {
         direction: Vector3,
         native_position: Point3,
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "extrusion")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout = crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -869,7 +863,7 @@ impl AsmEditSet {
         record: &Record,
         radii: [f64; 2],
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "rolling-ball")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout =
             crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, self.ref_width)
                 .transpose()?
@@ -897,7 +891,7 @@ impl AsmEditSet {
         record: &Record,
         tolerance: f64,
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "procedural-surface")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout = crate::nurbs::core::final_surface_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -925,7 +919,7 @@ impl AsmEditSet {
         record: &Record,
         tolerance: f64,
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "procedural-curve")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout = crate::nurbs::core::final_curve_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -953,12 +947,6 @@ impl AsmEditSet {
         record: &Record,
         transform: Transform,
     ) -> Result<(), CodecError> {
-        let header_scale = self.header_scale.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "transform record {} requires a positive finite header scale",
-                record.index
-            ))
-        })?;
         let [translation_x, translation_y, translation_z] = transform.translation().components();
         let vectors = [
             [
@@ -980,21 +968,21 @@ impl AsmEditSet {
                 cadmpeg_ir::math::multiply_divide(
                     translation_x,
                     LENGTH_PER_MILLIMETRE,
-                    header_scale.into(),
+                    FiniteReal::ONE,
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
                 cadmpeg_ir::math::multiply_divide(
                     translation_y,
                     LENGTH_PER_MILLIMETRE,
-                    header_scale.into(),
+                    FiniteReal::ONE,
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
                 cadmpeg_ir::math::multiply_divide(
                     translation_z,
                     LENGTH_PER_MILLIMETRE,
-                    header_scale.into(),
+                    FiniteReal::ONE,
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
@@ -1048,17 +1036,6 @@ impl AsmEditSet {
     }
 }
 
-fn record_slice<'a>(bytes: &'a [u8], record: &Record, label: &str) -> Result<&'a [u8], CodecError> {
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{label} record extent overflows address space"
-        ))
-    })?;
-    bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::malformed(format_args!("{label} record is truncated")))
-}
-
 const fn native_bool(value: bool) -> u8 {
     if value {
         0x0a
@@ -1081,7 +1058,7 @@ fn patch_helix_definition(
     let apex_factor = definition.apex_factor();
     let axis = definition.axis();
 
-    let record_bytes = record_slice(bytes, record, "helix")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1143,7 +1120,7 @@ fn patch_vector_offset_definition(
     parameter_range: [f64; 2],
     offset: Vector3,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "vector-offset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1174,7 +1151,7 @@ fn patch_subset_definition(
     record: &sab::Record,
     parameter_range: [f64; 2],
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "subset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1197,7 +1174,7 @@ fn patch_compound_definition(
     parameters: &[FiniteReal],
     components: &[CompoundComponent<CurveId, FiniteReal>],
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "compound")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1237,7 +1214,7 @@ fn patch_two_sided_offset_definition(
     discontinuity_flag: bool,
     offsets: [f64; 2],
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "two-sided offset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout =
         crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, stream_width)
             .filter(|layout| {
@@ -1343,7 +1320,7 @@ fn patch_surface_offset_definition(
     let base_u_range = base_u_range.endpoints();
     let base_v_range = base_v_range.endpoints();
     let base_range = base_range.endpoints();
-    let record_bytes = record_slice(bytes, record, "surface-offset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
     patch_intcurve_context(
@@ -1394,7 +1371,7 @@ fn patch_spring_definition(
         } => *discontinuity_flag,
         cadmpeg_ir::geometry::surface_curves::SpringLayout::CacheFirst { .. } => false,
     };
-    let record_bytes = record_slice(bytes, record, "spring")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     patch_intcurve_context(
@@ -1424,7 +1401,7 @@ fn patch_projection_definition(
     discontinuity_flag: bool,
     tail: &ProjectionTail<FiniteReal>,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "projection")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
     if layout
@@ -1491,7 +1468,7 @@ fn patch_intersection_definition(
     context: &IntcurveSupportContext,
     discontinuity_flag: bool,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "intersection")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
     patch_intcurve_context(
@@ -1514,7 +1491,7 @@ fn patch_three_surface_intersection_definition(
     context: &IntcurveSupportContext,
     selector: i64,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
         CodecError::Malformed("three-surface construction is malformed".into())
@@ -1545,7 +1522,7 @@ fn patch_surface_curve_definition(
     family: &SurfaceCurveFamily,
 ) -> Result<(), CodecError> {
     let context = family.context();
-    let record_bytes = record_slice(bytes, record, "surface-curve")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
         stream_width,
@@ -1580,7 +1557,7 @@ fn patch_silhouette_definition(
             Some(draft_factor.get())
         }
     };
-    let record_bytes = record_slice(bytes, record, "silhouette")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout =
         crate::nurbs::proc_curve::silhouette_patch_layout(record_bytes, stream_width, silhouette)
             .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
@@ -1607,7 +1584,7 @@ fn patch_nurbs_surface_record(
     surface_ordinal: Option<usize>,
 ) -> Result<(), CodecError> {
     let surface = edit.surface;
-    let record_bytes = record_slice(bytes, record, "NURBS surface")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = surface_ordinal
         .map_or_else(
             || crate::nurbs::core::final_surface_patch_layout(record_bytes, stream_width),
@@ -1711,7 +1688,7 @@ fn patch_nurbs_curve_record(
     target: CacheTarget,
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
-    let record_bytes = record_slice(bytes, record, "NURBS curve")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = match target {
         CacheTarget::Final => {
             crate::nurbs::core::final_curve_patch_layout(record_bytes, stream_width)
@@ -2201,7 +2178,7 @@ mod tests {
             bytes.extend_from_slice(&1.0_f64.to_le_bytes());
             bytes.push(0x11);
             let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
-            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let edits = AsmEditSet::from_framed(records.clone(), width);
             for expected in [
                 0.0_f64,
                 -0.0,
@@ -2387,7 +2364,7 @@ mod tests {
         let original = b"\x0d\x01x\x07\x05surf1\x11";
         let records =
             crate::test_support::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         let mut bytes = original[..7].to_vec();
         let before = bytes.clone();
         let error = edits
@@ -2409,7 +2386,7 @@ mod tests {
             original.push(0x11);
             let records =
                 crate::test_support::sab::frame(&original, 0, original.len(), width).unwrap();
-            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let edits = AsmEditSet::from_framed(records.clone(), width);
             let mut bytes = original[..4].to_vec();
             let before = bytes.clone();
             let error = edits
@@ -2436,7 +2413,7 @@ mod tests {
         let mut bytes = b"\x0d\x01x\x07\x05surf1\x11".to_vec();
         let records =
             crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         edits
             .patch_ascii_field(&mut bytes, &records[0], 0, "surf2")
             .unwrap();
@@ -2460,7 +2437,7 @@ mod tests {
             bytes.extend_from_slice(&[0; 8][..payload_width]);
             bytes.push(0x11);
             let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
-            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let edits = AsmEditSet::from_framed(records.clone(), width);
             edits
                 .patch_truecolor_field(&mut bytes, &records[0], 0, u32::MAX)
                 .unwrap();
@@ -2504,7 +2481,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
-        assert!(error.to_string().contains("truncated"));
+        assert!(error.to_string().contains("beyond the 10 the stream holds"));
         assert_eq!(truncated, before);
     }
 
@@ -2545,7 +2522,7 @@ mod tests {
             periodic: None,
             fit_tolerance: None,
         };
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         edits
             .patch_pcurve(
                 &mut original.clone(),
@@ -2576,7 +2553,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_patch_preserves_translation_at_large_header_scale() {
+    fn transform_patch_writes_the_translation_in_centimetres() {
         let mut bytes = vec![0x0d, 9];
         bytes.extend_from_slice(b"transform");
         for _ in 0..4 {
@@ -2588,9 +2565,9 @@ mod tests {
         bytes.push(0x11);
         let records =
             crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1e308);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         let transform = cadmpeg_ir::transform::Transform::affine([
-            [1.0, 0.0, 0.0, 1e308],
+            [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
         ])
@@ -2602,35 +2579,7 @@ mod tests {
             .required_payload_field(&bytes, &records[0], 3, 0x14)
             .unwrap();
         let native = cadmpeg_core::decode::View::f64_le_at(&bytes, offset + 1).unwrap();
-        assert!((native - 0.1).abs() <= f64::EPSILON);
-    }
-
-    #[test]
-    fn transform_rejects_nonpositive_and_nonfinite_header_scales() {
-        let mut original = vec![0x0d, 9];
-        original.extend_from_slice(b"transform");
-        for _ in 0..4 {
-            original.push(0x14);
-            original.extend_from_slice(&[0; 24]);
-        }
-        original.push(0x06);
-        original.extend_from_slice(&1.0f64.to_le_bytes());
-        original.push(0x11);
-        let records =
-            crate::test_support::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
-        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut bytes = original.clone();
-            let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, scale);
-            assert!(matches!(
-                edits.patch_transform(
-                    &mut bytes,
-                    &records[0],
-                    cadmpeg_ir::transform::Transform::identity()
-                ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
-            ));
-            assert_eq!(bytes, original);
-        }
+        assert!((native - 3.0).abs() <= f64::EPSILON);
     }
 
     #[test]

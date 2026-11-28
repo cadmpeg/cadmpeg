@@ -10,9 +10,25 @@ use cadmpeg_asm::{acis_header, acis_interned};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
+use cadmpeg_ir::unknown::part::Cause;
 
 /// Identity format of the B-rep entities that ACIS records decode.
 pub(crate) const ID_FORMAT: IdFormat = cadmpeg_asm::asm_format!("ironcad");
+
+/// Why an ACIS record does not decode.
+pub(crate) struct AcisFailure {
+    pub(crate) cause: Cause,
+    pub(crate) error: CodecError,
+}
+
+impl AcisFailure {
+    fn unreadable(error: CodecError) -> Self {
+        Self {
+            cause: Cause::Unreadable,
+            error,
+        }
+    }
+}
 
 /// One decoded ACIS record.
 pub(crate) struct DecodedAcis {
@@ -23,16 +39,19 @@ pub(crate) struct DecodedAcis {
     pub(crate) unread: Option<usize>,
 }
 
-/// Frames and decodes one ACIS binary save stream.
+/// Frames and decodes one ACIS binary save stream. A stream that does not
+/// frame is unreadable; a framed stream the B-rep decode refuses is
+/// undecoded.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     bytes: View<'_>,
     header: &BinaryHeader,
     stream: &str,
-) -> Result<DecodedAcis, CodecError> {
+) -> Result<DecodedAcis, AcisFailure> {
     let bytes = bytes.window();
-    let start = acis_header::record_stream_start_with_header(bytes, header)
-        .ok_or_else(|| CodecError::malformed("ACIS record has no record stream"))?;
+    let start = acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
+        AcisFailure::unreadable(CodecError::malformed("ACIS record has no record stream"))
+    })?;
     let entity_count = header.metadata.entity_count;
     let framing_error = |failure: StreamFailure| {
         failure.into_codec_error(ctx, |error| {
@@ -41,7 +60,8 @@ pub(crate) fn decode(
     };
     let (records, reduced_records, unread) = if acis_interned::applies(bytes, start) {
         let framed = acis_interned::frame(ctx, bytes, start, bytes.len(), entity_count)
-            .map_err(framing_error)?;
+            .map_err(framing_error)
+            .map_err(AcisFailure::unreadable)?;
         (framed.records, framed.reduced_records, framed.unread)
     } else {
         let records = match acis_header::solved_record_limit_with_header(bytes, header) {
@@ -50,7 +70,8 @@ pub(crate) fn decode(
                 sab::frame_history(ctx, bytes, start, bytes.len(), RefWidth::Four, entity_count)
             }
         }
-        .map_err(framing_error)?;
+        .map_err(framing_error)
+        .map_err(AcisFailure::unreadable)?;
         (records, 0, None)
     };
     let brep = decode_with_header(
@@ -61,7 +82,11 @@ pub(crate) fn decode(
         stream,
         ID_FORMAT,
         DecodePurpose::Model,
-    )?;
+    )
+    .map_err(|error| AcisFailure {
+        cause: Cause::Undecoded,
+        error,
+    })?;
     Ok(DecodedAcis {
         brep,
         reduced_records,
@@ -76,15 +101,12 @@ pub(crate) fn qualify(
     brep: AsmBrep,
     namespace: &str,
 ) -> Result<AsmBrep, CodecError> {
-    let mut map = IdentityMap::new(|source: &str| Ok(qualified_id(namespace, source)));
+    let prefix = format!("{ID_FORMAT}:");
+    let mut map = IdentityMap::new(|source: &str| {
+        let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
+        Ok(format!("{ID_FORMAT}:brep/{namespace}/{suffix}"))
+    });
     let rewritten = brep.rewrite_identities(ctx, &mut map);
     map.finish()?;
     rewritten
-}
-
-/// The identity that [`qualify`] gives `source` under `namespace`.
-fn qualified_id(namespace: &str, source: &str) -> String {
-    let prefix = format!("{ID_FORMAT}:");
-    let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
-    format!("{ID_FORMAT}:brep/{namespace}/{suffix}")
 }

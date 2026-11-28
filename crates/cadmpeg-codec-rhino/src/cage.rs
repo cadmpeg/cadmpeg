@@ -120,7 +120,7 @@ pub(crate) fn decode_at(
     }
     let dimension = positive(&mut body, "dimension")?;
     if dimension > MAX_DIMENSION {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             body.position() - 4,
             "NURBS cage dimension exceeds cap",
         ));
@@ -159,7 +159,7 @@ pub(crate) fn decode_at(
         .try_fold(1_usize, usize::checked_mul)
         .filter(|count| *count <= MAX_CONTROL_POINTS)
         .ok_or_else(|| {
-            GeometryError::malformed(body.position(), "NURBS cage control count exceeds cap")
+            GeometryError::undecoded(body.position(), "NURBS cage control count exceeds cap")
         })?;
 
     let mut knots: [Vec<FiniteReal>; 3] = std::array::from_fn(|_| Vec::new());

@@ -22,7 +22,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 mod configuration_bindings;
@@ -490,7 +490,9 @@ fn walk_native_markers(
             Ok(None) => {}
             Err(error) => {
                 if let Some((_, _, end)) = read_block_frame(bytes, i) {
-                    given_up.push(ctx.give_up_part(native_block_part(bytes, i, end), error)?);
+                    let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                    let part = native_block_part(bytes, i, end);
+                    given_up.push(ctx.give_up_part(part, cause, error)?);
                     i = end;
                     continue;
                 }
@@ -527,6 +529,7 @@ fn walk_native_markers(
         given_up_end = end;
         given_up.push(ctx.give_up_part(
             native_block_part(bytes, offset, end),
+            Cause::Unreadable,
             CodecError::malformed(
                 "declared native local member failed DEFLATE, size or CRC validation",
             ),
@@ -594,15 +597,20 @@ fn extract_streams_for_owner(
                 }
                 given_up.push(ctx.give_up_part(
                     member,
+                    Cause::Unreadable,
                     CodecError::malformed(
-                        "the ZLB-wrapped zlib member does not inflate to its declared size",
+                        "the ZLB-wrapped frames from this offset do not read: a zlib member \
+                         does not inflate to its declared size or passes the frame ceiling, a \
+                         frame runs past its section, or bytes after the frames are neither a \
+                         frame nor zero padding",
                     ),
                 )?);
             }
             Ok(streams)
         }
         Err(error) => {
-            given_up.push(ctx.give_up_part(part, error)?);
+            let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+            given_up.push(ctx.give_up_part(part, cause, error)?);
             Ok(crate::parasolid::ExtractedStreams::of(Vec::new(), false))
         }
     }
@@ -732,7 +740,10 @@ fn compound_streams(
                         bytes.len()
                     ));
                 }
-                compound.given_up.push(ctx.give_up_part(part, error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                compound
+                    .given_up
+                    .push(ctx.give_up_part(part, cause, error)?);
                 continue;
             }
         };
@@ -1560,10 +1571,10 @@ fn scan_solidworks_envelopes<'a>(
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
-            scan.configuration_bindings.record_features(&document);
+            scan.configuration_bindings.record_features(document.tree());
         }
         if root.tag_name().name().contains("Keywords") {
-            scan.configuration_bindings.record_keywords(&document);
+            scan.configuration_bindings.record_keywords(document.tree());
             for configuration in document
                 .descendants()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")

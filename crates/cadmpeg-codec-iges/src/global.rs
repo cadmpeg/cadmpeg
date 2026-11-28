@@ -1276,7 +1276,7 @@ impl Resolution {
         }
     }
 
-    fn significance(&mut self, index: usize) -> Supplied<u32> {
+    fn significance(&mut self, index: usize, global_table: GlobalTable) -> Supplied<u32> {
         let defect = match self.supplied_integer(index) {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
@@ -1285,12 +1285,13 @@ impl Resolution {
             },
             Supplied::Malformed => Defect::Malformed,
         };
-        self.charge(
-            IgesLossCode::GlobalSemanticContextSubstituted,
-            index,
-            defect,
-            SIGNIFICANCE_CONSEQUENCE,
-        );
+        let code = match defect {
+            Defect::Absent if !global_table.field_requires_value(index) => {
+                IgesLossCode::GlobalSemanticContextSubstituted
+            }
+            Defect::Absent | Defect::Malformed => IgesLossCode::GlobalSemanticContextInvalid,
+        };
+        self.charge(code, index, defect, SIGNIFICANCE_CONSEQUENCE);
         match defect {
             Defect::Absent => Supplied::Absent,
             Defect::Malformed => Supplied::Malformed,
@@ -1301,7 +1302,7 @@ impl Resolution {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
             SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
-                    IgesLossCode::GlobalSemanticContextSubstituted,
+                    IgesLossCode::GlobalSemanticContextInvalid,
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Absent,
                     RESOLUTION_CONSEQUENCE,
@@ -1313,7 +1314,7 @@ impl Resolution {
                 Ok(value) => value,
                 Err(_) => {
                     self.charge(
-                        IgesLossCode::GlobalSemanticContextSubstituted,
+                        IgesLossCode::GlobalSemanticContextInvalid,
                         FIELD_MINIMUM_RESOLUTION,
                         Defect::Malformed,
                         RESOLUTION_CONSEQUENCE,
@@ -1328,7 +1329,7 @@ impl Resolution {
                 }
                 Err(_) => {
                     self.charge(
-                        IgesLossCode::GlobalSemanticContextSubstituted,
+                        IgesLossCode::GlobalSemanticContextInvalid,
                         FIELD_MINIMUM_RESOLUTION,
                         Defect::Malformed,
                         RESOLUTION_CONSEQUENCE,
@@ -1338,7 +1339,7 @@ impl Resolution {
             },
             SuppliedReal::Malformed => {
                 self.charge(
-                    IgesLossCode::GlobalSemanticContextSubstituted,
+                    IgesLossCode::GlobalSemanticContextInvalid,
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Malformed,
                     RESOLUTION_CONSEQUENCE,
@@ -1590,7 +1591,9 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         .and_then(|value| u32::try_from(value).ok());
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE).value();
+    let single_significance = resolution
+        .significance(FIELD_SINGLE_SIGNIFICANCE, global_table)
+        .value();
     let double_magnitude =
         resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
     let double_significance = if global_table == GlobalTable::V5_0
@@ -1600,7 +1603,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         ) {
         Supplied::Absent
     } else {
-        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
+        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE, global_table)
     };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => {
@@ -1822,7 +1825,7 @@ impl ResolvedGlobal {
         }
         if matches!(self.numeric.double_significance, Supplied::Absent) {
             let note = global_loss_note(
-                IgesLossCode::GlobalSemanticContextSubstituted,
+                IgesLossCode::GlobalSemanticContextInvalid,
                 FIELD_DOUBLE_SIGNIFICANCE,
                 Defect::Absent,
                 SIGNIFICANCE_CONSEQUENCE,

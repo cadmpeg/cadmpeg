@@ -24,7 +24,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::StreamName;
 use std::sync::Arc;
@@ -386,8 +386,8 @@ impl<'a> ContainerScan<'a> {
     }
 
     /// Gives up the archive entry `name`, whose payload opened and then
-    /// failed to decode with `error`, as an `archive-entry` part holding
-    /// content of the classes its role holds. The source image keeps the
+    /// failed to decode with `error` for `cause`, as an `archive-entry` part
+    /// holding content of the classes its role holds. The source image keeps the
     /// entry's stored bytes, so the part keeps their digest. `None` when the
     /// scan did not open the entry: the scan gave that entry up itself.
     ///
@@ -399,6 +399,7 @@ impl<'a> ContainerScan<'a> {
         &self,
         ctx: &DecodeContext<'_>,
         name: &str,
+        cause: Cause,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
         let classes = self
@@ -406,7 +407,7 @@ impl<'a> ContainerScan<'a> {
             .iter()
             .find(|entry| entry.name == name)
             .map_or(&ArenaClass::ALL[..], |entry| held_classes(entry.role));
-        self.give_up_entry_holding(ctx, name, classes, error)
+        self.give_up_entry_holding(ctx, name, classes, cause, error)
     }
 
     /// [`Self::give_up_entry`] for a part holding content of the classes in
@@ -420,6 +421,7 @@ impl<'a> ContainerScan<'a> {
         ctx: &DecodeContext<'_>,
         name: &str,
         holds: &[ArenaClass],
+        cause: Cause,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
         if !self.has_entry(name) {
@@ -442,7 +444,7 @@ impl<'a> ContainerScan<'a> {
         if let Some(stream) = &self.stream {
             part = part.in_stream(stream.clone());
         }
-        ctx.give_up_part(part, error).map(Some)
+        ctx.give_up_part(part, cause, error).map(Some)
     }
 
     /// The stream name of the archive entry `name`: the entry path, inside
@@ -459,9 +461,9 @@ impl<'a> ContainerScan<'a> {
         StreamName::try_from(path).map_err(CodecError::malformed)
     }
 
-    /// Gives up bytes `span` of the opened archive entry `entry` as a part
-    /// of `kind` in the entry's stream, holding content of the classes in
-    /// `holds`. The inflated entry bytes are retained in no other record, so
+    /// Gives up bytes `span` of the opened archive entry `entry` for the
+    /// cause and error of `why` as a part of `kind` in the entry's stream, holding content of
+    /// the classes in `holds`. The inflated entry bytes are retained in no other record, so
     /// the part keeps them.
     ///
     /// # Errors
@@ -476,14 +478,14 @@ impl<'a> ContainerScan<'a> {
         kind: &'static str,
         span: std::ops::Range<usize>,
         holds: impl IntoIterator<Item = ArenaClass>,
-        error: CodecError,
+        (cause, error): (Cause, CodecError),
     ) -> Result<GivenUpPart, CodecError> {
         let bytes = self.entry_bytes(entry)?.get(span.clone()).ok_or_else(|| {
             CodecError::malformed(format_args!("F3D {kind} part leaves the entry {entry}"))
         })?;
         let part = Part::at("f3d", kind, u64_from_index(span.start), bytes, holds)
             .in_stream(self.entry_stream(entry)?);
-        ctx.give_up_part(part, error)
+        ctx.give_up_part(part, cause, error)
     }
 
     pub(crate) fn member_view<'b>(
@@ -660,9 +662,8 @@ impl<'a> ContainerScan<'a> {
         if !self.is_design_asset_entry(entry, expected_role) {
             return false;
         }
-        self.asset_segment(&entry.name).is_some_and(|segment| {
-            segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
-        })
+        self.asset_segment(&entry.name)
+            .is_some_and(is_design_segment)
     }
 
     /// Whether `entry` is a `BulkStream.dat` in an ACT segment of the
@@ -697,7 +698,7 @@ pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    scan_in(ctx, root, None)
+    scan_in(ctx, root, None, false)
 }
 
 /// [`scan`] of the F3Z member stored at `path`, whose given-up parts are
@@ -709,13 +710,26 @@ pub(crate) fn scan_member<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     let stream = StreamName::try_from(path.to_owned())
         .map_err(|_| CodecError::malformed("F3Z member path is empty"))?;
-    scan_in(ctx, root, Some(&stream))
+    scan_in(ctx, root, Some(&stream), false)
+}
+
+/// Read only the container members needed by the configuration decoder.
+pub(crate) fn scan_configurations<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
+    scan_in(ctx, root, None, true)
+}
+
+fn is_design_segment(segment: &str) -> bool {
+    segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
 }
 
 fn scan_in<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
     stream: Option<&StreamName>,
+    configurations_only: bool,
 ) -> Result<ContainerScan<'a>, CodecError> {
     #[cfg(test)]
     crate::test_support::scan_counts::record(root);
@@ -733,11 +747,18 @@ fn scan_in<'a>(
     let mut stored_ranges = BTreeMap::new();
 
     for file in archive.entries() {
+        let role = classify(&file.name);
+        if configurations_only
+            && !matches!(role, ContainerRole::Manifest | ContainerRole::DesignConfig)
+            && !(matches!(role, ContainerRole::Bulkstream | ContainerRole::Metastream)
+                && file.name.rsplit('/').nth(1).is_some_and(is_design_segment))
+        {
+            continue;
+        }
         let name = file.name.clone();
         if let Ok(range) = file.stored_range() {
             stored_ranges.insert(name.clone(), range);
         }
-        let role = classify(&name);
         let compression = file.compression;
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
@@ -809,7 +830,8 @@ fn scan_in<'a>(
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
-                let part = ctx.give_up_part(part, error)?;
+                let cause = Cause::Unreadable.of(&error);
+                let part = ctx.give_up_part(part, cause, error)?;
                 // Two directory entries can name one stored span.
                 if given_up
                     .iter()

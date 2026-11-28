@@ -8,6 +8,7 @@ mod attribute_colors;
 mod body_reference_tails;
 mod cc0_controller;
 mod configuration_parameters;
+pub(crate) mod configuration_wire;
 mod design_containment;
 mod design_parameters;
 mod design_v11;
@@ -31,6 +32,7 @@ mod fusion_surface_loft;
 mod fusion_surface_revolve;
 mod fusion_tessellate;
 mod fusion_timeline_state;
+mod fusion_two_sided_extrude;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -264,7 +266,12 @@ fn a_mistagged_delta_state_header_gives_up_the_history_partition() {
     let decoded = decode(bytes.clone());
     let head =
         "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=";
-    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
     assert!(f3d_native(decoded.ir()).asm_histories.is_empty());
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     crate::test_support::assert_pinned_refusal(bytes, head);
