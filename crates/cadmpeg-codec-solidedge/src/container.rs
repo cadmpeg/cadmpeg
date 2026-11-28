@@ -2,15 +2,17 @@
 //! Solid Edge compound directory access.
 
 use cadmpeg_container::compound::{
-    CompoundClassId, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot,
+    CompoundClassId, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot, CompoundStreamEntry,
 };
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{ContainerKind, ContainerSummary};
 
 use crate::dialect;
+use crate::family;
 use crate::loss::SolidEdgeLossCode;
 
 /// Root entries that identify a Solid Edge document.
@@ -86,6 +88,109 @@ pub(crate) fn open<'a>(
         ));
     }
     Ok(snapshot)
+}
+
+/// The storage whose streams make up the document: the root of an ordinary
+/// document, the active member storage of a family of assemblies.
+pub(crate) struct DocStreams<'s, 'a> {
+    snapshot: &'s CompoundSnapshot<'a>,
+    /// The storage path with its trailing separator; empty at the root. `None`
+    /// when the family names no member storage.
+    prefix: Option<String>,
+    /// The occurrences the active family member lists and excludes; `None`
+    /// places every occurrence of the storage and excludes none.
+    member: Option<family::Selection>,
+}
+
+impl<'s, 'a> DocStreams<'s, 'a> {
+    /// Select the member of `snapshot`. A family document with no readable
+    /// active member adds `family.member-unread` and states no streams.
+    pub(crate) fn select(
+        ctx: &DecodeContext<'a>,
+        snapshot: &'s CompoundSnapshot<'a>,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<Self, CodecError> {
+        if snapshot.stream(SITES_LIST).is_some() {
+            return Ok(Self {
+                snapshot,
+                prefix: Some(String::new()),
+                member: None,
+            });
+        }
+        let name = match snapshot.stream(FAMILY_INFO) {
+            Some(entry) => family::active_name(snapshot.open(ctx, entry)?.window()),
+            None => None,
+        };
+        let prefix = name
+            .clone()
+            .filter(|name| !name.contains('/'))
+            .map(|name| format!("{name}/"))
+            .filter(|prefix| {
+                snapshot.stream(&format!("{prefix}{SITES_LIST}")).is_some()
+                    && snapshot.stream(&format!("{prefix}{PSM_ROOTS}")).is_some()
+            });
+        if prefix.is_none() {
+            losses.push(SolidEdgeLossCode::FamilyMemberUnread.note(
+                "the family of assemblies names no member storage that holds the document \
+                 streams; no member is read",
+            ));
+        }
+        let mut member = None;
+        if let (Some(name), Some(_)) = (&name, &prefix) {
+            let table = match snapshot.stream(family::MEMBERS_PATH) {
+                Some(entry) => family::select(snapshot.open(ctx, entry)?.window(), name),
+                None => None,
+            };
+            match &table {
+                None => losses.push(SolidEdgeLossCode::FamilyMemberUnread.note(
+                    "the member table has no readable record for the active member; every \
+                     occurrence of the member storage is kept",
+                )),
+                Some(selection) if selection.unresolved => {
+                    losses.push(SolidEdgeLossCode::FamilyMemberUnread.note(
+                        "the member table states that a member other than the named one is \
+                         active and does not state which; the named member is read",
+                    ));
+                }
+                Some(_) => {}
+            }
+            member = table;
+        }
+        Ok(Self {
+            snapshot,
+            prefix,
+            member,
+        })
+    }
+
+    /// Whether the active member places the occurrence object `id`.
+    pub(crate) fn lists(&self, id: u32) -> bool {
+        self.member
+            .as_ref()
+            .is_none_or(|member| member.listed.contains(&id))
+    }
+
+    /// Whether the active member excludes the occurrence object `id`.
+    pub(crate) fn excludes(&self, id: u32) -> bool {
+        self.member
+            .as_ref()
+            .is_some_and(|member| member.excluded.contains(&id))
+    }
+
+    /// The stream `path` of the member.
+    pub(crate) fn stream(&self, path: &str) -> Option<&'s CompoundStreamEntry> {
+        let prefix = self.prefix.as_deref()?;
+        self.snapshot.stream(&format!("{prefix}{path}"))
+    }
+
+    /// Open a stream of the snapshot.
+    pub(crate) fn open(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+    ) -> Result<View<'a>, CodecError> {
+        self.snapshot.open(ctx, entry)
+    }
 }
 
 pub(crate) fn summary(
