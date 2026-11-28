@@ -5366,6 +5366,42 @@ source = "spec"
 anchor = "offset 84 stores the marked body-group reference"
 
 [[record]]
+name = "scale_axis_owner_modern_head"
+kind = "byte"
+section = "3.1"
+anchor = "A modern owner-backed per-axis Scale stores zero bytes at offsets 11 through 19"
+size = 33
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A modern owner-backed per-axis Scale stores zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "leading_zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "zero bytes at offsets 11 through 19, u32 factor kind `1` at offset 20"
+
+[[record.field]]
+name = "factor_kind"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 factor kind `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "trailing_zero_run"
+offset = 24
+type = "bytes[9]"
+source = "spec"
+anchor = "zero bytes at offsets 24 through 32"
+
+[[record]]
 name = "scale_legacy_uniform_tail"
 kind = "byte"
 section = "3.1"

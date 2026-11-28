@@ -1665,6 +1665,17 @@ Spec §3.1 · layout: byte offsets · size: 95 B
 | 80 | 4 | `group_count` | `u32` | little | spec | Offset 80 stores u32 one · value `1` |
 | 84 | 11 | `group_reference` | `bytes[11]` | little | spec | offset 84 stores the marked body-group reference |
 
+## `scale_axis_owner_modern_head`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A modern owner-backed per-axis Scale stores zero bytes at offsets 11 through 19 |
+| 11 | 9 | `leading_zero_run` | `bytes[9]` | little | spec | zero bytes at offsets 11 through 19, u32 factor kind `1` at offset 20 |
+| 20 | 4 | `factor_kind` | `u32` | little | spec | u32 factor kind `1` at offset 20 · value `1` |
+| 24 | 9 | `trailing_zero_run` | `bytes[9]` | little | spec | zero bytes at offsets 24 through 32 |
+
 ## `scale_legacy_uniform_tail`
 
 Spec §3.1 · layout: byte offsets · size: 78 B

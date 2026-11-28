@@ -1489,6 +1489,22 @@ pub(crate) mod scale_axis_owner_prefix {
     pub(crate) const GROUP_REFERENCE: usize = 84;
 }
 
+/// Byte offsets for the `scale_axis_owner_modern_head` record.
+///
+/// Spec §3.1. Record length 33 B.
+pub(crate) mod scale_axis_owner_modern_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `leading_zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const LEADING_ZERO_RUN: usize = 11;
+    /// Offset of `factor_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR_KIND: usize = 20;
+    /// Stated value of `factor_kind` (`u32`). Spec §3.1.
+    pub(crate) const FACTOR_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `trailing_zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const TRAILING_ZERO_RUN: usize = 24;
+}
+
 /// Byte offsets for the `scale_legacy_uniform_tail` record.
 ///
 /// Spec §3.1. Record length 78 B.

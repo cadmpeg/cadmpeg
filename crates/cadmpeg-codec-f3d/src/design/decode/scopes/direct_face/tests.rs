@@ -222,9 +222,23 @@ fn counted_group_scale_projects_the_ordered_groups() {
 
 #[test]
 fn axis_owner_scale_resolves_only_its_linked_positive_axis_factors() {
+    for modern in [false, true] {
+        axis_owner_scale_form(modern);
+    }
+}
+
+/// The owner-backed per-axis form with its legacy head, or with the modern head that moves the later fields four bytes.
+fn axis_owner_scale_form(modern: bool) {
     const STREAM: &str = "f3d:synthetic/BulkStream.dat";
     let mut prefix = legacy_uniform_prefix()[..40].to_vec();
     prefix[21..29].fill(0);
+    if modern {
+        prefix = legacy_uniform_prefix()[..11].to_vec();
+        prefix.extend_from_slice(&[0; 9]);
+        prefix.extend_from_slice(&1_u32.to_le_bytes());
+        prefix.extend_from_slice(&[0; 9]);
+        append_marked_reference(&mut prefix, 105);
+    }
     prefix.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0]);
     let axis_records = [201_u32, 205, 209];
     for record in axis_records {
@@ -292,6 +306,24 @@ fn axis_owner_scale_resolves_only_its_linked_positive_axis_factors() {
         offsets,
         std::array::from_fn(|i| owners[i].evaluated_value_offset())
     );
+    if modern {
+        for (at, value) in [(20, 2), (20, 0), (24, 1), (32, 1), (11, 1)] {
+            let mut invalid = bytes.clone();
+            invalid[at] = value;
+            assert!(
+                exact_axis_owner_scale(
+                    &invalid,
+                    &records,
+                    &scope,
+                    &HashMap::new(),
+                    &parameters,
+                    &owners
+                )
+                .is_none(),
+                "{at}"
+            );
+        }
+    }
     assert!(decode(&parameters, &owners[..2]).is_none());
     owners.push(owners[1].clone());
     assert!(decode(&parameters, &owners).is_none());
