@@ -1812,8 +1812,11 @@ fn decode_container<'a>(
                 ir,
                 &feature_inventory,
                 &sketch_inventory,
-                &design_inventory.parameters,
-                &design_inventory.units,
+                crate::design_v11::ParameterRecords {
+                    parameters: &design_inventory.parameters,
+                    units: &design_inventory.units,
+                    tables: &design_inventory.parameter_tables,
+                },
                 losses,
             )
         })?;

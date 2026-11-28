@@ -9881,6 +9881,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DatumAxis"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9917,6 +9918,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DatumPlane"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9953,6 +9955,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Draft"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -9989,6 +9992,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 4,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10025,6 +10029,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 5,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10061,6 +10066,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10097,6 +10103,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10133,6 +10140,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 12,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10169,6 +10177,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 14,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10205,6 +10214,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 15,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10241,6 +10251,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 30,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10277,6 +10288,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 32,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10313,6 +10325,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Hole"
           },
+          "position": 34,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10349,6 +10362,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#LinearPattern"
           },
+          "position": 6,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10385,6 +10399,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#LinearPattern"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10421,6 +10436,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#PatternBase"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10457,6 +10473,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Revolution"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -10493,6 +10510,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Thickness"
           },
+          "position": 11,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
