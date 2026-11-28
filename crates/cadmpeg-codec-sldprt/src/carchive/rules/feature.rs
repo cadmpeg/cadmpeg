@@ -6,6 +6,7 @@
 use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
 use crate::layout::axis_tail_version_15000_prefix as tail_prefix;
+use crate::layout::cut_list_folder_tail as cut_tail;
 use crate::layout::revolution_line_reference_record_tail as record_tail;
 use crate::layout::revolution_turn_block as turn;
 
@@ -3296,11 +3297,11 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
     let n = feature(r, "moFtrFolder_c")?;
     r.expect_zeros(12, "cut list 12 zero")?;
     let bodies = r.ptr(Some(SUOBLIST))?;
-    let mut tail = vec![1, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 2, 0, 0, 0];
-    tail.extend_from_slice(&[0; 23]);
-    tail.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
     let mut items = Vec::new();
-    while !r.eq(r.p, &tail) {
+    loop {
+        if at_cut_list_tail(r) {
+            break;
+        }
         let mut k = None;
         for q in r.p..r.p + 80 {
             if isclass(r, q, &["moCompFeature_c", "moCompSolidBody_c"])? {
@@ -3318,7 +3319,7 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
         r.p = k;
         items.push(r.ptr(None)?);
     }
-    r.skip(tail.len());
+    r.skip(cut_tail::LEN);
     Ok(V::map([
         ("n", n),
         ("bodies", V::from(bodies)),
@@ -3327,6 +3328,26 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// `moCutListSortOptions_c`.
+/// Whether the bytes at the reader's position are a cut-list folder's tail.
+fn at_cut_list_tail(r: &Reader<'_>) -> bool {
+    let at = |offset| r.p + offset;
+    r.eq(at(cut_tail::ONE), &cut_tail::ONE_VALUE.to_le_bytes())
+        && r.eq(
+            at(cut_tail::MINUS_ONE),
+            &cut_tail::MINUS_ONE_VALUE.to_le_bytes(),
+        )
+        && matches!(r.pu32(at(cut_tail::WORD)), Ok(2 | 3))
+        && r.eq(at(cut_tail::ZEROS), &cut_tail::ZEROS_VALUE)
+        && r.eq(
+            at(cut_tail::ONE_AFTER_ZEROS),
+            &cut_tail::ONE_AFTER_ZEROS_VALUE.to_le_bytes(),
+        )
+        && r.eq(
+            at(cut_tail::ONE_LAST),
+            &cut_tail::ONE_LAST_VALUE.to_le_bytes(),
+        )
+}
+
 pub(crate) fn cutlistsort(reader: &mut Reader<'_>) -> Res<V> {
     let first = reader.u32()?;
     let second = reader.u16()?;
