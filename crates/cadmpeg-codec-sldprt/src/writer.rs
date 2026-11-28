@@ -29,6 +29,7 @@ pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationTarget;
@@ -2869,7 +2870,7 @@ fn patch_active_configuration_xml(
 /// `text`, parsed as `document`, with `name` as its active configuration
 /// ([`patch_active_configuration_xml`]).
 fn active_configuration_patched(
-    document: &roxmltree::Document<'_>,
+    document: &XmlDocument<'_>,
     text: &str,
     name: &str,
 ) -> Result<Option<Vec<u8>>, &'static str> {
@@ -2893,7 +2894,7 @@ fn active_configuration_patched(
         .attributes()
         .find(|attribute| attribute.name() == "swConfigurationName")
         .ok_or("the model record names no active configuration")?;
-    let range = attribute.range();
+    let range = document.source_range(attribute.range());
     let mut output = String::with_capacity(text.len() + name.len());
     output.push_str(&text[..range.start]);
     output.push_str("swConfigurationName=\"");
