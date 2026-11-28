@@ -5,6 +5,7 @@ use std::ops::Range;
 use super::dtd::Prepared;
 
 type Tree<'a> = roxmltree::Document<'a>;
+type TreeNode<'tree, 'input> = <roxmltree::Descendants<'tree, 'input> as Iterator>::Item;
 
 self_cell::self_cell!(
     struct Recovered {
@@ -86,7 +87,7 @@ impl<'input> XmlDocument<'input> {
     }
 
     /// Returns the document element.
-    pub fn root_element(&self) -> roxmltree::Node<'_, '_> {
+    pub fn root_element(&self) -> TreeNode<'_, '_> {
         self.tree().root_element()
     }
 
