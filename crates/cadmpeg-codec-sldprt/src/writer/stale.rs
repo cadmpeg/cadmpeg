@@ -208,3 +208,6 @@ pub(super) fn mark_sections(
     }
     Ok(marked)
 }
+
+#[cfg(test)]
+mod tests;
