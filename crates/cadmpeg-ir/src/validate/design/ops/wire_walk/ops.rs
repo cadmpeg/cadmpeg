@@ -2363,6 +2363,26 @@ impl WireWalk for SheetMetal {
 impl WireWalk for SheetMetalKind {
     fn walk_wire<'a>(&'a self, owner: &'a str, out: &mut WireFound<'a>) {
         match self {
+            Self::AttachedPlate {
+                profile,
+                thickness: _,
+                side: _,
+                attachment,
+            } => {
+                profile.walk_wire(owner, out);
+                attachment.walk_wire(owner, out);
+            }
+            Self::AttachedBend {
+                plate: _,
+                attachment,
+                inside_radius: _,
+                relief: _,
+                transition_form: _,
+                transition_radius: _,
+            } => {
+                attachment.walk_wire(owner, out);
+            }
+            Self::UnchangedCorner { bend: _ } => {}
             Self::ApplyRule { rule: _, bodies } => {
                 bodies.walk_wire(owner, out);
             }

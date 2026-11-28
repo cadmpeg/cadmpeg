@@ -408,7 +408,7 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Controlled positive and negative taper settings, with profile and result cross-sections, for profile-plane and from-plane origins and each extent form.
 
-### DE-28. Plate-and-bend face plate without relief, transition, corner, and plate-control records
+### DE-32. Plate-and-bend face plate without relief, transition, corner, and plate-control records
 
 **Question.** What relief, transition, and corner values does a 17-property attached plate state when its slots 9, 10, 11, and 13 are null and slot 5 holds the joined-edge collection? What thickness side does a plate-side enumeration value 1 select?
 
