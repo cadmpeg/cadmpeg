@@ -95,7 +95,7 @@ fn messages(losses: &[LossNote], code: &str) -> Vec<String> {
 }
 
 fn set_depth(ir: &mut CadIr, id: &ParameterId) {
-    ir.edit()
+    ir.edit(&cadmpeg_ir::report::strictness::Strictness::default())
         .expect("editor")
         .set_dimension(id, millimetres(20.0))
         .expect("edit");
