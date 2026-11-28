@@ -1,0 +1,333 @@
+# SPDX-License-Identifier: Apache-2.0
+schema = 1
+format = "solidedge"
+spec = "docs/formats/solidedge.md"
+endianness = "little"
+
+[[record]]
+name = "property_set_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/settings.rs"
+section = "2.1"
+anchor = "A property set starts with a 16-byte header."
+size = 16
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u32"
+value = 0
+source = "spec"
+anchor = "| 0 | `u32` zero word | `0` |"
+
+[[record.field]]
+name = "tag"
+offset = 4
+type = "u16"
+value = 0x5151
+source = "spec"
+anchor = "| 4 | `u16` set tag | `0x5151` |"
+
+[[record.field]]
+name = "form"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| 6 | `u16` set form | |"
+
+[[record.field]]
+name = "index"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` set index | |"
+
+[[record.field]]
+name = "count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | `u32` record count `N` | |"
+
+[[record]]
+name = "space_map_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.1"
+anchor = "A space map starts with a 12-byte header."
+size = 12
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[4]"
+value = "sseg"
+source = "spec"
+anchor = "| 0 | ASCII `sseg` |"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| 4 | `u16` item count `A` |"
+
+[[record.field]]
+name = "bodyless_count"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| 6 | `u16` count of items without a body |"
+
+[[record.field]]
+name = "next_serial"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "| 8 | `u16` next free serial |"
+
+[[record.field]]
+name = "free_count"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "| 10 | `u16` free-list count `F` |"
+
+[[record]]
+name = "space_map_item"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.1"
+anchor = "An item is a `u16`"
+size = 18
+
+[[record.field]]
+name = "length"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "| 0 | `u16` length `L` |"
+
+[[record.field]]
+name = "object_offset"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "| 2 | `u32` object offset in the cluster stream |"
+
+[[record.field]]
+name = "object_id"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "| 6 | `u32` object identifier |"
+
+[[record.field]]
+name = "form_word"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "| 10 | `u16` form word; bits 6 and above are the object's form |"
+
+[[record.field]]
+name = "word_a"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "| 12 | `u16` |"
+
+[[record.field]]
+name = "word_b"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "| 14 | `u16` |"
+
+[[record.field]]
+name = "flags"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "| 16 | `u16` flags; bit `0x2000` selects the class rule in §3.3 |"
+
+[[record]]
+name = "cluster_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.1"
+anchor = "A cluster stream starts with the `u32` value `0x6C90F544` and a `u32` object"
+size = 8
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "u32"
+value = 0x6C90F544
+source = "spec"
+anchor = "A cluster stream starts with the `u32` value `0x6C90F544`"
+
+[[record.field]]
+name = "object_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a `u32` object"
+
+[[record]]
+name = "object_frame"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.1"
+anchor = "An object starts with an 8-byte frame:"
+size = 8
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u16"
+value = 0x5151
+source = "spec"
+anchor = "| 0 | `u16` `0x5151` |"
+
+[[record.field]]
+name = "form"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "| 2 | `u16` form, equal to the item's form word shifted right by 6 |"
+
+[[record.field]]
+name = "object_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | `u32` object identifier, equal to the item's identifier |"
+
+[[record]]
+name = "type_table_section_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.2"
+anchor = "Each section has a 20-byte"
+size = 20
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[4]"
+value = "ePyT"
+source = "spec"
+anchor = "header that starts with ASCII `ePyT`."
+
+[[record.gap]]
+offset = 4
+size = 6
+note = "§3.2 states no field between the magic and the count."
+
+[[record.field]]
+name = "count"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "The `u16` values at header offsets 10"
+
+[[record.gap]]
+offset = 12
+size = 2
+note = "§3.2 states no field between the two counts."
+
+[[record.field]]
+name = "count_repeat"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "and 14 are equal and give the section's record count."
+
+[[record.gap]]
+offset = 16
+size = 4
+note = "§3.2 states no field after the second count."
+
+[[record]]
+name = "type_declaration"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.2"
+anchor = "A declaration has this layout:"
+size = 30
+
+[[record.field]]
+name = "class_guid"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "| 0 | 16-byte class GUID |"
+
+[[record.field]]
+name = "index"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | `u32` declaration index"
+
+[[record.field]]
+name = "marker_one"
+offset = 20
+type = "u16"
+value = 1
+source = "spec"
+anchor = "| 20 | `u16` `1` |"
+
+[[record.field]]
+name = "marker_absent"
+offset = 22
+type = "u16"
+value = 0xFFFF
+source = "spec"
+anchor = "| 22 | `u16` `0xFFFF` |"
+
+[[record.field]]
+name = "metadata"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "| 24 | `u32` metadata word |"
+
+[[record.field]]
+name = "name_len"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "| 28 | `u16` class-name byte count `n` |"
+
+[[record]]
+name = "type_compact_record"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/psm.rs"
+section = "3.2"
+anchor = "It holds `K` compact records of 26 bytes,"
+size = 26
+
+[[record.field]]
+name = "guid"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "a 16-byte GUID and ten bytes"
+
+[[record.gap]]
+offset = 16
+size = 2
+note = "§3.2 states no field before the value."
+
+[[record.field]]
+name = "link"
+offset = 18
+type = "u16"
+source = "spec"
+anchor = "`u16` value `V` at record offset 18"
+
+[[record.gap]]
+offset = 20
+size = 6
+note = "§3.2 states no field after the value."

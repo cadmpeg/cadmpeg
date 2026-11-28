@@ -10,11 +10,15 @@ mod chart;
 mod container;
 mod decode;
 mod dialect;
+mod features;
 mod geometry;
 mod intersection;
 mod isocurve;
+mod layout;
 mod loss;
 mod partition;
+mod psm;
+mod settings;
 mod sp_curve;
 mod trace;
 
