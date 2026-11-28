@@ -120,7 +120,7 @@ class RustGate(unittest.TestCase):
                     ["cargo fmt --all --check", "cargo clippy --workspace --all-targets"],
                 )
 
-    def test_fuzz_source_uses_its_manifest(self):
+    def test_fuzz_source_does_not_select_workspace_cargo(self):
         self.assertEqual(
             self.cargo("crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs"),
             [],
@@ -140,7 +140,7 @@ class RustGate(unittest.TestCase):
             [],
         )
 
-    def test_fuzz_and_workspace_sources_run_both_gates(self):
+    def test_fuzz_and_workspace_sources_keep_workspace_gate_scoped(self):
         self.assertEqual(
             self.cargo("crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs\n"
                        "crates/cadmpeg-codec-step/src/reader.rs", "cadmpeg-codec-step"),
