@@ -441,7 +441,7 @@ fn resolve_support_surface_and_chart<'a>(
                         });
                     }
                     let decoded =
-                        crate::families::a5a8::records::a5_owned_surface_from_record_in_sources(
+                        crate::families::a5a8::records::a5_surface_from_record_in_sources(
                             env.data,
                             env.sources,
                             support_rec,

@@ -1804,9 +1804,10 @@ pub(in crate::families) fn a5_owned_surfaces_from_records(
 const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
 const IDENTITY_AFFINE_SCALE_TOLERANCE: f64 = 1.0e-12;
 
-/// Decode one owned `A_34` NURBS surface record, including records whose
-/// payload spans multiple physical extents in `sources`.
-pub(in crate::families) fn a5_owned_surface_from_record_in_sources(
+/// Decode one `A_34` NURBS surface record (preferring standard framing and
+/// falling back to owned framing), including records whose payload spans
+/// multiple physical extents in `sources`.
+pub(in crate::families) fn a5_surface_from_record_in_sources(
     data: &[u8],
     sources: &[Vec<crate::wire::records::SourceExtent>],
     record: &ConsolidatedRecord,
@@ -1819,16 +1820,15 @@ pub(in crate::families) fn a5_owned_surface_from_record_in_sources(
         return Ok(None);
     };
     let frame = ConsolidatedFrame {
-        pos: 0,
+        pos: record.byte_offset(),
         payload: 0,
         end: payload.len(),
         header_token: record.header_token(),
     };
-    let Some(mut surface) = a5_surface(&payload, frame, refusal, true)? else {
-        return Ok(None);
-    };
-    surface.pos = record.byte_offset();
-    Ok(Some(surface))
+    if let Some(surface) = a5_surface(&payload, frame, refusal, false)? {
+        return Ok(Some(surface));
+    }
+    a5_surface(&payload, frame, refusal, true)
 }
 
 fn a5_surfaces_in_scope(
@@ -1956,24 +1956,23 @@ fn a5_surface(
         v_distinct[0],
         v_distinct[v_distinct.len() - 1],
     ];
-    let u_last_span = u_distinct[u_distinct.len() - 1] - u_distinct[u_distinct.len() - 2];
-    let v_last_span = v_distinct[v_distinct.len() - 1] - v_distinct[v_distinct.len() - 2];
-    let u_scale = 1.0_f64
-        .max(u_distinct[u_distinct.len() - 1].abs())
-        .max(u_distinct[u_distinct.len() - 2].abs());
-    let v_scale = 1.0_f64
-        .max(v_distinct[v_distinct.len() - 1].abs())
-        .max(v_distinct[v_distinct.len() - 2].abs());
-    let matches_terminal_span = parameters[0] == 0.0
-        && (parameters[1] - u_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * u_scale
-        && parameters[2] == 0.0
-        && (parameters[3] - v_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * v_scale;
-    let identity_affine = (parameters[4] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
-        && parameters[5] == 0.0
-        && (parameters[6] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
-        && parameters[7] == 0.0;
-    let identity_chart =
-        (parameters[..4] == full_limits || matches_terminal_span) && identity_affine;
+    let identity_chart = {
+        let axis_matches_knot_span = |distinct: &[f64], low: f64, high: f64| -> bool {
+            low == 0.0
+                && distinct.windows(2).any(|w| {
+                    let span = w[1] - w[0];
+                    let scale = 1.0_f64.max(w[0].abs()).max(w[1].abs());
+                    (high - span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * scale
+                })
+        };
+        let matches_knot_span = axis_matches_knot_span(&u_distinct, parameters[0], parameters[1])
+            && axis_matches_knot_span(&v_distinct, parameters[2], parameters[3]);
+        let identity_affine = (parameters[4] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
+            && parameters[5] == 0.0
+            && (parameters[6] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
+            && parameters[7] == 0.0;
+        (parameters[..4] == full_limits || matches_knot_span) && identity_affine
+    };
     if !tail.fixed_suffix && !identity_chart {
         return Ok(None);
     }

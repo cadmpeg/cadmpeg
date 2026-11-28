@@ -372,19 +372,16 @@ impl<'a> CarrierResolver<'a> {
                 if let Some(cached) = self.a5_multi_extent_cache.borrow().get(&pos) {
                     return cached.clone().map(SolvedSurfaceGeometry::Nurbs);
                 }
-                let decoded =
-                    crate::families::a5a8::records::a5_owned_surface_from_record_in_sources(
-                        self.data,
-                        self.sources,
-                        carrier,
-                        refusal,
-                    )
-                    .ok()
-                    .flatten()
-                    .map(|surface| surface.geometry)
-                    .or_else(|| {
-                        decode_u32_nurbs_surface(self.data, self.sources, carrier, refusal)
-                    });
+                let decoded = crate::families::a5a8::records::a5_surface_from_record_in_sources(
+                    self.data,
+                    self.sources,
+                    carrier,
+                    refusal,
+                )
+                .ok()
+                .flatten()
+                .map(|surface| surface.geometry)
+                .or_else(|| decode_u32_nurbs_surface(self.data, self.sources, carrier, refusal));
                 self.a5_multi_extent_cache
                     .borrow_mut()
                     .insert(pos, decoded.clone());
