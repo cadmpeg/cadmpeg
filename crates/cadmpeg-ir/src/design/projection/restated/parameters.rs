@@ -467,10 +467,11 @@ fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool 
                 return negated_literal_carried(operand, &neutral.0);
             }
             let literal = literal(&neutral.0);
-            if let Some(number) = number_text {
-                return matches!((literal, number.trim().parse::<f64>()),
-                    (Some(Literal::Number(stated)), Ok(number))
-                        if number.is_finite() && same_number(stated, number));
+            if let (Some(number), Some(Literal::Number(stated))) = (number_text, &literal) {
+                return number
+                    .trim()
+                    .parse::<f64>()
+                    .is_ok_and(|number| number.is_finite() && same_number(*stated, number));
             }
             match (literal, literal_number(text)) {
                 (Some(Literal::Number(stated)), Some(number)) => same_number(stated, number),

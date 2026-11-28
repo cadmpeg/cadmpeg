@@ -249,6 +249,27 @@ fn a_display_modifier_is_carried_by_the_matching_typed_field() {
 }
 
 #[test]
+fn a_diameter_display_can_accompany_a_neutral_equation() {
+    let mut model = model("<MOD-DIAM>12");
+    model.display = Some(super::ModelDisplay::Diameter);
+    let mut design = design(ParameterDefinition::Unset);
+    design.display = Some(super::DimensionDisplay::Diameter);
+    for text in ["$0", "2 * $0"] {
+        design.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(
+            parse(text, &[width()], &[]).unwrap(),
+        )));
+        assert!(cut(&model, &design).is_empty());
+    }
+    design.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(
+        parse("12[mm]", NO_REFS, &[]).unwrap(),
+    )));
+    assert_eq!(
+        cut(&model, &design),
+        BTreeSet::from(["dependencies", "expression"])
+    );
+}
+
+#[test]
 fn a_parenthesized_negation_carries_the_signed_literal() {
     let mut model = model("-(12 mm)");
     model.dependencies = DistinctMembers::default();
