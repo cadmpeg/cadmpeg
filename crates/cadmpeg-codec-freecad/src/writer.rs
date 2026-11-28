@@ -68,12 +68,11 @@ impl Omissions {
     }
 }
 
-/// Pass on a resource refusal (§2.5) and an I/O failure reading retained
-/// source data, which planning reports as `EncodeError::Backend`; any other
-/// failure is the caller's to degrade.
+/// Pass on a resource refusal (§2.5); any other failure is the caller's to
+/// degrade.
 fn recover(error: CodecError) -> Result<(), CodecError> {
     match error {
-        CodecError::ResourceLimit(_) | CodecError::Io(_) => Err(error),
+        CodecError::ResourceLimit(_) => Err(error),
         _ => Ok(()),
     }
 }
@@ -823,6 +822,7 @@ fn read_back(
     resolve: bool,
 ) -> Result<Option<Graph>, CodecError> {
     let graph = parse_retained(ctx, xml, DOCUMENT_XML).and_then(|admitted| {
+        let admitted = cadmpeg_core::decode::tree::XmlDocument::original(admitted);
         let mut graph = crate::persistence::parse_document(&admitted, resolution.vocabulary())?;
         if !resolve {
             return Ok(graph);

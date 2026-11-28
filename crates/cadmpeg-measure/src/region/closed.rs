@@ -40,6 +40,7 @@ use crate::report::{Classification, LoopRole, NormalReading, RegionRule};
 use crate::tolerance::{MEMBER_OFFSET_RELATIVE, NESTING_SAMPLE_RELATIVE_DEVIATION};
 
 /// Reference points one membership query tries.
+// resource-cap: MAX_MEMBERSHIP_PATHS = 4
 const MAX_MEMBERSHIP_PATHS: usize = 8;
 
 /// One ring loop that bounds the region.

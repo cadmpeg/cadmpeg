@@ -774,6 +774,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     distances: &[(u32, u32, SectionAxis, f64)],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<BTreeMap<SectionCoordinateVariable, f64>, CodecError> {
+    // resource-cap: MAX_SIGNED_BRANCHES = 4
     const MAX_SIGNED_BRANCHES: usize = 4096;
     if distances.is_empty() {
         return Ok(BTreeMap::new());

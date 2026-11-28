@@ -48,7 +48,7 @@ pub(super) fn selection<O: MemberOrder>(picks: Vec<Picked>) -> Mapping<Selection
 pub(super) fn native(id: &str, within: Option<NativeOwner>) -> Mapping<Picked> {
     let mut picked = pick(PickTarget::Native { within });
     picked.native = Some(NativeName {
-        codec: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+        codec: cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
         value: NativeNameValue::Text(NonBlankString::new(id).ok_or("a selected id is blank")?),
     });
     Ok(picked)

@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::detect::{classify, header_attributes, StreamKind};
 use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEvidence, TextEvidence};
 use crate::loss::SatLossCode;
-use crate::FORMAT;
+use crate::registry_ids::FORMAT;
 
 /// The part kind of a text stream's bytes from the point where reading
 /// stops to the end of the source.

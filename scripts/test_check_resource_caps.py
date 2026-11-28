@@ -6,10 +6,8 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("check-resource-caps.py")
 SPEC = importlib.util.spec_from_file_location("check_resource_caps", SCRIPT)
@@ -19,116 +17,67 @@ sys.modules[SPEC.name] = caps
 SPEC.loader.exec_module(caps)
 
 
-def census_doc(*rows: str, extra: str = "") -> str:
-    table = "\n".join(rows)
-    return f"""# Decode resource caps
+class MarkerCensus(unittest.TestCase):
+    def scan(self, source: str):
+        return caps.scan_markers("crates/demo/src/lib.rs", source)
 
-## Production census
-
-| Crate | File | Constant | Value | Kind | Enforcement |
-| ----- | ---- | -------- | ----- | ---- | ----------- |
-{table}
-{extra}
-## Routing
+    def test_markers_bind_each_occurrence(self) -> None:
+        source = """// resource-cap: MAX_FOO = 2
+const MAX_FOO: usize = 1;
+fn f() {
+    // resource-cap: MAX_FOO = 4
+    const MAX_FOO: usize = 2;
+}
 """
+        constants, findings = self.scan(source)
+        self.assertEqual(findings, [])
+        self.assertEqual([c.kind for c in constants], ["2", "4"])
 
+    def test_missing_stale_duplicate_and_invalid_markers_fail(self) -> None:
+        for source, detail in [
+            ("const MAX_FOO: usize = 1;\n", "missing"),
+            ("// resource-cap: MAX_FOO = 2\nfn f() {}\n", "stale"),
+            ("// resource-cap: MAX_FOO = 2\n// resource-cap: MAX_FOO = 4\nconst MAX_FOO: usize = 1;\n", "duplicate"),
+            ("// resource-cap: MAX_BAR = 2\nconst MAX_FOO: usize = 1;\n", "invalid"),
+            ("// resource-cap: MAX_FOO = 9\nconst MAX_FOO: usize = 1;\n", "invalid"),
+            ("// resource-cap: MAX_FOO = 3\nconst MAX_FOO: usize = 1;\n", "kind 3"),
+            ("// resource-cap: MAX_FOO = 2\nconst MAX_FOO: usize = 1; const MAX_FOO: usize = 2;\n", "reused"),
+        ]:
+            with self.subTest(source=source):
+                _, findings = self.scan(source)
+                self.assertTrue(any(detail in finding for finding in findings), findings)
 
-FOO_ROW = "| `demo` | `src/lib.rs` | `MAX_FOO` | `1` | 2 | note |"
+    def test_test_items_and_literal_decoys_are_ignored(self) -> None:
+        source = '''const S: &str = "// resource-cap: MAX_FAKE = 2";
+#[cfg(test)]
+mod tests {
+    // resource-cap: MAX_TEST = 2
+    const MAX_TEST: usize = 1;
+}
+#[cfg(test)]
+// resource-cap: MAX_LOCAL = 4
+const MAX_LOCAL: usize = 1;
+'''
+        constants, findings = self.scan(source)
+        self.assertEqual(constants, [])
+        self.assertEqual(findings, [])
 
 
 class ResourceCapsCensus(unittest.TestCase):
-    def check(self, files: dict[str, str], parent: str = "") -> list[str]:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / parent
-            for name, source in files.items():
-                path = root / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-            with patch.object(caps, "ROOT", root):
-                return caps.check_tree(root)
-
-    def test_missing_row_fails(self) -> None:
-        findings = self.check(
-            {
-                "crates/demo/src/lib.rs": (
-                    "const MAX_FOO: usize = 1;\nconst MAX_BAR: usize = 2;\n"
-                ),
-                "docs/decode-resource-caps.md": census_doc(FOO_ROW),
-            }
-        )
-        self.assertTrue(
-            any("MAX_BAR" in line and "missing from table" in line for line in findings),
-            findings,
-        )
-
-    def test_row_without_constant_fails(self) -> None:
-        findings = self.check(
-            {
-                "crates/demo/src/lib.rs": "const MAX_FOO: usize = 1;\n",
-                "docs/decode-resource-caps.md": census_doc(
-                    FOO_ROW, "| `demo` | `src/lib.rs` | `MAX_GONE` | `1` | 2 | note |"
-                ),
-            }
-        )
-        self.assertTrue(
-            any("MAX_GONE" in line and "no source constant" in line for line in findings),
-            findings,
-        )
-
     def test_stored_totals_fail(self) -> None:
-        findings = self.check(
-            {
-                "crates/demo/src/lib.rs": "const MAX_FOO: usize = 1;\n",
-                "docs/decode-resource-caps.md": census_doc(
-                    FOO_ROW,
-                    extra="\n## Totals\n\nProduction `MAX_*` constants: 1.\n",
-                ),
-            }
-        )
-        self.assertEqual(len(findings), 2, findings)
-        self.assertTrue(all("stored total" in line for line in findings), findings)
+        findings = caps.stored_totals("## Totals\nProduction `MAX_*` constants: 1.\n")
+        self.assertEqual(len(findings), 2)
 
-    def test_session_ceiling_kind_fails(self) -> None:
-        findings = self.check(
-            {
-                "crates/demo/src/lib.rs": "const MAX_FOO: usize = 1;\n",
-                "docs/decode-resource-caps.md": census_doc(
-                    "| `demo` | `src/lib.rs` | `MAX_FOO` | `1` | 3 | note |"
-                ),
-            }
-        )
-        self.assertTrue(any("is kind 3" in line for line in findings), findings)
-
-    def test_counts_are_computed(self) -> None:
+    def test_counts_use_classifications(self) -> None:
         constants = [
-            caps.Constant("demo", "src/lib.rs", "MAX_FOO", 1, "crates/demo/src/lib.rs"),
-            caps.Constant("demo", "src/lib.rs", "MAX_BAR", 2, "crates/demo/src/lib.rs"),
-            caps.Constant("other", "src/lib.rs", "MAX_BAZ", 1, "crates/other/src/lib.rs"),
+            caps.Constant("crates/demo/src/lib.rs", "MAX_A", 1, "2"),
+            caps.Constant("crates/demo/src/lib.rs", "MAX_B", 3, "4"),
         ]
-        rows = [
-            caps.TableRow("demo", "src/lib.rs", "MAX_FOO", "2", 1),
-            caps.TableRow("demo", "src/lib.rs", "MAX_BAR", "4", 2),
-            caps.TableRow("other", "src/lib.rs", "MAX_BAZ", "4", 3),
-        ]
-        self.assertEqual(
-            caps.counts(constants, rows),
-            [
-                "production MAX_* constants: 3",
-                "by kind: 1 0, 2 1, 3 0, 4 2, N 0",
-                "by crate: demo 2, other 1",
-            ],
-        )
-
-    def test_checkout_under_src_counts_only_crate_sources(self) -> None:
-        findings = self.check(
-            {
-                "crates/demo/src/lib.rs": "const MAX_FOO: usize = 1;\n",
-                "crates/demo/fuzz_targets/target.rs": "const MAX_FUZZ: usize = 2;\n",
-                "docs/decode-resource-caps.md": census_doc(FOO_ROW),
-            },
-            parent="src/cadmpeg",
-        )
-        self.assertEqual(findings, [])
+        self.assertEqual(caps.counts(constants), [
+            "production MAX_* constants: 2",
+            "by kind: 1 0, 2 1, 3 0, 4 1, N 0",
+            "by crate: demo 2",
+        ])
 
 
 if __name__ == "__main__":

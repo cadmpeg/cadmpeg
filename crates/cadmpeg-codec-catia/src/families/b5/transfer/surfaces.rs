@@ -18,12 +18,13 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
-use super::super::vecmath::{add, components, coordinates, cross, scale};
+use super::super::vecmath::{add, components, coordinates, scale};
 use super::{
     annotate, dot, point3, subtract, RevolutionPlan, SurfacePlan, SurfaceProcedure, TransferPlan,
 };
@@ -578,7 +579,10 @@ fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
     add(
         add(
             scale(value, angle.cos()),
-            scale(cross(axis, value), angle.sin()),
+            scale(
+                Vector3::from(axis).cross(Vector3::from(value)).into(),
+                angle.sin(),
+            ),
         ),
         scale(axis, dot(axis, value) * (1.0 - angle.cos())),
     )

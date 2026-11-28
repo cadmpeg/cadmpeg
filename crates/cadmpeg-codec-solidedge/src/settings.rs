@@ -16,6 +16,7 @@ pub(crate) const CLUSTER_STREAM: &str = "PSMcluster0";
 /// four-byte value.
 const MIN_RECORD_LEN: usize = 24;
 /// The largest name field a record stores, in bytes.
+// resource-cap: MAX_NAME_BYTES = 1
 const MAX_NAME_BYTES: usize = 512;
 
 /// The record naming the document length unit.

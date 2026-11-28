@@ -140,6 +140,7 @@ pub(super) fn operation_state_block_before_boundary(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateBlock<'_>> {
+    // resource-cap: MAX_STATE_BLOCK_TAIL_BYTES = 1
     const MAX_STATE_BLOCK_TAIL_BYTES: usize = 64 * 1024;
 
     if start >= end || end > bytes.len() {

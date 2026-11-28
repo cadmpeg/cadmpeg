@@ -42,6 +42,7 @@ const EPS_RING_AREA_MM2: f64 = 1.0e-10;
 /// Most non-construction curves of one sketch that a trimmed region is cut
 /// against. The cut work of one sketch, built once per decode, is at most the
 /// square of this number.
+// resource-cap: MAX_SKETCH_CURVES = 4
 const MAX_SKETCH_CURVES: usize = 2048;
 const UNREAD_CURVE: &str = "the sketch holds a curve that is not a line, arc, or circle";
 
