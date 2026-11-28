@@ -602,3 +602,226 @@ fn suppressed_variables_keep_their_owned_definition_and_derived_features_keep_th
         validate(result);
     }
 }
+
+#[test]
+fn accounting_distinguishes_disabled_and_unsupported_fillet_controls() {
+    for active in [false, true] {
+        let bytes = part_studio("plate-fillet", |document| {
+            let fillet = &mut document["features"][2];
+            rows(fillet).extend([
+                json!({"parameterId":"isVariable","value":active}),
+                json!({"parameterId":"isPartial","value":false}),
+                json!({"parameterId":"allowEdgeOverflow","value":false}),
+                json!({"parameterId":"smoothCorners","value":false}),
+                json!({"parameterId":"smoothTransition","value":false}),
+                json!({"parameterId":"futureFlag","value":true}),
+            ]);
+        });
+        let result = decode(&bytes);
+        assert_eq!(
+            design_operation(result.ir(), "Corner round")["kind"],
+            "fillet"
+        );
+        assert_eq!(
+            parameter_loss(&result, "isVariable", "Corner round"),
+            active
+        );
+        for key in [
+            "isPartial",
+            "allowEdgeOverflow",
+            "smoothCorners",
+            "smoothTransition",
+        ] {
+            assert!(!parameter_loss(&result, key, "Corner round"), "{key}");
+        }
+        assert!(parameter_loss(&result, "futureFlag", "Corner round"));
+        validate(result);
+    }
+}
+
+#[test]
+fn accounting_omits_disabled_extrusion_controls_and_charges_active_second_offset() {
+    for offset in [false, true] {
+        let bytes = part_studio("plate-fillet", |document| {
+            rows(&mut document["features"][1]).extend([
+                json!({"parameterId":"hasExtrudeDirection","value":false}),
+                json!({"parameterId":"hasSecondDirection","value":true}),
+                json!({"parameterId":"secondDirectionBound","value":"UP_TO_NEXT"}),
+                json!({"parameterId":"hasSecondDirectionOffset","value":offset}),
+                json!({"parameterId":"secondDirectionOffsetDistance","expression":"1 mm"}),
+            ]);
+        });
+        let result = decode(&bytes);
+        assert_eq!(design_operation(result.ir(), "Plate")["kind"], "extrude");
+        assert!(!parameter_loss(&result, "hasExtrudeDirection", "Plate"));
+        assert_eq!(
+            parameter_loss(&result, "hasSecondDirectionOffset", "Plate"),
+            offset
+        );
+        assert_eq!(
+            parameter_loss(&result, "secondDirectionOffsetDistance", "Plate"),
+            offset
+        );
+        validate(result);
+    }
+}
+
+#[test]
+fn accounting_treats_a_plain_hole_as_deliberately_unthreaded() {
+    let bytes = part_studio("hole", |document| {
+        let hole = document["features"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|feature| feature["featureType"] == "hole")
+            .unwrap();
+        rows(hole).retain(|row| {
+            row["parameterId"] != "isTapped" && row["parameterId"] != "standardTappedOrClearance"
+        });
+        rows(hole).extend([
+            json!({"parameterId":"isTapped","value":false}),
+            json!({"parameterId":"standardTappedOrClearance","value":null}),
+            json!({"parameterId":"hasClearance","value":false}),
+            json!({"parameterId":"standardBlindInLast","value":false}),
+        ]);
+    });
+    let result = decode(&bytes);
+    let operation = design_operation(result.ir(), "Bore");
+    assert_eq!(operation["kind"], "hole");
+    assert!(operation["value"]["thread"].is_null());
+    for key in [
+        "isTapped",
+        "standardTappedOrClearance",
+        "hasClearance",
+        "standardBlindInLast",
+    ] {
+        assert!(!parameter_loss(&result, key, "Bore"), "{key}");
+    }
+    validate(result);
+}
+
+#[test]
+fn accounting_reports_a_formula_that_evaluates_to_a_flat_drill_bottom() {
+    let bytes = part_studio("hole-forms", |document| {
+        let hole = &mut document["features"][5];
+        rows(hole).retain(|row| row["parameterId"] != "tipAngleStyle");
+        rows(hole).push(json!({"parameterId":"tipAngleStyle","value":"CUSTOM"}));
+        parameter(hole, "tipAngle")["expression"] = json!("90 deg + 90 deg");
+    });
+    let result = decode(&bytes);
+    let operation = design_operation(result.ir(), "Tapped");
+    assert_eq!(
+        operation["value"]["shape"]["bottom"]["kind"], "flat",
+        "{operation}"
+    );
+    assert!(parameter_loss(&result, "tipAngle", "Tapped"));
+    validate(result);
+}
+
+#[test]
+fn accounting_reports_a_suppressed_derived_selector_beyond_the_document_pin() {
+    for part in ["part-one", "part-two"] {
+        let bytes = part_studio("derived", |document| {
+            document["features"].as_array_mut().unwrap().truncate(3);
+            let derived = &mut document["features"][2];
+            derived["suppressed"] = json!(true);
+            rows(derived).retain(|row| row["parameterId"] != "newUI");
+            rows(derived).push(json!({"parameterId":"newUI","value":true}));
+            parameter(derived, "partStudio")["partQuery"] =
+                json!({"queries":[{"deterministicIds":[part]}]});
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), "Derived");
+        assert_eq!(operation["value"]["origin"]["kind"], "linked");
+        assert!(!parameter_loss(&result, "newUI", "Derived"));
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code.local_code() == "history.parameter-not-projected"
+                        && loss.message.starts_with("parameter partStudio ")
+                        && loss.message.contains("partQuery")
+                        && loss.message.ends_with("; subject: Derived")
+                })
+                .count(),
+            1
+        );
+        validate(result);
+    }
+}
+
+#[test]
+fn accounting_reports_legacy_derived_controls_beyond_a_stored_pin() {
+    let bytes = part_studio("derived", |document| {
+        document["features"].as_array_mut().unwrap().truncate(3);
+        let derived = &mut document["features"][2];
+        derived["suppressed"] = json!(true);
+        rows(derived).retain(|row| row["parameterId"] != "newUI");
+        rows(derived).push(json!({"parameterId":"newUI","value":false}));
+    });
+    let result = decode(&bytes);
+    assert_eq!(
+        design_operation(result.ir(), "Derived")["value"]["origin"]["kind"],
+        "linked"
+    );
+    assert!(parameter_loss(&result, "newUI", "Derived"));
+    validate(result);
+}
+
+#[test]
+fn accounting_reports_an_unresolved_operation_once() {
+    let bytes = part_studio("plate-fillet", |document| {
+        parameter(&mut document["features"][1], "endBound")["value"] = json!("UP_TO_VERTEX");
+    });
+    let result = decode(&bytes);
+    assert_eq!(design_operation(result.ir(), "Plate")["kind"], "unresolved");
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "history.design-operation-unresolved"
+            && loss.message.ends_with("; subject: Plate")
+    }));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "history.parameter-not-projected"
+            && loss.message.ends_with("; subject: Plate")
+    }));
+    validate(result);
+}
+
+#[test]
+fn accounting_accepts_inactive_revolve_offset_controls() {
+    let bytes = part_studio("revolve", |document| {
+        rows(&mut document["features"][1]).extend([
+            json!({"parameterId":"endBoundHasOffset","value":false}),
+            json!({"parameterId":"startBoundHasOffset","value":false}),
+            json!({"parameterId":"startOppositeDirection","value":false}),
+        ]);
+    });
+    let result = decode(&bytes);
+    assert_eq!(design_operation(result.ir(), "Ring")["kind"], "revolve");
+    for key in [
+        "endBoundHasOffset",
+        "startBoundHasOffset",
+        "startOppositeDirection",
+    ] {
+        assert!(!parameter_loss(&result, key, "Ring"), "{key}");
+    }
+    validate(result);
+}
+
+#[test]
+fn accounting_reports_active_sketch_imprinting_control() {
+    let bytes = part_studio("plate-fillet", |document| {
+        let sketch = &mut document["features"][0];
+        rows(sketch).retain(|row| row["parameterId"] != "disableImprinting");
+        rows(sketch).push(json!({"parameterId":"disableImprinting","value":true}));
+    });
+    let result = decode(&bytes);
+    assert_eq!(
+        design_operation(result.ir(), "Base sketch")["kind"],
+        "sketch"
+    );
+    assert!(parameter_loss(&result, "disableImprinting", "Base sketch"));
+    assert!(!parameter_loss(&result, "sketchPlane", "Base sketch"));
+    validate(result);
+}
