@@ -52,7 +52,7 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
         &lane,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -87,7 +87,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &lane,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -101,7 +101,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &edited,
         &[],
         &[],
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
@@ -126,7 +126,7 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let native = crate::native::SldprtNative::load_under(
+        let native = crate::test_support::native::load_under(
             decoded.ir().native.namespace("sldprt").unwrap(),
             cadmpeg_core::decode::ResourceLimits::default(),
             decoded.ir().tolerances.linear,
@@ -176,7 +176,7 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let native = crate::native::SldprtNative::load_under(
+        let native = crate::test_support::native::load_under(
             decoded.ir().native.namespace("sldprt").unwrap(),
             cadmpeg_core::decode::ResourceLimits::default(),
             decoded.ir().tolerances.linear,

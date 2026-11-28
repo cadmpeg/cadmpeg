@@ -61,6 +61,8 @@ struct DimensionedRelationCarrier<'a> {
     marker: &'a SketchInputEntity,
     geometry: DimensionedCarrierGeometry,
     construction: Option<bool>,
+    /// Whether a radial record or an explicit center gave [`Self::construction`].
+    construction_read: bool,
 }
 
 enum DimensionedCarrierGeometry {
@@ -465,6 +467,7 @@ fn dimensioned_relation_carrier<'a>(
             marker,
             geometry: DimensionedCarrierGeometry::Center(center),
             construction: Some(true),
+            construction_read: true,
         });
     }
     if operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E) {
@@ -478,6 +481,7 @@ fn dimensioned_relation_carrier<'a>(
             marker,
             geometry: DimensionedCarrierGeometry::Center(center),
             construction: Some(false),
+            construction_read: true,
         });
     }
     if matches!(
@@ -492,6 +496,7 @@ fn dimensioned_relation_carrier<'a>(
             marker,
             geometry: DimensionedCarrierGeometry::Center(center),
             construction: Some(false),
+            construction_read: true,
         });
     }
     let explicit_circular_marker = explicit.is_some_and(|marker| {
@@ -613,6 +618,7 @@ fn dimensioned_relation_carrier<'a>(
         construction =
             direct_point_dimension_center(lanes, feature, operand, radius).map(|_| false);
     }
+    let construction_read = construction.is_some();
     let construction = construction.or_else(|| {
         declared_entity_handle.then_some(false).or_else(|| {
             matches!(
@@ -635,6 +641,7 @@ fn dimensioned_relation_carrier<'a>(
         marker,
         geometry,
         construction,
+        construction_read,
     })
 }
 
@@ -954,13 +961,15 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             };
             let native_ref = carrier.marker.id().to_string();
             let geometry_ref = relation.id.clone();
-            entities.push(
-                SketchEntity::new(entity_id, sketch_id, geometry)
-                    .with_construction(construction)
-                    .with_native_ref(Some(native_ref))
-                    .with_geometry_ref(Some(geometry_ref))
-                    .with_endpoint_refs(endpoint_refs),
-            );
+            let mut entity = SketchEntity::new(entity_id, sketch_id, geometry)
+                .with_construction(construction)
+                .with_native_ref(Some(native_ref))
+                .with_geometry_ref(Some(geometry_ref))
+                .with_endpoint_refs(endpoint_refs);
+            if carrier.construction_read {
+                entity.read_construction(construction);
+            }
+            entities.push(entity);
         }
     }
 
@@ -1099,6 +1108,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                     );
                 construction = explicit_center.then_some(false);
             }
+            let construction_read = construction.is_some();
             let construction =
                 construction.or_else(|| lane.native_payload.is_empty().then_some(false));
             let Some(construction) = construction else {
@@ -1145,12 +1155,14 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             };
             let native_ref = marker.id().to_string();
             let geometry_ref = relation.id.clone();
-            entities.push(
-                SketchEntity::new(entity_id, sketch_id, geometry)
-                    .with_construction(construction)
-                    .with_native_ref(Some(native_ref))
-                    .with_geometry_ref(Some(geometry_ref)),
-            );
+            let mut entity = SketchEntity::new(entity_id, sketch_id, geometry)
+                .with_construction(construction)
+                .with_native_ref(Some(native_ref))
+                .with_geometry_ref(Some(geometry_ref));
+            if construction_read {
+                entity.read_construction(construction);
+            }
+            entities.push(entity);
         }
     }
 
@@ -1850,14 +1862,16 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 None
                             };
                             let geometry_reference = parameter.native_ref.clone();
-                            let entity = SketchEntity::new(
+                            let mut entity = SketchEntity::new(
                                 entity_id,
                                 copy_marker_circle_sketch_id(sketch_id)?,
                                 geometry,
                             )
-                            .with_construction(carrier_construction && same_carrier)
                             .with_native_ref(native_reference)
                             .with_geometry_ref(geometry_reference);
+                            if same_carrier {
+                                entity.read_construction(carrier_construction);
+                            }
                             append_marker_circle(entities, sketch, entity, true);
                         }
                         continue;
@@ -2182,7 +2196,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             copy_marker_circle_sketch_id(sketch_id)?,
                             geometry,
                         )
-                        .with_construction(record.2)
+                        .with_read_construction(record.2)
                         .with_native_ref(Some(native_reference))
                         .with_geometry_ref(geometry_reference);
                         append_marker_circle(entities, sketch, entity, !record.2);
@@ -2249,7 +2263,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 copy_marker_circle_sketch_id(sketch_id)?,
                 geometry,
             )
-            .with_construction(construction)
+            .with_read_construction(construction)
             .with_geometry_ref(geometry_reference);
             append_marker_circle(entities, sketch, entity, true);
         }

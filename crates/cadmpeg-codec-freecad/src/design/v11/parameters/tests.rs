@@ -821,7 +821,46 @@ fn a_write_names_the_expression_a_driven_constraint_leaves_out() {
         "{charge:?}"
     );
     let driving = bound_constraint("1");
-    assert!(parameter_charge(&driving, DISTANCE).is_empty());
+    let charge = parameter_charge(&driving, DISTANCE);
+    assert!(charge.is_empty(), "{charge:?}");
+}
+
+/// A sketch's constraint parameters take their index in its constraint
+/// list as their position.
+#[test]
+fn a_constraint_parameter_is_placed_by_its_index_in_the_constraint_list() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object name="Sketch" type="Sketcher::SketchObject"/></Objects>
+<ObjectData Count="1">
+<Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="2"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="5" EndX="7" EndY="5"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
+<Constrain Name="" Type="6" First="0" FirstPos="1" Second="0" SecondPos="2" Value="12" IsDriving="1"/>
+<Constrain Name="" Type="6" First="1" FirstPos="1" Second="1" SecondPos="2" Value="7" IsDriving="1"/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    for (key, position) in [(1, 0), (2, 1)] {
+        let id = format!("fcstd:design:parameter#Sketch:constraint:{key}");
+        assert_eq!(parameter(&ir, &id).position, Some(position), "{id}");
+    }
+}
+
+/// A spreadsheet orders its cell parameters by its cells, so a cell
+/// parameter states no position.
+#[test]
+fn a_spreadsheet_cell_parameter_states_no_position() {
+    let ir = decode(SHEET_BOUND);
+    let cells = ir
+        .design
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.id.as_str().contains(":cell:"))
+        .collect::<Vec<_>>();
+    assert!(!cells.is_empty(), "{:?}", ir.design.parameters);
+    for cell in cells {
+        assert_eq!(cell.position, None, "{}", cell.id.as_str());
+    }
 }
 
 #[test]

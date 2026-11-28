@@ -764,12 +764,11 @@ fn a_definition_no_column_holds_is_charged_and_the_patch_is_kept() {
 }
 
 /// A column that names a feature through its parameter scope, in a document
-/// whose parameter scopes the source-less Design stream has no form for: the
-/// generator writes the design from its neutral records and charges each
-/// configuration with the native Design stream (cadir-v11.md §3.4, W2). No
-/// table is written, so no feature state is written or read back otherwise.
+/// whose parameter scopes the source-less Design stream does not write: the
+/// table is written, and each configuration is charged with the feature state
+/// that its row reads back without (cadir-v11.md §3.4, W1).
 #[test]
-fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() {
+fn a_feature_column_beside_unwritten_parameter_scopes_is_charged_in_each_configuration() {
     use crate::test_support::configuration_table::{bool_cell, object_target};
     let plain = F3dCodec
         .decode(&mut Cursor::new(DESIGN), &DecodeOptions::default())
@@ -814,20 +813,23 @@ fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() 
         let id = configuration.id.as_str();
         assert!(
             report.losses.iter().any(|loss| {
-                loss.code.to_string() == "f3d/writer.configuration-omitted"
-                    && loss.message.contains(id)
+                loss.code.to_string() == "export/edit.dropped"
+                    && loss
+                        .message
+                        .contains(&format!("{id}: properties.suppressed:F"))
             }),
             "{id}: {:#?}",
             report.losses
         );
         assert!(
-            report.losses.iter().all(|loss| {
-                loss.code.to_string() != "export/edit.dropped" || !loss.message.contains(id)
-            }),
+            report
+                .losses
+                .iter()
+                .all(|loss| loss.code.to_string() != "f3d/writer.configuration-omitted"),
             "{id}: {:#?}",
             report.losses
         );
     }
-    assert!(f3d_native(round_trip.ir()).design_configurations.is_empty());
-    assert!(round_trip.ir().model.configurations.is_empty());
+    assert!(!f3d_native(round_trip.ir()).design_configurations.is_empty());
+    assert_eq!(round_trip.ir().model.configurations.len(), 2);
 }
