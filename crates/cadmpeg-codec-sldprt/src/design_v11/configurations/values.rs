@@ -100,6 +100,20 @@ pub(in crate::design_v11) fn project(
         if state.parameter_values.is_empty() && observed.is_empty() {
             continue;
         }
+        let repeats_base = |position: usize, inherited: Option<&ParameterValue>| {
+            let parameter = &parameters[position];
+            let base_value = base_values
+                .as_ref()
+                .and_then(|values| values[position].as_ref())
+                .or(parameter.value.as_ref());
+            state
+                .parameter_values
+                .get(&parameter.id)
+                .is_some_and(|value| base.parameter_values.get(&parameter.id) == Some(value))
+                && inherited
+                    .zip(base_value)
+                    .is_some_and(|(inherited, base)| same_value(inherited, base))
+        };
         let mut effective = vec![None; parameters.len()];
         let mut unread = Vec::new();
         for (position, ordered) in graph
@@ -113,10 +127,10 @@ pub(in crate::design_v11) fn project(
                 .then(|| graph.inherited(position, &effective))
                 .flatten();
             let Some(value) = sample(parameter, state, observed) else {
-                effective[position] = inherited;
-                if observed.contains(&parameter.id) {
+                if observed.contains(&parameter.id) && !repeats_base(position, inherited.as_ref()) {
                     unread.push(&parameter.id);
                 }
+                effective[position] = inherited;
                 continue;
             };
             if inherited
@@ -150,9 +164,11 @@ pub(in crate::design_v11) fn project(
         }
         if state.parameter_values.iter().any(|(id, value)| {
             if let Some(&position) = graph.by_id.get(id) {
-                let matched = typed_cache(&parameters[position].kind, value.clone())
-                    .zip(effective[position].as_ref())
-                    .is_some_and(|(value, effective)| same_value(&value, effective));
+                let effective = effective[position].as_ref();
+                let matched = match typed_cache(&parameters[position].kind, value.clone()) {
+                    Some(value) => effective.is_some_and(|effective| same_value(&value, effective)),
+                    None => repeats_base(position, effective),
+                };
                 return !matched
                     && (observed.contains(id) || base.parameter_values.get(id) != Some(value));
             }

@@ -10,7 +10,9 @@ use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::parameter::ParameterValue;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
-use cadmpeg_ir::features::parameters::DesignConfiguration as ModelConfiguration;
+use cadmpeg_ir::features::parameters::{
+    DesignConfiguration as ModelConfiguration, ParameterValue as ModelValue,
+};
 
 use crate::test_support::cadir::round_trip;
 use crate::test_support::history::resolved_features_payload_with_names_relation_and_scalar;
@@ -232,10 +234,8 @@ fn a_configuration_storing_the_active_configurations_values_states_no_override()
     assert!(overrides.is_empty(), "{overrides:#?}");
 }
 
-fn length(value: f64) -> cadmpeg_ir::features::parameters::ParameterValue {
-    cadmpeg_ir::features::parameters::ParameterValue::Length(
-        cadmpeg_ir::scalar::Length::new(value).unwrap(),
-    )
+fn length(value: f64) -> ModelValue {
+    ModelValue::Length(cadmpeg_ir::scalar::Length::new(value).unwrap())
 }
 
 fn number(value: f64) -> ParameterValue {
@@ -250,15 +250,19 @@ fn millimetres(value: f64) -> Expression {
 
 fn project_samples(
     ir: &mut CadIr,
-    values: &[(&str, &[(&str, f64)])],
-) -> (DesignConfiguration, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    values: &[(&str, &[(&str, ModelValue)])],
+) -> (
+    DesignConfiguration,
+    bool,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
     use super::super::configurations::{values::project, Configurations};
 
     let mut samples = crate::history::configuration::ConfigurationSamples::new();
     for &(configuration, values) in values {
         let parameters = values
             .iter()
-            .map(|&(name, value)| (parameter_named(ir, name).id.clone(), length(value)))
+            .map(|(name, value)| (parameter_named(ir, name).id.clone(), value.clone()))
             .collect::<std::collections::BTreeMap<_, _>>();
         let lane = ir
             .model
@@ -282,32 +286,31 @@ fn project_samples(
             .collect(),
         active: ir.design.scopes[0].active_configuration.clone(),
     };
-    let (_, losses) = project(
+    let (cuts, losses) = project(
         &mut configurations,
         &ir.model.configurations,
         &samples,
         &mut ir.design.parameters,
         Some(UnitSymbol::Mm),
     );
-    (
-        configurations
-            .records
-            .into_iter()
-            .find(|record| record.name == "Large")
-            .unwrap(),
-        losses,
-    )
+    let alternate = configurations
+        .records
+        .into_iter()
+        .find(|record| record.name == "Large")
+        .unwrap();
+    let cut = cuts.contains(&alternate.id);
+    (alternate, cut, losses)
 }
 
 #[test]
 fn a_stored_result_overrides_the_expression_evaluated_with_the_alternate_inputs() {
     for (driving, result) in [(25.0, 70.0), (50.0, 50.0), (50.0, 70.0)] {
         let mut ir = with_configured_radius("30mm", &[0.025, 0.025]);
-        let (large, losses) = project_samples(
+        let (large, cut, losses) = project_samples(
             &mut ir,
             &[
-                ("Default", &[("D1", 25.0), ("D2", 50.0)]),
-                ("Large", &[("D1", driving), ("D2", result)]),
+                ("Default", &[("D1", length(25.0)), ("D2", length(50.0))]),
+                ("Large", &[("D1", length(driving)), ("D2", length(result))]),
             ],
         );
         let radius = parameter_named(&ir, "D1");
@@ -319,7 +322,37 @@ fn a_stored_result_overrides_the_expression_evaluated_with_the_alternate_inputs(
         let entry = &large.overrides.parameters[&parameter_named(&ir, "D2").id];
         assert_eq!(entry.expression, Some(millimetres(result)));
         assert_eq!(entry.value, Some(number(result)));
+        assert!(!cut);
         assert!(losses.is_empty(), "{losses:#?}");
+    }
+}
+
+#[test]
+fn an_incompatible_value_repeats_the_base_when_the_inherited_result_agrees() {
+    for (driving, reading, unread) in [(25.0, 50, false), (25.0, 70, true), (50.0, 50, true)] {
+        let mut ir = with_configured_radius("25mm", &[0.025, 0.025]);
+        let (large, cut, losses) = project_samples(
+            &mut ir,
+            &[
+                (
+                    "Default",
+                    &[("D1", length(25.0)), ("D2", ModelValue::Integer(50))],
+                ),
+                (
+                    "Large",
+                    &[
+                        ("D1", length(driving)),
+                        ("D2", ModelValue::Integer(reading)),
+                    ],
+                ),
+            ],
+        );
+        assert!(!large
+            .overrides
+            .parameters
+            .contains_key(&parameter_named(&ir, "D2").id));
+        assert_eq!(cut, unread, "{driving}, {reading}");
+        assert_eq!(losses.len(), usize::from(unread), "{losses:#?}");
     }
 }
 
@@ -345,11 +378,18 @@ fn a_missing_intermediate_sample_uses_its_inherited_expression() {
     ))));
     c.value = Some(number(21.0));
     ir.design.parameters.insert(0, c);
-    let (large, losses) = project_samples(
+    let (large, cut, losses) = project_samples(
         &mut ir,
         &[
-            ("Default", &[("D1", 10.0), ("D2", 20.0), ("C", 21.0)]),
-            ("Large", &[("D1", 20.0), ("C", 41.0)]),
+            (
+                "Default",
+                &[
+                    ("D1", length(10.0)),
+                    ("D2", length(20.0)),
+                    ("C", length(21.0)),
+                ],
+            ),
+            ("Large", &[("D1", length(20.0)), ("C", length(41.0))]),
         ],
     );
     assert_eq!(large.overrides.parameters.len(), 1);
@@ -357,6 +397,7 @@ fn a_missing_intermediate_sample_uses_its_inherited_expression() {
         .overrides
         .parameters
         .contains_key(&parameter_named(&ir, "D1").id));
+    assert!(!cut);
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -376,10 +417,11 @@ fn an_unread_expression_preserves_the_sample_as_a_charged_cache() {
         dialect: ExpressionDialect::SolidWorks,
         tokens: vec![ExpressionToken::Text("\"Unresolved\" * 2".to_owned())],
     });
-    let (large, losses) = project_samples(&mut ir, &[("Large", &[("D2", 70.0)])]);
+    let (large, cut, losses) = project_samples(&mut ir, &[("Large", &[("D2", length(70.0))])]);
     let entry = &large.overrides.parameters[&id];
     assert_eq!(entry.expression, None);
     assert_eq!(entry.value, Some(number(70.0)));
+    assert!(!cut);
     let [loss] = losses.as_slice() else {
         panic!("{losses:#?}")
     };
