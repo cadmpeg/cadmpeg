@@ -86,6 +86,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A stored replacement or feature-time revision join for the absent hole circle, and a material-selection rule for the initial region and its descendants. The rule must bind the compact incidence operands to directed curve intervals and identify the selected holes.
 
+### DR-1076. Unnamed boundary curves of a counted region
+
+**Question.** Does a boundary curve of a selected face that no member of its counted list names show that the Sketch gained the curve after the feature stored the list?
+
+**Known.** A counted list can match no arrangement walk because the face boundary holds a curve with tail marker `0` that no member names. A Revolve selection can name the outline of a face except for a curve whose persistent identity is above every named identity. The face has no island, and each neighbouring face across that curve has no named curve. Higher-identity curves can also divide the named region into two faces. Named curves, higher-identity curves, and tail marker `1` curves bound those faces. Each face has no island.
+
+**Need.** Save a Sketch and a Revolve that selects its closed region. Add a curve that divides the region after the Revolve. Save again, then edit the Revolve and select both resulting faces. Compare the counted member lists and persistent curve identities across the three saves.
+
+**Note.** A Revolve whose counted list matches no walk, and which no certificate settles, takes the one atomic face that holds every named curve, when every other boundary curve has an identity above every named identity or has tail marker `1`, at least one such curve has the higher identity, and the face has no island. A neighbouring face across a higher-identity curve that holds a named curve joins the selection as a further region when named curves, higher-identity curves and tail marker `1` curves bound it and it has no island; any other such neighbour leaves the selection native. The reading carries `feature.profile-later-curve-boundary-assumed`.
+
 ### DR-500. Counted profile incidence ordinals and curve partitions
 
 **Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?

@@ -918,6 +918,8 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections read counted member pieces over the
     /// partition by the curves of each member list.
     FeatureProfilePiecePartitionAssumed,
+    /// Profile selections use a face bounded by every named curve and later curves.
+    FeatureProfileLaterCurveBoundaryAssumed,
     /// Extrude profile selections took the polyline side of a projected point
     /// within the tolerance of a NURBS tube of a face boundary.
     FeatureProfilePolylineSideAssumed,
@@ -2276,6 +2278,9 @@ impl F3dLossCode {
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePiecePartitionAssumed => "feature.profile-piece-partition-assumed",
+            Self::FeatureProfileLaterCurveBoundaryAssumed => {
+                "feature.profile-later-curve-boundary-assumed"
+            }
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
@@ -3342,6 +3347,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePiecePartitionAssumed
+            | Self::FeatureProfileLaterCurveBoundaryAssumed
             | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -4141,6 +4147,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePiecePartitionAssumed
+            | Self::FeatureProfileLaterCurveBoundaryAssumed
             | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -5084,6 +5091,7 @@ mod tests {
                 "feature.profile-text-glyphs-native",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-piece-partition-assumed",
+                "feature.profile-later-curve-boundary-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",

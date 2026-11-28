@@ -6822,15 +6822,29 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     .and_then(|indices| PlanarProfileRef::sketch_profiles(sketch, indices).ok())
                     {
                         Some(selected) => Some(selected),
-                        None => region_members::resolve(
-                            stream,
-                            &profile,
-                            source,
-                            resolution.curve_identities,
-                            resolution.sketch_entities,
-                            scoped,
-                            false,
-                        )?,
+                        None => {
+                            let mut resolved = region_members::resolve(
+                                stream,
+                                &profile,
+                                source,
+                                resolution.curve_identities,
+                                resolution.sketch_entities,
+                                scoped,
+                                false,
+                            )?;
+                            if resolved.is_none() {
+                                resolved = region_members::resolve_later_curve_boundary(
+                                    stream,
+                                    &profile,
+                                    source,
+                                    resolution.curve_identities,
+                                    resolution.sketch_entities,
+                                    scoped,
+                                )?;
+                            }
+                            scoped.profile_work.finish_selection();
+                            resolved
+                        }
                     }
                 } else {
                     None

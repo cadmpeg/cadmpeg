@@ -83,6 +83,100 @@ pub(super) fn resolve(
     Ok(profile)
 }
 
+/// The face that every curve of a member list bounds when curves that the
+/// list does not name also bound it, as a last fallback after `resolve`
+/// found no walk. Only a caller that accepts this assumption calls it.
+///
+/// A boundary curve is later when its persistent identity is above every
+/// named identity of the selection. Curves with tail marker `1` are neither
+/// named nor later; they stay on the boundary. `resolve` and its fallbacks
+/// have already failed, so no certificate tests the face.
+pub(super) fn resolve_later_curve_boundary(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    sketch: &Sketch,
+    curves: &[SketchCurveIdentity],
+    entities: &[SketchEntity],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let Some(selection) = profile.planar_region_selection() else {
+        return Ok(None);
+    };
+    let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
+        return Ok(None);
+    };
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
+    let mut named = Vec::new();
+    for region in regions {
+        let mut ring = std::collections::HashSet::new();
+        for member in &region.members {
+            let Some(entity) =
+                sketch_profile_member_entity(stream, owner, member, sketch, curves, entities)
+            else {
+                return Ok(None);
+            };
+            ring.insert(entity.clone());
+        }
+        named.push(ring);
+    }
+    let identities = curves
+        .iter()
+        .filter(|curve| {
+            crate::ids::native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner)
+        })
+        .map(|curve| {
+            (
+                crate::ids::neutral_sketch_curve_id(
+                    &sketch.id,
+                    curve.primary_id.get(),
+                    curve.secondary_id,
+                ),
+                curve.primary_id.get(),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let identity = |entity: &SketchEntity| identities.get(entity.id()).copied();
+    let mut highest = 0;
+    for entity in entities.iter().filter(|entity| entity.sketch == sketch.id) {
+        if named.iter().any(|ring| ring.contains(entity.id())) {
+            let Some(id) = identity(entity) else {
+                return Ok(None);
+            };
+            highest = highest.max(id);
+        }
+    }
+    let ignored = unnamed_curves(curves, sketch, entities);
+    let later = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter(|entity| {
+            !ignored.contains(entity.id()) && !named.iter().any(|ring| ring.contains(entity.id()))
+        })
+        .filter(|entity| identity(entity).is_some_and(|id| id > highest))
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
+    let Some(regions) = crate::design::geometry::arrangement_regions_holding_named_curves(
+        sketch,
+        entities,
+        &named,
+        &crate::design::geometry::UnnamedBoundaryCurves { later, ignored },
+        resolution.linear_tolerance,
+        resolution.profile_work,
+        resolution.ctx,
+    )?
+    else {
+        return Ok(None);
+    };
+    let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok();
+    if profile.is_some() {
+        resolution.profile_work.note_later_curve_boundary_assumed();
+    }
+    Ok(profile)
+}
+
 /// The entities of `sketch` whose curve records carry tail marker `1`. A
 /// counted region member list never names them.
 fn unnamed_curves(

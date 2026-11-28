@@ -89,6 +89,8 @@ pub(crate) struct ProfileGeometryWork {
     island_absence_assumed_selections: Cell<usize>,
     piece_partition_assumed: Cell<bool>,
     piece_partition_assumed_selections: Cell<usize>,
+    later_curve_boundary_assumed: Cell<bool>,
+    later_curve_boundary_assumed_selections: Cell<usize>,
     polyline_side_assumed: Cell<bool>,
     polyline_side_assumed_selections: Cell<usize>,
     cap_outline_assumed: Cell<bool>,
@@ -189,6 +191,8 @@ impl ProfileGeometryWork {
             island_absence_assumed_selections: Cell::new(0),
             piece_partition_assumed: Cell::new(false),
             piece_partition_assumed_selections: Cell::new(0),
+            later_curve_boundary_assumed: Cell::new(false),
+            later_curve_boundary_assumed_selections: Cell::new(0),
             polyline_side_assumed: Cell::new(false),
             polyline_side_assumed_selections: Cell::new(0),
             cap_outline_assumed: Cell::new(false),
@@ -507,6 +511,10 @@ impl ProfileGeometryWork {
                 &self.piece_partition_assumed_selections,
             ),
             (
+                &self.later_curve_boundary_assumed,
+                &self.later_curve_boundary_assumed_selections,
+            ),
+            (
                 &self.polyline_side_assumed,
                 &self.polyline_side_assumed_selections,
             ),
@@ -574,6 +582,12 @@ impl ProfileGeometryWork {
     /// face ring through the member-list piece partition.
     pub(crate) fn note_piece_partition_assumed(&self) {
         self.piece_partition_assumed.set(true);
+    }
+
+    /// Record that the open selection took the one face that every named
+    /// curve bounds, with boundary curves that the member list does not name.
+    pub(crate) fn note_later_curve_boundary_assumed(&self) {
+        self.later_curve_boundary_assumed.set(true);
     }
 
     /// Record that the polyline side of a projected point decided the face
@@ -667,6 +681,12 @@ impl ProfileGeometryWork {
         if piece_partition != 0 {
             losses.push(F3dLossCode::FeatureProfilePiecePartitionAssumed.note(format!(
                 "{piece_partition} extrude profile selection(s) matched counted members to a face whose edges curves outside the member list split. The reading takes the participating curves of each member's piece words from its member list; whether the serialized tracking graph names other curves is open (DR-500)."
+            )));
+        }
+        let later_curve = self.later_curve_boundary_assumed_selections.get();
+        if later_curve != 0 {
+            losses.push(F3dLossCode::FeatureProfileLaterCurveBoundaryAssumed.note(format!(
+                "{later_curve} profile selection(s) took the one atomic face that every named curve bounds, although the face boundary also holds curves that the member list does not name and whose persistent identities are above every named identity. Whether the Sketch gained those curves after the selection was stored is open (DR-1076)."
             )));
         }
         let island_absence = self.island_absence_assumed_selections.get();
@@ -2165,6 +2185,125 @@ pub(super) fn atomic_sketch_regions(
             })
             .collect(),
     ))
+}
+
+/// The boundary curves that no member list names: curves the Sketch gained
+/// after the named ones, and curves that a member list never names.
+pub(super) struct UnnamedBoundaryCurves {
+    pub(super) later: HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    pub(super) ignored: HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+}
+
+/// The regions that counted member rings select when no face walk matches a
+/// ring because curves that the member lists do not name also bound the
+/// face. Each ring selects the one atomic face whose boundary holds every
+/// curve of the ring, where every other boundary curve is in `later` or
+/// `ignored` and at least one is in `later`. A neighbouring face across a
+/// later boundary curve that holds a curve of the ring is part of the region
+/// that the later curve split: it joins the ring's selection as a further
+/// region when only curves of the ring, later curves and ignored curves bound
+/// it, and any other such neighbour leaves the selection native.
+/// `None` when a ring is empty, a ring has no such face or several, a face
+/// has an island or can hold an unlisted curve, two rings select one face,
+/// or the work budget runs out. The arrangement is built here and not
+/// before.
+pub(super) fn arrangement_regions_holding_named_curves(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    rings: &[HashSet<cadmpeg_ir::sketches::SketchEntityId>],
+    unnamed: &UnnamedBoundaryCurves,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>>, CodecError> {
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
+
+    let UnnamedBoundaryCurves { later, ignored } = unnamed;
+    if rings.is_empty() || later.is_empty() || rings.iter().any(HashSet::is_empty) {
+        return Ok(None);
+    }
+    let Some(faces) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
+        return Ok(None);
+    };
+    let boundaries = faces
+        .iter()
+        .map(|face| {
+            face.boundary
+                .iter()
+                .map(|use_| &use_.entity)
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut selected = Vec::new();
+    for named in rings {
+        let mut holding = boundaries.iter().enumerate().filter(|(_, boundary)| {
+            named.iter().all(|entity| boundary.contains(entity))
+                && boundary.iter().any(|entity| later.contains(*entity))
+                && boundary.iter().all(|entity| {
+                    named.contains(*entity) || later.contains(*entity) || ignored.contains(*entity)
+                })
+        });
+        let Some((index, _)) = holding.next() else {
+            return Ok(None);
+        };
+        let face = &faces[index];
+        if holding.next().is_some()
+            || face.encloses_island
+            || face.island_absence_assumed
+            || selected.contains(&index)
+        {
+            return Ok(None);
+        }
+        // A neighbouring face across a later curve that holds a named curve
+        // of this ring is a part of the region that the later curve divided:
+        // it joins the selection when only named, later and ignored curves
+        // bound it. Any other neighbour that holds a named curve leaves the
+        // selection native.
+        let mut group = vec![index];
+        let mut at = 0;
+        while at < group.len() {
+            let member = group[at];
+            at += 1;
+            for entity in boundaries[member]
+                .iter()
+                .filter(|entity| later.contains(**entity))
+            {
+                for (other, boundary) in boundaries.iter().enumerate() {
+                    if group.contains(&other)
+                        || !boundary.contains(*entity)
+                        || !rings.iter().flatten().any(|named| boundary.contains(named))
+                    {
+                        continue;
+                    }
+                    let joins = boundary.iter().any(|curve| named.contains(*curve))
+                        && boundary.iter().all(|curve| {
+                            named.contains(*curve)
+                                || later.contains(*curve)
+                                || ignored.contains(*curve)
+                        })
+                        && !faces[other].encloses_island
+                        && !faces[other].island_absence_assumed;
+                    if !joins {
+                        return Ok(None);
+                    }
+                    group.push(other);
+                }
+            }
+        }
+        if group.iter().any(|face| selected.contains(face)) {
+            return Ok(None);
+        }
+        selected.extend(group);
+    }
+    let mut regions = Vec::with_capacity(selected.len());
+    for index in selected {
+        let Ok(region) = SketchProfileRegion::trimmed(faces[index].boundary.clone(), Vec::new())
+        else {
+            return Ok(None);
+        };
+        regions.push(region);
+    }
+    Ok(Some(regions))
 }
 
 /// Most atomic regions whose boundaries lie in one stored loop that the
