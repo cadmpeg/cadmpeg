@@ -32,9 +32,10 @@ fn group(members: &[u32]) -> DesignConstructionOperandGroup {
         class_tag: crate::records::references::DesignClassTag::try_from("280".to_owned()).unwrap(),
         members: members
             .iter()
-            .map(|value| crate::records::identity::Located {
+            .enumerate()
+            .map(|(index, value)| crate::records::identity::Located {
                 value: *value,
-                offset: 0,
+                offset: u64::try_from(index).unwrap() * 11,
             })
             .collect(),
         lost_edge_references: Vec::new(),
@@ -89,7 +90,7 @@ fn binding(
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
-            id: format!("{STREAM}:design-body-binding#{entity}"),
+            id: format!("{STREAM}:design-body-binding#0"),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
             pair_ordinal: 0,
