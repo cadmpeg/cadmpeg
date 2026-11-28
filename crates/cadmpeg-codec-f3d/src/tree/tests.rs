@@ -615,7 +615,7 @@ fn an_operand_names_an_external_instance_by_its_identity_segment() {
     instance.native_ref = Some(NATIVE.to_owned());
     ir.model.occurrences = vec![occurrence("f3d:model:occurrence#a", PART, 10.0), instance];
     let reference: crate::records::xref::XrefReference =
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "id": NATIVE, "ordinal": 0, "occurrence_ordinal": 0,
             "from": "root.f3d", "relative_path": "part.f3d", "neutron_role": "role",
             "neutron_data": "",
