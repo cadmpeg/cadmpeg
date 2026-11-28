@@ -26,7 +26,7 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
         .iter()
         .position(|finding| finding.check == Check::GeometricConsistency)
         .unwrap();
-    let payload = serde_json::json!({"ir_version": cadmpeg_ir::document::IR_VERSION,
+    let payload = cadmpeg_core::json!({"ir_version": cadmpeg_ir::document::IR_VERSION,
         "command": "check", "input_path": input, "check_report": validation});
     std::fs::write(&report, json::to_vec(&payload).unwrap()).unwrap();
     let cli = crate::Cli::try_parse_from([
@@ -94,7 +94,8 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
         related: Vec::new(),
         message: "synthetic finding requiring additional context".into(),
     };
-    let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
+    let payload =
+        cadmpeg_core::json!({"input_path": input, "check_report": {"findings": [finding]}});
     std::fs::write(&report, json::to_vec(&payload).unwrap()).unwrap();
     for strict in [false, true] {
         let output = directory.path().join(format!("bundle-{strict}.json"));
@@ -174,7 +175,8 @@ fn repro_bundle_holds_the_one_zero() {
         &json::from_slice(&input_bytes).unwrap()
     ));
     std::fs::write(&input, input_bytes).unwrap();
-    let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
+    let payload =
+        cadmpeg_core::json!({"input_path": input, "check_report": {"findings": [finding]}});
     std::fs::write(&report, json::to_vec(&payload).unwrap()).unwrap();
     let cli = crate::Cli::try_parse_from([
         "cadmpeg",

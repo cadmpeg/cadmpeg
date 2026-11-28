@@ -5,6 +5,7 @@ use super::composite::CompositeIndex;
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
@@ -19,7 +20,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry,
 };
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, Identity, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
@@ -467,6 +468,14 @@ fn resolve_pcurve(
     }))
 }
 
+/// The first parameter curve of `uses` that has no projected curve record.
+fn missing_pcurve(ir: &CadIr, uses: &[(bool, u32)]) -> Option<u32> {
+    uses.iter().map(|(_, sequence)| *sequence).find(|sequence| {
+        let id = crate::ids::curve(&crate::ids::Stem::directory(*sequence));
+        !ir.geometry.curves.iter().any(|curve| curve.id == id)
+    })
+}
+
 fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],
@@ -530,6 +539,9 @@ fn resolve_pcurve_uses<'a>(
     )
 }
 
+/// Projects the explicit B-rep entities. Records in `supports`, for each
+/// parsed vertex list, edge list, loop, and face, the entities that read it
+/// as their input.
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -537,6 +549,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
+    supports: &mut BTreeMap<u32, BTreeSet<u32>>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -563,6 +576,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -571,6 +585,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("vertex lists cannot carry a transformation"),
             );
             continue;
@@ -579,6 +594,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("vertex-list count is not positive"),
             );
             continue;
@@ -605,6 +621,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("vertex-list coordinates are truncated or non-finite"),
             );
             continue;
@@ -620,6 +637,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("edge lists cannot carry a transformation"),
             );
             continue;
@@ -628,6 +646,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -636,11 +655,13 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("edge-list count is not positive"),
             );
             continue;
         };
         let mut edges = Vec::new();
+        let mut needs = None;
         for item in 0..count {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
@@ -661,6 +682,11 @@ pub(super) fn project(
                 edges.clear();
                 break;
             };
+            for list in [edge.start_list, edge.end_list] {
+                if vertex_lists.contains_key(&list) {
+                    supports.entry(list).or_default().insert(entry.sequence);
+                }
+            }
             if vertex_lists
                 .get(&edge.start_list)
                 .is_none_or(|list| edge.start_index >= list.len())
@@ -668,15 +694,20 @@ pub(super) fn project(
                     .get(&edge.end_list)
                     .is_none_or(|list| edge.end_index >= list.len())
             {
+                needs = [edge.start_list, edge.end_list]
+                    .into_iter()
+                    .find(|list| !vertex_lists.contains_key(list));
                 edges.clear();
                 break;
             }
             edges.push(edge);
         }
         if edges.len() != count {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
+                Cause::Unreadable,
                 format_args!("edge-list tuple is invalid or names a missing vertex"),
             );
             continue;
@@ -692,6 +723,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("loops cannot carry a transformation"),
             );
             continue;
@@ -700,6 +732,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -708,12 +741,14 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("loop edge-use count is not positive"),
             );
             continue;
         };
         let mut index = 2;
         let mut uses = Vec::new();
+        let mut needs = None;
         for _ in 0..count {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
@@ -723,6 +758,11 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
+            if (use_type == 0 && edge_lists.contains_key(&list))
+                || (use_type == 1 && vertex_lists.contains_key(&list))
+            {
+                supports.entry(list).or_default().insert(entry.sequence);
+            }
             let Some(item_index) = list_index(record, index + 2) else {
                 uses.clear();
                 break;
@@ -748,6 +788,9 @@ pub(super) fn project(
                 if entries.get(&sequence).is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
+                    if !entries.contains_key(&sequence) {
+                        needs = Some(sequence);
+                    }
                     pcurves.clear();
                     break;
                 }
@@ -771,6 +814,9 @@ pub(super) fn project(
                         .get(&list)
                         .is_none_or(|items| item_index >= items.len())
                     {
+                        if !edge_lists.contains_key(&list) {
+                            needs = Some(list);
+                        }
                         uses.clear();
                         break;
                     }
@@ -786,6 +832,9 @@ pub(super) fn project(
                         .get(&list)
                         .is_none_or(|items| item_index >= items.len())
                     {
+                        if !vertex_lists.contains_key(&list) {
+                            needs = Some(list);
+                        }
                         uses.clear();
                         break;
                     }
@@ -804,11 +853,23 @@ pub(super) fn project(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("loop edge-use tuple is invalid"),
-            );
+            match needs {
+                Some(sequence) => super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    Some(sequence),
+                    Cause::Unreadable,
+                    format_args!(
+                        "loop edge use names D{sequence}, which the projection does not hold"
+                    ),
+                ),
+                None => super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    Cause::Unreadable,
+                    format_args!("loop edge-use tuple is invalid"),
+                ),
+            }
             continue;
         }
         loops.insert(entry.sequence, uses);
@@ -822,6 +883,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("faces cannot carry a transformation"),
             );
             continue;
@@ -830,6 +892,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -838,6 +901,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("face surface pointer is invalid"),
             );
             continue;
@@ -846,6 +910,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("face loop count is not positive"),
             );
             continue;
@@ -857,6 +922,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("face outer-loop flag is not logical"),
                 );
                 continue;
@@ -866,6 +932,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("face loop pointer is invalid"),
             );
             continue;
@@ -883,6 +950,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("face loop pointer is invalid"),
             );
             continue;
@@ -895,11 +963,22 @@ pub(super) fn project(
         } else {
             FaceLoopPointers::Unclassified { first, rest }
         };
-        if face_loops
+        for sequence in face_loops.iter() {
+            if loops.contains_key(&sequence) {
+                supports.entry(sequence).or_default().insert(entry.sequence);
+            }
+        }
+        if let Some(missing) = face_loops
             .iter()
-            .any(|sequence| !loops.contains_key(&sequence))
+            .find(|sequence| !loops.contains_key(sequence))
         {
-            super::push_geometry_loss(&mut losses, entry, format_args!("face loop is missing"));
+            super::push_geometry_loss_needing(
+                &mut losses,
+                entry,
+                Some(missing),
+                Cause::Unreadable,
+                format_args!("face loop is missing"),
+            );
             continue;
         }
         faces.insert(
@@ -920,6 +999,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("shells cannot carry a transformation"),
             );
             continue;
@@ -928,6 +1008,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -936,11 +1017,13 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("shell face count is not positive"),
             );
             continue;
         };
         let mut face_uses = Vec::new();
+        let mut needs = None;
         for index in 0..count {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
@@ -955,15 +1038,19 @@ pub(super) fn project(
                 }
             };
             if !faces.contains_key(&face) {
+                needs = Some(face);
                 face_uses.clear();
                 break;
             }
+            supports.entry(face).or_default().insert(entry.sequence);
             face_uses.push((face, sense));
         }
         if face_uses.len() != count {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
+                Cause::Unreadable,
                 format_args!("shell face-use tuple is invalid"),
             );
             continue;
@@ -1003,6 +1090,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -1011,6 +1099,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("solid outer-shell pointer is invalid"),
             );
             continue;
@@ -1022,6 +1111,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("solid outer-shell orientation is not logical"),
                 );
                 continue;
@@ -1031,6 +1121,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("solid void-shell count is invalid"),
             );
             continue;
@@ -1059,9 +1150,19 @@ pub(super) fn project(
                     .is_none_or(|shell| shell.form != 1)
             })
         {
-            super::push_geometry_loss(
+            let needs = valid
+                .then(|| {
+                    shell_uses
+                        .iter()
+                        .find(|(sequence, _)| !shell_definitions.contains_key(sequence))
+                        .map(|(sequence, _)| *sequence)
+                })
+                .flatten();
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
+                Cause::Undecoded,
                 format_args!("solid shell-use tuple is invalid or not closed"),
             );
             continue;
@@ -1081,7 +1182,13 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    message.cause(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1157,6 +1264,11 @@ pub(super) fn project(
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
         sequences.record_body(&body_id, entry.sequence, &stem);
+        let projected: Identity = if entry.entity_type == 186 {
+            body_id.clone().into()
+        } else {
+            crate::ids::shell(&stem).into()
+        };
         let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
@@ -1164,6 +1276,7 @@ pub(super) fn project(
         let mut region_shells = Vec::new();
         let mut consumed = BTreeSet::new();
         let mut valid = true;
+        let mut needs = None;
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
             let shell_definition = &shell_definitions[&shell_sequence];
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
@@ -1201,6 +1314,7 @@ pub(super) fn project(
                         geometry => std::borrow::Cow::Borrowed(geometry),
                     })
                 else {
+                    needs = Some(face_definition.surface);
                     valid = false;
                     break;
                 };
@@ -1283,6 +1397,7 @@ pub(super) fn project(
                                     super::push_geometry_loss(
                                         &mut losses,
                                         entry,
+                                        Cause::Undecoded,
                                         format_args!(
                                             "a loop vertex-use pcurve states no carrier: {error}"
                                         ),
@@ -1291,11 +1406,18 @@ pub(super) fn project(
                                     break;
                                 }
                             }) else {
-                                super::push_geometry_loss(
+                                needs = missing_pcurve(ir, pcurves);
+                                super::give_up_needing(
                                     &mut losses,
                                     entry,
-                                    format_args!(
-                                        "loop vertex-use pcurves disagree with the pole vertex"
+                                    Some(projected.clone()),
+                                    needs,
+                                    Cause::Undecoded,
+                                    super::geometry_note(
+                                        entry,
+                                        format_args!(
+                                            "loop vertex-use pcurves disagree with the pole vertex"
+                                        ),
                                     ),
                                 );
                                 valid = false;
@@ -1315,6 +1437,7 @@ pub(super) fn project(
                                     super::push_geometry_loss(
                                         &mut losses,
                                         entry,
+                                        Cause::Undecoded,
                                         format_args!("{error}"),
                                     );
                                     valid = false;
@@ -1347,6 +1470,7 @@ pub(super) fn project(
                             super::push_geometry_loss(
                                 &mut losses,
                                 entry,
+                                Cause::Undecoded,
                                 format_args!(
                                     "an edge vertex position states a non-finite coordinate"
                                 ),
@@ -1388,6 +1512,7 @@ pub(super) fn project(
                                 super::push_geometry_loss(
                                     &mut losses,
                                     entry,
+                                    Cause::Undecoded,
                                     format_args!(
                                         "a loop edge-use pcurve states no carrier: {error}"
                                     ),
@@ -1396,11 +1521,18 @@ pub(super) fn project(
                                 break;
                             }
                         }) else {
-                            super::push_geometry_loss(
+                            needs = missing_pcurve(ir, pcurves);
+                            super::give_up_needing(
                                 &mut losses,
                                 entry,
-                                format_args!(
-                                    "loop edge-use pcurves disagree with the edge vertices"
+                                Some(projected.clone()),
+                                needs,
+                                Cause::Undecoded,
+                                super::geometry_note(
+                                    entry,
+                                    format_args!(
+                                        "loop edge-use pcurves disagree with the edge vertices"
+                                    ),
                                 ),
                             );
                             valid = false;
@@ -1429,6 +1561,7 @@ pub(super) fn project(
                                 )
                             })?;
                             let Some(candidates) = curve_edges.get(curve_id.as_str()) else {
+                                needs = Some(edge_definition.curve);
                                 valid = false;
                                 break;
                             };
@@ -1439,6 +1572,7 @@ pub(super) fn project(
                                 super::push_geometry_loss(
                                     &mut losses,
                                     entry,
+                                    Cause::Undecoded,
                                     format_args!(
                                         "edge curve endpoints disagree with the vertex-list points"
                                     ),
@@ -1457,12 +1591,12 @@ pub(super) fn project(
                             ) {
                                 Ok(source_edge) => source_edge,
                                 Err(SourceEdgeSelectionError::NoMatch) => {
-                                    super::push_geometry_loss(&mut losses, entry, format_args!("edge curve endpoints disagree with the vertex-list points"));
+                                    super::push_geometry_loss(&mut losses, entry, Cause::Undecoded, format_args!("edge curve endpoints disagree with the vertex-list points"));
                                     valid = false;
                                     break;
                                 }
                                 Err(SourceEdgeSelectionError::Ambiguous) => {
-                                    super::push_geometry_loss(&mut losses, entry, format_args!("edge curve maps to multiple ambiguous edge occurrences"));
+                                    super::push_geometry_loss(&mut losses, entry, Cause::Undecoded, format_args!("edge curve maps to multiple ambiguous edge occurrences"));
                                     valid = false;
                                     break;
                                 }
@@ -1482,6 +1616,7 @@ pub(super) fn project(
                                     super::push_geometry_loss(
                                         &mut losses,
                                         entry,
+                                        Cause::Undecoded,
                                         format_args!("{error}"),
                                     );
                                     valid = false;
@@ -1523,6 +1658,7 @@ pub(super) fn project(
                                 super::push_geometry_loss(
                                     &mut losses,
                                     entry,
+                                    Cause::Undecoded,
                                     format_args!("{error}"),
                                 );
                                 valid = false;
@@ -1562,12 +1698,12 @@ pub(super) fn project(
                     let boundary = if coedge_ids.is_empty() {
                         let mut uses = loop_vertex_uses.into_iter();
                         let Some((vertex, None, pcurves)) = uses.next() else {
-                            super::push_geometry_loss(&mut losses, entry, format_args!("vertex-only loop does not contain exactly one unanchored vertex"));
+                            super::push_geometry_loss(&mut losses, entry, Cause::Undecoded, format_args!("vertex-only loop does not contain exactly one unanchored vertex"));
                             valid = false;
                             break;
                         };
                         if uses.next().is_some() {
-                            super::push_geometry_loss(&mut losses, entry, format_args!("vertex-only loop does not contain exactly one unanchored vertex"));
+                            super::push_geometry_loss(&mut losses, entry, Cause::Undecoded, format_args!("vertex-only loop does not contain exactly one unanchored vertex"));
                             valid = false;
                             break;
                         }
@@ -1592,6 +1728,7 @@ pub(super) fn project(
                             super::push_geometry_loss(
                                 &mut losses,
                                 entry,
+                                Cause::Undecoded,
                                 format_args!("edge loop contains an unanchored vertex use"),
                             );
                             valid = false;
@@ -1602,6 +1739,7 @@ pub(super) fn project(
                             super::push_geometry_loss(
                                 &mut losses,
                                 entry,
+                                Cause::Undecoded,
                                 format_args!("edge loop has no coedges"),
                             );
                             valid = false;
@@ -1666,10 +1804,16 @@ pub(super) fn project(
             consumed.insert(shell_sequence);
         }
         if !valid {
-            super::push_geometry_loss(
+            super::give_up_needing(
                 &mut losses,
                 entry,
-                format_args!("shell topology references missing geometry"),
+                Some(projected),
+                needs,
+                Cause::Undecoded,
+                super::geometry_note(
+                    entry,
+                    format_args!("shell topology references missing geometry"),
+                ),
             );
             continue;
         }
@@ -1684,6 +1828,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "closed shell does not use every edge exactly twice with opposite senses"
                 ),
@@ -1720,6 +1865,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("shell candidate failed neutral validation"),
             );
             continue;

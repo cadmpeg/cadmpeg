@@ -8,8 +8,7 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::SourceProvenance;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -216,6 +215,8 @@ impl SourceStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryEntry {
     pub(crate) source_offset: u64,
+    /// The byte length of the two-card pair from `source_offset`.
+    pub(crate) source_length: Option<u64>,
     pub(crate) sequence: u32,
     pub(crate) entity_type: i64,
     pub(crate) parameter_start: i64,
@@ -293,25 +294,6 @@ pub(crate) enum DirectoryDefect {
     UnpairedCard,
 }
 
-impl Serialize for DirectoryDefect {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.key())
-    }
-}
-
-impl DirectoryDefect {
-    fn key(self) -> &'static str {
-        match self {
-            Self::FieldNotAscii(_) => "field-not-ascii",
-            Self::FieldNotAnInteger(_) => "field-not-an-integer",
-            Self::FieldBlankNotAllowed(_) => "field-blank-not-allowed",
-            Self::StatusNumberInvalid => "status-number-invalid",
-            Self::RepeatedEntityTypeMismatch { .. } => "repeated-entity-type-mismatch",
-            Self::UnpairedCard => "unpaired-card",
-        }
-    }
-}
-
 impl fmt::Display for DirectoryDefect {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -341,6 +323,8 @@ impl fmt::Display for DirectoryDefect {
 pub(crate) struct QuarantinedDirectoryRecord {
     pub(crate) sequence: u32,
     pub(crate) source_offset: u64,
+    /// The byte length of the record's cards from `source_offset`.
+    pub(crate) source_length: Option<u64>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) defect: DirectoryDefect,
 }
@@ -350,26 +334,14 @@ impl QuarantinedDirectoryRecord {
         self.bytes.len() / crate::card::CARD_WIDTH
     }
 
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:directory#{}", self.sequence)
-    }
-
-    pub(crate) fn loss_note(&self) -> LossNote {
-        let message = format!("IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
-        self.sequence,
-        self.defect,
-        self.cards());
-        let tag = format!("directory_entry:D{}", self.sequence);
-        let code = IgesLossCode::DirectoryRecordQuarantined;
-
-        code.note(message).with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                cadmpeg_ir::stream_name!("iges"),
-                self.source_offset,
-            )
-            .with_tag(tag),
+    /// The error text of the record's give-up.
+    pub(crate) fn defect_message(&self) -> String {
+        format!(
+            "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are \
+             retained and no typed field was interpreted",
+            self.sequence,
+            self.defect,
+            self.cards()
         )
     }
 }
@@ -459,6 +431,7 @@ fn parse_pair(
     }
     Ok(DirectoryEntry {
         source_offset: first.offset,
+        source_length: card_span(first, second),
         sequence,
         entity_type,
         parameter_start: directory_integer(
@@ -494,18 +467,29 @@ fn parse_pair(
     })
 }
 
+/// The byte length from the start of `first` to the end of the card
+/// payload of `last`.
+pub(crate) fn card_span(first: &PhysicalLine, last: &PhysicalLine) -> Option<u64> {
+    last.offset
+        .checked_add(cadmpeg_core::decode::u64_from_index(last.payload.len()))?
+        .checked_sub(first.offset)
+}
+
 fn quarantine(
     first: (u32, &PhysicalLine),
     rest: &[(u32, &PhysicalLine)],
     defect: DirectoryDefect,
 ) -> QuarantinedDirectoryRecord {
     let mut bytes = Vec::new();
+    let mut last = first.1;
     for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
         bytes.extend_from_slice(&line.payload);
+        last = line;
     }
     QuarantinedDirectoryRecord {
         sequence: first.0,
         source_offset: first.1.offset,
+        source_length: card_span(first.1, last),
         bytes,
         defect,
     }

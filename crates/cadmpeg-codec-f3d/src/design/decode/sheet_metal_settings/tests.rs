@@ -320,7 +320,7 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
 #[test]
 fn settings_name_every_linked_record_for_header_retention() {
     let settings: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20", "record_index": 50,
             "byte_offset": 20, "paired_byte_offset": 100, "mask": 4,
             "inputs": {"version": "v2", "slots": [null, 55, null, null, null, null, null]},
@@ -396,7 +396,7 @@ fn decode_two_frames(
     extra: &[u64],
 ) -> (
     Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
-    Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<crate::design::decode::record::GivenUpFrame>,
 ) {
     use std::io::{Cursor, Write};
     let (mut first, first_frame) = first;
@@ -443,9 +443,9 @@ fn decode_two_frames(
     zip.write_all(&meta).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&bytes, |scan| {
-        let mut losses = Vec::new();
-        let settings = super::decode_settings(scan, &mut losses).unwrap();
-        (settings, losses)
+        let mut given_up = Vec::new();
+        let settings = super::decode_settings(scan, &mut given_up).unwrap();
+        (settings, given_up)
     })
 }
 
@@ -453,8 +453,8 @@ fn decode_two_frames(
 fn leading_reference_frames_decode_without_loss() {
     for tail in [&[0, 0][..], &[1, 0, 0][..]] {
         let first = leading_reference_fixture(tail);
-        let (settings, losses) = decode_two_frames(3, tail, first, &[55]);
-        assert!(losses.is_empty());
+        let (settings, given_up) = decode_two_frames(3, tail, first, &[55]);
+        assert!(given_up.is_empty());
         let records: Vec<_> = settings
             .iter()
             .map(|record| (record.record_index, record.mask))
@@ -495,13 +495,20 @@ fn unreadable_settings_keep_the_sibling_settings() {
             first[11] = 2;
         }
         let extra: &[u64] = if reference_prefix { &[55] } else { &[] };
-        let (settings, losses) = decode_two_frames(version, tail, (first, first_frame), extra);
+        let first_span = first_frame.start..first_frame.end;
+        let (settings, given_up) = decode_two_frames(version, tail, (first, first_frame), extra);
         assert_eq!(settings.len(), 1);
         assert_eq!(settings[0].record_index, 150);
-        assert_eq!(losses.len(), 1);
+        let [frame] = given_up.as_slice() else {
+            panic!("one given-up settings frame: {given_up:?}");
+        };
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::BendSettingsUndecoded.kind()
+            frame.reason().0,
+            cadmpeg_ir::unknown::part::Cause::Undecoded
+        );
+        assert_eq!(
+            frame.span(),
+            ("FusionAssetName[Active]/Design1/BulkStream.dat", first_span)
         );
     }
 }

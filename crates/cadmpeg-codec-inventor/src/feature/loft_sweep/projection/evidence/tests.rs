@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 use std::rc::Rc;
 
 fn model() -> CadIr {
@@ -495,6 +495,120 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     assert!(check(&other_body).is_none());
 }
 
+/// `legacy_model` with the tail of its side face replaced by `tail`.
+fn legacy_side(tail: &[i64]) -> CadIr {
+    let mut model = legacy_model();
+    let values = &mut model.model.attributes[2].values;
+    values.truncate(9);
+    values.extend(
+        tail.iter()
+            .map(|value| Some(AttributeValue::Integer(*value))),
+    );
+    model
+}
+
+/// The side tail of one face between a first-section boundary of curves 8
+/// and 9 and a last-section boundary of curve 3: two groups of the first
+/// section, then one of the last.
+const MERGED_SIDE: [i64; 16] = [3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 3, 23, 258, 0, 0];
+
+fn merged_curves(section: usize) -> Vec<i64> {
+    [vec![8, 9], vec![3]][section].clone()
+}
+
+#[test]
+fn a_legacy_side_face_can_join_several_curves_of_one_section() {
+    let model = legacy_side(&MERGED_SIDE);
+    assert!(legacy_loft(&model, 17, [19, 23], merged_curves).is_some());
+    assert!(loft_result(&model, 17, [19, 23], merged_curves).is_some());
+    assert!(loft_final_proof(&model, 17, [19, 23], merged_curves, false).is_some());
+    // The side face names both curves of the first boundary, so a boundary
+    // with only one of them, or with a third curve, is not complete.
+    assert!(legacy_loft(&model, 17, [19, 23], legacy_curves).is_none());
+    assert!(legacy_loft(&model, 17, [19, 23], |section| {
+        [vec![8, 9, 10], vec![3]][section].clone()
+    })
+    .is_none());
+    // Two groups of the last section after one of the first section (ABB)
+    // are outside the stated form.
+    let last = legacy_side(&[3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 4, 23, 258, 0, 0]);
+    assert!(legacy_loft(&last, 17, [19, 23], |section| {
+        [vec![8], vec![3, 4]][section].clone()
+    })
+    .is_none());
+    // Four groups are outside the stated form.
+    let four = legacy_side(&[
+        4, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 10, 19, 258, 0, 0, 3, 23, 258, 0, 0,
+    ]);
+    assert!(legacy_loft(&four, 17, [19, 23], |section| {
+        [vec![8, 9, 10], vec![3]][section].clone()
+    })
+    .is_none());
+}
+
+#[test]
+fn a_legacy_side_tail_with_more_than_two_groups_keeps_the_group_form() {
+    let check = |tail: &[i64]| legacy_loft(&legacy_side(tail), 17, [19, 23], merged_curves);
+    assert!(check(&MERGED_SIDE).is_some());
+    // The group count disagrees with the groups.
+    let mut count = MERGED_SIDE;
+    count[0] = 2;
+    assert!(check(&count).is_none());
+    count[0] = 4;
+    assert!(check(&count).is_none());
+    // A group of the last section comes before a group of the first section.
+    assert!(check(&[3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 9, 19, 258, 0, 0]).is_none());
+    // A section that the loft does not use.
+    assert!(check(&[3, 8, 19, 258, 0, 0, 9, 40, 258, 0, 0, 3, 23, 258, 0, 0]).is_none());
+    // Every group of the face joins one section.
+    assert!(check(&[3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 3, 19, 258, 0, 0]).is_none());
+    assert!(check(&[3, 8, 23, 258, 0, 0, 9, 23, 258, 0, 0, 3, 23, 258, 0, 0]).is_none());
+    // A group tail other than 0, 0.
+    let mut member = MERGED_SIDE;
+    member[4] = 4;
+    member[5] = 1;
+    assert!(check(&member).is_none());
+    let mut curve_tail = MERGED_SIDE;
+    curve_tail[8] = 257;
+    assert!(check(&curve_tail).is_none());
+    // One group, no group, or a negative count.
+    assert!(check(&[1, 8, 19, 258, 0, 0]).is_none());
+    assert!(check(&[0]).is_none());
+    assert!(check(&[-3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 3, 23, 258, 0, 0]).is_none());
+    // A curve that two faces name, or that one face names twice.
+    let mut repeated = MERGED_SIDE;
+    repeated[6] = 8;
+    assert!(check(&repeated).is_none());
+    let mut duplicate = legacy_side(&MERGED_SIDE);
+    let mut other = duplicate.model.attributes[2].clone();
+    other.target =
+        AttributeTarget::Face(json::from_value(json!("test:model:face#f3")).expect("face id"))
+            .into();
+    other.values[7] = Some(AttributeValue::Integer(17));
+    duplicate.model.attributes[3] = other;
+    assert!(legacy_loft(&duplicate, 17, [19, 23], merged_curves).is_none());
+}
+
+#[test]
+fn a_bound_state_screens_a_merged_side_tail_like_the_two_group_form() {
+    let model = |tail: &[i64]| {
+        let mut model = legacy_side(tail);
+        model.model.attributes.remove(0);
+        model
+    };
+    let screen = |tail: &[i64]| loft_owned_consistent(&model(tail), 17, [19, 23], merged_curves);
+    assert!(screen(&MERGED_SIDE));
+    assert!(!screen(&[
+        3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 9, 19, 258, 0, 0
+    ]));
+    assert!(!screen(&[
+        3, 8, 19, 258, 0, 0, 99, 19, 258, 0, 0, 3, 23, 258, 0, 0
+    ]));
+    assert!(!screen(&[
+        3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 99, 23, 258, 0, 0
+    ]));
+}
+
 /// A source of history-state models that answers every request with one
 /// fixed outcome and records the source indices it was asked for.
 struct FixedStates {
@@ -513,7 +627,9 @@ impl FixedStates {
     }
 
     fn holding(model: CadIr) -> Self {
-        Self::new(model, |model| StateModel::Model(Box::new(model.clone())))
+        Self::new(model, |model| {
+            StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
+        })
     }
 }
 
@@ -525,6 +641,10 @@ impl ResultStates for FixedStates {
     ) -> Result<Rc<StateModel>, CodecError> {
         self.asked.borrow_mut().push(source_index);
         Ok(Rc::new((self.outcome)(&self.model)))
+    }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
     }
 }
 
@@ -593,10 +713,10 @@ fn the_state_must_hold_the_complete_result_itself() {
 #[test]
 fn a_state_view_over_its_work_cap_keeps_the_loft_unproved_as_bounded() {
     let later = consumed_cap();
-    let bounded = FixedStates::new(CadIr::empty(), |_| StateModel::Bounded);
+    let bounded = FixedStates::new(CadIr::empty(), |_| StateModel::Bounded(StateLimit::Work));
     assert!(matches!(
         proof(Some(&later), Some(&bounded)),
-        Err(Unproved::Bounded)
+        Err(Unproved::Bounded(StateLimit::Work))
     ));
     // A final model that proves the loft never reads the state.
     assert!(proof(Some(&legacy_model()), Some(&bounded)).is_ok());
@@ -731,14 +851,16 @@ fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index()
         frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
     };
     use crate::feature::history_views::StateViews;
+    use crate::feature::loft_sweep::controls::NativeReason;
     use crate::kernel::parse_carrier;
     use crate::test_support::history_carrier::{
         framed_carrier, lofted_carrier_bytes, LATER_GENERATOR, LOFT_CURVES, LOFT_GENERATOR,
         LOFT_SECTIONS,
     };
     use cadmpeg_asm::kernel_header::RefWidth;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    let payload = framed_carrier(&lofted_carrier_bytes(RefWidth::Eight));
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let name = "n".repeat(1200);
+    let payload = framed_carrier(&lofted_carrier_bytes(RefWidth::Eight, &name));
     let arena = DecodeArena::new();
     let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
         .expect("carrier fits policy");
@@ -781,4 +903,313 @@ fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index()
         loft_proof(&ctx, None, Some(&views), loft_source, [23, 19], curves),
         Err(Unproved::Result)
     ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8192;
+    let (bounded, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("document context");
+    bounded
+        .retain_bytes(8191, "active body")
+        .expect("active model fits");
+    let views = StateViews::new(&carrier, &closed, 1 << 20);
+    let Err(Unproved::Bounded(cause @ StateLimit::Resource(limit))) = loft_proof(
+        &bounded,
+        Some(&consumed_cap()),
+        Some(&views),
+        loft_source,
+        LOFT_SECTIONS,
+        curves,
+    ) else {
+        panic!("the named state exceeds the remaining retained bytes");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "keep Inventor history state evidence");
+    let loss = NativeReason::ResultStateBounded(cause).note();
+    assert!(loss.message.contains("RetainedBytes"), "{}", loss.message);
+    assert!(loss.message.contains(limit.operation), "{}", loss.message);
+    assert!(!loss.message.contains("work cap"), "{}", loss.message);
+    assert!(bounded.resource_refusal().is_none());
+}
+
+/// History states of a joined loft: the state after it and the state before
+/// it, each with its own outcome.
+struct PairStates {
+    after: (CadIr, fn(&CadIr) -> StateModel),
+    before: (CadIr, fn(&CadIr) -> StateModel),
+}
+
+fn held(model: &CadIr) -> StateModel {
+    StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
+}
+
+impl ResultStates for PairStates {
+    fn after(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
+        Ok(Rc::new((self.after.1)(&self.after.0)))
+    }
+
+    fn before(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
+        Ok(Rc::new((self.before.1)(&self.before.0)))
+    }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
+    }
+}
+
+fn join_proof(states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    loft_join_proof(&ctx, states, 17, [19, 23], legacy_curves)
+}
+
+/// The complete legacy loft with its foreign face removed: the result body
+/// holds the faces of the loft only.
+fn unmerged() -> CadIr {
+    let mut model = legacy_model();
+    model.geometry.faces.pop();
+    model.model.attributes.pop();
+    model
+}
+
+#[test]
+fn a_joined_loft_is_proved_by_its_foreign_face_and_a_solid_before_it() {
+    let states = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), held),
+    };
+    assert!(join_proof(Some(&states)).is_ok());
+    assert!(matches!(join_proof(None), Err(Unproved::Result)));
+}
+
+#[test]
+fn a_result_body_of_the_loft_faces_alone_is_not_a_join() {
+    let states = PairStates {
+        after: (unmerged(), held),
+        before: (model(), held),
+    };
+    assert!(matches!(
+        join_proof(Some(&states)),
+        Err(Unproved::NotJoined)
+    ));
+}
+
+#[test]
+fn a_joined_loft_admits_a_state_after_it_with_one_cap_merged_away() {
+    // `consumed_cap` names the cap of the last section and both curves. The
+    // join merges the other cap into the joined body.
+    let states = PairStates {
+        after: (consumed_cap(), held),
+        before: (model(), held),
+    };
+    assert!(join_proof(Some(&states)).is_ok());
+}
+
+#[test]
+fn a_joined_loft_requires_the_named_result_in_the_state_after_it() {
+    let joined = |after: CadIr, curves: fn(usize) -> Vec<i64>| {
+        let states = PairStates {
+            after: (after, held),
+            before: (model(), held),
+        };
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        loft_join_proof(&ctx, Some(&states), 17, [19, 23], curves)
+    };
+    // No named cap face.
+    let mut capless = legacy_cap(0, 99, [0, 19, 260]);
+    capless.model.attributes[1] = legacy_cap(1, 99, [0, 23, 260]).model.attributes[1].clone();
+    assert!(matches!(
+        joined(capless, legacy_curves),
+        Err(Unproved::Result)
+    ));
+    // A named curve that the section boundary does not hold.
+    assert!(matches!(
+        joined(legacy_model(), |section| [vec![9], vec![3]][section]
+            .clone()),
+        Err(Unproved::Result)
+    ));
+    // Two curves of one section without a side face.
+    assert!(matches!(
+        joined(legacy_model(), |section| [vec![8, 9, 10], vec![3]][section]
+            .clone()),
+        Err(Unproved::Result)
+    ));
+    // Another generator names no face.
+    let states = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), held),
+    };
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert!(matches!(
+        loft_join_proof(&ctx, Some(&states), 99, [19, 23], legacy_curves),
+        Err(Unproved::Result)
+    ));
+}
+
+/// A state model read for a test history state.
+type StateRead = fn(&CadIr) -> StateModel;
+
+#[test]
+fn a_joined_loft_requires_a_solid_with_enough_faces_in_the_state_before_it() {
+    let cases: [(CadIr, StateRead); 2] = [
+        (CadIr::empty(), held),
+        (model(), |_| StateModel::Unavailable),
+    ];
+    for (before, outcome) in cases {
+        let states = PairStates {
+            after: (legacy_model(), held),
+            before: (before, outcome),
+        };
+        assert!(matches!(
+            join_proof(Some(&states)),
+            Err(Unproved::NotJoined)
+        ));
+    }
+    let failed = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), |_| StateModel::Failed),
+    };
+    assert!(matches!(
+        join_proof(Some(&failed)),
+        Err(Unproved::StateFailed)
+    ));
+    let bounded = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), |_| StateModel::Bounded(StateLimit::Work)),
+    };
+    assert!(matches!(
+        join_proof(Some(&bounded)),
+        Err(Unproved::Bounded(StateLimit::Work))
+    ));
+    let after_failed = PairStates {
+        after: (legacy_model(), |_| StateModel::Failed),
+        before: (model(), held),
+    };
+    assert!(matches!(
+        join_proof(Some(&after_failed)),
+        Err(Unproved::StateFailed)
+    ));
+}
+
+/// `legacy_model` with the attribute of the cap face `index` replaced by the
+/// generator `generator` and the tail `tail`.
+fn legacy_cap(index: usize, generator: i64, tail: [i64; 3]) -> CadIr {
+    let mut model = legacy_model();
+    let values = &mut model.model.attributes[index].values;
+    values[7] = Some(AttributeValue::Integer(generator));
+    values.truncate(9);
+    values.extend(tail.map(|value| Some(AttributeValue::Integer(value))));
+    model
+}
+
+#[test]
+fn a_joined_legacy_loft_admits_split_caps_and_one_unnamed_curve_per_section() {
+    let joined = |model: &CadIr, curves: fn(usize) -> Vec<i64>| {
+        legacy_loft_in(model.into(), 17, [19, 23], curves, true).is_some()
+    };
+    let strict = |model: &CadIr, curves: fn(usize) -> Vec<i64>| {
+        legacy_loft(model, 17, [19, 23], curves).is_some()
+    };
+    // Two named faces of one section and none of the other.
+    let split = legacy_cap(1, 17, [0, 19, 260]);
+    assert!(joined(&split, legacy_curves));
+    assert!(!strict(&split, legacy_curves));
+    // One cap face, one curve of each section without a side face.
+    let one_cap = legacy_cap(1, 99, [0, 23, 260]);
+    let extra = |section: usize| [vec![8, 9], vec![3, 4]][section].clone();
+    assert!(joined(&one_cap, extra));
+    assert!(!strict(&one_cap, extra));
+    assert!(!strict(&legacy_model(), extra));
+    // Two unnamed curves of a section exceed the merged end.
+    assert!(!joined(&one_cap, |section| [vec![8, 9, 10], vec![3]]
+        [section]
+        .clone()));
+    // A cap of another section or no cap at all is not a loft cap.
+    assert!(!joined(&legacy_cap(1, 17, [0, 31, 260]), legacy_curves));
+    let mut capless = legacy_cap(0, 99, [0, 19, 260]);
+    capless.model.attributes[1] = legacy_cap(1, 99, [0, 23, 260]).model.attributes[1].clone();
+    assert!(!joined(&capless, legacy_curves));
+    // A named curve outside the section boundary is a face of another loft.
+    assert!(!joined(&one_cap, |section| [vec![9], vec![3]][section].clone()));
+    // A joined loft of another generator is not this loft.
+    assert!(legacy_loft_in((&split).into(), 99, [19, 23], legacy_curves, true).is_none());
+}
+
+#[test]
+fn a_joined_loft_with_split_caps_is_proved_by_the_preceding_state() {
+    let states = PairStates {
+        after: (legacy_cap(1, 17, [0, 19, 260]), held),
+        before: (model(), held),
+    };
+    assert!(join_proof(Some(&states)).is_ok());
+}
+
+/// `model()` with its last face moved into a second solid body.
+fn two_bodies() -> CadIr {
+    let mut model = model();
+    let mut geometry = json::to_value(&model.geometry).expect("topology");
+    let object = geometry.as_object_mut().expect("topology object");
+    let push = |object: &mut serde_json::Map<String, serde_json::Value>, key: &str, value| {
+        object
+            .get_mut(key)
+            .and_then(|array| array.as_array_mut())
+            .expect("arena")
+            .push(value);
+    };
+    push(
+        object,
+        "bodies",
+        json!({"id":"test:model:body#b2", "kind":"solid"}),
+    );
+    push(
+        object,
+        "regions",
+        json!({"id":"test:model:region#r2", "body":"test:model:body#b2", "shells":["test:model:shell#s2"]}),
+    );
+    push(
+        object,
+        "shells",
+        json!({"id":"test:model:shell#s2", "region":"test:model:region#r2", "members":[]}),
+    );
+    object["faces"][2]["shell"] = json!("test:model:shell#s2");
+    model.geometry = json::from_value(geometry).expect("two bodies");
+    model
+}
+
+/// `legacy_model` with two more faces that the loft does not name.
+fn three_foreign_faces() -> CadIr {
+    let mut model = legacy_model();
+    for id in ["f4", "f5"] {
+        let mut face = model.geometry.faces[3].clone();
+        face.id = json::from_value(json!(format!("test:model:face#{id}"))).expect("id");
+        model.geometry.faces.push(face);
+    }
+    model
+}
+
+#[test]
+fn a_joined_loft_needs_one_solid_before_it_with_the_foreign_faces() {
+    let proof = |before: CadIr| {
+        join_proof(Some(&PairStates {
+            after: (three_foreign_faces(), held),
+            before: (before, held),
+        }))
+    };
+    assert!(proof(model()).is_ok());
+    // Two solid bodies of two and one faces hold three faces together, and
+    // neither holds the three foreign faces.
+    assert!(matches!(proof(two_bodies()), Err(Unproved::NotJoined)));
+}
+
+#[test]
+fn a_joined_loft_whose_source_no_state_lists_stays_unproved() {
+    struct Unlisted;
+    impl ResultStates for Unlisted {
+        fn after(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
+            Ok(Rc::new(StateModel::Unavailable))
+        }
+
+        fn introduces(&self, _: u32, _: i64) -> bool {
+            false
+        }
+    }
+    assert!(matches!(join_proof(Some(&Unlisted)), Err(Unproved::Result)));
 }

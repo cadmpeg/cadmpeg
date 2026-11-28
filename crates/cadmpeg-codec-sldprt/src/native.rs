@@ -340,18 +340,29 @@ impl SldprtNative {
         records.chain(objects)
     }
 
-    /// Loads and admits `namespace`; `linear` is the linear tolerance of the
-    /// document that holds it, under which its relation instances are derived.
-    pub(crate) fn load(
+    /// Loads the records of `namespace` in the session `ctx`; `linear` is the
+    /// linear tolerance of the document that holds it, under which its
+    /// relation instances are derived.
+    pub(crate) fn load_in(
+        ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
         linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        // Reconstruction adds the record root above a field's containers.
+        let nesting = ctx
+            .policy()
+            .limits
+            .max_recursion_depth
+            .checked_add(1)
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "the recursion limit leaves no level for the record root",
+                )
+            })?;
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        // A native field can contain 256 containers; reconstruction adds the record root.
-        policy.limits.max_recursion_depth = 257;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::load_with_context(&ctx, namespace, linear)
+        ctx.with_arena_nesting(&arena, nesting, |ctx| {
+            Self::load_with_context(ctx, namespace, linear)
+        })
     }
 
     pub(crate) fn load_with_context(

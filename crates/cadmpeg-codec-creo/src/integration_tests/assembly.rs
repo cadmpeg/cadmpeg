@@ -2,12 +2,16 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::products::Storage;
+use cadmpeg_ir::report::loss::LossKind;
+use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::loss::CreoLossCode;
-use crate::test_support::{build_asm, build_asm_with, build_prt_raw, members_table};
+use crate::test_support::{
+    build_asm, build_asm_sections, build_asm_with, build_prt_raw, members_table, neu_asm_payload,
+};
 use crate::CreoCodec;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
@@ -16,6 +20,17 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized Creo assembly should decode"),
     )
+}
+
+/// The record each `record.unreadable` names, as its message's second token.
+fn unreadable_records(result: &EditableDecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter_map(|loss| loss.message.split_whitespace().nth(1).map(str::to_owned))
+        .collect()
 }
 
 fn loss_messages(result: &EditableDecodeResult, code: CreoLossCode) -> Vec<String> {
@@ -134,10 +149,35 @@ fn an_assembly_header_without_a_component_table_reports_the_drop() {
     let result = decode(assembly);
     assert!(result.ir().model.occurrences.is_empty());
     assert_eq!(
+        loss_messages(&result, CreoLossCode::AssemblyMemberTableUnread).len(),
+        1
+    );
+    assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).is_empty());
+    assert!(loss_messages(&result, CreoLossCode::AssemblyComponentsExternal).is_empty());
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_table_with_another_row_count() {
+    let mut table = members_table();
+    table[b"\xe0\x00members\0\xf1\xf8".len()] = 0x04;
+    let result = decode(build_asm_with(table.clone()));
+    assert_eq!(result.ir().model.occurrences.len(), 3);
+    assert_eq!(
         loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).len(),
         1
     );
-    assert!(loss_messages(&result, CreoLossCode::AssemblyComponentsExternal).is_empty());
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(build_asm_with(table)), &options)
+        .expect_err("a pinned decode refuses a table that breaks its row count");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        CreoLossCode::AssemblyMemberTableIncomplete.kind()
+    );
 }
 
 #[test]
@@ -179,12 +219,141 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
     let result = decode(build_asm_with(table));
     // The root definition owns the two component rows that stay.
     assert_eq!(result.ir().model.occurrences.len(), 2);
+    let dropped = "creo:model:occurrence#member-1";
+    assert_eq!(unreadable_records(&result), [dropped.to_owned()]);
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("proper rigid placement"))
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "one entry states the drop: {charges:#?}");
+    assert_eq!(charges[0].code, record_unreadable_kind());
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.id.as_str() != dropped));
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_frame_that_is_not_rigid() {
+    let mut table = members_table();
+    replace_once(&mut table, b"\x18\x10\x18\x2d", b"\x18\x0f\x18\x2d");
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(build_asm_with(table)), &options)
+        .expect_err("a pinned decode refuses a dropped component row");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == "creo:model:occurrence#member-1"));
+}
+
+/// Decodes the component table after `damage` changes the second row, which
+/// starts with `8a 0f 02`, and returns the single row give-up's message after
+/// checking that it covers that row through the end of the section.
+fn given_up_rows(damage: impl FnOnce(&mut [u8], usize), cause: &LossKind) -> String {
+    let mut table = members_table();
+    let in_table = table
+        .windows(3)
+        .position(|window| window == b"\x8a\x0f\x02")
+        .expect("the second row");
+    damage(&mut table, in_table);
+    let bytes = build_asm_with(table);
+    let row = bytes
+        .windows(3)
+        .position(|window| window == b"\x8a\x0f\x02")
+        .expect("the unread row");
+    let end = crate::container::scan_bytes_ok(bytes.clone())
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "NeuAsmSld")
+        .expect("the component section")
+        .end();
+    let result = decode(bytes.clone());
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).is_empty());
+    assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableUnread).is_empty());
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == record_unreadable_kind() || loss.code == record_undecoded_kind()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_eq!(&charges[0].code, cause);
+    let message = charges[0].message.clone();
+    assert!(
+        message.starts_with(&format!(
+            "part component-rows stream=\"\" offset={row} length={} record=creo:source:part#",
+            end - row
+        )),
+        "{message}"
+    );
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| message.contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert!(stub.links.is_empty());
     assert_eq!(
-        loss_messages(&result, CreoLossCode::AssemblyPlacementUnresolved),
-        [
-            "1 component row(s) store a frame that is not a proper rigid placement; \
-          those occurrences did not transfer"
-        ]
+        result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .and_then(|record| record.data()),
+        Some(&bytes[row..end])
+    );
+    message
+}
+
+/// The offset of the second row's `tha_ref` byte from its start.
+const THA_REF: usize = b"\x8a\x0f\x02BRACKET\0BRACKET\0".len();
+
+#[test]
+fn a_component_row_that_breaks_the_grammar_is_given_up_as_unreadable() {
+    let message = given_up_rows(
+        |table, row| table[row + THA_REF + 1] = 0xe4,
+        &record_unreadable_kind(),
+    );
+    assert!(
+        message.contains("does not match the component row grammar"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_component_row_with_an_unread_value_form_is_given_up_as_undecoded() {
+    let message = given_up_rows(
+        |table, row| {
+            assert_eq!(table[row + THA_REF], 0xe1);
+            table[row + THA_REF] = 0xe2;
+        },
+        &record_undecoded_kind(),
+    );
+    assert!(
+        message.contains("holds a value form the row grammar does not read"),
+        "{message}"
+    );
+    let message = given_up_rows(
+        |table, row| table[row + THA_REF + 1] = 0xa4,
+        &record_undecoded_kind(),
+    );
+    assert!(
+        message.contains("holds a value form the row grammar does not read"),
+        "{message}"
     );
 }
 
@@ -220,4 +389,223 @@ fn a_family_instance_row_has_an_unresolved_prototype() {
         loss_messages(&result, CreoLossCode::AssemblyMemberReferenceUnresolved).len(),
         1
     );
+}
+
+/// The `record.undecoded` messages, in report order.
+fn charges(result: &EditableDecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_undecoded_kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+/// The start and end of each `NeuAsmSld` section of `bytes`.
+fn component_sections(bytes: &[u8]) -> Vec<(usize, usize)> {
+    crate::container::scan_bytes_ok(bytes.to_vec())
+        .framing
+        .sections
+        .iter()
+        .filter(|section| section.name() == "NeuAsmSld")
+        .map(|section| (section.offset(), section.end()))
+        .collect()
+}
+
+/// The offset of each `members` field in `bytes`.
+fn member_fields(bytes: &[u8]) -> Vec<usize> {
+    let field = b"\xe0\x00members\0";
+    bytes
+        .windows(field.len())
+        .enumerate()
+        .filter(|(_, window)| window == field)
+        .map(|(offset, _)| offset)
+        .collect()
+}
+
+/// Asserts that `charge` gives up `bytes[start..end]` as a `component-table`
+/// part for `reason`, and that the decode retains those bytes on its stub.
+fn assert_table_given_up(
+    result: &EditableDecodeResult,
+    charge: &str,
+    bytes: &[u8],
+    (start, end): (usize, usize),
+    reason: &str,
+) {
+    assert!(
+        charge.starts_with(&format!(
+            "part component-table stream=\"\" offset={start} length={} record=creo:source:part#",
+            end - start
+        )),
+        "{charge}"
+    );
+    assert!(
+        charge.ends_with(&format!("{reason}; dropped=[]")),
+        "{charge}"
+    );
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| charge.contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .and_then(|record| record.data()),
+        Some(&bytes[start..end])
+    );
+}
+
+/// A component table whose array header does not frame a table.
+fn unframed_table() -> Vec<u8> {
+    let mut table = members_table();
+    replace_once(&mut table, b"members\0\xf1\xf8", b"members\0\xf1\xf9");
+    table
+}
+
+#[test]
+fn a_component_table_the_reader_cannot_frame_is_given_up() {
+    let bytes = build_asm_with(unframed_table());
+    let [field] = member_fields(&bytes)[..] else {
+        panic!("one members field");
+    };
+    let [(_, end)] = component_sections(&bytes)[..] else {
+        panic!("one component section");
+    };
+    let result = decode(bytes.clone());
+    assert!(result.ir().model.occurrences.is_empty());
+    for code in [
+        CreoLossCode::AssemblyMemberTableIncomplete,
+        CreoLossCode::AssemblyMemberTableUnread,
+    ] {
+        assert!(loss_messages(&result, code).is_empty());
+    }
+    assert!(unreadable_records(&result).is_empty());
+    let charges = charges(&result);
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_table_given_up(
+        &result,
+        &charges[0],
+        &bytes,
+        (field, end),
+        "the members field header is not the table array form the reader reads",
+    );
+}
+
+#[test]
+fn a_pinned_decode_keeps_a_component_table_the_reader_cannot_frame() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(build_asm_with(unframed_table())), &options)
+            .expect("a pinned decode keeps a table form it does not decode"),
+    );
+    let charges = charges(&result);
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0].starts_with("part component-table "),
+        "{}",
+        charges[0]
+    );
+}
+
+#[test]
+fn a_section_with_two_members_fields_is_given_up_from_the_first() {
+    let mut tables = members_table();
+    tables.extend(members_table());
+    let bytes = build_asm_with(tables);
+    let fields = member_fields(&bytes);
+    assert_eq!(fields.len(), 2);
+    let [(_, end)] = component_sections(&bytes)[..] else {
+        panic!("one component section");
+    };
+    let result = decode(bytes.clone());
+    assert!(result.ir().model.occurrences.is_empty());
+    let charges = charges(&result);
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_table_given_up(
+        &result,
+        &charges[0],
+        &bytes,
+        (fields[0], end),
+        "the section holds more than one members field",
+    );
+}
+
+#[test]
+fn component_tables_in_two_sections_are_each_given_up() {
+    let bytes = build_asm_sections(&[
+        ("NeuAsmSld", neu_asm_payload(members_table())),
+        ("NeuAsmSld", neu_asm_payload(members_table())),
+    ]);
+    let fields = member_fields(&bytes);
+    let sections = component_sections(&bytes);
+    assert_eq!((fields.len(), sections.len()), (2, 2));
+    let result = decode(bytes.clone());
+    assert!(result.ir().model.occurrences.is_empty());
+    let charges = charges(&result);
+    assert_eq!(charges.len(), 2, "{charges:#?}");
+    for (charge, (field, (_, end))) in charges.iter().zip(fields.into_iter().zip(sections)) {
+        assert_table_given_up(
+            &result,
+            charge,
+            &bytes,
+            (field, end),
+            "another NeuAsmSld section also holds a component table",
+        );
+    }
+}
+
+#[test]
+fn an_unframed_table_beside_the_transferred_one_is_given_up() {
+    let bytes = build_asm_sections(&[
+        ("NeuAsmSld", neu_asm_payload(members_table())),
+        ("NeuAsmSld", neu_asm_payload(unframed_table())),
+    ]);
+    let fields = member_fields(&bytes);
+    let sections = component_sections(&bytes);
+    assert_eq!((fields.len(), sections.len()), (2, 2));
+    let result = decode(bytes.clone());
+    assert_eq!(result.ir().model.occurrences.len(), 3);
+    let charges = charges(&result);
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_table_given_up(
+        &result,
+        &charges[0],
+        &bytes,
+        (fields[1], sections[1].1),
+        "the members field header is not the table array form the reader reads",
+    );
+}
+
+#[test]
+fn a_table_whose_next_row_would_start_at_the_section_end_gives_up_nothing() {
+    // The last row's terminator says another row follows, and the section
+    // ends there: no row bytes are left unread.
+    let mut table = members_table();
+    let last = table.len() - 1;
+    assert_eq!(table[last], 0xf4);
+    table[last] = 0xe3;
+    let mut payload = b"\xe0\x00Sld_NeutAssem\0\xe3".to_vec();
+    payload.extend(table);
+    let bytes = build_asm_sections(&[("NeuAsmSld", payload)]);
+    let [(_, end)] = component_sections(&bytes)[..] else {
+        panic!("one component section");
+    };
+    assert_eq!(end, bytes.len());
+    let result = decode(bytes);
+    assert_eq!(result.ir().model.occurrences.len(), 3);
+    let notes = loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete);
+    assert_eq!(notes.len(), 1, "{notes:#?}");
+    assert!(
+        notes[0].contains(&format!("before offset {end}:")),
+        "{}",
+        notes[0]
+    );
+    assert!(charges(&result).is_empty(), "{:#?}", charges(&result));
 }

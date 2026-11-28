@@ -8,6 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind, record_unreadable_kind};
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
@@ -329,20 +330,20 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
 }
 
 #[test]
-fn a_pinned_decode_admits_an_oriented_shell_missing_its_derived_slot() {
+fn a_pinned_decode_refuses_an_oriented_shell_missing_its_derived_slot() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let result = StepCodec::default()
+    let error = StepCodec::default()
         .decode(
             &mut Cursor::new(oriented_closed_shell_source(false)),
             &options,
         )
-        .expect("a noncanonical oriented shell pins no strict floor");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::OrientedShellOmitsCfsFaces.kind()));
+        .expect_err("a shell that breaks Part 21 meets its strict floor");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }
+            if rejection.loss().code == StepLossCode::OrientedShellOmitsCfsFaces.kind()
+    ));
 }
 
 #[test]
@@ -373,6 +374,76 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("STEP topology root #31 rejected: face carrier #99")));
+}
+
+/// A root that fails drops no shell or face that another root built: the
+/// shell, its face, and the styles bound to them stay with the root that
+/// built them.
+#[test]
+fn a_failed_root_keeps_the_shell_a_second_root_built() {
+    let source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+    .replace(
+        "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+        "#31=BREP_WITH_VOIDS('',#30,(#34));",
+    )
+    .replace(
+        "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+        "#33=OPEN_SHELL('',(#29));\n#34=CLOSED_SHELL('',(#99));\n#99=UNSUPPORTED_FACE('',());\n\
+         #70=MANIFOLD_SOLID_BREP('',#30);\n#69=STYLED_ITEM('',(#66),#30);",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("decode a failed root beside a root that shares its shell");
+    let ir = decoded.ir();
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("STEP topology root #31 rejected")));
+    assert!(ir
+        .geometry
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "step:data:body#70"));
+    // The charge of the failed root names the void shell and its face by the
+    // ids that the root mints for them, and no member that root #70 keeps.
+    let root = source.find("#31=").expect("the failed root");
+    let head = format!("part data_record stream=\"\" offset={root} ");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_undecoded_kind() && loss.message.starts_with(&head))
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge names the root: {charges:#?}");
+    };
+    assert!(
+        charge.message.ends_with(
+            "; dropped=[step:data:face#99-root-31-shell-34, step:data:shell#34-root-31]"
+        ),
+        "{}",
+        charge.message
+    );
+    assert_eq!(ir.geometry.shells.len(), 1, "{:#?}", ir.geometry.shells);
+    let [face] = ir.geometry.faces.as_slice() else {
+        panic!("the face of the kept shell: {:#?}", ir.geometry.faces);
+    };
+    assert!(serde_json::to_string(&ir.model.appearance_bindings)
+        .unwrap()
+        .contains(&format!("\"{}\"", face.id.as_str())));
+    assert!(
+        ir.model
+            .appearance_bindings
+            .iter()
+            .any(|binding| binding.source_entity_id.as_deref() == Some("#30")),
+        "{:#?}",
+        ir.model.appearance_bindings
+    );
 }
 
 #[test]
@@ -701,8 +772,8 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
         .expect("decode partial solid witness");
     assert!(solid.ir().geometry.bodies.is_empty());
     assert!(solid.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
     }));
     assert!(
         cadmpeg_ir::validate_neutral(solid.ir(), solid.report().losses.clone())
@@ -711,42 +782,105 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
     );
 }
 
+/// `VERTEX_POINT('',#4)` with `#4` a `DIRECTION` breaks the point type of
+/// `vertex_geometry`. The vertex is given up as unreadable; the solid root
+/// drops with it, and the vertex's charge names the root's face and shell.
 #[test]
-fn rejected_solid_root_reports_an_error_severity_loss() {
+fn a_vertex_on_a_direction_is_unreadable_and_the_root_drops_with_it() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
     .expect("fixture is UTF-8")
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("salvage mode accepts a destroyed solid");
+    let part = |name: &str, statement: &str| {
+        format!(
+            "part data_record stream=\"\" offset={} length={} record=",
+            source.find(name).expect("statement"),
+            statement.len()
+        )
+    };
+    let vertex = part("#10=", "#10=VERTEX_POINT('',#4);");
+    let root = part("#18=", "#18=MANIFOLD_SOLID_BREP('',#17);");
 
-    assert!(decoded.ir().geometry.bodies.is_empty());
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
-    }));
+    let admitted = StepCodec::default()
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .expect("the default decode admits a document without the destroyed solid");
+    assert!(admitted.ir().geometry.bodies.is_empty());
+    let losses = &admitted.report().losses;
+    let charges = losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code) && loss.message.starts_with(&vertex))
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge names the vertex: {losses:?}");
+    };
+    assert_eq!(charge.code, record_unreadable_kind());
+    assert!(
+        charge
+            .message
+            .ends_with("; dropped=[step:data:face#16, step:data:shell#17]"),
+        "{}",
+        charge.message
+    );
+    assert!(
+        !losses.iter().any(|loss| loss.message.starts_with(&root)),
+        "{losses:?}"
+    );
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("a pinned decode refuses an unreadable vertex");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
 }
 
 #[test]
-fn a_pinned_decode_admits_a_destroyed_solid() {
-    let source = String::from_utf8(
-        include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
-    )
-    .expect("fixture is UTF-8")
-    .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
-    let mut options = DecodeOptions::default();
-    options.strictness.pinned = true;
-
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(source), &options)
-        .expect("a rejected topology root pins no strict floor");
-    assert!(result
+fn a_rejected_root_drops_its_shells_and_faces_and_keeps_their_supports() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .lines()
+            .filter(|line| !(50..=57).any(|id| line.starts_with(&format!("#{id}="))))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .replace("#7,#57,", "#7,#16,")
+            .replace("ADVANCED_FACE('',(#26)", "ADVANCED_FACE('',()");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("salvage mode admits the document without the rejected root");
+    let ir = decoded.ir();
+    assert!(ir.geometry.faces.is_empty());
+    assert!(ir.geometry.shells.is_empty());
+    assert!(ir
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#28"));
+    let charges = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
+        .filter(|loss| gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {charges:#?}");
+    };
+    assert_eq!(charge.code, record_undecoded_kind());
+    // The base shell #30, its face #29, and the style binding of the face
+    // drop with the surface model #31, each named by the id the root mints
+    // for it. The oriented shell #33 mints no record of its own.
+    assert!(charge.message.contains(" record="), "{}", charge.message);
+    assert!(
+        charge.message.ends_with(
+            "; dropped=[step:data:face#29, step:data:shell#30, step:presentation:binding#47:0-0]"
+        ),
+        "{}",
+        charge.message
+    );
 }
 
 #[test]
@@ -762,6 +896,7 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
         &ir,
         StepSchema::Ap242Edition3,
         std::collections::HashSet::new(),
+        crate::test_support::write_context(),
     )
     .unwrap();
     builder.build();

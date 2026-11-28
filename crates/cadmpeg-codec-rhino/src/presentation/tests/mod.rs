@@ -72,7 +72,7 @@ fn assert_presentation_native_limit<T: serde::Serialize>(
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id": record.id, "payload": expected}),
+        cadmpeg_core::json!({"id": record.id, "payload": expected}),
     );
 }
 
@@ -80,10 +80,10 @@ fn assert_presentation_native_limit<T: serde::Serialize>(
 fn dimension_style_controls_stream_under_native_retained_limit() {
     let mut controls = DimensionControlEntries::default();
     controls
-        .insert_with("v5_dimension_scale", || Ok(serde_json::json!(2.0)))
+        .insert_with("v5_dimension_scale", || Ok(cadmpeg_core::json!(2.0)))
         .expect("dimension control admitted");
     controls
-        .insert_with("text_height", || Ok(serde_json::json!(4.0)))
+        .insert_with("text_height", || Ok(cadmpeg_core::json!(4.0)))
         .expect("text control admitted");
     let details = DimensionStyleDetails::Modern {
         parent_style_uuid: Some("11111111-1111-1111-1111-111111111111".to_owned()),
@@ -91,7 +91,7 @@ fn dimension_style_controls_stream_under_native_retained_limit() {
     };
     assert_presentation_native_limit(
         &details,
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "parent_style_uuid": "11111111-1111-1111-1111-111111111111",
             "controls": {"text_height": 4.0, "v5_dimension_scale": 2.0},
         }),
@@ -111,7 +111,7 @@ fn per_viewport_uuid_streams_under_native_retained_limit() {
     };
     assert_presentation_native_limit(
         &settings,
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "viewport_uuid": viewport_id.to_string(),
             "settings_mask": settings.settings_mask(),
             "color": null,
@@ -1011,23 +1011,23 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
     );
     assert_eq!(
         value.details.controls()["decimal_separator"],
-        serde_json::json!(112)
+        cadmpeg_core::json!(112)
     );
     assert_eq!(
         value.details.controls()["use_kerning"],
-        serde_json::json!(true)
+        cadmpeg_core::json!(true)
     );
     assert_eq!(
         value.details.controls()["line_space_scale"],
-        serde_json::json!(1.75)
+        cadmpeg_core::json!(1.75)
     );
     assert_eq!(
         value.details.controls()["dimension_length_display"],
-        serde_json::json!(107)
+        cadmpeg_core::json!(107)
     );
     assert_eq!(
         value.details.controls()["font_characteristics"]["byte_len"],
-        serde_json::json!(24)
+        cadmpeg_core::json!(24)
     );
     assert_eq!(value.source_offset, 321);
 }
@@ -1046,11 +1046,11 @@ fn dimension_style_current_minor_transfers_new_text_controls() {
     .expect("dimension style with current minor");
     assert_eq!(
         value.details.controls()["use_kerning"],
-        serde_json::json!(true)
+        cadmpeg_core::json!(true)
     );
     assert_eq!(
         value.details.controls()["line_space_scale"],
-        serde_json::json!(1.75)
+        cadmpeg_core::json!(1.75)
     );
     assert_eq!(value.source_offset, 654);
 }
@@ -1111,7 +1111,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     );
     assert_eq!(
         value.details.controls()["v5_arrow_type"],
-        serde_json::json!(7)
+        cadmpeg_core::json!(7)
     );
     assert_eq!(
         value.source_uuid,
@@ -1839,3 +1839,14 @@ mod resource_limits;
 mod materials;
 
 mod utf16;
+
+/// A major-1 mapping channel with a negative minor has no typed reading
+/// (`rhino_3dm.md` §4: major-1 readers accept every nonnegative minor).
+#[test]
+fn a_negative_minor_mapping_channel_is_undecoded() {
+    let archive = crate::chunks::ArchiveVersion::V5;
+    let chunk = crate::test_support::test_dump::anonymous_chunk(archive, -1, &[0; 24]);
+    let error = super::parse_rendering_mapping_channel(&chunk, 0, chunk.len(), archive, false)
+        .expect_err("negative minor");
+    assert_eq!(error.cause(), cadmpeg_ir::unknown::part::Cause::Undecoded);
+}

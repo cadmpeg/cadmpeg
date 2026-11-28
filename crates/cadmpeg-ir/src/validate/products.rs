@@ -16,9 +16,20 @@ use crate::products::{JointOperands, OperandContainer, PairedJointKind};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
+#[cfg(test)]
 pub(super) fn check_products(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let records = crate::validate::design::records::DesignRecords::new(ir);
+    check_products_with(ctx, ir, &records, findings)
+}
+
+pub(super) fn check_products_with(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    records: &crate::validate::design::records::DesignRecords<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let definitions = BorrowedIdentities::build(|add| {
@@ -26,7 +37,7 @@ pub(super) fn check_products(
             add(definition.id.as_str(), ());
         }
     });
-    decode_set::check_component_records(ir, findings);
+    decode_set::check_component_records(records, findings);
     for (id, owner) in ir
         .model
         .features
@@ -274,7 +285,7 @@ pub(super) fn check_products(
             }
         }
     }
-    definitions::check(ir, findings);
+    definitions::check(records, findings);
     Ok(())
 }
 
@@ -587,8 +598,8 @@ mod tests {
         ));
         let mut wire = json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
-            serde_json::json!(occurrence.as_str());
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+            cadmpeg_core::json!(occurrence.as_str());
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "path": "external.f3d"
         });
         assert!(json::from_value::<AssemblyJoint>(wire).is_err());

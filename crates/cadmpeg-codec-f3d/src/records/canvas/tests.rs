@@ -182,8 +182,8 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
                     .expect("Canvas prologue bytes");
             prologue[10] = first_flag;
             prologue[14] = u8::from(visible);
-            value["geometry_prologue"] = serde_json::json!(prologue);
-            value["visible"] = serde_json::json!(visible);
+            value["geometry_prologue"] = cadmpeg_core::json!(prologue);
+            value["visible"] = cadmpeg_core::json!(visible);
             let wire: crate::records::canvas::DesignCanvasImageWire =
                 json::from_value(value).expect("Canvas wire");
             let expected = json::to_string(&wire).expect("Canvas wire bytes");
@@ -197,7 +197,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
     }
     for geometry_reference_offset in [424, 428] {
         let mut value = base.clone();
-        value["geometry_reference_offset"] = serde_json::json!(geometry_reference_offset);
+        value["geometry_reference_offset"] = cadmpeg_core::json!(geometry_reference_offset);
         let wire: crate::records::canvas::DesignCanvasImageWire =
             json::from_value(value).expect("Canvas scope form");
         let expected = json::to_string(&wire).expect("Canvas scope wire");
@@ -210,8 +210,8 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         );
     }
     let mut unicode = base.clone();
-    unicode["label"] = serde_json::json!("A😀");
-    unicode["asset_name"] = serde_json::json!("图😀.png");
+    unicode["label"] = cadmpeg_core::json!("A😀");
+    unicode["asset_name"] = cadmpeg_core::json!("图😀.png");
     for (field, value) in [
         ("geometry_frame_length", 223),
         ("paired_geometry_byte_offset", 323),
@@ -220,7 +220,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         ("asset_name_offset", 378),
         ("geometry_reference_offset", 414),
     ] {
-        unicode[field] = serde_json::json!(value);
+        unicode[field] = cadmpeg_core::json!(value);
     }
     let wire: crate::records::canvas::DesignCanvasImageWire =
         json::from_value(unicode).expect("Canvas Unicode wire");
@@ -248,7 +248,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         "geometry_reference_offset",
     ] {
         let mut value = base.clone();
-        value[field] = serde_json::json!(0);
+        value[field] = cadmpeg_core::json!(0);
         let error = json::from_value::<crate::records::canvas::DesignCanvasImage>(value)
             .expect_err("misplaced Canvas field")
             .to_string();
@@ -262,7 +262,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         "asset_name",
     ] {
         let mut value = base.clone();
-        value[field] = serde_json::json!("");
+        value[field] = cadmpeg_core::json!("");
         let error = json::from_value::<crate::records::canvas::DesignCanvasImage>(value)
             .expect_err("empty Canvas field")
             .to_string();
@@ -275,7 +275,7 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         .to_string();
     assert!(error.contains("plane_entity_suffix"));
     let mut cleared = base.clone();
-    cleared["second_boundary_flag"] = serde_json::json!(false);
+    cleared["second_boundary_flag"] = cadmpeg_core::json!(false);
     let image: crate::records::canvas::DesignCanvasImage =
         json::from_value(cleared).expect("modern Canvas with a cleared flag");
     assert!(image.geometry().flag_assumed());
@@ -283,32 +283,32 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
         .geometry()
         .flag_assumed());
     let mut repeated_record = base.clone();
-    repeated_record["asset_record_index"] = serde_json::json!(101);
+    repeated_record["asset_record_index"] = cadmpeg_core::json!(101);
     let error = json::from_value::<crate::records::canvas::DesignCanvasImage>(repeated_record)
         .expect_err("repeated Canvas record identity")
         .to_string();
     assert!(error.contains("asset_record_index"));
     let mut overflow = base.clone();
-    overflow["geometry_byte_offset"] = serde_json::json!(u64::MAX);
+    overflow["geometry_byte_offset"] = cadmpeg_core::json!(u64::MAX);
     let error = json::from_value::<crate::records::canvas::DesignCanvasImage>(overflow)
         .expect_err("Canvas extent overflow")
         .to_string();
     assert!(error.contains("geometry_byte_offset"));
     let mut boundary_offset = base.clone();
-    boundary_offset["boundary_coordinate_offsets"][0] = serde_json::json!(0);
+    boundary_offset["boundary_coordinate_offsets"][0] = cadmpeg_core::json!(0);
     let error = json::from_value::<crate::records::canvas::DesignCanvasImage>(boundary_offset)
         .expect_err("Canvas boundary offset")
         .to_string();
     assert!(error.contains("boundary_coordinate_offsets"));
     for (field, replacement) in [
-        ("visible", serde_json::json!(false)),
-        ("opacity", serde_json::json!(0.5)),
-        ("origin", serde_json::json!({"x":11.0,"y":20.0,"z":30.0})),
-        ("u_axis", serde_json::json!({"x":1.0,"y":1.0,"z":0.0})),
-        ("v_axis", serde_json::json!({"x":0.0,"y":0.0,"z":0.0})),
+        ("visible", cadmpeg_core::json!(false)),
+        ("opacity", cadmpeg_core::json!(0.5)),
+        ("origin", cadmpeg_core::json!({"x":11.0,"y":20.0,"z":30.0})),
+        ("u_axis", cadmpeg_core::json!({"x":1.0,"y":1.0,"z":0.0})),
+        ("v_axis", cadmpeg_core::json!({"x":0.0,"y":0.0,"z":0.0})),
         (
             "boundary_segments",
-            serde_json::json!([[{"u":-2.0,"v":-1.0},{"u":3.0,"v":-1.0}],[{"u":-2.0,"v":4.0},{"u":2.0,"v":4.0}]]),
+            cadmpeg_core::json!([[{"u":-2.0,"v":-1.0},{"u":3.0,"v":-1.0}],[{"u":-2.0,"v":4.0},{"u":2.0,"v":4.0}]]),
         ),
     ] {
         let mut value = base.clone();

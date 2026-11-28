@@ -402,7 +402,18 @@
       ],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "pvz": {
+        "unknowns": [
+          {
+            "id": "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4",
+            "links": [
+              "pvz:model:definition#2"
+            ]
+          }
+        ]
+      }
+    },
     "process": {
       "features": [],
       "groups": [],
@@ -486,18 +497,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "geometry.exact-undecoded",
-            "kind": "geometry_not_transferred",
-            "namespace": "pvz"
-          }
-        },
-        "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "attributes.records-undecoded",
             "kind": "attributes_not_transferred",
             "namespace": "pvz"
@@ -553,6 +552,25 @@
         },
         "message": "1 of 2 geometry members carry the 19-byte preamble block whose fields are an open item (PVZ-11); the block was not transferred",
         "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part ol-stream stream=\"pvz:plate.ol\" offset=414 length=35 record=pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4: malformed container: the exact-geometry stream did not decode into B-rep: malformed container: exact stream does not end with its stream terminator; the member keeps its tessellation; dropped=[]",
+        "provenance": {
+          "format": "pvz",
+          "offset": 414,
+          "stream": "pvz:plate.ol",
+          "tag": "ol-stream"
+        },
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -573,7 +591,21 @@
     "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "bb8e2d7ef4d80dc90db97bf278192bf77179b468c90b5f95075b3ebaf5de62c4",
     "file_digests": {},
-    "retained_records": {},
-    "unrepresented": []
+    "retained_records": {
+      "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4": {
+        "bytes": {
+          "data": "H4sIAAAAAAAA/wEMAPP/AgAAAQQAAAAEAAAAHtW9iwwAAAA=",
+          "kind": "inline"
+        },
+        "offset": 414,
+        "stream": "pvz:plate.ol",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

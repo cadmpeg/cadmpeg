@@ -158,7 +158,7 @@ fn geometry_without_design_records_keeps_no_scope() {
     for key in ["a", "b", "other"] {
         ir.geometry.bodies.push(
             json::from_value(
-                serde_json::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
+                cadmpeg_core::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
             )
             .expect("body"),
         );
@@ -248,7 +248,15 @@ fn native_header_flags_supply_suppression_for_unplaced_features() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut losses = Vec::new();
-    project(&ctx, &mut ir, &inventory, &sketches, &[], &[], &mut losses).expect("projection");
+    project(
+        &ctx,
+        &mut ir,
+        &inventory,
+        &sketches,
+        crate::design_v11::ParameterRecords::default(),
+        &mut losses,
+    )
+    .expect("projection");
     assert_eq!(
         ir.design.features[0].suppressed,
         Some(Dimension::Literal(true))
@@ -297,7 +305,7 @@ fn with_bodies(mut ir: CadIr) -> CadIr {
     for key in ["b", "a", "other"] {
         ir.geometry.bodies.push(
             json::from_value(
-                serde_json::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
+                cadmpeg_core::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
             )
             .expect("body"),
         );
@@ -390,8 +398,7 @@ fn native_design_validation_uses_the_decoder_projection() {
         &mut ir,
         &inventory,
         &sketches,
-        &[],
-        &[],
+        crate::design_v11::ParameterRecords::default(),
         &mut Vec::new(),
     )
     .expect("projection");
@@ -453,7 +460,7 @@ fn native_operation_keeps_all_source_parameter_strings() {
 fn current_body_membership_survives_geometry_arena_sorting() {
     let mut ir = part(vec![feature("producer", 0)]);
     for name in ["b", "a"] {
-        let body: cadmpeg_ir::topology::Body = json::from_value(serde_json::json!({
+        let body: cadmpeg_ir::topology::Body = json::from_value(cadmpeg_core::json!({
             "id":format!("inventor:brep:body#{name}"), "kind":"solid"
         }))
         .expect("body");
@@ -527,8 +534,7 @@ fn native_validation_rejects_bodies_the_predicate_places_elsewhere() {
             ir,
             &crate::feature::FeatureInventory::default(),
             &sketches,
-            &[],
-            &[],
+            crate::design_v11::ParameterRecords::default(),
             &mut Vec::new(),
         )
         .expect("projection");

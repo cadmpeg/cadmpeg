@@ -120,7 +120,6 @@ fn retains_support_attachment_and_distinct_offset_frame() {
 #[test]
 fn rejects_ambiguous_attachment_carriers() {
     for property in [
-        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1"/><PropertyPlacement Px="2"/></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/><String value="Deformed"/></Property>"#,
         r#"<Property name="AttachmentSupport" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer value="55"/></Property>"#,
@@ -169,32 +168,6 @@ fn rejects_noncanonical_map_mode_value_grammar() {
 }
 
 #[test]
-fn rejects_invalid_attachment_placement_values() {
-    for property in [
-        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>"#,
-        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#,
-        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="0"/></Property>"#,
-        r#"<Property name="Placement" type="App::PropertyString"/>"#,
-    ] {
-        let document = format!(
-            r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
-<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">{property}</Properties></Object></ObjectData>
-</Document>"#
-        );
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(&document)),
-                &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
-    }
-}
-
-#[test]
 fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
     for index in 0..super::MAP_MODE_NAMES.len() {
         let expected = index.to_string();
@@ -204,7 +177,7 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
             super::MapModeIndex::try_from(expected.as_str()).expect("text index"),
             mode
         );
-        let wire = serde_json::json!(expected);
+        let wire = cadmpeg_core::json!(expected);
         assert_eq!(json::to_value(mode).expect("serialize index"), wire);
         assert_eq!(
             json::from_value::<super::MapModeIndex>(wire).expect("deserialize index"),
@@ -233,7 +206,7 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
     ] {
         assert!(super::MapModeIndex::try_from(value.as_str()).is_err());
         let mut invalid = wire.clone();
-        invalid["map_mode"] = serde_json::json!(value);
+        invalid["map_mode"] = cadmpeg_core::json!(value);
         let error = json::from_value::<crate::native::AttachmentRecord>(invalid)
             .expect_err("invalid map mode at the record wire boundary");
         assert!(error.to_string().contains("map_mode"));

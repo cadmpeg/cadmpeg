@@ -5,6 +5,7 @@
 //! length-prefixes. Callers build IDs through the named functions below.
 
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
+use crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity;
 
 use crate::records::feature::{
     assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
@@ -560,6 +561,25 @@ pub(crate) fn neutral_combine_external_body_id(
         )
 }
 
+/// Feature-input-local body key for one complete legacy external `Combine`
+/// selector path.
+pub(crate) fn neutral_combine_legacy_external_body_id(
+    identity: &DesignCombineLegacyExternalBodyIdentity,
+) -> String {
+    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
+    let selector_context = identity_key_component(identity.selector_context_id.as_str());
+    format!(
+        "f3d:feature-input:body#combine-legacy-external:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.occurrence_reference,
+        identity.browser_node_entity,
+        identity.source_occurrence_identity,
+    )
+}
+
 /// Feature-input-local connector key for one pathless axial assembly selector.
 pub(crate) fn neutral_assembly_axial_object_id(
     identity: &DesignAssemblyAxialSelectorIdentity,
@@ -642,9 +662,18 @@ pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId 
 pub(crate) fn neutral_parameter_id(
     parameter: &DesignParameter,
 ) -> cadmpeg_ir::features::ParameterId {
+    neutral_parameter_id_of(&parameter.id, parameter.record_index)
+}
+
+/// The neutral parameter key of the design parameter record `record_id` at
+/// `record_index`.
+pub(crate) fn neutral_parameter_id_of(
+    record_id: &str,
+    record_index: u32,
+) -> cadmpeg_ir::features::ParameterId {
     neutral_parameter_id_parts(
-        native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM),
-        parameter.record_index,
+        native_stream(record_id).unwrap_or(DEFAULT_STREAM),
+        record_index,
     )
 }
 

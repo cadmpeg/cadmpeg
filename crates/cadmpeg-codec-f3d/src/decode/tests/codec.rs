@@ -640,9 +640,18 @@ fn decode_yields_metadata_and_honest_report() {
         cadmpeg_ir::report::loss::LossCategory::Geometry
     )));
 
+    // The fixture's history partition stores zero bytes where the first
+    // `delta_state` header integer belongs, so the history is given up as a
+    // part: its stub joins the unknowns and keeps a retained record.
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(result.source_fidelity().retained_records().len(), 2);
+    assert_eq!(unknowns.len(), 3);
+    assert_eq!(result.source_fidelity().retained_records().len(), 4);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(
+                "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" ",
+            )
+    }));
     assert!(result
         .source_fidelity()
         .retained_records()

@@ -101,8 +101,8 @@ fn every_compute_option_of_a_circular_pattern_reads_its_payload() {
             .as_array()
             .expect("feature list")
             .iter()
-            .find(|feature| feature["name"] == "C-Pattern 1")
-            .expect("C-Pattern 1");
+            .find(|feature| feature["name"] == "C-Pattern1")
+            .expect("C-Pattern1");
         let pattern = &pattern["definition"]["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "circular", "{pattern}");
         assert_eq!(pattern["count"], 4);
@@ -110,14 +110,14 @@ fn every_compute_option_of_a_circular_pattern_reads_its_payload() {
     }
 }
 
-/// The pattern of the feature named `C-Pattern 1`.
+/// The pattern of the feature named `C-Pattern1`.
 fn circular_pattern(ir: &serde_json::Value) -> &serde_json::Value {
     let feature = ir["model"]["features"]
         .as_array()
         .expect("feature list")
         .iter()
-        .find(|feature| feature["name"] == "C-Pattern 1")
-        .expect("C-Pattern 1");
+        .find(|feature| feature["name"] == "C-Pattern1")
+        .expect("C-Pattern1");
     &feature["definition"]["value"]["value"]["pattern"]
 }
 
@@ -132,7 +132,7 @@ fn a_one_sided_circular_pattern_leaves_out_its_suppressed_instances() {
     assert_eq!(pattern["kind"], "circular_angles", "{pattern}");
     assert_eq!(
         pattern["axis_dir"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
     let angles = pattern["angles"]
         .as_array()
@@ -158,7 +158,10 @@ fn a_symmetric_circular_pattern_keeps_and_charges_its_suppressed_instances() {
         .iter()
         .find_map(|scope| scope["circular_pattern_construction"]["suppressed"]["value"].as_array())
         .expect("suppressed keys");
-    assert_eq!(suppressed, &[serde_json::json!(2), serde_json::json!(5)]);
+    assert_eq!(
+        suppressed,
+        &[cadmpeg_core::json!(2), cadmpeg_core::json!(5)]
+    );
     let pattern = circular_pattern(&ir);
     assert_eq!(pattern["kind"], "circular", "{pattern}");
     assert_eq!(pattern["count"], 5, "{pattern}");

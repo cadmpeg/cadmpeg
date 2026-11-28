@@ -278,7 +278,16 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 1);
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 2);
+    let [partial] = faces
+        .iter()
+        .filter(|face| face.loops.is_partial())
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("the face of the rejected loop stays in partial form");
+    };
+    assert_eq!(partial.loops.stated().count(), 0);
     assert_eq!(result.ir().geometry.loops.len(), 1);
     assert_eq!(result.ir().geometry.coedges.len(), 3);
     assert_eq!(result.ir().geometry.edges.len(), 3);
@@ -367,14 +376,19 @@ fn dummy_partner_mismatch_withholds_the_edge() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 0);
+    let [face] = &result.ir().geometry.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.fin-partner-unresolved")
-            .count(),
+        super::given_up(
+            &result,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
         1
     );
 }
@@ -392,14 +406,19 @@ fn dummy_partner_null_nose_withholds_the_edge() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 0);
+    let [face] = &result.ir().geometry.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.fin-partner-unresolved")
-            .count(),
+        super::given_up(
+            &result,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
         1
     );
 }
@@ -415,15 +434,24 @@ fn nonreciprocal_backward_link_withholds_the_ring() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 0);
+    let [face] = &result.ir().geometry.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    // The give-up of the loop is the one loss of the ring.
+    let ring_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("reciprocal backward link"))
+        .collect::<Vec<_>>();
+    let [loss] = ring_losses[..] else {
+        panic!("one loss states the ring: {ring_losses:#?}");
+    };
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.fin-link-unresolved")
-            .count(),
-        1
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
 }
 
@@ -448,20 +476,18 @@ fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 0);
+    let [face] = &result.ir().geometry.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.ring-edge-withheld")
-            .count(),
+        super::given_up(&result, &[crate::brep::graph::RING_EDGE_WITHHELD]),
         1
     );
 }
 
 #[test]
-fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
+fn a_face_whose_loop_ring_breaks_keeps_a_partial_loop_list() {
     let mut body = triangle_body();
     let at = body
         .windows(4)
@@ -475,13 +501,23 @@ fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 0);
+    let [face] = &result.ir().geometry.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert!(result.ir().geometry.loops.is_empty());
+    assert_eq!(
+        super::given_up(&result, &[crate::brep::graph::FACE_WITHHELD]),
+        0
+    );
     assert_eq!(
         result
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+            .filter(|loss| loss.message.starts_with("record sldprt:brep:loop#20 "))
             .count(),
         1
     );
@@ -511,11 +547,7 @@ fn a_face_that_stores_no_loop_covers_its_sphere() {
         carrier
     };
     let withheld = |result: &cadmpeg_ir::codec::DecodeResult| {
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+        super::given_up(result, &[crate::brep::graph::FACE_WITHHELD]) == 1
     };
 
     for (bridge_marker, sense) in [(0x2d, Sense::Forward), (0x2b, Sense::Reversed)] {
@@ -527,8 +559,11 @@ fn a_face_that_stores_no_loop_covers_its_sphere() {
         assert!(!withheld(&result));
     }
     let stored_loop = decode(sphere(0x2b), 20, 0x2b);
-    assert!(stored_loop.ir().geometry.faces.is_empty());
-    assert!(withheld(&stored_loop));
+    let [face] = &stored_loop.ir().geometry.faces[..] else {
+        panic!("the face that names a loop is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert!(!withheld(&stored_loop));
     let plane = decode(
         plane_carrier(100, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         1,

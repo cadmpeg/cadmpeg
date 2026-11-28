@@ -20,6 +20,20 @@ impl Sha256Digest {
         Self::from_bytes(super::sha256(bytes))
     }
 
+    /// Hash borrowed extents in order and return their combined byte length.
+    #[must_use]
+    pub(crate) fn digest_chunks<'a>(chunks: impl IntoIterator<Item = &'a [u8]>) -> (u64, Self) {
+        use sha2::{Digest, Sha256};
+
+        let mut byte_len = 0;
+        let mut hasher = Sha256::new();
+        for chunk in chunks {
+            byte_len += cadmpeg_core::decode::u64_from_index(chunk.len());
+            hasher.update(chunk);
+        }
+        (byte_len, Self::from_bytes(hasher.finalize().into()))
+    }
+
     /// Encode the 32 bytes produced by a SHA-256 hasher.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
@@ -103,16 +117,6 @@ mod tests {
     use super::Sha256Digest;
     use cadmpeg_core::serde_erase::json;
 
-    #[cfg(feature = "schema")]
-    #[test]
-    fn digest_schema_does_not_admit_a_trailing_line_break() {
-        let schema = json::to_value(schemars::schema_for!(Sha256Digest)).unwrap();
-        assert_eq!(schema["minLength"], 64);
-        assert_eq!(schema["maxLength"], 64);
-        assert_eq!(schema["pattern"], "^[0-9a-f]{64}$");
-        assert!(Sha256Digest::try_from(format!("{}\n", "a".repeat(64))).is_err());
-    }
-
     #[test]
     fn digest_matches_sha256_abc_vector() {
         let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -135,12 +139,12 @@ mod tests {
             "é".repeat(32),
         ] {
             assert!(Sha256Digest::try_from(text.as_str()).is_err());
-            assert!(json::from_value::<Sha256Digest>(serde_json::json!(text)).is_err());
+            assert!(json::from_value::<Sha256Digest>(cadmpeg_core::json!(text)).is_err());
         }
         let digest = Sha256Digest::from_bytes([0; 32]);
         assert_eq!(digest.as_str(), "0".repeat(64));
         assert_eq!(
-            json::from_value::<Sha256Digest>(serde_json::json!(digest)).unwrap(),
+            json::from_value::<Sha256Digest>(cadmpeg_core::json!(digest)).unwrap(),
             digest
         );
     }

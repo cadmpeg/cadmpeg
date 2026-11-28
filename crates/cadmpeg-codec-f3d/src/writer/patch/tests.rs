@@ -121,7 +121,6 @@ fn generated_straight_record_patches_by_token_boundaries() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("generated line edit");
     let decoded = sab::frame(
@@ -205,7 +204,6 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("generated sphere edit");
     let decoded = sab::frame(
@@ -293,7 +291,6 @@ fn generated_plane_patch_keeps_its_reference_vector_length_and_sense() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("generated plane edit");
     let decoded = sab::frame(
@@ -388,7 +385,6 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("generated torus edit");
     let decoded = sab::frame(
@@ -482,7 +478,6 @@ fn generated_cylinder_preserves_native_angle_branch() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("generated cylinder edit");
     let decoded = sab::frame(
@@ -573,7 +568,6 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("generated ellipse edit");
     let ratio_offset = cadmpeg_asm::test_support::sab::payload_token_offsets(

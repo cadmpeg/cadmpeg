@@ -5,6 +5,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{AxisValue, InputReference, InputRole, Relation, Subject};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -16,7 +17,7 @@ use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::Severity;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{assert_no_design_findings, part_with_history, timeline_feature, typed_timeline};
 use crate::loss::SldprtLossCode;
@@ -190,8 +191,12 @@ fn part_in_order(
         classes.push(("moProfileFeature_c", "Sketch1", 8));
     }
     let mut ir = part_with_history(keywords.as_bytes(), &classes);
-    let native =
-        SldprtNative::load(ir.native.namespace("sldprt").unwrap(), ir.tolerances.linear).unwrap();
+    let native = crate::test_support::native::load_under(
+        ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let id = |name: &str| {
         ir.model
             .features

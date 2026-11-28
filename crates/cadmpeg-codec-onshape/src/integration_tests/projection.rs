@@ -3,10 +3,13 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::reader::{self, id, query, topology};
-use crate::test_support::projection::{base_fixture, changed, changed_fixture, selected};
+use crate::test_support::projection::{
+    base_fixture, changed, changed_fixture, selected, variable, with_variables,
+};
 use crate::test_support::review::parameter;
 use crate::test_support::{fixture, Report};
 
@@ -76,15 +79,35 @@ pub(super) fn kinds(wire: &Value) -> Vec<&str> {
 fn real_shaped_synthetic_bundle_resolves_plane_and_selected_region() {
     let (wire, report) = read(&base_fixture());
     assert_eq!(kinds(&wire), ["sketch", "extrude"], "{:?}", report.losses());
-    assert!(
-        report.losses().iter().all(|loss| !loss
-            .code
-            .as_deref()
-            .unwrap_or("")
-            .starts_with("onshape/")),
-        "{:?}",
-        report.losses()
+    let onshape: Vec<_> = report
+        .losses()
+        .iter()
+        .filter(|loss| loss.code.as_deref().unwrap_or("").starts_with("onshape/"))
+        .collect();
+    assert!(onshape.is_empty(), "{onshape:?}");
+    let result = crate::test_support::review::decode(&base_fixture());
+    let plate = crate::test_support::review::design_operation(result.ir(), "raised-plate");
+    assert_eq!(plate["kind"], "extrude");
+    let [region] = plate["value"]["profile"]["picks"]["value"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("one region pick");
+    };
+    assert_eq!(region["target"]["kind"], "sketch_region");
+    assert_eq!(
+        region["target"]["value"]["sketch"],
+        json!(id("sketch", "drawn-profile"))
     );
+    assert_eq!(
+        region["target"]["value"]["region"]["outer"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    crate::test_support::review::validate(result);
     assert_eq!(
         wire["sketches"][0]["placement"]["frame"]["normal"],
         json!({"x":0.0,"y":0.0,"z":1.0})
@@ -1167,51 +1190,6 @@ fn a_dropped_constraint_names_its_kind_even_when_an_operand_is_missing() {
         && loss.detail.contains("kept the solved sketch geometry")));
 }
 
-/// `fixture` with `variables` placed before its features. Every later feature moves down by
-/// as many rollback positions, so the body details captured at those rollbacks move with it.
-fn with_variables(
-    fixture: &[u8],
-    variables: &[Value],
-    mut edit: impl FnMut(&mut Value),
-) -> Vec<u8> {
-    let shift = cadmpeg_core::decode::u64_from_index(variables.len());
-    let mut archive = zip::ZipArchive::new(Cursor::new(fixture)).unwrap();
-    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    for i in 0..archive.len() {
-        let mut member = archive.by_index(i).unwrap();
-        let mut name = member.name().unwrap().into_owned();
-        let mut bytes = Vec::new();
-        member.read_to_end(&mut bytes).unwrap();
-        if name.ends_with("features.json") {
-            let mut response: Value = json::from_slice(&bytes).unwrap();
-            edit(&mut response);
-            let rows = response["features"].as_array_mut().unwrap();
-            for (at, row) in variables.iter().enumerate() {
-                rows.insert(at, row.clone());
-            }
-            bytes = json::to_vec(&response).unwrap();
-        } else if name.ends_with("bodydetails/index.json") {
-            let indices: Vec<u64> = json::from_slice(&bytes).unwrap();
-            let moved: Vec<u64> = indices.iter().map(|i| i + shift).collect();
-            bytes = json::to_vec(&moved).unwrap();
-        } else if let Some((folder, file)) = name.rsplit_once("bodydetails/") {
-            let index: u64 = file.strip_suffix(".json").unwrap().parse().unwrap();
-            name = format!("{folder}bodydetails/{}.json", index + shift);
-        }
-        output
-            .start_file(name.as_str(), zip::write::SimpleFileOptions::default())
-            .unwrap();
-        output.write_all(&bytes).unwrap();
-    }
-    output.finish().unwrap().into_inner()
-}
-
-fn variable(feature: &str, name: &str, kind: &str, key: &str, expression: &str) -> Value {
-    json!({"featureId":feature,"featureType":"assignVariable","parameters":[
-        {"parameterId":"mode","value":"ASSIGNED"},{"parameterId":"variableType","value":kind},
-        {"parameterId":"name","value":name},{"parameterId":key,"expression":expression}]})
-}
-
 #[test]
 fn a_variable_revolve_angle_becomes_a_parameter_the_revolve_owns() {
     let bytes = with_variables(
@@ -1261,7 +1239,7 @@ fn a_variable_revolve_angle_becomes_a_parameter_the_revolve_owns() {
 }
 
 #[test]
-fn suppressed_features_and_variables_do_not_report_variable_loss() {
+fn a_suppressed_feature_keeps_its_definition_and_charges_what_it_drops() {
     for suppression in ["suppressed", "parentSuppressed"] {
         for suppress_variable in [false, true] {
             let mut round = variable("round-variable", "round", "LENGTH", "lengthValue", "1 mm");
@@ -1276,66 +1254,69 @@ fn suppressed_features_and_variables_do_not_report_variable_loss() {
                 }
             });
             let (wire, report) = read(&bytes);
+            let context = format!("{suppression}, suppress_variable={suppress_variable}");
             assert_eq!(wire["features"][0]["suppressed"], suppress_variable);
             assert_eq!(wire["features"][3]["suppressed"], true);
+            let variable_id = id("parameter", "round-variable");
+            let parameter = wire["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|parameter| parameter["id"] == variable_id)
+                .unwrap();
+            let owner = id("feature", "round-variable");
             assert_eq!(
-                wire["parameters"]
-                    .as_array()
-                    .unwrap()
+                parameter["owner"].as_str(),
+                suppress_variable.then_some(owner.as_str())
+            );
+            let history: Vec<_> = report
+                .losses()
+                .iter()
+                .filter(|loss| {
+                    loss.code
+                        .as_deref()
+                        .is_some_and(|code| code.starts_with("onshape/history."))
+                })
+                .collect();
+            if suppress_variable {
+                assert!(
+                    history
+                        .iter()
+                        .any(|loss| loss.detail.ends_with("subject: Corner round")),
+                    "{context}: {history:?}"
+                );
+                assert!(
+                    history
+                        .iter()
+                        .all(|loss| !loss.detail.ends_with("subject: round-variable")),
+                    "{context}: {history:?}"
+                );
+            } else {
+                assert!(history.is_empty(), "{context}: {history:?}");
+                assert_eq!(kinds(&wire)[3], "fillet", "{context}");
+                let result = crate::test_support::review::decode(&bytes);
+                let fillet =
+                    crate::test_support::review::design_operation(result.ir(), "Corner round");
+                assert_eq!(
+                    fillet["value"]["sets"][0]["section"]["size"]["value"],
+                    json!({"kind":"parameter","value":id("parameter", "Corner round/radius")}),
+                    "{context}"
+                );
+                let feature = result
+                    .ir()
+                    .design
+                    .features
                     .iter()
-                    .any(|p| { p["id"] == id("parameter", "round-variable") }),
-                !suppress_variable
-            );
-            assert!(
-                !report.losses().iter().any(|loss| loss
-                    .code
-                    .as_deref()
-                    .is_some_and(|code| code.starts_with("onshape/history."))),
-                "{suppression}, suppress_variable={suppress_variable}: {:?}",
-                report.losses()
-            );
+                    .find(|feature| feature.id.as_str() == id("feature", "Corner round"))
+                    .unwrap();
+                assert_eq!(
+                    feature.suppressed,
+                    Some(cadmpeg_ir::design::dimension::Dimension::Literal(true))
+                );
+                crate::test_support::review::validate(result);
+            }
         }
     }
-}
-
-#[test]
-fn a_variable_value_no_parameter_drives_is_a_named_loss() {
-    let bytes = with_variables(
-        &fixture("plate-fillet"),
-        &[variable(
-            "round-variable",
-            "round",
-            "LENGTH",
-            "lengthValue",
-            "1 mm",
-        )],
-        |response| {
-            for p in response["features"][2]["parameters"]
-                .as_array_mut()
-                .unwrap()
-            {
-                if p["parameterId"] == "radius" {
-                    p["expression"] = json!("#round");
-                }
-            }
-        },
-    );
-    let (wire, report) = read(&bytes);
-    assert_eq!(
-        kinds(&wire),
-        ["tree_node", "sketch", "extrude", "fillet"],
-        "{:?}",
-        report.losses()
-    );
-    let losses: Vec<_> = report
-        .losses()
-        .iter()
-        .filter(|l| l.code.as_deref() == Some("onshape/history.variable-evaluated"))
-        .collect();
-    assert_eq!(losses.len(), 1, "{:?}", report.losses());
-    assert!(losses[0]
-        .detail
-        .starts_with("radius uses Part Studio variables"));
 }
 
 #[test]
@@ -1814,9 +1795,10 @@ fn absent_stored_thin_domain_refuses_the_scoped_construction() {
             }
         });
     let result = crate::test_support::review::decode(&bytes);
-    assert!(result.ir().design.features.is_empty());
-    assert!(result.ir().design.containers.is_empty());
-    assert!(result.ir().design.scopes.is_empty());
+    assert_eq!(
+        crate::test_support::review::design_operation(result.ir(), "Plate"),
+        crate::test_support::review::unresolved("extrude")
+    );
     assert!(result
         .report()
         .losses
@@ -1988,7 +1970,10 @@ fn absent_stored_thin_side_or_direction_refuses_the_wall() {
             },
         );
         let result = crate::test_support::review::decode(&bytes);
-        assert!(result.ir().design.features.is_empty());
+        assert_eq!(
+            crate::test_support::review::design_operation(result.ir(), "Plate"),
+            crate::test_support::review::unresolved("extrude")
+        );
         assert!(result
             .report()
             .losses

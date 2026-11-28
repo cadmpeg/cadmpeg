@@ -37,7 +37,9 @@ const STORED_VALUE_AGREEMENT: f64 = 1e-9;
 /// Restate every user parameter the decoder transferred as a parameter of
 /// `scope`, and add to `losses` the note naming those that drop an input.
 /// The decoder files no CATIA parameter under a feature; one it did would
-/// need its owner stated, and is left out.
+/// need its owner stated, and is left out. Each takes its rank in the
+/// stored order of the user parameters as its position, where those ranks
+/// are distinct.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -51,6 +53,12 @@ pub(super) fn project(
         .filter(|parameter| parameter.owner.is_none())
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
+    let ranked = user
+        .values()
+        .map(|parameter| parameter.ordinal)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == user.len();
     let mut projected = Vec::with_capacity(user.len());
     let mut dropped = Vec::new();
     for parameter in user.values() {
@@ -72,6 +80,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: scope.clone(),
             owner: None,
+            position: ranked.then_some(parameter.ordinal),
             name: NonBlankString::new(parameter.name.clone()),
             value: value(parameter.value.as_ref(), &kind),
             definition: ParameterDefinition::Expression(expression),
@@ -144,6 +153,7 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
         ],
         ParameterField::Value => &[ModelParameterField::Value, ModelParameterField::Properties],
         ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Position => &[ModelParameterField::Ordinal],
         ParameterField::Scope
         | ParameterField::Owner
         | ParameterField::Unit
@@ -157,7 +167,7 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
 }
 
 /// The projected parameters whose signature declares no kind.
-pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&str> {
+pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&ParameterId> {
     let projected = ir
         .design
         .parameters
@@ -170,7 +180,7 @@ pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&str> {
         .filter(|parameter| {
             projected.contains(parameter.id.as_str()) && property(parameter, "value_type").is_none()
         })
-        .map(|parameter| parameter.id.as_str())
+        .map(|parameter| &parameter.id)
         .collect()
 }
 

@@ -5,6 +5,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
+mod given_up;
 mod recovery;
 mod support;
 mod transforms;
@@ -216,7 +217,38 @@ fn nonfinite_instance_transform_is_refused_at_the_matrix_first_byte() {
     let error = parse_reference(&bytes, 0..bytes.len()).expect_err("nonfinite transform");
     assert_eq!(
         error,
-        crate::chunks::FramingError::structural(matrix_offset, "instance transform is not finite")
+        crate::chunks::FramingError::unsupported(matrix_offset, "instance transform is not finite")
+    );
+}
+
+/// A transform that is not finite, not affine, or not invertible has no typed
+/// reading and breaks no stated rule; a nil definition names no record.
+#[test]
+fn a_transform_without_a_typed_reading_is_undecoded() {
+    use cadmpeg_ir::unknown::part::Cause;
+    let cause = |rows: [[f64; 4]; 4]| {
+        let bytes = reference_matrix_bytes(rows);
+        parse_reference(&bytes, 0..bytes.len())
+            .expect_err("refused transform")
+            .cause()
+    };
+    let mut singular = Transform::identity().rows();
+    singular[2][2] = 0.0;
+    assert_eq!(cause(singular), Cause::Undecoded);
+    let mut projective = Transform::identity().rows();
+    projective[3][0] = 1.0;
+    assert_eq!(cause(projective), Cause::Undecoded);
+    let mut nonfinite = Transform::identity().rows();
+    nonfinite[1][2] = f64::NAN;
+    assert_eq!(cause(nonfinite), Cause::Undecoded);
+
+    let mut nil = reference_bytes(Transform::identity());
+    nil[1..17].fill(0);
+    assert_eq!(
+        parse_reference(&nil, 0..nil.len())
+            .expect_err("nil definition")
+            .cause(),
+        Cause::Unreadable
     );
 }
 

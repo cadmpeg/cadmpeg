@@ -131,10 +131,10 @@ fn named_combine_preserves_middle_reference_and_scope_identity() {
     let roundtrip: super::DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(roundtrip).unwrap(), wire);
     let mut wrong_offset = wire.clone();
-    wrong_offset["combine_named_tail"]["middle"]["offset"] = serde_json::json!(214);
+    wrong_offset["combine_named_tail"]["middle"]["offset"] = cadmpeg_core::json!(214);
     assert!(json::from_value::<super::DesignParameterScope>(wrong_offset).is_err());
     let mut wrong_kind = wire;
-    wrong_kind["kind"] = serde_json::json!("SplitFace");
+    wrong_kind["kind"] = cadmpeg_core::json!("SplitFace");
     assert!(json::from_value::<super::DesignParameterScope>(wrong_kind).is_err());
 }
 
@@ -566,6 +566,8 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
             let scope = parse_hole_scope(&tail).expect("reciprocal Hole tail");
             assert_eq!(scope.history_state_id(), Some(9));
             assert_eq!(scope.previous_history_state_id(), Some(8), "{length}");
+            assert_eq!(scope.tail_flags, None);
+            assert_eq!(scope.stored_suppression(), Some(suppressed));
             let wire = json::to_string(&scope).unwrap();
             let decoded: crate::records::feature::scope::DesignParameterScope =
                 serde_json::from_str(&wire).unwrap();
@@ -632,8 +634,7 @@ fn parse_thread_scope(
 
 /// The suppression flag of a Thread companion tail decodes as the Thread's
 /// suppression, with its location, and the tail stores no item tail state:
-/// the flag byte sits where an item tail stores its `01` marker. The
-/// reciprocal Hole tails leave the tail state unread.
+/// the flag byte sits where an item tail stores its `01` marker.
 #[test]
 fn a_thread_companion_tail_decodes_its_suppression_flag() {
     use crate::layout::thread_hole_companion_tail as companion;
@@ -669,17 +670,6 @@ fn a_thread_companion_tail_decodes_its_suppression_flag() {
                     .is_err(),
                 "offset {offset}"
             );
-        }
-        for (members, further) in [
-            (&[12][..], false),
-            (&[12][..], true),
-            (&[12, 100][..], false),
-            (&[12, 100][..], true),
-        ] {
-            let scope = parse_hole_scope(&reciprocal_hole_tail(members, further, suppressed))
-                .expect("reciprocal Hole tail");
-            assert_eq!(scope.tail_flags, None, "{members:?} {further}");
-            assert_eq!(scope.companion_suppressed, None, "{members:?} {further}");
         }
     }
 }
@@ -751,8 +741,8 @@ fn thread_envelopes_that_differ_only_in_the_companion_flag_keep_the_later() {
 }
 
 #[test]
-fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
-    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
+fn named_reciprocal_hole_retains_its_label_preceding_state_and_suppression() {
+    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, true);
     let closing_references_width = 2 * 11 + 1;
     reciprocal.insert(reciprocal.len() - closing_references_width, 0);
     let mut tail = reciprocal[..8].to_vec();
@@ -766,6 +756,18 @@ fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
     );
     assert_eq!(scope.previous_history_state_id(), Some(8));
     assert_eq!(scope.tail_flags, None);
+    assert_eq!(scope.stored_suppression(), Some(true));
+    let wire = json::to_value(&scope).unwrap();
+    assert_eq!(
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire.clone())
+            .unwrap(),
+        scope
+    );
+    let mut moved = wire;
+    moved["companion_suppressed"]["offset"] = scope.feature_ordinal_offset().into();
+    assert!(
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved).is_err()
+    );
     tail[count_at] = 1;
     assert!(parse_hole_scope(&tail).is_none());
 }
@@ -1127,11 +1129,11 @@ fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
         value
     };
     let standard = |offset: u64| {
-        serde_json::json!({"hole_extent": {"standard": {
+        cadmpeg_core::json!({"hole_extent": {"standard": {
             "offset": offset, "standard": "ISO", "fit": "Normal",
             "size": "M6", "fastener": "Socket head cap screw"}}})
     };
     assert_eq!(stripped(standard(120)), stripped(standard(480)));
-    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    let alignment = |x: f64| cadmpeg_core::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
     assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

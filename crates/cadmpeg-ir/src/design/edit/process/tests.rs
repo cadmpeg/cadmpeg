@@ -5,8 +5,8 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
-use serde_json::json;
 
 use crate::design::configuration::{DesignConfiguration, Overrides};
 use crate::design::container::{Container, OrderedKind, Rollback};
@@ -99,6 +99,7 @@ fn blank_parameter(key: u32) -> DesignParameter {
         id: parameter_id(key),
         scope: definition(),
         owner: None,
+        position: None,
         name: Some(NonBlankString::new(format!("p{key}")).unwrap()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -486,6 +487,7 @@ fn switching_the_active_configuration_rebases_process_states() {
             id: configuration(key),
             scope: scope.clone(),
             name: format!("c{key}"),
+            position: None,
             parent: None,
             comment: None,
             overrides: Overrides::default(),

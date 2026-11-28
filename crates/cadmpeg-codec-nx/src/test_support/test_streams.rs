@@ -709,6 +709,150 @@ pub(crate) fn topology_partition_stream() -> Vec<u8> {
     s
 }
 
+/// [`topology_partition_stream`] under a base-13006 transmit header whose
+/// primary framing stops before the first record, with a base-schema BODY
+/// that stores `res_linear` (metres) in place of the fixed BODY record.
+pub(crate) fn primary_stopped_topology_stream(res_linear: f64) -> Vec<u8> {
+    primary_stopped_stream(
+        &topology_partition_stream(),
+        ": TRANSMIT FILE (partition) created by modeller",
+        40,
+        res_linear,
+    )
+}
+
+/// `fixed`, a stream whose first record after the `SCH_TEST_1_9999` header is
+/// a 24-byte BODY, under a base-13006 transmit header of `description` whose
+/// primary framing stops before the first record, with a base-schema BODY of
+/// node id `body_node_id` that stores `res_linear` (metres) in place of the
+/// fixed BODY record.
+pub(crate) fn primary_stopped_stream(
+    fixed: &[u8],
+    description: &str,
+    body_node_id: u32,
+    res_linear: f64,
+) -> Vec<u8> {
+    let marker = b"SCH_TEST_1_9999\x00";
+    let records = fixed
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap()
+        + marker.len();
+    let mut s = b"PS".to_vec();
+    for field in [description, "SCH_999_13006"] {
+        s.extend(u32::try_from(field.len()).unwrap().to_be_bytes());
+        s.extend(field.as_bytes());
+    }
+    s.extend(0u32.to_be_bytes());
+    // Node type 0 stops the primary sequence.
+    s.extend([0, 0]);
+    push_base_body(&mut s, body_node_id, res_linear);
+    s.extend_from_slice(&fixed[records + 24..]);
+    s
+}
+
+/// Appends a base-schema BODY 2 of node id `node_id` that stores
+/// `res_linear` (metres).
+fn push_base_body(s: &mut Vec<u8>, node_id: u32, res_linear: f64) {
+    use super::test_bytes::encoded_xmt;
+    s.extend(12u16.to_be_bytes());
+    s.extend(encoded_xmt(2));
+    s.extend(node_id.to_be_bytes());
+    for _ in 0..6 {
+        s.extend(encoded_xmt(1));
+    }
+    s.extend(1.0e3f64.to_be_bytes());
+    s.extend(res_linear.to_be_bytes());
+    for _ in 0..3 {
+        s.extend(encoded_xmt(1));
+    }
+    s.push(0);
+    s.extend(encoded_xmt(1));
+    s.extend([1, 0]);
+    for _ in 0..7 {
+        s.extend(encoded_xmt(1));
+    }
+}
+
+/// Writes `node_id`, when the record has one, and the null reference in
+/// each pointer cell of `record` at `pointers` that holds zero.
+fn base_fields(record: &mut [u8], node_id: Option<u32>, pointers: &[usize]) {
+    if let Some(node_id) = node_id {
+        record[4..8].copy_from_slice(&node_id.to_be_bytes());
+    }
+    for &at in pointers {
+        if record[at..at + 2] == [0, 0] {
+            put_ref(record, at, 1);
+        }
+    }
+}
+
+/// [`topology_partition_stream`] under a base-13006 transmit header whose
+/// primary sequence frames each record and ends at its terminator. A
+/// base-schema BODY and REGION take the place of the fixed ones, each other
+/// record states a node id and null references in place of its zero
+/// references, and POINT 11 stores `point` (metres).
+pub(crate) fn primary_terminated_topology_stream(point: [f64; 3]) -> Vec<u8> {
+    use super::test_bytes::encoded_xmt;
+    let fixed = topology_partition_stream();
+    let marker = b"SCH_TEST_1_9999\x00";
+    let records = fixed
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap()
+        + marker.len();
+    // SHELL, FACE, LOOP, FIN, EDGE, PLANE, LINE, and VERTEX follow the BODY.
+    let region = records + 24 + 24 + 39 + 16 + 23 + 32 + 91 + 67 + 28;
+    assert_eq!(fixed[region..region + 4], [0, 19, 0, 12]);
+    let mut s = b"PS".to_vec();
+    for field in [
+        ": TRANSMIT FILE (partition) created by modeller",
+        "SCH_999_13006",
+    ] {
+        s.extend(u32::try_from(field.len()).unwrap().to_be_bytes());
+        s.extend(field.as_bytes());
+    }
+    s.extend(0u32.to_be_bytes());
+    push_base_body(&mut s, 60, 1.0e-8);
+    let mut topology = fixed[records + 24..region].to_vec();
+    let mut at = 0;
+    let mut node_id = 41;
+    // The length, node-id presence, and pointer cells of SHELL, FACE, LOOP,
+    // FIN, EDGE, PLANE, LINE, and VERTEX.
+    for (length, has_node_id, pointers) in [
+        (24, true, &[8, 10, 12, 14, 16, 18, 20, 22][..]),
+        (39, true, &[8, 18, 20, 22, 24, 26, 29, 31, 33, 35, 37][..]),
+        (16, true, &[8, 10, 12, 14][..]),
+        (23, false, &[4, 6, 8, 10, 12, 14, 16, 18, 20][..]),
+        (32, true, &[8, 18, 20, 22, 24, 26, 28, 30][..]),
+        (91, true, &[8, 10, 12, 14, 16][..]),
+        (67, true, &[8, 10, 12, 14, 16][..]),
+        (28, true, &[8, 10, 12, 14, 16, 26][..]),
+    ] {
+        base_fields(
+            &mut topology[at..at + length],
+            has_node_id.then_some(node_id),
+            pointers,
+        );
+        at += length;
+        node_id += 1;
+    }
+    s.extend(topology);
+    s.extend(19u16.to_be_bytes());
+    s.extend(encoded_xmt(12));
+    s.extend(node_id.to_be_bytes());
+    for reference in [1, 2, 1, 1, 1] {
+        s.extend(encoded_xmt(reference));
+    }
+    s.push(b'S');
+    let mut stored = fixed[region + 16..].to_vec();
+    base_fields(&mut stored, Some(node_id + 1), &[8, 10, 12, 14]);
+    put_vec3(&mut stored, 16, point);
+    s.extend(stored);
+    s.extend([0, 1, 0, 1]);
+    s
+}
+
 /// `stream`, a [`topology_partition_stream`], with the identity of each record
 /// whose XMT `widen` selects, and every reference to it, moved past 32767 into
 /// the four-byte pointer cell.

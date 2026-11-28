@@ -328,7 +328,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
     };
 
     let mut invalid_wire = json::to_value(&native.value_blocks[0]).unwrap();
-    invalid_wire["declared_len"] = serde_json::json!(native.value_blocks[0].declared_len() + 1);
+    invalid_wire["declared_len"] = cadmpeg_core::json!(native.value_blocks[0].declared_len() + 1);
     assert!(json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_payload = native.clone();
@@ -336,7 +336,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
     assert_rejected(invalid_payload);
 
     let mut invalid_wire = json::to_value(&native.value_blocks[0]).unwrap();
-    invalid_wire["fields"] = serde_json::json!([]);
+    invalid_wire["fields"] = cadmpeg_core::json!([]);
     assert!(json::from_value::<crate::native::CatiaValueBlock>(invalid_wire).is_err());
 
     let mut invalid_selections = native;
@@ -939,7 +939,8 @@ fn native_store_paths_cover_every_declared_arena() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 54);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 55);
+    assert!(catalogue_names.contains("feature_containers"));
     assert!(catalogue_names.contains("consolidated_a_class25_maps"));
     assert!(catalogue_names.contains("consolidated_a5_charts"));
     assert!(catalogue_names.contains("consolidated_rolling_ball_continuations"));

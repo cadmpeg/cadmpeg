@@ -1,9 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::parasolid::sequence::{face_fields, sequence_of, F};
+use crate::loss::SldprtLossCode;
+use crate::test_support::parasolid::sequence::{face_fields, loopless_nodes, sequence_of, F};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+/// How many records `out` gives up for one of `causes`.
+fn given_up(out: &super::Brep, causes: &[&str]) -> usize {
+    out.dropped
+        .iter()
+        .filter(|dropped| {
+            matches!(dropped, super::DroppedRecord::GivenUp { error, .. } if causes.contains(&error.as_str()))
+        })
+        .count()
+}
 
 fn decode(nodes: &[(u16, u16, Vec<F>)]) -> super::Brep {
     let (payload, _) = sequence_of(nodes);
@@ -16,39 +27,6 @@ fn decode(nodes: &[(u16, u16, Vec<F>)]) -> super::Brep {
         &cadmpeg_ir::stream_name!("closed-face"),
     )
     .unwrap()
-}
-
-fn loopless_nodes(kind: u16) -> Vec<(u16, u16, Vec<F>)> {
-    use F::{B, C, I, P, R, V};
-    let mut face = face_fields();
-    face[5] = P(1);
-    let mut surface = vec![I(7), P(1), P(1), P(1), P(1), P(1), C(b'+')];
-    match kind {
-        53 => surface.extend([
-            V([0.0; 3]),
-            R(0.007),
-            V([0.0, 0.0, 1.0]),
-            V([1.0, 0.0, 0.0]),
-        ]),
-        54 => surface.extend([
-            V([0.0; 3]),
-            V([0.0, 0.0, 1.0]),
-            R(0.007),
-            R(0.002),
-            V([1.0, 0.0, 0.0]),
-        ]),
-        50 => surface.extend([V([0.0; 3]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]),
-        _ => unreachable!(),
-    }
-    #[rustfmt::skip]
-    let nodes = vec![
-        (12, 2, vec![I(7), P(1), P(1), P(1), P(1), P(1), P(1), R(1000.0), R(1.0e-8), P(1), P(1), P(1), B(1), P(1), B(1), B(0), P(4), P(1), P(1), P(1), P(3), P(1), P(1)]),
-        (19, 3, vec![I(2), P(1), P(2), P(1), P(1), P(4), C(b'S')]),
-        (13, 4, vec![I(3), P(1), P(2), P(1), P(5), P(1), P(1), P(3), P(1)]),
-        (14, 5, face),
-        (kind, 20, surface),
-    ];
-    nodes
 }
 
 #[test]
@@ -132,22 +110,102 @@ fn a_compact_trimmed_face_supplies_topology_for_its_null_loop_ownership_face() {
 }
 
 #[test]
-fn a_loopless_plane_stays_withheld_with_ownership_loss() {
+fn a_loopless_plane_keeps_its_shell_region_and_body_marked() {
+    use cadmpeg_ir::topology::{BodyKind, Unstated};
     let out = decode(&loopless_nodes(50));
     assert!(out.faces.is_empty());
-    assert!(out
+    assert_eq!(given_up(&out, &[super::FACE_WITHHELD]), 1);
+    assert!(!out
+        .dropped
+        .iter()
+        .any(|dropped| matches!(dropped, super::DroppedRecord::With { .. })));
+    // The shell holds no stated face and says so; its region and body stay.
+    let [shell] = out.shells.as_slice() else {
+        panic!("one shell: {:#?}", out.dropped);
+    };
+    assert_eq!(shell.id.as_str(), "sldprt:brep:shell#4");
+    assert_eq!(shell.unstated, Some(Unstated::Members));
+    let [region] = out.regions.as_slice() else {
+        panic!("one region");
+    };
+    assert_eq!(region.id.as_str(), "sldprt:brep:region#3");
+    assert_eq!(region.unstated, None);
+    assert_eq!(region.stated_shells().collect::<Vec<_>>(), [&shell.id]);
+    let [body] = out.bodies.as_slice() else {
+        panic!("one body");
+    };
+    assert_eq!(body.id.as_str(), "sldprt:brep:body#2");
+    assert_eq!((body.kind, body.unstated), (BodyKind::Solid, None));
+    // The records stated in partial form are not counted as withheld.
+    assert!(!out
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "topology.ownership-withheld"));
 }
 
 #[test]
-fn a_missing_spherical_loop_is_withheld() {
+fn a_derived_shell_states_no_members_once_a_face_is_given_up() {
+    use cadmpeg_ir::topology::Unstated;
+    use F::{C, I, P, V};
     let mut nodes = loopless_nodes(53);
-    nodes[3].2[5] = F::P(6);
+    // The region does not name its body, so the decode derives the hierarchy.
+    nodes[1].2[2] = P(9);
+    let kept = decode(&nodes);
+    assert!(kept.stats.synthetic_body_grouping);
+    assert!(kept.shells.iter().all(|shell| shell.unstated.is_none()));
+    // A loopless plane beside the sphere in its shell is given up.
+    nodes[3].2[3] = P(30);
+    let mut plane = face_fields();
+    plane[0] = I(9);
+    plane[4] = P(5);
+    plane[5] = P(1);
+    plane[7] = P(21);
+    nodes.push((14, 30, plane));
+    #[rustfmt::skip]
+    nodes.push((50, 21, vec![I(8), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.0; 3]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]));
     let out = decode(&nodes);
-    assert!(out.faces.is_empty());
-    assert_eq!(out.stats.withheld_faces, 1);
+    assert!(out.stats.synthetic_body_grouping);
+    let [face] = out.faces.as_slice() else {
+        panic!("the sphere face is kept: {:#?}", out.dropped);
+    };
+    assert_eq!(face.id.as_str(), "sldprt:brep:face#5");
+    assert!(!out.shells.is_empty());
+    assert!(out
+        .shells
+        .iter()
+        .all(|shell| shell.unstated == Some(Unstated::Members)));
+}
+
+/// A typed FACE node that the decode does not state, with no record given
+/// up, marks each derived shell: no node says which shell held that face.
+#[test]
+fn a_derived_shell_states_no_members_once_a_typed_face_is_not_stated() {
+    use cadmpeg_ir::ids::{RegionId, ShellId};
+    use cadmpeg_ir::topology::{Shell, Unstated};
+    let region = RegionId::try_from("sldprt:brep:region#0").unwrap();
+    let mut out = super::Brep::default();
+    out.stats.synthetic_body_grouping = true;
+    out.shells.push(Shell::new(
+        ShellId::try_from("sldprt:brep:shell#0").unwrap(),
+        region,
+    ));
+    super::mark_derived_shells(&mut out, false);
+    assert_eq!(out.shells[0].unstated, None);
+    super::mark_derived_shells(&mut out, true);
+    assert_eq!(out.shells[0].unstated, Some(Unstated::Members));
+}
+
+#[test]
+fn a_spherical_face_whose_loop_record_is_missing_keeps_a_partial_loop_list() {
+    let mut nodes = loopless_nodes(53);
+    nodes[3].2 = face_fields();
+    let out = decode(&nodes);
+    let [face] = &out.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert_eq!(given_up(&out, &[crate::brep::graph::FACE_WITHHELD]), 0);
 }
 
 fn indexed(geometry: SolvedCurveGeometry) -> super::IndexedCurve {
@@ -217,15 +275,18 @@ fn a_reciprocal_ellipse_ring_keeps_its_sheet_face() {
         out.edges[0].param_range().unwrap().get(),
         [0.0, std::f64::consts::TAU]
     );
-    assert_eq!(out.stats.withheld_ring_edges, 0);
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 0);
 }
 
 #[test]
 fn an_ellipse_ring_without_a_mutual_partner_stays_withheld() {
     let out = decode(&ellipse_sheet(false));
-    assert!(out.faces.is_empty());
+    let [face] = &out.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
     assert!(out.edges.is_empty());
-    assert_eq!(out.stats.withheld_ring_edges, 1);
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 1);
 }
 
 #[test]
@@ -309,8 +370,14 @@ fn a_bounded_ellipse_ring_requires_one_complete_revolution() {
         bound_ellipse(&mut nodes, range);
         let out = decode(&nodes);
         assert_eq!(out.edges.len(), usize::from(admitted));
-        assert_eq!(out.faces.len(), usize::from(admitted));
-        assert_eq!(out.stats.withheld_ring_edges, usize::from(!admitted));
+        let [face] = &out.faces[..] else {
+            panic!("the face is kept");
+        };
+        assert_eq!(face.loops.is_partial(), !admitted);
+        assert_eq!(
+            given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]),
+            usize::from(!admitted)
+        );
     }
 }
 
@@ -335,7 +402,17 @@ fn a_vertexless_ring_recovers_a_canonical_boundary_dummy() {
         (1, 1, 1)
     );
     assert_eq!(out.stats.withheld_fin_partners, 0);
-    assert_eq!(out.stats.withheld_ring_edges, 0);
+    assert_eq!(
+        given_up(
+            &out,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
+        0
+    );
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 0);
 }
 
 #[test]
@@ -443,8 +520,9 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
         vertex_loops: Vec::new(),
         unresolved_loop: None,
         unresolved_fins: Vec::new(),
-        withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: None,
     };
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let resolved = super::resolve_sweep_surface(
@@ -539,4 +617,208 @@ fn ignored_spun_profile_intervals_keep_typed_surfaces_and_report_loss() {
         assert_eq!(notes.len(), 1);
         assert!(notes[0].message.contains(&format!("[{low}, {high}]")));
     }
+}
+
+/// The ring of `ellipse_sheet` whose edge has no EDGE record and whose FINs
+/// name a vertex that no record states.
+fn unresolved_end_sheet() -> Vec<(u16, u16, Vec<F>)> {
+    let mut nodes = ellipse_sheet(true);
+    nodes.retain(|(kind, _, _)| *kind != 16);
+    for (kind, _, fields) in &mut nodes {
+        if *kind == 17 {
+            fields[4] = F::P(9);
+        }
+    }
+    nodes
+}
+
+#[test]
+fn a_loop_whose_unrecorded_edge_has_an_unresolved_end_names_the_vertex() {
+    let out = decode(&unresolved_end_sheet());
+    assert!(out.loops.is_empty());
+    assert!(out.edges.is_empty());
+    let loop_charge = "an end vertex of an edge of the loop does not resolve";
+    assert!(
+        out.dropped.iter().any(|dropped| matches!(
+            dropped,
+            super::DroppedRecord::GivenUp { record, error, .. }
+                if record.contains("loop") && error == loop_charge
+        )),
+        "{:#?}",
+        out.dropped
+    );
+    assert_eq!(
+        given_up(
+            &out,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
+        0
+    );
+}
+
+/// A body kept after all its faces are lost keeps its native identity
+/// values and is the target of its last modifying feature.
+#[test]
+fn a_body_whose_every_face_is_lost_keeps_its_identity_and_modifier() {
+    let (payload, offset) = sequence_of(&loopless_nodes(50));
+    let records = super::topology::nodes::sequence(&payload).unwrap();
+    let tables = super::topology::nodes::tables(&records, &payload, offset).unwrap();
+    let facts = super::typed::nodes::facts(&records, offset).unwrap();
+    let entity_facts = super::entity::Facts {
+        body_payloads: vec![(2, vec![77])],
+        body_modifiers: vec![super::attrib::BodyModifier {
+            body_attr: 2,
+            feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(5).unwrap(),
+            target: None,
+        }],
+        ..super::entity::Facts::default()
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let out = super::decode_graph(
+        &ctx,
+        &mut super::CarrierIndex::default(),
+        &tables,
+        entity_facts,
+        &facts,
+        &cadmpeg_ir::stream_name!("lost-faces"),
+    )
+    .unwrap();
+    assert!(out.faces.is_empty());
+    let [body] = out.bodies.as_slice() else {
+        panic!("one body: {:#?}", out.dropped);
+    };
+    assert_eq!(body.id.as_str(), "sldprt:brep:body#2");
+    let identities: Vec<_> = out
+        .native_body_identities
+        .iter()
+        .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
+        .collect();
+    assert_eq!(identities, [("sldprt:brep:body#2", &[77][..])]);
+    let targets: Vec<_> = out
+        .body_modifiers
+        .iter()
+        .map(|modifier| modifier.target.as_deref())
+        .collect();
+    assert_eq!(targets, [Some("sldprt:brep:body#2")]);
+}
+
+/// The nodes of `nodes` without their BODY record, whose body the decode
+/// then derives.
+fn without_body(mut nodes: Vec<(u16, u16, Vec<F>)>) -> Vec<(u16, u16, Vec<F>)> {
+    nodes.retain(|(kind, _, _)| *kind != 12);
+    nodes
+}
+
+#[test]
+fn a_derived_body_is_a_solid_only_where_its_faces_close() {
+    use cadmpeg_ir::topology::BodyKind;
+    let mut partial = loopless_nodes(53);
+    partial[3].2[5] = F::P(6);
+    for (nodes, kind) in [
+        (loopless_nodes(53), BodyKind::Solid),
+        (partial, BodyKind::Sheet),
+        (ellipse_sheet(true), BodyKind::Sheet),
+    ] {
+        let out = decode(&without_body(nodes));
+        assert!(out.stats.synthetic_body_grouping);
+        assert_eq!(out.faces.len(), 1, "{:#?}", out.dropped);
+        let [body] = out.bodies.as_slice() else {
+            panic!("one derived body");
+        };
+        assert_eq!(body.kind, kind);
+    }
+}
+
+#[test]
+fn body_records_that_do_not_link_up_still_state_the_derived_body_kind() {
+    use cadmpeg_ir::topology::BodyKind;
+    let mut nodes = loopless_nodes(53);
+    // A sheet BODY record that its region names, whose region chain does not
+    // reach that region.
+    nodes[0].2[14] = F::B(3);
+    nodes[0].2[20] = F::P(9);
+    let out = decode(&nodes);
+    assert!(out.stats.synthetic_body_grouping);
+    let kind = out.stats.derived_kind;
+    assert!(kind.agreed && !kind.disagree && !kind.absent);
+    let [body] = out.bodies.as_slice() else {
+        panic!("one derived body");
+    };
+    assert_eq!(body.kind, BodyKind::Sheet);
+}
+
+/// A BODY record that names a region as the head of its region chain, where
+/// that region does not name the body back, does not link to it: the
+/// derived body takes the kind of its faces.
+#[test]
+fn a_body_record_its_region_does_not_name_states_no_derived_kind() {
+    use cadmpeg_ir::topology::BodyKind;
+    let mut nodes = loopless_nodes(53);
+    nodes[0].2[14] = F::B(3);
+    nodes[1].2[2] = F::P(9);
+    let out = decode(&nodes);
+    assert!(out.stats.synthetic_body_grouping);
+    let kind = out.stats.derived_kind;
+    assert!(!kind.agreed && !kind.disagree && kind.absent);
+    let [body] = out.bodies.as_slice() else {
+        panic!("one derived body");
+    };
+    assert_eq!(body.kind, BodyKind::Solid);
+}
+
+/// A derived hierarchy beside a typed BODY, REGION, and SHELL that hold its
+/// faces counts each of them as withheld.
+#[test]
+fn a_derived_hierarchy_counts_the_typed_region_it_withholds() {
+    use F::{C, I, P, R, V};
+    let mut nodes = loopless_nodes(53);
+    // FACE 7 in shell 4, which the typed graph does not read: its tolerance
+    // is negative.
+    nodes[3].2[3] = P(7);
+    let mut face = face_fields();
+    face[0] = I(12);
+    face[2] = R(-1.0);
+    face[4] = P(5);
+    face[5] = P(1);
+    face[6] = P(4);
+    face[7] = P(21);
+    nodes.push((14, 7, face));
+    #[rustfmt::skip]
+    nodes.push((53, 21, vec![I(13), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.0, 0.0, 0.05]), R(0.007), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]));
+    let out = decode(&nodes);
+    assert!(out.stats.synthetic_body_grouping);
+    let notes: Vec<_> = out
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::TopologyOwnershipWithheld.kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        notes,
+        ["3 current typed ownership node(s) are withheld: 1 body node(s), 1 region node(s), 1 shell node(s), and 0 face node(s)."]
+    );
+}
+
+#[test]
+fn a_face_whose_loop_chain_is_cut_is_noted() {
+    let mut nodes = loopless_nodes(53);
+    nodes[3].2[5] = F::P(6);
+    let out = decode(&nodes);
+    let notes: Vec<_> = out
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::TopologyLoopChainCut.kind())
+        .collect();
+    let [note] = notes.as_slice() else {
+        panic!("one chain-cut note: {:#?}", out.losses);
+    };
+    assert!(
+        note.message.contains("no loop record states"),
+        "{}",
+        note.message
+    );
 }

@@ -3,7 +3,7 @@
 
 use super::face_operands::RegisteredFaceOperandFrame;
 use super::face_recipe_program_kind;
-use super::recipe_structure::{face_recipe_next_boundary, face_recipe_nodes};
+use super::recipe_structure::{face_recipe_next_boundary_in, face_recipe_nodes};
 use super::sketch_profiles::parse_sketch_profile_region_selection;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::dimension_frames::{
@@ -85,8 +85,13 @@ pub(crate) fn parse_face_operand(
         let program_start = usize::try_from(first_recipe.byte_offset)
             .ok()?
             .checked_add(family_name_len)?;
-        let (immediate_next, next_record_index) =
-            face_recipe_next_boundary(bytes, program_start, header.record_index, next_byte_offset)?;
+        let (immediate_next, next_record_index) = face_recipe_next_boundary_in(
+            bytes.len(),
+            records,
+            program_start,
+            header.record_index,
+            next_byte_offset,
+        )?;
         offsets[4] = immediate_next;
         (offsets, next_record_index)
     };

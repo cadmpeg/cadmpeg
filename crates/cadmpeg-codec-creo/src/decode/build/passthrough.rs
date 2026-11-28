@@ -112,10 +112,8 @@ pub(super) fn preserve_passthrough_sections(
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;
                 };
-                let Some(marker_offset) = expanded
-                    .data
-                    .windows(3)
-                    .position(|window| window == container::JPEG_MAGIC)
+                let Some(marker_offset) =
+                    cadmpeg_core::bytes::find(&expanded.data, container::JPEG_MAGIC)
                 else {
                     continue;
                 };
@@ -126,9 +124,8 @@ pub(super) fn preserve_passthrough_sections(
                     Exactness::Derived,
                 )
             } else {
-                let Some(marker_offset) = section_bytes
-                    .windows(3)
-                    .position(|window| window == container::JPEG_MAGIC)
+                let Some(marker_offset) =
+                    cadmpeg_core::bytes::find(section_bytes, container::JPEG_MAGIC)
                 else {
                     continue;
                 };
@@ -210,7 +207,7 @@ where
     emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
             annotations,
-            record.id(),
+            super::super::native::native_key(record.id())?,
             legacy_source_stream(scan, record.offset),
             cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
@@ -238,7 +235,7 @@ pub(super) fn emit_legacy_arenas(
         |annotations, record| {
             annotate(
                 annotations,
-                record.id(),
+                super::super::native::native_key(record.id())?,
                 legacy_source_stream(scan, record.offset),
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
@@ -347,7 +344,7 @@ pub(super) fn emit_legacy_arenas(
             |annotations, record| {
                 annotate(
                     annotations,
-                    record.id(),
+                    super::super::native::native_key(record.id())?,
                     legacy_source_stream(scan, record.offset),
                     cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
@@ -399,6 +396,7 @@ mod tests {
             .push(crate::container::SectionExpansionLoss {
                 section_offset: 0,
                 message: "truncated compressed payload".to_owned(),
+                cause: cadmpeg_ir::unknown::part::Cause::Unreadable,
             });
         let records = crate::decode::with_service_context(|ctx| {
             preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())

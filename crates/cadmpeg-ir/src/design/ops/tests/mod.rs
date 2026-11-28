@@ -3,8 +3,6 @@
 //! shared operation types.
 
 mod datum;
-#[cfg(feature = "schema")]
-mod schema;
 mod shared;
 pub(in crate::design) mod sketch;
 mod unit_variants;

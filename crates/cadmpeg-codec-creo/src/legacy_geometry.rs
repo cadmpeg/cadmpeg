@@ -768,7 +768,7 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> 
     let record = integer_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(*value),
-        NumericPayload::Array(_) => None,
+        NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
     }
 }
 
@@ -803,7 +803,7 @@ fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Optio
     let record = real_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(value.value()),
-        NumericPayload::Array(_) => None,
+        NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
     }
 }
 
@@ -1010,11 +1010,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         Persistence {
             real_values: crate::legacy::TypedValues {
                 rows: real_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             integer_values: crate::legacy::TypedValues {
                 rows: integer_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             objects,
             ..Persistence::default()
@@ -1088,11 +1088,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         Persistence {
             real_values: crate::legacy::TypedValues {
                 rows: real_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             integer_values: crate::legacy::TypedValues {
                 rows: integer_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             objects,
             ..Persistence::default()
@@ -1171,11 +1171,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         Persistence {
             real_values: crate::legacy::TypedValues {
                 rows: real_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             integer_values: crate::legacy::TypedValues {
                 rows: integer_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             objects,
             ..Persistence::default()
@@ -1236,7 +1236,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .rows
             .iter()
             .all(|record| record.name != "local_sys"));
-        assert_eq!(persistence.real_values.unresolved_count, 1);
+        assert_eq!(persistence.real_values.unresolved.len(), 1);
 
         let result = scan(&persistence);
 
@@ -1262,7 +1262,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .rows
             .iter()
             .any(|record| record.name == "local_sys"));
-        assert_eq!(persistence.real_values.unresolved_count, 0);
+        assert!(persistence.real_values.unresolved.is_empty());
 
         let result = scan(&persistence);
 
@@ -1619,11 +1619,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         Persistence {
             real_values: crate::legacy::TypedValues {
                 rows: real_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             integer_values: crate::legacy::TypedValues {
                 rows: integer_values,
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             objects,
             ..Persistence::default()

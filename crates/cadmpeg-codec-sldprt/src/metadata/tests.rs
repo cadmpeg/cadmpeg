@@ -24,7 +24,15 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let attributes = super::attributes(&ctx, &scan, &mut annotations, &mut Vec::new()).unwrap();
+    let attributes = super::attributes(
+        &ctx,
+        &scan,
+        None,
+        &mut annotations,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .unwrap();
 
     assert!(attributes
         .iter()
@@ -308,7 +316,9 @@ fn scanned_metadata(payload: &[u8]) -> Vec<cadmpeg_ir::attributes::SourceAttribu
     super::attributes(
         &ctx,
         &scan,
+        None,
         &mut cadmpeg_ir::annotations::Annotations::default(),
+        &mut Vec::new(),
         &mut Vec::new(),
     )
     .unwrap()
@@ -547,8 +557,10 @@ fn unsupported_part_roots_report_loss_and_embedded_tokens_do_not_create_metadata
         let attributes = super::attributes(
             &ctx,
             &scan,
+            None,
             &mut cadmpeg_ir::annotations::Annotations::default(),
             &mut losses,
+            &mut Vec::new(),
         )
         .unwrap();
         assert!(!attributes
@@ -660,7 +672,15 @@ fn unsupported_configuration_manager_roots_retain_bytes_without_scalar_attribute
             DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let mut losses = Vec::new();
-        let attributes = super::attributes(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+        let attributes = super::attributes(
+            &ctx,
+            &scan,
+            None,
+            &mut annotations,
+            &mut losses,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(!attributes.iter().any(|a| a.name == "configuration_manager"));
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -692,8 +712,101 @@ fn embedded_or_truncated_manager_tokens_do_not_establish_an_mfc_root() {
             DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let mut losses = Vec::new();
-        let attributes = super::attributes(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+        let attributes = super::attributes(
+            &ctx,
+            &scan,
+            None,
+            &mut annotations,
+            &mut losses,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(!attributes.iter().any(|a| a.name == "configuration_manager"));
         assert!(losses.is_empty());
     }
+}
+
+/// The permissive decode of a document whose one block is the member
+/// `name` holding `payload`.
+fn decoded_member(name: &str, payload: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::Codec as _;
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(
+        0x43, name, payload,
+    ));
+    crate::SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(source),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("a permissive decode succeeds")
+}
+
+/// The `record.unreadable` losses that charge a saved-property carrier part.
+fn carrier_charges(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+) -> Vec<&cadmpeg_ir::report::loss::LossNote> {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.starts_with("part property-carrier "))
+        .collect()
+}
+
+fn assert_carrier_given_up(decoded: &cadmpeg_ir::codec::DecodeResult, unsupported: &str) {
+    let [charge] = carrier_charges(decoded)[..] else {
+        panic!("one charge names the carrier part");
+    };
+    assert!(decoded.ir().native.0["sldprt"].arenas()["unknowns"]
+        .iter()
+        .any(|stub| charge.message.contains(&format!(" record={}: ", stub.id()))));
+    assert!(decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .all(|attribute| !super::is_saved_property_attribute(attribute)));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != unsupported));
+}
+
+const CONFIGURATION_RECORD: &str =
+    r#"<property name="Designer" pid="3" IsEquation="False"><v:lpstr>Ada</v:lpstr></property>"#;
+
+fn configuration_xml(records: &str) -> String {
+    format!(
+        r#"<ConfigProperties xmlns="http://www.solidworks.com/config-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><propertySection xmlns="" fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}">{records}</propertySection></ConfigProperties>"#
+    )
+}
+
+#[test]
+fn a_malformed_configuration_property_carrier_is_given_up_as_a_part() {
+    let source = configuration_xml(&format!("{CONFIGURATION_RECORD}{CONFIGURATION_RECORD}"));
+    let decoded = decoded_member("docProps/Config-3-Properties.xml", source.as_bytes());
+    assert_carrier_given_up(
+        &decoded,
+        "metadata.configuration-property-carrier-unsupported",
+    );
+}
+
+#[test]
+fn an_unsupported_configuration_property_form_charges_no_part() {
+    let source = configuration_xml(CONFIGURATION_RECORD).replace("ConfigProperties", "Other");
+    let decoded = decoded_member("docProps/Config-3-Properties.xml", source.as_bytes());
+    assert!(carrier_charges(&decoded).is_empty());
+    assert!(decoded.report().losses.iter().any(
+        |loss| loss.code.local_code() == "metadata.configuration-property-carrier-unsupported"
+    ));
+}
+
+#[test]
+fn a_malformed_default_property_carrier_is_given_up_as_a_part() {
+    let source = r#"<p:Properties xmlns:p="http://schemas.openxmlformats.org/officeDocument/2006/SolidworksInformation-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><propertySection fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"/><propertySection fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"/></p:Properties>"#;
+    let decoded = decoded_member("docProps/ISolidWorksInformation.xml", source.as_bytes());
+    assert_carrier_given_up(&decoded, "metadata.default-carrier-unsupported");
 }

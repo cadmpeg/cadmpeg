@@ -406,7 +406,7 @@ subsidiary. An internal relative address is resolved from the directory of its
 referencing member and cannot address a file outside the archive. Archive
 member paths use `/`. The Part 21 ZIP profile uses stored or Deflate compression and excludes Unicode filename support.
 
-CADIR decision: the default recovery route rejects unsafe paths and duplicate names, and requires a readable root with matching size and CRC. Ancillary Unicode names, unsupported compression, encryption, and damaged local frames do not prevent that root from being decoded. A safely readable root with nonprofile compression is also recoverable. Each such recovery carries `step/container.member-noncanonical`, which strict admission rejects, and retains the exact central declaration as a source record. Container metadata records central names, compression, CRC, sizes and offsets; an unreadable local frame has no admitted payload offset.
+CADIR decision: the default recovery route rejects unsafe paths and duplicate names, and requires a readable root with matching size and CRC. Ancillary Unicode names, unsupported compression, encryption, and damaged local frames do not prevent that root from being decoded. A safely readable root with nonprofile compression is also recoverable. Each such recovery carries `step/container.member-noncanonical` and retains the exact central declaration as a source record. That code has strict floor Warning (CADIR §3.2), so a full strict decode rejects the archive. Container metadata records central names, compression, CRC, sizes and offsets; an unreadable local frame has no admitted payload offset.
 
 The STEP detector uses a bounded prefix. A medium-confidence ZIP result
 requires the prefix to parse as a ZIP archive whose central directory has an
@@ -515,6 +515,13 @@ derived       = "*"
 sign          = "+" | "-"
 tag_name      = (letter | "_") (letter | digit | "_")*
 ```
+
+CADIR decision: where the input ends after readable DATA records and before
+the exchange terminator (`END-ISO-10303-21;`, or `ENDSTEP;` in a draft
+exchange) or before the semicolon of that terminator, the reader keeps the
+records and reports `step/parse.envelope-incomplete` at the end of the input.
+That code has strict floor Warning (CADIR §3.2), so a full strict decode
+rejects the exchange.
 
 Keywords and entity names use ASCII letters, digits, underscore, and hyphen.
 User-defined names begin with `!` where the grammar admits them. Canonical
@@ -635,7 +642,7 @@ explicit attributes before the attributes introduced by the leaf. External
 complex mapping supplies every partial's explicit attributes. `$` represents
 an absent OPTIONAL explicit attribute; no mapping removes an inherited
 attribute from its required position. A record that shifts a leaf parameter
-into an omitted inherited `name` position is invalid Part 21 source. Recovery of a missing leading name requires one fewer parameter than the carrier's declared arity. A present value at canonical arity retains its position even when it is not an admissible name. Closed, bounded descriptive literals retain their source bytes when their values cannot be interpreted; this does not relax required schema selection, DATA geometry values, or delimiter framing.
+into an omitted inherited `name` position is invalid Part 21 source. Recovery of a missing leading name requires one fewer parameter than the carrier's declared arity. A present value at canonical arity retains its position even when it is not an admissible name. Closed, bounded descriptive literals retain their source bytes when their values cannot be interpreted; this does not relax required schema selection, DATA geometry values, or delimiter framing. A retained literal that breaks the Part 21 token grammar, or a typed parameter with other than one value, is charged `step/parse.noncanonical-syntax`. A retained literal that is a valid token with an integer outside the signed 64-bit range or a real outside binary64 is charged `step/parse.presentation-literal-unrepresentable`.
 
 Entity instance names share one namespace across all DATA sections. Forward
 and backward references resolve after all DATA sections are read. A reference
@@ -683,8 +690,10 @@ names, and EXPRESS constant value names. Each parameterized DATA section can
 name any schema in the list.
 
 CADIR decision: the reader locates header records by name. Missing, duplicate,
-reordered, or invalid descriptive metadata produces a loss and does not prevent
-DATA admission. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
+reordered, or invalid descriptive metadata produces a
+`step/parse.header-metadata-noncanonical` loss and does not prevent DATA
+admission. That code has strict floor Warning (CADIR §3.2), so a full strict
+decode rejects the exchange. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
 usable identifier. Invalid entries supply no schema identity, and repeated
 identifiers supply the same identity once. Schema selection uses the first
 usable identifier. An unverified implementation-level declaration uses the
@@ -712,7 +721,9 @@ attribute:
 
 `<n>` is the zero-based position in the source list, and every list member
 holding a non-blank decodable string supplies an attribute. A value is the
-whole string after §4 escape decoding, with control characters left out; a
+whole string after §4 escape decoding, with control characters left out. A
+value that leaves out a control character is charged
+`step/metadata.header-controls-omitted`. A
 string longer than its effective length below keeps every character. A string
 that is omitted, does not decode, or holds no non-whitespace character
 supplies no attribute.
@@ -1133,14 +1144,75 @@ An open literal or comment provides no continuation boundary.
 CADIR decision: the first statement of a repeated instance name, in file
 order across all DATA sections, is the instance, and every reference by the
 name resolves to it (CADIR §2.2). Each later statement of the name is read
-and not stated: its exact source is retained, and it is charged one
-`step/parse.record-omitted` loss that names the instance name and gives the
-copy's byte span. Where the first statement is unreadable, it is given up as
-its own part with the records that need it (CADIR §3.3), and no later
-statement of the name stands in its place: each later readable statement is
-charged as above. A later unreadable statement is given up as its own part,
-and the first statement stands. The repetition gives up neither the file nor
-the DATA section.
+and not stated. A copy that states the same entity names and parameters as a
+first statement that stands drops nothing, and its exact source is retained.
+It is charged one `step/parse.record-omitted` loss that names the instance
+name and gives the copy's byte span. That code has strict floor Warning
+(CADIR §3.2), so a full strict decode rejects the exchange. Each other copy is given up as a
+`data_record` part over its exact source with `record.unreadable` (CADIR
+§3.3), and the give-up names the instance name and gives the copy's byte
+span.
+Where the first statement is unreadable, it is given up as its own part, and
+the records that need it drop with it. No later statement of the name stands
+in its place: each later readable statement is given up as its own part. A
+later unreadable statement is given up as its own part, and the first
+statement stands. The repetition gives up neither the file nor the DATA
+section.
+
+CADIR decision: a DATA statement with a reference that names no instance and
+no REFERENCE binding is given up as a `data_record` part over its exact
+source with `record.unreadable`. An ANCHOR or DATA item whose expansion
+exceeds its bound is given up as an `anchor_record` or `data_record` part
+with `record.undecoded`. An item that exceeds its bound
+only because it names an omitted anchor drops with the part of that anchor.
+An anchor or record that needs a given-up statement drops with that part, and
+its exact source is retained as an omitted statement. The part names each
+dropped statement by the id of its omitted statement
+(`step:file:omitted#<offset>`). A record that names a given-up statement only as an entry
+of an unordered aggregate loses that entry. A DATA instance that the reader
+cannot decode is given up as a `data_record` part over its statement. The
+part keeps the digest only where the document keeps the exact source of the
+instance as an opaque record. A record that the reader drops only because it
+needs a given-up or dropped instance drops with that instance. An instance
+that is a value of no record, such as a `VECTOR` or a placement, keeps its
+exact source as an opaque record, and the give-up names no record for it.
+
+CADIR decision: each give-up charges one loss (CADIR §3.3), and the reader
+charges no `step/` loss for the lost record. A statement that breaks the
+Part 21 grammar, and a record that holds a value its type forbids, give up
+with `record.unreadable`. An integer outside the signed 64-bit range, a real
+outside the finite binary64 range, and an instance name outside the unsigned
+64-bit range are valid Part 21 tokens that the reader holds no value for:
+their statement gives up with `record.undecoded`. A statement that passes a
+resource ceiling of the caller (`ResourceLimit` with `scope: Part`) gives up
+with `record.undecoded`. A record of a form that the reader holds no reading
+for, and a record whose cause the reader cannot identify, give up with
+`record.undecoded`. A curve or a surface that no decoded pcurve holds and that
+references a two-dimensional point, direction, vector, or placement is such a
+form. A record that drops because it needs an instance that the
+decode holds as no record gives up with `record.undecoded`.
+
+When the reader gives up a topology root, the base shell of each shell of the
+root and each face of that base shell drop with the root. The give-up names
+each by the id that the root mints for it: the shell id
+(`step:data:shell#N`, or `step:data:shell#N-root-R` where the document has
+more than one distinct root) and the face id with its shell and root scope.
+An oriented shell mints no record of its own. A shell that another root
+builds, and a face that another root holds, stay in the document. A carrier
+that keeps the face instance as its source object stays in the document. A
+`STYLED_ITEM` binding whose target drops with the root drops with that
+target. When the reader gives up an
+`EDGE_BASED_WIREFRAME_MODEL` or a `SHELL_BASED_WIREFRAME_MODEL` because none
+of its members commits, each member drops with the model. The give-up names
+each member by the shell id that the model mints for it. A root or a model
+that commits a body keeps it. A connected edge set or a shell that it omits
+gives up alone where no other model or root builds it. The give-up text names
+the carrier that does not resolve or the reason the commit refuses the
+member. A topology root, a wireframe model, and their members give up with
+`record.undecoded`. A topology root that commits no body drops with the
+record its first failing member needs, and has no charge of its own (CADIR
+§3.3), where that record is a given-up or dropped instance and the commit
+rejects none of the root's shells.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
@@ -1376,8 +1448,10 @@ numeric direction records and applies only to STEP placement and transformation
 construction. If a supplied reference is non-parallel, the reader projects
 that reference without applying the default-axis tolerance. If a supplied
 reference is parallel or anti-parallel, the reader reports
-`PlacementReferenceInferred` and uses the projected default reference. This
-STEP-local salvage does not change neutral transform or chart semantics.
+`step/geometry.placement-reference-inferred` and uses the projected default
+reference. That code has strict floor Warning (CADIR §3.2), so a full strict
+decode rejects the record. This STEP-local salvage does not change neutral
+transform or chart semantics.
 
 ISO 10303-42 defines `ELLIPSE` with positive `semi_axis_1` and
 `semi_axis_2`. `semi_axis_1` lies in placement `p[1]` and `semi_axis_2` lies
@@ -1442,7 +1516,9 @@ branch adjustment. A local parameter maps to `u1 + s` or `u1 - s`, and to
 `v1 + t` or `v1 - t`, according to the stored senses. On a cyclic basis axis,
 the forward branch increases the second endpoint by one period when it is
 below the first; the reversed branch increases the first endpoint by one
-period when it is below the second. A
+period when it is below the second. A trimmed or offset surface whose
+construction is not valid, such as a trim with a zero parameter range, stays
+in the document as one unknown carrier that keeps its source record. A
 `SURFACE_REPLICA` retains the complete parent relation,
 including a rectangular or curve-bounded surface; its transformation changes
 model-space location and dimensions while preserving the parent parameter
@@ -1550,6 +1626,12 @@ CADIR decision: the decoder applies the composed face reversal to the face
 the face `sense` then state the same oriented normal. A void of a
 `BREP_WITH_VOIDS` is an `ORIENTED_CLOSED_SHELL` with `orientation = FALSE`, so
 the CADIR void faces are the reverse of the base closed-shell faces.
+
+CADIR decision: a simple `ORIENTED_OPEN_SHELL` or `ORIENTED_CLOSED_SHELL`
+record that omits the derived `cfs_faces` slot does not conform to Part 21.
+The reader reads the shell element from positional slot 1 and reports
+`step/topology.oriented-shell-omits-cfs-faces`. That code has strict floor
+Warning (CADIR §3.2), so a full strict decode rejects the record.
 
 Connected face sets join through common edges or common vertices. Edge-based
 and shell-based wireframe models preserve their connected edge and vertex
@@ -1676,9 +1758,10 @@ results is acyclic (§6.4.6). Length attributes convert to millimetres and
 angle attributes to radians by the units of the item's representation
 context.
 
-CADIR decision: a Boolean result on an operand cycle, and a Boolean result
-whose operand tree reaches one, has no feature (`csg.item-unresolved`, which
-names the cycle). Their other operands keep their features and have no derived body.
+CADIR decision: each Boolean result on an operand cycle gives up with
+`record.unreadable`, and the give-up names the cycle. A Boolean result whose
+operand tree reaches one drops with the operand that it needs. Neither has a
+feature. Their other operands keep their features and have no derived body.
 
 CADIR decision: a revolution angle within 10⁻⁹ of one turn of its
 plane-angle unit, relative to the turn, is exactly one turn, and a larger
@@ -1809,7 +1892,12 @@ CADIR decision: a topology member that requires a `VERTEX_POINT` with an
 absent point carrier is mandatory and unrepresentable. Sheet and wire
 representations omit only the failed independent member and retain complete
 members. A solid-root transaction rejects the root. CADIR has no tolerant-point
-or partial-solid carrier and does not infer coordinates. A geometric set with
+or partial-solid carrier and does not infer coordinates. ISO 10303-42
+`vertex_point.vertex_geometry` is a point. A `VERTEX_POINT` with no point
+reference, or whose reference names a direction, a vector, a placement, a
+curve, or a surface, is given up with `record.unreadable`. A `VERTEX_POINT`
+whose point is a given-up or dropped instance drops with that instance. A
+geometric set with
 surface members forms a sheet carrier. Each surface member is a face in its own
 shell of the one sheet region. A member that is a plane, a cylinder, or a cone
 states no boundary on a surface whose domain is unbounded, so its face is
@@ -1955,7 +2043,10 @@ so the decoder states none: it assigns no outer role and the face carries
 `FaceLoops::Unspecified`. Loop, edge, coedge, surface, and shell admission
 follow the normal path, and the enclosing root is retained. The
 `topology.face-multiple-outer-bounds` warning identifies the face and the
-count. This result is independent of the serialized order of the `bounds` SET.
+count. ISO 10303-42 `face` admits at most one `FACE_OUTER_BOUND` (`WR1`), so
+that code has strict floor Warning (CADIR §3.2), and a full strict decode
+rejects the face. This result is independent of the serialized order of the
+`bounds` SET.
 The original face and bound records remain exact source records with their
 reference links. Unclassified loops state no outer role. A `FACE` may carry
 only `FACE_BOUND` records; its `FACE_OUTER_BOUND` count need not be positive.
@@ -2213,8 +2304,9 @@ CADIR decision: a neutral occurrence admits exactly one resolved
 relationship targets the same usage, the placement is ambiguous even when the
 transforms are equal. The decoder admits no neutral occurrence for that usage,
 retains the `NEXT_ASSEMBLY_USAGE_OCCURRENCE` and every ambiguous
-`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` as named opaque source records and
-reports `product.nauo-placement-ambiguous`. It never
+`CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` as named opaque source records. The
+usage gives up with `record.undecoded`, and the give-up names each ambiguous
+relationship. The decoder never
 substitutes an identity transform or selects a relation from Part 21 record
 order or numeric entity identifiers. A missing or otherwise unresolved sole
 relationship remains an unresolved placement.
@@ -2224,8 +2316,9 @@ placement is ambiguous even when all transforms are equal. The decoder admits
 no neutral occurrence for that usage, retains the usage and every direct
 context-dependent placement relation and occurrence-owned
 `SHAPE_DEFINITION_REPRESENTATION` relation that supplied a qualifying mapped
-candidate as named opaque source records, and reports
-`product.nauo-placement-ambiguous`. It never gives one assembly mechanism
+candidate as named opaque source records. The usage gives up with
+`record.undecoded`, and the give-up names each ambiguous relation. The
+decoder never gives one assembly mechanism
 precedence over the other or selects a mechanism from Part 21 record order or
 numeric entity identifiers.
 ISO 10303-43 §4.4.18 defines `representation_map.mapped_representation` as
@@ -2505,6 +2598,8 @@ equal scalar rank. The projection does not use source instance order or alpha
 to choose between different RGB colors. Equal-rank candidates with different
 RGB colors leave the scalar color unset, retain every source style through its
 appearance binding, and produce `presentation.conflicting-scalar-colors`.
+Where one `STYLED_ITEM` holds equal-rank candidates with different RGB
+colors, that styled item gives up with `record.undecoded`.
 When equal-rank candidates have the same RGB color, the projection retains the
 lower alpha so a rendering transparency property is not lost beside an opaque
 fill color. Independent effective styled items retain separate appearance
@@ -2540,8 +2635,9 @@ style branch. Distinct contexts have no format-defined precedence.
 
 CADIR decision: the STEP decoder has no requested presentation context. It
 retains context-qualified style branches and their owning styled items as
-named opaque source data and produces a
-`presentation.context-dependent-style-unresolved` loss. It emits no neutral
+named opaque source data, and the styled item gives up with
+`record.undecoded`. The give-up names each context-qualified style and its
+context. The decoder emits no neutral
 appearance for an unavailable or unselected context and does not infer a
 selection from direct membership. An unscoped sibling style may transfer
 independently. An `ANNOTATION_PLANE` owns each
@@ -2714,6 +2810,32 @@ projection-end shape aspect, and positive projected length to a zone.
 `PROJECTED_ZONE_DEFINITION_WITH_OFFSET` adds a signed offset. A zone can have
 more than one projected definition. Zone references supply ownership;
 aggregate order does not. All length values use their explicit measure units.
+ISO 10303-47 `tolerance_zone_target` admits a geometric tolerance, a
+dimensional location, a dimensional size, and a general datum reference as a
+defining tolerance. `PLUS_MINUS_TOLERANCE` is of another type.
+CADIR decision: a zone whose defining tolerance is a given-up or dropped
+instance is a value of that instance. It drops with that instance and has no
+charge of its own (CADIR §3.3), and each projected definition of the zone
+drops with the zone. A zone that does not transfer for another reason is
+given up as a `data_record` part over its statement, and each projected
+definition of the zone drops with it. The give-up is `record.unreadable`
+where the zone has no defining tolerance set, the set is empty, or the
+defining tolerance is of a type that `tolerance_zone_target` excludes. It is
+`record.unreadable` where the zone form is absent, is a record without a
+`TOLERANCE_ZONE_FORM` partial, or has a name that is not a string or does not
+decode under §4. It is `record.undecoded` where the set holds more than one
+tolerance, where the defining tolerance is of a `tolerance_zone_target` type
+that the reader does not transfer, and where the zone form name is blank. A
+complex instance with a partial whose name begins with `GEOMETRIC_TOLERANCE`
+or ends in `_TOLERANCE`, other than `PLUS_MINUS_TOLERANCE`, is a geometric
+tolerance for this rule.
+CADIR decision: a projected definition whose zone, boundary set, projection
+end, or projected length is absent or of the wrong kind, whose boundary or
+projection end names a record that is not a shape aspect, or whose length is
+not positive, is given up with `record.unreadable`. A projected definition
+whose length or offset is a value that the reader does not read as a length
+measure is given up with `record.undecoded`. A projected definition that
+references a given-up or dropped instance drops with that instance.
 CADIR decision: the reader recognizes only the exact characteristic leaf
 names above. An unrecognized direct entity name ending in `_TOLERANCE`,
 including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a
@@ -2774,7 +2896,14 @@ numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`. A `TOLERANCE_VALUE` whose `lower_bound` exceeds its
 `upper_bound` holds the upper deviation in `lower_bound` and the lower
-deviation in `upper_bound`.
+deviation in `upper_bound`. ISO 10303-47 `plus_minus_tolerance` UR1 makes
+`toleranced_dimension` unique.
+CADIR decision: the reader reads `PLUS_MINUS_TOLERANCE` records in instance
+order. A tolerance that the dimension cannot hold beside the tolerance it
+already holds is given up as a `data_record` part over its statement. The
+give-up is `record.unreadable` where an earlier `PLUS_MINUS_TOLERANCE`
+tolerances the same dimension, and `record.undecoded` where the dimension
+holds a tolerance from its own representation.
 
 An `APLL_POINT` or `APLL_POINT_WITH_SURFACE` referenced by an annotation
 placeholder, annotation-to-annotation, annotation-to-model, or auxiliary

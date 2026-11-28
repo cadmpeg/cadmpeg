@@ -3,7 +3,7 @@ use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::datum::DatumElement;
-use cadmpeg_ir::design::ops::sketch::SketchRelation;
+use cadmpeg_ir::design::ops::sketch::{PlanarCurve, SketchRelation};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
@@ -15,7 +15,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::scalar::{Angle, Length};
-use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId, SketchPlacement};
 
 fn feature(operation: LegacyOperation, name: &str) -> Feature {
     Feature {
@@ -125,7 +125,7 @@ fn rectangle_on_principal_plane_keeps_frame_and_construction_line() {
         );
     }
     ir.model.sketch_constraints.push(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id":"inventor:design:constraint#horizontal", "sketch":sketch_id(),
             "definition":{"kind":"horizontal", "entity":entity_id("a")}
         }))
@@ -278,7 +278,7 @@ fn arc_circle_and_point_keep_geometry_and_sketch_point_datum() {
 #[test]
 fn spline_keeps_knots_poles_weights_and_periodicity() {
     let mut ir = fixture();
-    let geometry: cadmpeg_ir::sketches::SketchGeometry = json::from_value(serde_json::json!({
+    let geometry: cadmpeg_ir::sketches::SketchGeometry = json::from_value(cadmpeg_core::json!({
         "kind":"nurbs", "curve": {"degree":1, "knots":[0.0,0.0,1.0,1.0],
         "poles":{"kind":"rational", "points":[
             {"point":{"u":2.0,"v":3.0},"weight":1.0},
@@ -301,7 +301,7 @@ fn spline_keeps_knots_poles_weights_and_periodicity() {
     let wire = json::to_value(curve).expect("wire");
     assert_eq!(
         wire,
-        serde_json::json!({"degree":1, "knots":[0.0,0.0,1.0,1.0],
+        cadmpeg_core::json!({"degree":1, "knots":[0.0,0.0,1.0,1.0],
         "poles":{"kind":"rational", "points":[
             {"point":{"u":2.0,"v":3.0},"weight":1.0},
             {"point":{"u":4.0,"v":5.0},"weight":0.5}]}, "periodic":false})
@@ -491,18 +491,259 @@ fn endpoint_roles_keep_reference_names_in_their_own_sketch() {
     let roles = endpoint_roles(&entities);
     for (index, sketch) in sketches.iter().enumerate() {
         assert_eq!(
-            roles[&(sketch, "shared-start")],
+            roles_at(
+                &roles,
+                (sketch, "shared-start"),
+                FinitePoint2::new(Point2::new(0.0, 0.0)).expect("start"),
+                0.0
+            ),
             vec![EntityRole {
                 of: entity_id(&format!("curve-{index}")),
                 role: DefiningRole::Start
             }]
         );
         assert_eq!(
-            roles[&(sketch, "shared-end")],
+            roles_at(
+                &roles,
+                (sketch, "shared-end"),
+                FinitePoint2::new(Point2::new(1.0, 0.0)).expect("end"),
+                0.0
+            ),
             vec![EntityRole {
                 of: entity_id(&format!("curve-{index}")),
                 role: DefiningRole::End
             }]
         );
+    }
+}
+
+/// The fields a CADIR write of `ir` names for the model sketch entity `id`:
+/// none where it carries the record whole.
+fn entity_charge(ir: &CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `sketch_entities`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(!omitted.contains(id), "{}", loss.message);
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// Two lines whose endpoint records no point entity of the sketch carries,
+/// as a block instance's placed curves name the points of the block
+/// definition, end at points the design states: one point for the shared
+/// record, the end of each line that names it, and a CADIR write carries
+/// each line's endpoint records.
+#[test]
+fn endpoint_records_without_point_entities_are_stated_as_points() {
+    let mut ir = fixture();
+    for (name, start, end, refs) in [
+        ("p", [0.0, 0.0], [2.0, 0.0], ["first", "corner"]),
+        ("q", [2.0, 0.0], [2.0, 1.0], ["corner", "last"]),
+    ] {
+        add_entity(
+            &mut ir,
+            name,
+            Geometry::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+            false,
+        );
+        ir.model
+            .sketch_entities
+            .last_mut()
+            .expect("line")
+            .endpoint_refs = Vec::from(refs.map(|name| format!("inventor:pmdc:point#{name}")));
+    }
+    run(&mut ir);
+    let corner = ir
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.native_ref.as_deref() == Some("inventor:pmdc:point#corner"))
+        .collect::<Vec<_>>();
+    let [corner] = corner.as_slice() else {
+        panic!("one point carries the shared record: {corner:#?}");
+    };
+    assert_eq!(
+        corner.definition,
+        EntityDefinition::Free(PlanarCurve::Point(
+            FinitePoint2::new(Point2::new(2.0, 0.0)).expect("point")
+        ))
+    );
+    assert_eq!(
+        corner.roles,
+        vec![
+            EntityRole {
+                of: entity_id("p"),
+                role: DefiningRole::End
+            },
+            EntityRole {
+                of: entity_id("q"),
+                role: DefiningRole::Start
+            },
+        ]
+    );
+    assert_eq!(ir.design.sketch_entities.len(), 5);
+    for line in ["p", "q"] {
+        let fields = entity_charge(&ir, entity_id(line).as_str());
+        assert!(
+            !fields.iter().any(|field| field == "endpoint_refs"),
+            "{fields:?}"
+        );
+    }
+}
+
+#[test]
+fn decoded_open_spline_carries_both_endpoint_records() {
+    let entities = crate::test_support::sketch_curves::open_cubic_entities();
+    let sources = cadmpeg_core::decode::unique_index(entities.iter().map(|entity| {
+        (
+            (
+                entity.identity.segment_token.as_str(),
+                entity.identity.record_ordinal,
+            ),
+            entity,
+        )
+    }));
+    let geometry =
+        crate::sketch::project_geometry(&entities[2], &sources).expect("decoded spline geometry");
+    let refs = crate::sketch::entity_endpoint_refs(&entities[2], &sources);
+    let [start, end] = refs.as_slice() else {
+        panic!("the spline record names both ends");
+    };
+    let curve = entity_id("spline");
+    let mut ir = fixture();
+    ir.model.sketch_entities.push(
+        LegacyEntity::new(curve.clone(), sketch_id(), geometry).with_endpoint_refs(refs.clone()),
+    );
+    run(&mut ir);
+    for (reference, role, position) in [
+        (start, DefiningRole::Start, Point2::new(0.0, 0.0)),
+        (end, DefiningRole::End, Point2::new(20.0, 0.0)),
+    ] {
+        let point = ir
+            .design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.native_ref.as_ref() == Some(reference))
+            .expect("point for the decoded record");
+        assert_eq!(
+            point.definition,
+            EntityDefinition::Free(PlanarCurve::Point(
+                FinitePoint2::new(position).expect("finite endpoint")
+            ))
+        );
+        assert_eq!(
+            point.roles,
+            [EntityRole {
+                of: curve.clone(),
+                role
+            }]
+        );
+    }
+    assert!(!entity_charge(&ir, curve.as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+}
+
+#[test]
+fn conflicting_endpoint_positions_keep_the_unstated_role_charged() {
+    let mut ir = fixture();
+    for (name, start, end, refs) in [
+        ("a", 0.0, 2.0, ["first", "shared"]),
+        ("b", 3.0, 4.0, ["shared", "last"]),
+    ] {
+        add_entity(
+            &mut ir,
+            name,
+            Geometry::Line {
+                start: Point2::new(start, 0.0),
+                end: Point2::new(end, 0.0),
+            },
+            false,
+        );
+        ir.model
+            .sketch_entities
+            .last_mut()
+            .expect("line")
+            .endpoint_refs = Vec::from(refs.map(|name| format!("inventor:pmdc:point#{name}")));
+    }
+    run(&mut ir);
+    let shared = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|point| point.native_ref.as_deref() == Some("inventor:pmdc:point#shared"))
+        .expect("shared point");
+    assert_eq!(
+        shared.roles,
+        [EntityRole {
+            of: entity_id("a"),
+            role: DefiningRole::End
+        }]
+    );
+    assert!(!entity_charge(&ir, entity_id("a").as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+    assert!(entity_charge(&ir, entity_id("b").as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+}
+
+#[test]
+fn repeated_block_placements_restate_both_pairs_of_ends() {
+    let mut ir = fixture();
+    ir.model.sketch_entities =
+        crate::sketch::tests::repeated_blocks::repeated_block_lines(&sketch_id());
+    assert_eq!(ir.model.sketch_entities.len(), 2);
+    assert_eq!(
+        ir.model.sketch_entities[0].endpoint_refs,
+        ir.model.sketch_entities[1].endpoint_refs
+    );
+    run(&mut ir);
+    assert_eq!(ir.design.sketch_entities.len(), 6);
+    for (curve, start) in ir.model.sketch_entities.iter().zip([0.0, 10.0]) {
+        for ((role, u), record) in [
+            (DefiningRole::Start, start),
+            (DefiningRole::End, start + 5.0),
+        ]
+        .into_iter()
+        .zip(&curve.endpoint_refs)
+        {
+            let point = ir
+                .design
+                .sketch_entities
+                .iter()
+                .find(|point| {
+                    point
+                        .roles
+                        .iter()
+                        .any(|held| &held.of == curve.id() && held.role == role)
+                })
+                .expect("placed endpoint");
+            assert_eq!(point.roles.len(), 1);
+            assert_eq!(point.native_ref.as_ref(), Some(record));
+            assert!(
+                matches!(&point.definition, EntityDefinition::Free(PlanarCurve::Point(at)) if at.u == u && at.v == 0.0)
+            );
+        }
+        assert!(!entity_charge(&ir, curve.id().as_str())
+            .iter()
+            .any(|field| field == "endpoint_refs"));
     }
 }

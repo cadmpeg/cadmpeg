@@ -360,6 +360,50 @@ fn shell_based_wireframe_model_owns_wire_shell_edges() {
 }
 
 #[test]
+fn a_wireframe_model_whose_shells_all_fail_drops_them_with_it() {
+    let model = "#31=SHELL_BASED_WIREFRAME_MODEL('',(#33));";
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#31=SHELL_BASED_SURFACE_MODEL('',(#33));", model)
+            .replace(
+                "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+                "#33=WIRE_SHELL('',(#26));",
+            );
+    let head = format!(
+        "part data_record stream=\"\" offset={} length={} record=",
+        source.find(model).expect("the model"),
+        model.len()
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("salvage mode admits the document without the model");
+
+    assert!(decoded.ir().geometry.bodies.is_empty());
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {charges:#?}");
+    };
+    assert_eq!(
+        charge.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    // The wire shell drops with the model and has no charge of its own. The
+    // charge names it by the shell id that the model mints for it.
+    assert!(charge.message.starts_with(&head), "{}", charge.message);
+    assert!(
+        charge.message.ends_with("; dropped=[step:data:shell#33]"),
+        "{}",
+        charge.message
+    );
+}
+
+#[test]
 fn shell_based_wireframe_model_retains_vertex_shells() {
     use cadmpeg_ir::topology::BodyKind;
 

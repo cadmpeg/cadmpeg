@@ -63,7 +63,7 @@ pub(crate) fn linked_record_indices(settings: &[DesignSheetMetalSettings]) -> Ve
 
 pub(crate) fn decode_settings(
     scan: &ContainerScan,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<Vec<DesignSheetMetalSettings>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -112,10 +112,11 @@ pub(crate) fn decode_settings(
             if !guid.eq_ignore_ascii_case(SETTINGS_GUID) || !matches!(version, 2 | 3) {
                 continue;
             }
-            let Some(record) = super::record::recover(
+            let Some(record) = super::record::recover_frame(
                 stream.record(frame, *version, &mut thickness_by_rule),
-                losses,
-                crate::loss::F3dLossCode::BendSettingsUndecoded,
+                given_up,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
+                super::record::RecordFrame::new(&entry.name, frame.start, frame.end),
                 format_args!("Sheet-metal settings record {}", frame.entity_id),
             )?
             else {

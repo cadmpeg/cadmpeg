@@ -52,7 +52,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": record_index - 100,
@@ -84,7 +84,7 @@ fn axis_selection(
     face_states: &[i64],
     edge: bool,
 ) -> DesignEntitySelectionOperand {
-    let mut selection = json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
+    let mut selection = json::from_value::<DesignEntitySelectionOperand>(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
         "group_record_index": 101, "group_member_ordinal": 0,
         "record_index": 201, "byte_offset": 100, "class_tag": "307",

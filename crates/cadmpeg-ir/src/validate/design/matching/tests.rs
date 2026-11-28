@@ -5,7 +5,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::super::fixture::{design_findings, document};
 use super::super::selections::Stored;
@@ -137,7 +137,7 @@ fn lost(ir: &CadIr) -> bool {
 fn assert_matches(ir: &CadIr, name: &TopoName, expected: bool) {
     let states = States::new(ir);
     let matchers = Matchers::new(&states);
-    let extents = states.extents.iter().collect();
+    let extents = states.extents.clone();
     let matcher = matchers.get(&Stored::Extents(extents)).unwrap();
     assert_eq!(matcher.matches_any(name), expected, "{name:?}");
     let evaluation = ir.design.evaluations[0].id.as_str();
@@ -158,7 +158,7 @@ fn a_bounded_name_matches_the_edge_between_its_faces() {
     let states = States::new(&ir);
     let matchers = Matchers::new(&states);
     let matcher = matchers
-        .get(&Stored::Extents(states.extents.iter().collect()))
+        .get(&Stored::Extents(states.extents.clone()))
         .unwrap();
     assert_eq!(
         matcher.matched(&edge).into_iter().collect::<Vec<_>>(),
@@ -189,7 +189,7 @@ fn ends_narrow_only_among_several_candidates_and_ignore_unknown_faces() {
     let states = States::new(&ir);
     let matchers = Matchers::new(&states);
     let matcher = matchers
-        .get(&Stored::Extents(states.extents.iter().collect()))
+        .get(&Stored::Extents(states.extents.clone()))
         .unwrap();
     assert_eq!(matcher.matched(&one_side).len(), 4);
     let narrowed = bounded(&[face_name(first, None)], &[face_name(second, None)]);
@@ -228,7 +228,7 @@ fn a_meeting_name_matches_the_vertex_where_its_faces_meet() {
     let states = States::new(&ir);
     let matchers = Matchers::new(&states);
     let matcher = matchers
-        .get(&Stored::Extents(states.extents.iter().collect()))
+        .get(&Stored::Extents(states.extents.clone()))
         .unwrap();
     assert_eq!(matcher.matched(&corner).len(), 1);
     assert_matches(
@@ -318,7 +318,7 @@ fn ends_narrow_after_indexes_on_a_bounded_name() {
         let states = States::new(&ir);
         let matchers = Matchers::new(&states);
         let base_matcher = matchers
-            .get(&Stored::Extents(states.extents.iter().collect()))
+            .get(&Stored::Extents(states.extents.clone()))
             .unwrap();
         let all = base_matcher.matched(&bounded(&[face_name(first, None)], &[]));
         let near = base_matcher.matched(&bounded(
@@ -361,7 +361,7 @@ fn ends_narrow_after_indexes_on_a_bounded_name() {
     let states = States::new(&ir);
     let matchers = Matchers::new(&states);
     let matcher = matchers
-        .get(&Stored::Extents(states.extents.iter().collect()))
+        .get(&Stored::Extents(states.extents.clone()))
         .unwrap();
     assert_eq!(
         matcher.matched(&pick).into_iter().collect::<Vec<_>>(),
@@ -381,7 +381,7 @@ fn a_face_a_delta_removes_bounds_no_edge_in_that_state() {
     let states = States::new(&ir);
     let matchers = Matchers::new(&states);
     let current = matchers
-        .get(&Stored::Extents(states.extents.iter().collect()))
+        .get(&Stored::Extents(states.extents.clone()))
         .unwrap();
     assert!(current.matches_any(&edge));
     let evaluation = matchers

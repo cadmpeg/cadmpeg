@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::loss::OnshapeLossCode;
 use crate::test_support::{fixture, review};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn sweep_bundle(operation: &str, control: Option<&str>) -> Vec<u8> {
     review::edit(&fixture("plate-fillet"), |path, value| {
@@ -96,6 +98,37 @@ fn plain_sweep_resolves_profile_path_order_and_dependencies() {
             .losses
             .iter()
             .any(|loss| loss.code.to_string() == "onshape/sweep.not-supported"));
+        let design = json::to_value(
+            &result
+                .ir()
+                .design
+                .features
+                .last()
+                .unwrap()
+                .definition
+                .operation,
+        )
+        .unwrap();
+        assert_eq!(design["kind"], "sweep");
+        assert_eq!(
+            design["value"]["section"]["picks"]["value"],
+            json!([{"target":{"kind":"sketch","value":"onshape:model:sketch#Base%20sketch"}}])
+        );
+        assert_eq!(
+            design["value"]["path"]["picks"]["value"],
+            json!([
+                {"target":{"kind":"sketch_entity","value":"onshape:model:entity#path-sketch/z-line"}},
+                {"target":{"kind":"sketch_entity","value":"onshape:model:entity#path-sketch/a-arc"}}
+            ])
+        );
+        assert_eq!(
+            design["value"]["output"]["boolean"]["kind"],
+            if expected == "new_body" {
+                "new_body"
+            } else {
+                "apply"
+            }
+        );
         review::validate(result);
     }
 }
@@ -103,11 +136,9 @@ fn plain_sweep_resolves_profile_path_order_and_dependencies() {
 #[test]
 fn unsupported_sweep_options_retain_native_with_named_loss() {
     for (key, value) in [
-        ("profileControl", json!("KEEP_ORIENTATION")),
         ("profileControl", json!("LOCK_FACES")),
         ("profileControl", json!("LOCK_DIRECTION")),
         ("bodyType", json!("SURFACE")),
-        ("operationType", json!("REMOVE")),
         ("hasTwist", json!(true)),
         ("hasScale", json!(true)),
         ("extendToFullPath", json!(true)),
@@ -340,5 +371,122 @@ fn disabled_sweep_twist_and_scale_expressions_are_unused() {
         .losses
         .iter()
         .any(|l| l.code.to_string() == "onshape/history.variable-evaluated"));
+    review::validate(result);
+}
+
+#[test]
+fn sweep_design_keeps_cut_intersect_twist_scale_and_profile_lock() {
+    for (operation, boolean) in [("REMOVE", "cut"), ("INTERSECT", "intersect")] {
+        let bytes = crate::test_support::review::edit(
+            &sweep_bundle(operation, Some("KEEP_ORIENTATION")),
+            |path, response| {
+                if path.ends_with("/features.json") {
+                    let feature = response["features"]
+                        .as_array_mut()
+                        .unwrap()
+                        .last_mut()
+                        .unwrap();
+                    feature["parameters"].as_array_mut().unwrap().extend([
+                        json!({"parameterId":"hasTwist","value":true}),
+                        json!({"parameterId":"twistType","value":"ANGLE"}),
+                        json!({"parameterId":"angle","expression":"45 deg"}),
+                        json!({"parameterId":"ccw","value":true}),
+                        json!({"parameterId":"hasScale","value":true}),
+                        json!({"parameterId":"scaleFactor","expression":"2"}),
+                    ]);
+                }
+            },
+        );
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        let op = wire["design"]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|feature| {
+                feature
+                    .pointer("/definition/operation")
+                    .filter(|op| op["kind"] == "sweep")
+            })
+            .unwrap_or_else(|| panic!("{:?}", result.report().losses));
+        assert_eq!(op["value"]["output"]["boolean"]["op"]["kind"], boolean);
+        assert_eq!(op["value"]["controls"]["orientation"]["kind"], "fixed");
+        assert_eq!(op["value"]["controls"]["twist"]["kind"], "angle");
+        assert_eq!(
+            op["value"]["controls"]["scaling"]["value"]["value"]["end"]["value"],
+            2.0
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| OnshapeLossCode::SweepScaleAssumed.matches(loss)));
+        crate::test_support::review::validate(result);
+    }
+}
+
+#[test]
+fn pitch_twist_uses_the_sweep_path_length() {
+    let bytes = review::edit(&sweep_bundle("NEW", Some("NONE")), |path, source| {
+        if path.ends_with("/features.json") {
+            let feature = source["features"]
+                .as_array_mut()
+                .unwrap()
+                .last_mut()
+                .unwrap();
+            feature["parameters"].as_array_mut().unwrap().extend([
+                json!({"parameterId":"hasTwist","value":true}),
+                json!({"parameterId":"twistType","value":"PITCH"}),
+                json!({"parameterId":"pitch","expression":"10 mm"}),
+                json!({"parameterId":"ccw","value":true}),
+            ]);
+        }
+    });
+    let result = review::decode(&bytes);
+    let operation = review::design_operation(result.ir(), "swept-body");
+    let twist = &operation["value"]["controls"]["twist"];
+    assert_eq!(twist["kind"], "angle");
+    assert_eq!(twist["value"]["kind"], "parameter");
+    let view = review::wire(&result);
+    let parameter = view["design"]["parameters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|parameter| parameter["id"] == twist["value"]["value"])
+        .unwrap();
+    let measures = &parameter["definition"]["value"]["value"]["measures"];
+    assert_eq!(measures[0]["kind"], json!({"kind":"length"}), "{parameter}");
+    let selection = &measures[0]["of"];
+    assert_eq!(selection["kind"], "selection");
+    assert_eq!(selection["at"], operation["value"]["path"]["at"]);
+    assert_eq!(selection["picks"], operation["value"]["path"]["picks"]);
+    assert!(measures[0].get("cached").is_none());
+    review::validate(result);
+}
+
+#[test]
+fn an_active_face_lock_is_a_sweep_orientation() {
+    let bytes = review::edit(&sweep_bundle("NEW", Some("LOCK_FACES")), |path, source| {
+        if path.ends_with("/features.json") {
+            source["features"]
+                .as_array_mut()
+                .unwrap()
+                .last_mut()
+                .unwrap()["parameters"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "parameterId":"lockFaces","queries":[{"deterministicIds":["support"]}]
+                }));
+        }
+    });
+    let result = review::decode(&bytes);
+    let operation = review::design_operation(result.ir(), "swept-body");
+    let lock = &operation["value"]["controls"]["orientation"];
+    assert_eq!(lock["kind"], "surface");
+    assert_eq!(
+        lock["value"]["picks"]["value"][0]["native"]["value"]["value"],
+        "support"
+    );
     review::validate(result);
 }

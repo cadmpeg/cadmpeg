@@ -7,9 +7,8 @@ use super::emit::{
     unknown_stream_metadata,
 };
 use super::geometry_work::{
-    model_geometry_work_limit, GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK,
-    MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK, MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
-    MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+    model_geometry_work_limit, GeometryWorkBudget, LaneGeometryWork, MAX_ADAPTIVE_GEOMETRY_WORK,
+    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
@@ -26,7 +25,7 @@ use super::support_uv::{
     invalidate_inconsistent_support_uv_with_validated_lanes_and_status, linear_knots,
     support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
-    IntersectionCompletionSource, SerializedSupportUv,
+    IntersectionCompletionSource, SerializedSupportUv, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
@@ -36,7 +35,7 @@ use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, WorkBudget};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -53,14 +52,16 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
-    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, Identity, LoopId, PcurveId, PointId,
+    ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use cadmpeg_parasolid::geometry::Refusal;
+use cadmpeg_parasolid::precision;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates(graph: &Graph) -> Vec<(FinitePoint3, &Node)> {
@@ -89,33 +90,358 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
     )
 }
 
-/// One loss for each graph-owned CONE or TORUS record whose otherwise valid
-/// fields state a form that has no surface.
-fn surface_refusals(si: usize, graph: &Graph) -> Vec<LossNote> {
+/// Gives up the record `node` of Parasolid stream `si`, which the decode
+/// names `stream`, for `cause` as `why` states, as a `parasolid-record`
+/// part. The retained record of the stream keeps the inflated bytes, so the
+/// part keeps only their length and digest.
+pub(super) fn give_up_record(
+    ctx: &DecodeContext<'_>,
+    stream: (usize, &cadmpeg_ir::StreamName),
+    node: &Node,
+    cause: Cause,
+    why: String,
+) -> Result<GivenUpPart, CodecError> {
+    ctx.give_up_part(
+        stream_part(stream, "parasolid-record", node.pos(), node.bytes())?,
+        cause,
+        give_up_error(cause, why),
+    )
+}
+
+/// The error of a give-up for `cause` with the text `why`: a malformed input
+/// for [`Cause::Unreadable`], and a form without a reading for
+/// [`Cause::Undecoded`].
+fn give_up_error(cause: Cause, why: String) -> CodecError {
+    match cause {
+        Cause::Unreadable => CodecError::Malformed(why),
+        Cause::Undecoded => CodecError::NotImplemented(why),
+    }
+}
+
+/// The part of `kind` over `bytes` at `pos` of Parasolid stream `si`, which
+/// the decode names `stream`. The retained record of the stream keeps the
+/// inflated bytes, so the part keeps only their length and digest.
+fn stream_part<'a>(
+    (si, stream): (usize, &cadmpeg_ir::StreamName),
+    kind: &'static str,
+    pos: usize,
+    bytes: &'a [u8],
+) -> Result<Part<'a>, CodecError> {
+    let holder = UnknownId::mint(format!(
+        "{}{si}",
+        crate::RETAINED_PARASOLID_STREAM_ID_PREFIX
+    ))
+    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok(
+        Part::at("nx", kind, u64_from_index(pos), bytes, [ArenaClass::Model])
+            .in_stream(stream.clone())
+            .contained_in(cadmpeg_ir::ids::Identity::from(holder))
+            .digest_only(),
+    )
+}
+
+/// A part of a Parasolid stream that the decode gives up once it knows the
+/// faces that the part's records leave partial.
+struct PendingPart {
+    stream: (usize, cadmpeg_ir::StreamName),
+    kind: &'static str,
+    range: std::ops::Range<usize>,
+    cause: Cause,
+    error: String,
+    id: Identity,
+    /// The kind and XMT index of the record that the part holds, for a record
+    /// of the stream that needs it.
+    record: Option<(NodeKind, u32)>,
+}
+
+/// The parts of the Parasolid streams that the decode gives up, with the
+/// faces that each part marks.
+#[derive(Default)]
+pub(super) struct PendingParts {
+    parts: Vec<PendingPart>,
+    marks: BTreeMap<Identity, BTreeSet<Identity>>,
+}
+
+impl PendingParts {
+    /// Enters the part of `kind` over `bytes` at `pos` of Parasolid stream
+    /// `si`, which the decode names `stream`, given up for `cause` with the
+    /// text of `why`, and returns its stub id. `record` is the kind and XMT
+    /// index of the record that the part holds.
+    fn push(
+        &mut self,
+        (si, stream): (usize, &cadmpeg_ir::StreamName),
+        kind: &'static str,
+        (pos, bytes): (usize, &[u8]),
+        (cause, why): (Cause, &LossNote),
+        record: Option<(NodeKind, u32)>,
+    ) -> Result<Identity, CodecError> {
+        let id = Identity::from(stream_part((si, stream), kind, pos, bytes)?.id()?);
+        self.parts.push(PendingPart {
+            stream: (si, stream.clone()),
+            kind,
+            range: pos..pos + bytes.len(),
+            cause,
+            error: format!("{}: {}", why.code, why.message),
+            id: id.clone(),
+            record,
+        });
+        Ok(id)
+    }
+
+    /// Enters the record `node` of Parasolid stream `si`, which the decode
+    /// names `stream`, as a `parasolid-record` part given up for `cause`
+    /// with the text of `why`, and returns its stub id.
+    pub(super) fn push_record(
+        &mut self,
+        stream: (usize, &cadmpeg_ir::StreamName),
+        node: &Node,
+        why: (Cause, &LossNote),
+    ) -> Result<Identity, CodecError> {
+        self.push(
+            stream,
+            "parasolid-record",
+            (node.pos(), node.bytes()),
+            why,
+            None,
+        )
+    }
+
+    /// The kind, XMT index, and stub id of each part of stream `si` that
+    /// holds a node record.
+    pub(super) fn records_of(
+        &self,
+        si: usize,
+    ) -> impl Iterator<Item = ((NodeKind, u32), &Identity)> {
+        self.parts
+            .iter()
+            .filter(move |part| part.stream.0 == si)
+            .filter_map(|part| Some((part.record?, &part.id)))
+    }
+
+    /// Names `record` among the records that the part `id` marks.
+    pub(super) fn mark(&mut self, id: Identity, record: Identity) {
+        self.marks.entry(id).or_default().insert(record);
+    }
+
+    /// Gives up each part. Its charge names each record it marks that
+    /// `holds` finds in the document.
+    pub(super) fn give_up(
+        self,
+        ctx: &DecodeContext<'_>,
+        scan: &Scan<'_>,
+        holds: impl Fn(&Identity) -> bool,
+        given_up: &mut Vec<GivenUpPart>,
+    ) -> Result<(), CodecError> {
+        let Self { parts, mut marks } = self;
+        for part in parts {
+            let (si, name) = &part.stream;
+            let bytes = scan
+                .streams
+                .get(*si)
+                .and_then(|stream| stream.inflated.get(part.range.clone()))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "NX stream #{si} has no bytes at {:?}",
+                        part.range
+                    ))
+                })?;
+            let marked = marks
+                .remove(&part.id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|record| holds(record));
+            given_up.push(ctx.give_up_part(
+                stream_part((*si, name), part.kind, part.range.start, bytes)?.marking(marked),
+                part.cause,
+                give_up_error(part.cause, part.error),
+            )?);
+        }
+        Ok(())
+    }
+}
+
+/// Enters the records and spans of each Parasolid stream that its primary
+/// parse frames and leaves out: the nodes and EDGE records the graph does
+/// not select, the surface-intersection records that state no construction,
+/// the bytes past a stop of the primary framing that no record the decode
+/// reads holds, and every intersection construction whose identity another
+/// one also carries.
+pub(super) fn give_up_unread(
+    scan: &Scan<'_>,
+    parsed: &crate::native::substrate::ParsedStreams<'_>,
+    parts: &mut PendingParts,
+) -> Result<(), CodecError> {
+    for (si, stream) in scan.streams.iter().enumerate() {
+        let view = parsed.stream(si);
+        let graph = &view.graph;
+        let name = cadmpeg_ir::StreamName::try_from(format!(
+            "nx:parasolid#{si}:{}",
+            stream.kind().label()
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut give_up = |kind, range: std::ops::Range<usize>, why: (Cause, &LossNote), record| {
+            let Some(bytes) = view.source.get(range.clone()) else {
+                return Err(CodecError::malformed(format_args!(
+                    "NX stream #{si} has no bytes at {range:?}"
+                )));
+            };
+            parts.push((si, &name), kind, (range.start, bytes), why, record)?;
+            Ok(())
+        };
+        for (xmt, range) in graph.primary_edge_refusals() {
+            let why = NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                "Primary EDGE in stream #{si} at byte {} has no typed projection under its \
+                 declared field contract and source identity; exact Source bytes remain retained.",
+                range.start
+            ));
+            give_up(
+                "parasolid-record",
+                range.clone(),
+                (Cause::Undecoded, &why),
+                Some((NodeKind::Edge, *xmt)),
+            )?;
+        }
+        for (kind, xmt, range) in graph.primary_node_refusals() {
+            let why = NxLossCode::PrimaryNodeUnresolved.note(format!(
+                "Primary {kind:?} node in stream #{si} at byte {} has no typed projection \
+                 under its declared field contract and source identity; exact Source bytes \
+                 remain retained.",
+                range.start
+            ));
+            give_up(
+                "parasolid-record",
+                range.clone(),
+                (Cause::Undecoded, &why),
+                Some((*kind, *xmt)),
+            )?;
+        }
+        for (xmt, range) in &view.intersections.unread {
+            let why = NxLossCode::IntersectionRecordUnresolved.note(format!(
+                "parasolid#{si} INTERSECTION {xmt} at byte {} states no construction: a \
+                 reference is null, or neither surface reference names a record, or the chart \
+                 and term references are neither a chart nor null; the record is withheld.",
+                range.start
+            ));
+            give_up(
+                "parasolid-record",
+                range.clone(),
+                (Cause::Undecoded, &why),
+                None,
+            )?;
+        }
+        if let Some(stop) = graph.primary_unread_from() {
+            let gaps = graph.unread_spans(view.source.len(), records_read_past(stream, view, stop));
+            if !gaps.is_empty() {
+                let why = NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                    "Primary framing in stream #{si} stops at byte {stop}; the bytes past it \
+                     that no record the decode reads holds, EDGE records among them, have no \
+                     typed projection, and exact Source bytes remain retained."
+                ));
+                for gap in gaps {
+                    give_up("parasolid-unframed", gap, (Cause::Undecoded, &why), None)?;
+                }
+            }
+        }
+        let duplicates = &view.intersections.duplicates;
+        let mut xmts = duplicates.iter().map(|copy| copy.xmt).collect::<Vec<_>>();
+        xmts.sort_unstable();
+        xmts.dedup();
+        for xmt in xmts {
+            let copies = duplicates.iter().filter(|copy| copy.xmt == xmt);
+            let offsets = copies
+                .clone()
+                .map(|copy| copy.pos.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let why = NxLossCode::IntersectionIdentityDuplicated.note(format!(
+                "parasolid#{si} INTERSECTION {xmt} is stored at bytes {offsets}; each copy is \
+                 withheld."
+            ));
+            for copy in copies {
+                give_up(
+                    "parasolid-record",
+                    copy.pos..copy.end,
+                    (Cause::Unreadable, &why),
+                    None,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The span of each record past `stop` of `stream` that the decode reads or
+/// gives up as a part of its own outside its node graph: the
+/// surface-intersection records, the NURBS arrays, control values and
+/// descriptors, the charts, and the LIMIT, blend-bound, and support-UV
+/// records that the readers scanning the whole stream read.
+fn records_read_past(
+    stream: &crate::parasolid::Stream,
+    view: &crate::native::substrate::StreamView<'_>,
+    stop: usize,
+) -> Vec<std::ops::Range<usize>> {
+    let source = view.source;
+    let mut read = view
+        .intersections
+        .source_constructions
+        .iter()
+        .chain(&view.intersections.duplicates)
+        .map(|construction| construction.pos..construction.end)
+        .chain(
+            view.intersections
+                .unread
+                .iter()
+                .map(|(_, range)| range.clone()),
+        )
+        .collect::<Vec<_>>();
+    read.extend(crate::nurbs::record_extents(source, stop));
+    let layout = match &stream.body {
+        crate::parasolid::StreamBody::Parasolid { subtype, .. } => subtype.chart_point_layout(),
+        crate::parasolid::StreamBody::Preview => None,
+    };
+    if let Some(layout) = layout {
+        read.extend((stop..source.len()).filter_map(|tag| {
+            crate::intersection::chart_source_record_at(source, tag, layout)
+                .map(|(_, end)| tag..end)
+        }));
+    }
+    read.extend(crate::intersection::scanned_record_extents(source, layout));
+    read
+}
+
+/// Each graph-owned CONE or TORUS record whose otherwise valid fields state
+/// a form that has no surface, with the cause and text of its give-up. A
+/// half-angle pair off the unit identity breaks the record's rules; a
+/// negative half-angle field or major radius states a form that the
+/// decoder has no surface for.
+fn surface_refusals(si: usize, graph: &Graph) -> Vec<(&Node, Cause, String)> {
     [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
         .into_iter()
         .flat_map(|(kind, name)| graph.of_kind(kind).map(move |node| (name, node)))
         .filter_map(|(name, node)| {
-            let (code, cause) = match node.surface_refusal()? {
+            let (cause, why) = match node.surface_refusal()? {
                 SurfaceRefusal::Analytic(Refusal::ConeHalfAngleSign) => (
-                    NxLossCode::CarrierConeHalfAngleSignUnresolved,
+                    Cause::Undecoded,
                     "stores a negative half-angle sine or cosine",
                 ),
                 SurfaceRefusal::Analytic(Refusal::ConeHalfAngleIdentity) => (
-                    NxLossCode::CarrierConeHalfAngleIdentityRefused,
+                    Cause::Unreadable,
                     "stores a half-angle sine and cosine whose squared sum differs from one \
                      by more than 1e-9",
                 ),
-                SurfaceRefusal::NegativeMajorRadius => (
-                    NxLossCode::CarrierTorusNegativeMajorUnresolved,
-                    "stores a negative major radius",
-                ),
+                SurfaceRefusal::NegativeMajorRadius => {
+                    (Cause::Undecoded, "stores a negative major radius")
+                }
                 SurfaceRefusal::Analytic(Refusal::Fields) => return None,
             };
-            Some(code.note(format!(
-                "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
-                node.pos()
-            )))
+            Some((
+                node,
+                cause,
+                format!(
+                    "parasolid#{si} {name} at byte {} {why}; the surface is not emitted.",
+                    node.pos()
+                ),
+            ))
         })
         .collect()
 }
@@ -134,15 +460,24 @@ fn ordered_fixed_candidates<T>(
     candidates.into_values().collect()
 }
 
-/// Decode analytic carriers from every Parasolid stream. Returns `None` when no
-/// carrier of any kind passes its gate, so the caller falls back to metadata.
 type GeometryDecode = (
     CadIr,
     DecodeBody,
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
+    Vec<GivenUpPart>,
 );
 
+/// The carrier records that a geometry decode which admits no carrier gave
+/// up. The metadata decode the caller falls back to reads no carrier record,
+/// so it commits these.
+pub(super) struct RefusedCarriers {
+    pub(super) given_up: Vec<GivenUpPart>,
+}
+
+/// Decode analytic carriers from every Parasolid stream. Returns
+/// [`RefusedCarriers`] when no carrier of any kind passes its gate, so the
+/// caller falls back to metadata.
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
@@ -150,7 +485,7 @@ pub(super) fn try_decode_geometry(
     dialect_losses: &[LossNote],
     notes: &[String],
     admitted_entities: &mut u64,
-) -> Result<Option<GeometryDecode>, CodecError> {
+) -> Result<Result<GeometryDecode, RefusedCarriers>, CodecError> {
     let mut ir = CadIr::empty();
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
@@ -162,8 +497,10 @@ pub(super) fn try_decode_geometry(
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-    let mut carrier_refusals: Vec<LossNote> = Vec::new();
-    let mut topology_losses = parsed.primary_losses();
+    let mut given_up = Vec::new();
+    let mut stream_parts = PendingParts::default();
+    let mut topology_losses = Vec::new();
+    give_up_unread(scan, &parsed, &mut stream_parts)?;
     // Losses that state a face partial, kept for the faces the document holds
     // once inactive bodies are pruned.
     let mut partial_face_losses = Vec::new();
@@ -223,6 +560,11 @@ pub(super) fn try_decode_geometry(
         terminal_preselection,
         has_plain_beside_partition_streams(scan.streams.iter().map(crate::parasolid::Stream::kind)),
     );
+    // The `res_linear` each SHELL-named BODY of a decoded stream stores, read
+    // when the document tolerances are stated after body selection.
+    let mut stored_resolutions: BTreeMap<BodyId, Option<f64>> = BTreeMap::new();
+    // Each decoded stream's tolerances, which its geometry stage reads.
+    let mut stream_tolerances = BTreeMap::new();
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -255,27 +597,17 @@ pub(super) fn try_decode_geometry(
             MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
             geometry_record_count,
         ),
-        support_uv_completion: model_geometry_work_limit(
-            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
-            geometry_record_count,
-        ),
-        coupled_support_uv: model_geometry_work_limit(
-            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
-            geometry_record_count,
-        ),
     };
     let exact_transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
     let transfer_budget = WorkBudget::new(transfer_limit);
     let support_uv_validation_budget = WorkBudget::new(support_uv_limit);
-    let support_budget = WorkBudget::new(support_uv_limit);
-    let coupled_support_budget = WorkBudget::new(support_uv_limit);
     let adaptive_geometry_budget = GeometryWorkBudget::from_context(ctx, geometry_limits.adaptive);
     let completion_geometry_budget =
         GeometryWorkBudget::from_context(ctx, geometry_limits.pcurve_completion);
-    let support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, geometry_limits.support_uv_completion);
-    let coupled_support_uv_geometry_budget =
-        GeometryWorkBudget::from_context(ctx, geometry_limits.coupled_support_uv);
+    let support_uv_lane_work =
+        LaneGeometryWork::from_context(ctx, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
+    let coupled_support_uv_lane_work =
+        LaneGeometryWork::from_context(ctx, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
     let serialized_support_uv_geometry_budget =
         GeometryWorkBudget::from_context(ctx, geometry_limits.serialized_support_uv);
     let mut support_uv_lane_geometry_exhausted = false;
@@ -291,8 +623,8 @@ pub(super) fn try_decode_geometry(
         let scope = IdScope::stream_from_index(si)?;
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
-        support_uv_geometry_budget.clear_blend_frame_cache();
-        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
+        support_uv_lane_work.clear_blend_frame_cache();
+        coupled_support_uv_lane_work.clear_blend_frame_cache();
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         if preselection
             .as_ref()
@@ -301,12 +633,12 @@ pub(super) fn try_decode_geometry(
             let unknown_index = unknowns.len();
             let unknown = unknown_stream_metadata(si, stream)?;
             annotations.note(
-                unknown.id().as_str(),
+                unknown.id(),
                 &container_stream,
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
             );
-            annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            annotations.exactness(unknown.id(), Exactness::Derived);
             scan.note_untyped(unknown.id(), [cadmpeg_core::decode::ArenaClass::Model]);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
@@ -319,22 +651,68 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
             unresolved_controls,
         } = parsed.parse_nurbs(si);
-        carrier_refusals.extend(nurbs_refusals.iter().map(|refusal| refusal.loss(si)));
-        for carrier in unresolved_controls {
-            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
-                "parasolid#{si} {} at byte {} names no control values that resolve to it",
-                carrier.family, carrier.pos
-            )));
-        }
+        let stream_name = cadmpeg_ir::StreamName::try_from(format!(
+            "nx:parasolid#{si}:{}",
+            stream.kind().label()
+        ))
+        .map_err(CodecError::malformed)?;
         let view = parsed.stream(si);
-        carrier_refusals.extend(surface_refusals(si, &view.graph));
-        let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
-        let source_stream = StreamHandle::new(
-            cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
-        );
+        let refused = nurbs_refusals
+            .iter()
+            .map(|refusal| (refusal.pos, refusal.give_up(si)))
+            .chain(unresolved_controls.iter().map(|carrier| {
+                (
+                    carrier.pos,
+                    (
+                        Cause::Undecoded,
+                        format!(
+                            "parasolid#{si} {} at byte {} names no control values that resolve \
+                             to it",
+                            carrier.family, carrier.pos
+                        ),
+                    ),
+                )
+            }))
+            .map(|(pos, (cause, why))| {
+                let node = view.graph.at_pos(pos).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "parasolid#{si} refused carrier at byte {pos} is not a graph record"
+                    ))
+                })?;
+                Ok::<_, CodecError>((node, cause, why))
+            })
+            .chain(surface_refusals(si, &view.graph).into_iter().map(Ok));
+        let mut refused_carriers = BTreeMap::new();
+        for refusal in refused {
+            let (node, cause, why) = refusal?;
+            let part = give_up_record(ctx, (si, &stream_name), node, cause, why)?;
+            refused_carriers.insert(node.xmt(), Identity::from(part.id().clone()));
+            given_up.push(part);
+        }
+        let source_stream = StreamHandle::new(stream_name);
 
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
+        let mut stream_precisions = Vec::new();
+        let named_bodies = graph
+            .of_kind(NodeKind::Shell)
+            .filter_map(|shell| Some(u32::from(shell.shell_fields()?.body?)))
+            .collect::<BTreeSet<_>>();
+        for body_xmt in named_bodies {
+            let body: BodyId =
+                scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
+            let res_linear = graph.body_linear_resolutions().get(&body_xmt).copied();
+            if preselection
+                .as_ref()
+                .is_none_or(|(selected, _, _)| selected.contains(&body))
+            {
+                stream_precisions.extend(res_linear.and_then(precision::linear_precision));
+            }
+            stored_resolutions.insert(body, res_linear);
+        }
+        let tolerances = precision::part_tolerances(stream_precisions);
+        stream_tolerances.insert(si, tolerances);
+        ir.tolerances = tolerances;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut reversed_analytic_surfaces = BTreeSet::new();
@@ -357,14 +735,8 @@ pub(super) fn try_decode_geometry(
         for (pi, (position, node)) in ordered_point_candidates(graph).into_iter().enumerate() {
             let pid: PointId = scope.id_from_display(&cadmpeg_ir::identity_component!("pt"), pi)?;
             let vid: VertexId = scope.id_from_display(&cadmpeg_ir::identity_component!("v"), pi)?;
-            annotate_node(
-                &mut annotations,
-                pid.as_str(),
-                &source_stream,
-                node,
-                "POINT",
-            );
-            annotations.derived(pid.as_str(), "position")?;
+            annotate_node(&mut annotations, &pid, &source_stream, node, "POINT");
+            annotations.derived(&pid, "position")?;
 
             ir.geometry
                 .points
@@ -406,7 +778,7 @@ pub(super) fn try_decode_geometry(
             }
             annotate_node(
                 &mut annotations,
-                id.as_str(),
+                &id,
                 &source_stream,
                 node,
                 surface_tag(geometry.solved().ok_or_else(|| {
@@ -415,7 +787,7 @@ pub(super) fn try_decode_geometry(
                     )
                 })?),
             );
-            annotations.derived(id.as_str(), "geometry")?;
+            annotations.derived(&id, "geometry")?;
 
             ir.geometry.surfaces.push(Surface {
                 id: id.clone(),
@@ -430,12 +802,12 @@ pub(super) fn try_decode_geometry(
             let id: SurfaceId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
             annotations.note(
-                id.as_str(),
+                &id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(surf.pos),
                 Some("B_SPLINE_SURFACE"),
             );
-            annotations.derived(id.as_str(), "geometry")?;
+            annotations.derived(&id, "geometry")?;
 
             ir.geometry.surfaces.push(Surface {
                 id: id.clone(),
@@ -469,12 +841,12 @@ pub(super) fn try_decode_geometry(
                     let surface_id: SurfaceId = scope
                         .id_from_display(&cadmpeg_ir::identity_component!("offset-surf"), oi)?;
                     annotations.note(
-                        surface_id.as_str(),
+                        &surface_id,
                         &source_stream,
                         cadmpeg_core::decode::u64_from_index(offset.pos),
                         Some("OFFSET_SURF"),
                     );
-                    annotations.derived(surface_id.as_str(), "geometry")?;
+                    annotations.derived(&surface_id, "geometry")?;
 
                     ir.geometry.surfaces.push(Surface {
                         id: surface_id.clone(),
@@ -501,12 +873,12 @@ pub(super) fn try_decode_geometry(
                     (surface_id, None)
                 };
             annotations.note(
-                procedural_id.as_str(),
+                &procedural_id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(offset.pos),
                 Some("OFFSET_SURF"),
             );
-            annotations.derived(procedural_id.as_str(), "definition")?;
+            annotations.derived(&procedural_id, "definition")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                     support,
@@ -543,12 +915,12 @@ pub(super) fn try_decode_geometry(
             let procedural_id: ProceduralSurfaceId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("blend"), bi)?;
             annotations.note(
-                surface_id.as_str(),
+                &surface_id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(blend.pos),
                 Some("BLEND_SURF"),
             );
-            annotations.derived(surface_id.as_str(), "geometry")?;
+            annotations.derived(&surface_id, "geometry")?;
 
             ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
@@ -571,12 +943,12 @@ pub(super) fn try_decode_geometry(
                 native_ref: None,
             });
             annotations.note(
-                procedural_id.as_str(),
+                &procedural_id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(blend.pos),
                 Some("BLEND_SURF"),
             );
-            annotations.derived(procedural_id.as_str(), "definition")?;
+            annotations.derived(&procedural_id, "definition")?;
             let procedural_index = ir.geometry.procedural_surfaces.len();
 
             let attached = procedural_admission.add_surface(
@@ -621,16 +993,19 @@ pub(super) fn try_decode_geometry(
             )?;
             let procedural_id: ProceduralSurfaceId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("cliff-edge"), edge.xmt)?;
-            for id in [surface_id.as_str(), procedural_id.as_str()] {
+            for key in [
+                cadmpeg_ir::annotations::AnnotationKey::from(&surface_id),
+                cadmpeg_ir::annotations::AnnotationKey::from(&procedural_id),
+            ] {
                 annotations.note(
-                    id,
+                    &key,
                     &source_stream,
                     cadmpeg_core::decode::u64_from_index(edge.pos),
                     Some("BLEND_SURF"),
                 );
             }
-            annotations.derived(surface_id.as_str(), "geometry")?;
-            annotations.derived(procedural_id.as_str(), "definition")?;
+            annotations.derived(&surface_id, "geometry")?;
+            annotations.derived(&procedural_id, "definition")?;
             ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -704,7 +1079,7 @@ pub(super) fn try_decode_geometry(
             let id: CurveId = scope.id_from_display(&cadmpeg_ir::identity_component!("crv"), ci)?;
             annotate_node(
                 &mut annotations,
-                id.as_str(),
+                &id,
                 &source_stream,
                 node,
                 curve_tag(geometry.solved().ok_or_else(|| {
@@ -713,7 +1088,7 @@ pub(super) fn try_decode_geometry(
                     )
                 })?),
             );
-            annotations.derived(id.as_str(), "geometry")?;
+            annotations.derived(&id, "geometry")?;
 
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
@@ -729,12 +1104,12 @@ pub(super) fn try_decode_geometry(
             let id: CurveId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("nurbs-crv"), ci)?;
             annotations.note(
-                id.as_str(),
+                &id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(crv.pos),
                 Some("B_SPLINE_CURVE"),
             );
-            annotations.derived(id.as_str(), "geometry")?;
+            annotations.derived(&id, "geometry")?;
 
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
@@ -752,12 +1127,12 @@ pub(super) fn try_decode_geometry(
             let id: PcurveId =
                 scope.id_from_display(&cadmpeg_ir::identity_component!("pcurve"), pi)?;
             annotations.note(
-                id.as_str(),
+                &id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(pcurve.pos),
                 Some("B_CURVE_2D"),
             );
-            annotations.derived(id.as_str(), "geometry")?;
+            annotations.derived(&id, "geometry")?;
 
             ir.geometry.pcurves.push(Pcurve {
                 id: id.clone(),
@@ -919,15 +1294,15 @@ pub(super) fn try_decode_geometry(
                 ));
             }
             annotations.note(
-                curve_id.as_str(),
+                &curve_id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(construction.pos),
                 Some("INTERSECTION"),
             );
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived(curve_id.as_str(), "geometry")?;
+                annotations.derived(&curve_id, "geometry")?;
             } else {
-                annotations.exactness(curve_id.as_str(), Exactness::Unknown);
+                annotations.exactness(&curve_id, Exactness::Unknown);
             }
 
             ir.geometry.curves.push(Curve {
@@ -969,15 +1344,15 @@ pub(super) fn try_decode_geometry(
                 native_ref: None,
             });
             annotations.note(
-                procedural_id.as_str(),
+                &procedural_id,
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(construction.pos),
                 Some("INTERSECTION"),
             );
             if charted.is_some() || uncharted.is_some() {
-                annotations.derived(procedural_id.as_str(), "definition")?;
+                annotations.derived(&procedural_id, "definition")?;
             } else {
-                annotations.exactness(procedural_id.as_str(), Exactness::Unknown);
+                annotations.exactness(&procedural_id, Exactness::Unknown);
             }
             let definition = if let Some(charted) = charted {
                 let support_uv = if let Some(lanes) = intersection_support_uv.get(&construction.xmt)
@@ -1115,16 +1490,19 @@ pub(super) fn try_decode_geometry(
                     .id_from_display(&cadmpeg_ir::identity_component!("swept-surf"), swept.xmt)?;
                 let procedural_id: ProceduralSurfaceId =
                     scope.id_from_display(&cadmpeg_ir::identity_component!("swept"), swept.xmt)?;
-                for id in [surface_id.as_str(), procedural_id.as_str()] {
+                for key in [
+                    cadmpeg_ir::annotations::AnnotationKey::from(&surface_id),
+                    cadmpeg_ir::annotations::AnnotationKey::from(&procedural_id),
+                ] {
                     annotations.note(
-                        id,
+                        &key,
                         &source_stream,
                         cadmpeg_core::decode::u64_from_index(swept.pos),
                         Some("SWEPT_SURF"),
                     );
                 }
-                annotations.derived(surface_id.as_str(), "geometry")?;
-                annotations.derived(procedural_id.as_str(), "definition")?;
+                annotations.derived(&surface_id, "geometry")?;
+                annotations.derived(&procedural_id, "definition")?;
                 surface_indices.insert(surface_id.clone(), ir.geometry.surfaces.len());
                 ir.geometry.surfaces.push(Surface {
                     id: surface_id.clone(),
@@ -1290,6 +1668,7 @@ pub(super) fn try_decode_geometry(
                 graph,
                 points: &points_by_xmt,
                 surfaces: &surfaces_by_xmt,
+                refused_carriers: &refused_carriers,
                 reversed_analytic_surfaces: &reversed_analytic_surfaces,
                 curves: &curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
@@ -1310,6 +1689,7 @@ pub(super) fn try_decode_geometry(
             crate::decode::emit::TopologyLosses {
                 losses: &mut topology_losses,
                 partial_faces: &mut partial_face_losses,
+                parts: &mut stream_parts,
             },
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
@@ -1339,16 +1719,16 @@ pub(super) fn try_decode_geometry(
             &pending_ext11_support_uv,
             &serialized_support_uv_geometry_budget,
         )?;
-        support_uv_geometry_budget.clear_blend_frame_cache();
-        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
+        support_uv_lane_work.clear_blend_frame_cache();
+        coupled_support_uv_lane_work.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(&mut ir)?;
         let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
                 &mut ir,
                 &pending_ext11_support_uv,
-                (&support_budget, &support_uv_geometry_budget),
-                (&coupled_support_budget, &coupled_support_uv_geometry_budget),
+                &support_uv_lane_work,
+                &coupled_support_uv_lane_work,
                 &mut completed_endpoint_witnesses,
             )?;
         let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
@@ -1392,12 +1772,12 @@ pub(super) fn try_decode_geometry(
             unknown.links_mut().push(curve.id.as_str().to_owned());
         }
         annotations.note(
-            unknown.id().as_str(),
+            unknown.id(),
             &container_stream,
             cadmpeg_core::decode::u64_from_index(stream.file_offset),
             Some(stream.kind().label()),
         );
-        annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+        annotations.exactness(unknown.id(), Exactness::Derived);
         scan.note_untyped(unknown.id(), [cadmpeg_core::decode::ArenaClass::Model]);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
@@ -1405,26 +1785,30 @@ pub(super) fn try_decode_geometry(
 
     drop(procedural_admission);
     intersection_index.complete_from_model(&mut ir);
-    let mut completion_sources = Vec::new();
+    // Each source's surfaces are evaluated under the tolerances of its own
+    // stream.
     for (si, source_stream) in &completion_streams {
-        completion_sources.push(IntersectionCompletionSource {
+        if let Some(tolerances) = stream_tolerances.get(si) {
+            ir.tolerances = *tolerances;
+        }
+        let source = IntersectionCompletionSource {
             scope: IdScope::stream_from_index(*si)?,
             graph: parsed.stream(*si).graph.as_ref(),
             source_stream: source_stream.clone(),
             coedge_start: 0,
             procedural_start: 0,
-        });
+        };
+        attach_completed_intersection_pcurves_for_model_with_budget(
+            &mut ir,
+            std::slice::from_ref(&source),
+            &mut annotations,
+            &model_endpoint_witnesses,
+            &completion_geometry_budget,
+        )?;
     }
-    attach_completed_intersection_pcurves_for_model_with_budget(
-        &mut ir,
-        &completion_sources,
-        &mut annotations,
-        &model_endpoint_witnesses,
-        &completion_geometry_budget,
-    )?;
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
-        return Ok(None);
+        return Ok(Err(RefusedCarriers { given_up }));
     }
 
     ir.source = Some(source_meta(scan, dialects, Some(&parsed))?);
@@ -1470,10 +1854,15 @@ pub(super) fn try_decode_geometry(
         }
     }
     if !active_body_selection {
-        active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
+        active_body_selection = select_terminal_feature_bodies(
+            &mut ir,
+            &model.segments.body_bindings,
+            &model.segments.body_lineage_statuses,
+        );
     }
+    let resolution_losses = state_held_body_tolerances(&mut ir, &stored_resolutions);
     classify_body_kinds(&mut ir)?;
-    crate::native::attach_annotations(
+    given_up.extend(crate::native::attach_annotations(
         ctx,
         &mut ir,
         &model,
@@ -1481,7 +1870,7 @@ pub(super) fn try_decode_geometry(
         &mut annotations,
         &mut unknowns,
         &mut native_losses,
-    )?;
+    )?);
     for (si, unknown_index) in stream_unknowns {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
@@ -1509,14 +1898,6 @@ pub(super) fn try_decode_geometry(
             samples_exhausted: support_uv_budget_exhausted(&support_uv_validation_budget),
             geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
         },
-        direct: crate::decode::report::SupportUvPhaseStatus {
-            samples_exhausted: support_uv_budget_exhausted(&support_budget),
-            geometry_exhausted: support_uv_geometry_budget.exhausted(),
-        },
-        coupled: crate::decode::report::SupportUvPhaseStatus {
-            samples_exhausted: support_uv_budget_exhausted(&coupled_support_budget),
-            geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
-        },
         support_uv_lane_geometry_exhausted,
         transfer_limit,
         support_uv_limit,
@@ -1539,19 +1920,30 @@ pub(super) fn try_decode_geometry(
         &ir,
         &model,
     )?;
-    let stated_faces: std::collections::BTreeSet<_> =
-        ir.geometry.faces.iter().map(|face| &face.id).collect();
+    let stated_faces: BTreeSet<&str> = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.id.as_str())
+        .collect();
+    stream_parts.give_up(
+        ctx,
+        scan,
+        |record| stated_faces.contains(record.as_str()),
+        &mut given_up,
+    )?;
     topology_losses.extend(
         partial_face_losses
             .into_iter()
-            .filter(|(face, _)| stated_faces.contains(face))
+            .filter(|(face, _)| stated_faces.contains(face.as_str()))
             .map(|(_, note)| note),
     );
-    for losses in [carrier_refusals, topology_losses, native_losses] {
+    topology_losses.extend(resolution_losses);
+    for losses in [topology_losses, native_losses] {
         report.losses.extend(losses);
     }
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
-    Ok(Some((ir, report, annotations, unknowns)))
+    Ok(Ok((ir, report, annotations, unknowns, given_up)))
 }
 
 fn extend_endpoint_witnesses(target: &mut EndpointWitnesses, source: EndpointWitnesses) {
@@ -1720,7 +2112,7 @@ fn retain_live_unknown_links(
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
-            annotations.derived(unknown.id().as_str(), "links")?;
+            annotations.derived(unknown.id(), "links")?;
         }
     }
     Ok(())
@@ -1899,6 +2291,35 @@ fn has_plain_beside_partition_streams(kinds: impl IntoIterator<Item = StreamKind
     partition && plain
 }
 
+/// States the document tolerances of `ir` from the `res_linear` its held
+/// bodies store (`parasolid.md` §4), and returns the losses of the held bodies
+/// whose value states no linear precision.
+fn state_held_body_tolerances(
+    ir: &mut CadIr,
+    stored_resolutions: &BTreeMap<BodyId, Option<f64>>,
+) -> Vec<LossNote> {
+    let mut precisions = Vec::new();
+    let mut losses = Vec::new();
+    for body in &ir.geometry.bodies {
+        let res_linear = stored_resolutions.get(&body.id).copied().flatten();
+        if let Some(precision) = res_linear.and_then(precision::linear_precision) {
+            precisions.push(precision);
+            continue;
+        }
+        let code = if res_linear.is_some() {
+            NxLossCode::BodyResolutionInvalid
+        } else {
+            NxLossCode::BodyResolutionUnread
+        };
+        losses.push(code.note(precision::unusable_resolution_message(
+            body.id.as_str(),
+            res_linear,
+        )));
+    }
+    ir.tolerances = precision::part_tolerances(precisions);
+    losses
+}
+
 /// The stream-level preselection. Plain history images beside partition
 /// streams are withheld before terminal lineage selects, so terminal-lineage
 /// preselection runs only for a part without them.
@@ -2029,7 +2450,8 @@ pub(super) fn select_active_body(
 
 fn select_terminal_feature_bodies(
     ir: &mut CadIr,
-    model: &crate::native::model::NativeModel,
+    bindings: &[crate::native::segments::SegmentBodyBinding],
+    statuses: &[crate::native::segments::SegmentBodyLineageStatus],
 ) -> bool {
     if ir.geometry.bodies.len() <= 1 {
         return false;
@@ -2041,11 +2463,9 @@ fn select_terminal_feature_bodies(
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
-    let Some(selected) = crate::native::model::terminal_feature_body_ids(
-        &emitted,
-        &model.segments.body_bindings,
-        &model.segments.body_lineage_statuses,
-    ) else {
+    let Some(selected) =
+        crate::native::model::terminal_feature_body_ids(&emitted, bindings, statuses)
+    else {
         return false;
     };
     apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
@@ -2261,9 +2681,13 @@ fn finalize_point_topology(
     let shell_id: ShellId =
         derived.id_from_display(&cadmpeg_ir::identity_component!("point-shell"), 0)?;
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
-        annotations.note(id, &stream, 0, Some("derived_point_topology"));
-        annotations.exactness(id, Exactness::Inferred);
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
+        annotations.note(&key, &stream, 0, Some("derived_point_topology"));
+        annotations.exactness(&key, Exactness::Inferred);
     }
 
     let mut free_vertices = Vec::new();
@@ -2271,13 +2695,8 @@ fn finalize_point_topology(
     for (index, point) in ir.geometry.points.iter().enumerate() {
         let vertex_id: VertexId =
             derived.id_from_display(&cadmpeg_ir::identity_component!("point-vertex"), index)?;
-        annotations.note(
-            vertex_id.as_str(),
-            &stream,
-            0,
-            Some("derived_point_topology"),
-        );
-        annotations.exactness(vertex_id.as_str(), Exactness::Inferred);
+        annotations.note(&vertex_id, &stream, 0, Some("derived_point_topology"));
+        annotations.exactness(&vertex_id, Exactness::Inferred);
         ir.geometry.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point.id.clone(),

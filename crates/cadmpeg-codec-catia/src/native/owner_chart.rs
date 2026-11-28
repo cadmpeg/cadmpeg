@@ -309,7 +309,7 @@ pub(super) enum CatiaOwnerChartBridge {
 }
 
 /// Compatibility representation with explicit framing controls.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaOwnerChartBridgeWire {
     /// Five-reference supported-surface construction.
@@ -607,8 +607,8 @@ mod tests {
         CatiaOwnerChartBridgeReference, CatiaOwnerChartBridgeReferenceWire,
         CatiaOwnerChartBridgeWire, CatiaOwnerChartRelation, CatiaOwnerChartRelationWire,
     };
+    use cadmpeg_core::json;
     use cadmpeg_core::serde_erase::json;
-    use serde_json::json;
 
     fn owner_chart() -> CatiaOwnerChartRelation {
         let native = crate::native::CatiaNative::decode(

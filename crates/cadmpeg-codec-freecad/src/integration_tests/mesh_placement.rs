@@ -37,6 +37,15 @@ fn linked(target: &str, include_prototype_placement: bool) -> Vec<String> {
     ]
 }
 
+fn loss_codes(result: &cadmpeg_ir::DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect()
+}
+
 fn mesh_properties(position: [f64; 3], quarter_turn: bool) -> Vec<String> {
     vec![
         r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="triangle"/></Property>"#.to_owned(),
@@ -178,6 +187,39 @@ fn application_mesh_composes_nested_container_placements() {
 }
 
 #[test]
+fn application_mesh_in_an_unplaced_container_keeps_its_own_placement() {
+    let result = decode(
+        &[
+            (
+                "Holder",
+                "App::Part",
+                vec![
+                    members(&["Mesh"]),
+                    r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#.to_owned(),
+                ],
+            ),
+            (
+                "Mesh",
+                "Mesh::Feature",
+                mesh_properties([5.0, 0.0, 0.0], false),
+            ),
+        ],
+        &[],
+    );
+    assert_vertices(
+        &result,
+        0,
+        [[5.0, 0.0, 0.0], [7.0, 0.0, 0.0], [5.0, 3.0, 0.0]],
+    );
+    assert!(loss_codes(&result).contains(
+        &crate::loss::FreecadLossCode::MeshPlacementNotTransferred
+            .note(String::new())
+            .code
+            .to_string()
+    ));
+}
+
+#[test]
 fn application_mesh_links_select_prototype_placement_once() {
     for prototype_transform in [false, true] {
         let mut link = linked("Mesh", prototype_transform);
@@ -226,7 +268,7 @@ fn application_mesh_links_select_prototype_placement_once() {
                 .unwrap(),
             1
         );
-        assert!(result.report().losses.is_empty());
+        assert_eq!(loss_codes(&result), Vec::<String>::new());
     }
 }
 
@@ -359,7 +401,7 @@ fn application_mesh_link_scale_transforms_prototype_translation_and_vertices() {
         1,
         [[6.0, 0.0, 0.0], [2.0, 0.0, 0.0], [6.0, 9.0, 0.0]],
     );
-    assert!(result.report().losses.is_empty());
+    assert_eq!(loss_codes(&result), Vec::<String>::new());
 }
 
 #[test]
@@ -426,4 +468,60 @@ fn application_mesh_nested_link_fanout_has_a_shared_work_bound() {
         0,
         [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 3.0, 0.0]],
     );
+}
+
+#[test]
+fn a_link_to_a_mesh_places_after_the_mesh_occurrence() {
+    let mut link = linked("Mesh", true);
+    link.push(placement("LinkPlacement", [10.0, 20.0, 30.0], false));
+    let result = decode(
+        &[
+            (
+                "Mesh",
+                "Mesh::Feature",
+                mesh_properties([100.0, 200.0, 300.0], true),
+            ),
+            ("Link", "App::Link", link),
+        ],
+        &[],
+    );
+    let ir = result.ir();
+    // The mesh is in its object's frame (§6.7): the object's own appearance is
+    // an occurrence at its `Placement`.
+    let own = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with("#Mesh:container"))
+        .unwrap_or_else(|| panic!("{:?}", ir.model.occurrences));
+    let rows = own.transform.expect("the mesh's Placement").affine_rows();
+    assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [100.0, 200.0, 300.0]);
+    let place = ir
+        .design
+        .features
+        .iter()
+        .find_map(|feature| match &feature.definition.operation {
+            cadmpeg_ir::design::feature::FeatureOperation::Place(place)
+                if feature.native_ref.as_deref() == Some("fcstd:native:object#Link") =>
+            {
+                Some(place)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{:?}", ir.design.features));
+    assert_eq!(
+        place.base,
+        Some(cadmpeg_ir::design::ops::assembly::PlacementBase::OwnOccurrence)
+    );
+    let origin = place
+        .placement
+        .as_ref()
+        .expect("the link's LinkPlacement")
+        .resolved
+        .as_ref()
+        .expect("a resolved frame")
+        .origin
+        .get();
+    assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
+    assert_eq!(loss_codes(&result), Vec::<String>::new());
 }

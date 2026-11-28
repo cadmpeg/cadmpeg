@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::reference::references;
 use super::{named_parameter, RecordExt, ValueExt};
+use crate::reader::instance_is_lost;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -18,16 +19,18 @@ use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Fraction;
+use cadmpeg_ir::tessellation::TessellationId;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
 use super::groups::NonemptyGroup;
 use super::topology::TopologyData;
 use super::StageOutcome;
+use super::{decode_text, string_text};
 
 pub(super) fn decode(
     exchange: &Exchange,
@@ -107,8 +110,10 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.push(
-                StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
+            exchange.lost().give_up_for(
+                id,
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
             );
             continue;
         };
@@ -177,33 +182,42 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            )));
+            exchange.lost().give_up_for(
+                layer_id,
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
+                )),
+            );
             continue;
         };
         if assigned_items.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            )));
+            exchange.lost().give_up_for(
+                layer_id,
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!(
+                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
+                )),
+            );
             continue;
         }
-        let Some(name) =
-            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
-                decode_text(
-                    exchange,
-                    value,
-                    &mut losses,
-                    layer_id,
-                    "presentation layer name",
-                    StepLossCode::MetadataStringInvalid,
-                )
+        let name = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0)
+            .map_or(Ok(None), |value| {
+                string_text(exchange, value, layer_id, "presentation layer name")
             })
-        else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            )));
-            continue;
+            .and_then(|name| {
+                name.ok_or_else(|| format!("PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"))
+            });
+        let name = match name {
+            Ok(name) => name,
+            Err(why) => {
+                exchange.lost().give_up_for(
+                    layer_id,
+                    Cause::Unreadable,
+                    &StepLossCode::DecodeWarning.note(why),
+                );
+                continue;
+            }
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {
@@ -260,8 +274,10 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.push(
-                StepLossCode::DecodeWarning
+            exchange.lost().give_up_for(
+                style_id,
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
             );
             continue;
@@ -297,7 +313,7 @@ pub(super) fn decode(
         }
         if !context_style_ids.is_empty() {
             let message = context_style_message(style_id, &context_style_ids, exchange);
-            losses.push(StepLossCode::ContextDependentStyleUnresolved.note(message));
+            exchange.lost().give_up(style_id, Cause::Undecoded, message);
             continue;
         }
         let color = combine_color_resolutions(style_references.iter().copied().map(|reference| {
@@ -336,17 +352,25 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
-                    "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )));
+                exchange.lost().give_up_for(
+                    style_id,
+                    Cause::Undecoded,
+                    &StepLossCode::ConflictingScalarColors.note(format!(
+                        "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
+                    )),
+                );
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, ctx)? {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "STYLED_ITEM #{style_id} has no resolved surface color"
-                    )));
+                    exchange.lost().give_up_for(
+                        style_id,
+                        Cause::Undecoded,
+                        &StepLossCode::DecodeWarning.note(format!(
+                            "STYLED_ITEM #{style_id} has no resolved surface color"
+                        )),
+                    );
                 }
                 continue;
             }
@@ -394,6 +418,21 @@ pub(super) fn decode(
             hidden_style_ids.is_empty().then_some(None);
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
             let targets = appearance_targets(target_step, exchange, topology, &entity_ids, indices);
+            if targets
+                .iter()
+                .all(|target| matches!(target, AppearanceTarget::Unresolved))
+                && instance_is_lost(exchange, target_step)
+            {
+                // The binding drops with the record of its target.
+                exchange.lost().drop_record(
+                    ids::presentation(
+                        kind!("binding"),
+                        IdentityKey::from(style_id).colon(ordinal).dash(0_usize),
+                    ),
+                    target_step,
+                );
+                continue;
+            }
             if targets.is_empty() {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
@@ -774,9 +813,9 @@ fn appearance_targets(
     } else if entity_ids.points.contains(point_id.as_str()) {
         Some(AppearanceTarget::Point(PointId::from(point_id)))
     } else if entity_ids.tessellations.contains(tessellation_id.as_str()) {
-        Some(AppearanceTarget::Tessellation(
-            tessellation_id.into_string(),
-        ))
+        Some(AppearanceTarget::Tessellation(TessellationId::from(
+            tessellation_id,
+        )))
     } else if exchange.records().contains_key(&id) {
         Some(AppearanceTarget::Unresolved)
     } else {
@@ -927,7 +966,7 @@ fn presentation_item_one(
             .contains(ids::tessellation(kind!("mesh"), id).as_str())
     {
         PresentationItem::Tessellation {
-            tessellation: ids::tessellation(kind!("mesh"), id).into_string(),
+            tessellation: TessellationId::from(ids::tessellation(kind!("mesh"), id)),
         }
     } else {
         PresentationItem::Source {

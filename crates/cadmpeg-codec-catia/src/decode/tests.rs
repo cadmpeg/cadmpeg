@@ -289,7 +289,9 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
 
 /// The router states a fall-through by name. A route that refuses records and
 /// then transfers no model leaves both its refusal notes and one fall-through
-/// note in the report of whatever route or fallback finishes the decode.
+/// note in the report of whatever route or fallback finishes the decode. The
+/// metadata fallback keeps the payload whole, so it charges no give-up
+/// beyond those of the records the route refused.
 #[test]
 fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {
@@ -318,6 +320,7 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 ),
                 annotations: cadmpeg_ir::Annotations::default(),
                 unknowns: Vec::new(),
+                given_up: Vec::new(),
                 admitted_model_entities: 0,
             }))
         },
@@ -351,6 +354,26 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 && message.contains("the decode continued to the metadata fallback")
         }),
         "the fall-through statement: {messages:?}"
+    );
+    let payloads = decoded
+        .ir
+        .native_unknowns("catia")
+        .expect("the native unknowns deserialize")
+        .into_iter()
+        .map(|record| record.id.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!payloads.is_empty(), "the fallback keeps the payload");
+    assert!(
+        decoded
+            .body
+            .losses
+            .iter()
+            .filter(|note| cadmpeg_ir::unknown::part::gives_up(&note.code))
+            .all(|note| payloads.iter().all(|payload| !note
+                .message
+                .split_whitespace()
+                .any(|token| token == payload))),
+        "no give-up names the kept payload: {messages:?}"
     );
     assert!(
         refusal.take_notes().is_empty(),

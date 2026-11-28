@@ -317,8 +317,55 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
 
     assert!(result.ir().geometry.bodies.is_empty());
     assert!(result.ir().geometry.faces.is_empty());
+    // The face give-ups state the unclosed graph; no note repeats them.
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+        cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            && loss.message.contains("topology.b5-graph-unclosed")
     }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()));
+}
+
+#[test]
+fn an_unclosed_b5_graph_gives_up_its_face_records() {
+    let mut stream = b5_closed_triangle_stream();
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(100));
+    face_payload.extend_from_slice(&b5_object_ref(400));
+    face_payload.push(0x03);
+    append_b5_record(&mut stream, 0x5f, 902, &face_payload);
+    let bytes = object_main_catpart(&stream);
+    let names_face =
+        |message: &str, face: &str| message.split_whitespace().any(|token| token == face);
+
+    let admitted = CatiaCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("a default decode admits the unclosed graph");
+    let losses = &admitted.report().losses;
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()));
+    for face in ["catia:b5:face#500", "catia:b5:face#902"] {
+        let charges = losses
+            .iter()
+            .filter(|loss| {
+                cadmpeg_ir::unknown::part::gives_up(&loss.code) && names_face(&loss.message, face)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(charges.len(), 1, "one give-up names {face}: {losses:?}");
+        assert_eq!(
+            charges[0].code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
+        assert_eq!(charges[0].severity, cadmpeg_ir::report::Severity::Warning);
+    }
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect("a pinned decode admits a graph that the decoder does not close");
 }

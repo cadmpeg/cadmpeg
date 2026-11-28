@@ -9,10 +9,11 @@
 //! every other member, and a repeated key. A target the sweep cannot reach
 //! fails the test.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::CadIr;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{collect_documents, golden_files, hand_written_documents, states_native_elision};
 
@@ -189,7 +190,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             ),
         ),
         (
-            "neutral parameter expression",
+            "neutral parameter expression with a blank native option",
             design_document(
                 "parameters",
                 json!({
@@ -206,7 +207,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                     },
                     "id": "test:sweep:parameter#1",
                     "kind": {"kind": "boolean"},
-                    "native_options": {},
+                    "native_options": {"test:note": {"kind": "blank", "value": " "}},
                     "scope": "test:sweep:product-definition#0",
                     "source_settings": {},
                 }),

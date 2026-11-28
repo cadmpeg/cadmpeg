@@ -301,6 +301,11 @@ pub struct ArenaDiff {
 pub struct IrDiff {
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    /// `(left, right)` up axes, present only when the two documents' up axes differ.
+    pub up_axis_change: Option<(
+        Option<crate::up_axis::UpAxis>,
+        Option<crate::up_axis::UpAxis>,
+    )>,
     /// `(left, right)` scopes, present only when the two documents hold
     /// different classes.
     pub scope_change: Option<(ContentScope, ContentScope)>,
@@ -315,6 +320,7 @@ impl IrDiff {
     /// any arena differ.
     pub fn is_empty(&self) -> bool {
         self.tolerance_change.is_none()
+            && self.up_axis_change.is_none()
             && self.scope_change.is_none()
             && self.source.is_empty()
             && self.per_arena.iter().all(|arena| {
@@ -335,6 +341,11 @@ struct IrDiffWriteWire<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     tolerance_change: &'a Option<(crate::units::Tolerances, crate::units::Tolerances)>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    up_axis_change: &'a Option<(
+        Option<crate::up_axis::UpAxis>,
+        Option<crate::up_axis::UpAxis>,
+    )>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     scope_change: &'a Option<(ContentScope, ContentScope)>,
     source: &'a SourceDiff,
     per_arena: &'a [ArenaDiff],
@@ -345,6 +356,7 @@ impl Serialize for IrDiff {
         IrDiffWriteWire {
             unit_change: None,
             tolerance_change: &self.tolerance_change,
+            up_axis_change: &self.up_axis_change,
             scope_change: &self.scope_change,
             source: &self.source,
             per_arena: &self.per_arena,
@@ -588,12 +600,14 @@ fn attribute_changes(
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     let tolerance_change = (!tolerances_agree(left.tolerances, right.tolerances))
         .then_some((left.tolerances, right.tolerances));
+    let up_axis_change = (left.up_axis != right.up_axis).then_some((left.up_axis, right.up_axis));
     let scope_change = (left.scope() != right.scope()).then_some((left.scope(), right.scope()));
     let mut per_arena = diff_arenas(left, right);
     per_arena.push(diff_names(left, right));
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
         tolerance_change,
+        up_axis_change,
         scope_change,
         source: diff_source(left, right),
         per_arena,
@@ -728,6 +742,25 @@ mod tests {
         assert!(diff(&left, &right).tolerance_change.is_some());
     }
 
+    /// A changed or newly stated up axis is a difference.
+    #[test]
+    fn an_up_axis_change_is_reported() {
+        use crate::up_axis::UpAxis;
+        let left = unit_cube().expect("valid unit cube fixture");
+        let mut right = left.clone();
+        assert!(diff(&left, &right).up_axis_change.is_none());
+        right.up_axis = Some(UpAxis::Y);
+        let result = diff(&left, &right);
+        assert_eq!(result.up_axis_change, Some((None, Some(UpAxis::Y))));
+        assert!(!result.is_empty());
+        let mut z = left.clone();
+        z.up_axis = Some(UpAxis::Z);
+        assert_eq!(
+            diff(&z, &right).up_axis_change,
+            Some((Some(UpAxis::Z), Some(UpAxis::Y)))
+        );
+    }
+
     /// Two documents that hold different classes differ, and the diff
     /// states both scopes.
     #[test]
@@ -744,8 +777,9 @@ mod tests {
         );
         assert!(!result.is_empty());
         assert_eq!(
-            serde_json::to_value(&result).expect("diff serializes")["scope_change"],
-            serde_json::json!([
+            cadmpeg_core::serde_erase::json::to_value(&result).expect("diff serializes")
+                ["scope_change"],
+            cadmpeg_core::json!([
                 {"model": true, "design": true, "process": true},
                 {"model": true, "design": false, "process": false}
             ])
@@ -946,7 +980,10 @@ mod tests {
 
         let rendered =
             json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
-        assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
+        assert_eq!(
+            rendered["format_change"],
+            cadmpeg_core::json!(["", "rhino"])
+        );
 
         assert!(diff(&bare, &bare).is_empty());
     }

@@ -4,8 +4,9 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 use crate::F3dCodec;
@@ -102,13 +103,13 @@ fn decoded_with_inferred_history(bytes: &[u8]) -> (Value, bool) {
     )
 }
 
-/// The features named `Reverse Normal 1`, in timeline order.
+/// The features named `Reverse Normal1`, in timeline order.
 fn reverse_normals(ir: &Value) -> Vec<&Value> {
     let mut features = ir["model"]["features"]
         .as_array()
         .expect("feature list")
         .iter()
-        .filter(|feature| feature["name"] == "Reverse Normal 1")
+        .filter(|feature| feature["name"] == "Reverse Normal1")
         .collect::<Vec<_>>();
     features.sort_by_key(|feature| feature["ordinal"].as_u64());
     features

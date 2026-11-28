@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly product, placement and mate admission.
 use crate::test_support::{assembly::*, read_bytes, Report};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 use std::path::Path;
 
 fn read(definition: serde_json::Value) -> (crate::reader::Model, Report) {
@@ -169,6 +169,83 @@ fn several_studios_have_distinct_geometry_identities() {
     assert_ne!(first.prototype, second.prototype);
 }
 
+/// A record one studio drops leaves every record of another studio, also
+/// where both studios' STEP text states the same instance labels.
+#[test]
+fn a_record_one_studio_drops_leaves_the_records_of_another_studio() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let mut definition = definition();
+    definition["rootAssembly"]["instances"][1]["elementId"] = json!("other");
+    let mut other = definition["parts"][0].clone();
+    other["elementId"] = json!("other");
+    definition["parts"].as_array_mut().unwrap().push(other);
+    let text = String::from_utf8(crate::test_support::step().to_vec()).unwrap();
+    let unread = unreadable_plane_placement(&text);
+    let bytes = bundle_with_other_studio(definition, Some(unread.as_bytes()));
+    let result = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)),
+        "{:#?}",
+        result.report().losses
+    );
+    let ir = result.ir();
+    let faces_of = |shell: &cadmpeg_ir::topology::Shell| {
+        ir.geometry
+            .faces
+            .iter()
+            .filter(|face| face.shell == shell.id)
+            .count()
+    };
+    let mut counts = ir.geometry.shells.iter().map(faces_of).collect::<Vec<_>>();
+    counts.sort_unstable();
+    // The other studio's cube loses the face on the given-up plane; this
+    // studio's cube keeps all six.
+    assert_eq!(counts, [5, 6], "{:#?}", ir.geometry.faces);
+}
+
+/// `text` with the placement of its first plane holding a token that is no
+/// parameter, so the placement is given up and the plane and its face drop
+/// with it.
+fn unreadable_plane_placement(text: &str) -> String {
+    let refs = |line: &str| {
+        line.split('#')
+            .skip(1)
+            .map(|tail| {
+                tail.chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let instance = |line: &str| {
+        let (label, rest) = line.split_once('=')?;
+        Some((label.trim().to_owned(), rest.trim_start().to_owned()))
+    };
+    let plane = text
+        .lines()
+        .filter_map(instance)
+        .find(|(_, rest)| rest.starts_with("PLANE("))
+        .expect("a plane");
+    let placement = format!("#{}", refs(&plane.1).last().cloned().expect("a placement"));
+    text.lines()
+        .map(|line| match instance(line) {
+            Some((label, rest)) if label == placement => {
+                let location = refs(&rest).first().cloned().expect("a location");
+                format!("{label}=AXIS2_PLACEMENT_3D('',#{location},%,%);")
+            }
+            _ => line.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn malformed_placement_and_external_parts_retain_other_instances() {
     let mut definition = definition();
@@ -238,4 +315,174 @@ fn unresolved_mate_quantities_remain_in_the_definition_asset() {
         json::from_slice::<serde_json::Value>(data.as_bytes()).unwrap(),
         definition
     );
+}
+
+/// The `record.unreadable` losses of `report` that name the source record at
+/// `address`.
+fn charges(report: &Report, address: &str) -> Vec<String> {
+    let record = crate::archive::source_record(address);
+    let code = cadmpeg_ir::unknown::part::record_unreadable_kind().to_string();
+    report
+        .losses()
+        .iter()
+        .filter(|loss| {
+            loss.code.as_deref() == Some(code.as_str())
+                && loss
+                    .detail
+                    .split_whitespace()
+                    .any(|word| word == record.as_str())
+        })
+        .map(|loss| loss.detail.clone())
+        .collect()
+}
+
+const DEFINITION: &str = "assemblies/assembly/definition.json";
+
+#[test]
+fn an_instance_without_a_type_is_given_up_with_the_mates_that_need_it() {
+    let mut definition = definition();
+    definition["rootAssembly"]["instances"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("type");
+    definition["rootAssembly"]["features"] = json!([mate("fastened", "FASTENED")]);
+    let (model, report) = read(definition);
+    let charges = charges(&report, &format!("{DEFINITION}#/rootAssembly/instances/1"));
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {:?}", report.losses());
+    };
+    let joint = crate::reader::id("joint", "[]:fastened");
+    assert!(
+        charge.ends_with(&format!("; dropped=[{joint}]")),
+        "{charge}"
+    );
+    assert!(model
+        .ir
+        .model
+        .assembly_joints
+        .iter()
+        .all(|placed| placed.id.as_str() != joint));
+    assert!(model
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .all(|placed| placed.name.as_deref() != Some("second")));
+    assert_eq!(
+        report
+            .losses()
+            .iter()
+            .filter(|loss| loss.detail.contains(&joint))
+            .count(),
+        1,
+        "{:?}",
+        report.losses()
+    );
+}
+
+/// A given-up instance names among its dropped records only the joints its
+/// mates map to: a planar mate's sense needs the lost placement, and a mate
+/// whose other connector has no frame maps to no joint.
+#[test]
+fn a_given_up_instance_names_only_the_joints_its_mates_map_to() {
+    let mut definition = definition();
+    definition["rootAssembly"]["instances"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("type");
+    let mut frameless = mate("frameless", "FASTENED");
+    frameless["featureData"]["matedEntities"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("matedCS");
+    definition["rootAssembly"]["features"] = json!([
+        mate("planar", "PLANAR"),
+        frameless,
+        mate("fastened", "FASTENED")
+    ]);
+    let (_, report) = read(definition);
+    let charges = charges(&report, &format!("{DEFINITION}#/rootAssembly/instances/1"));
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {:?}", report.losses());
+    };
+    let joint = crate::reader::id("joint", "[]:fastened");
+    assert!(
+        charge.ends_with(&format!("; dropped=[{joint}]")),
+        "{charge}"
+    );
+}
+
+#[test]
+fn a_repeated_instance_id_is_given_up_only_where_its_content_differs() {
+    let repeat = format!("{DEFINITION}#/rootAssembly/instances/2");
+    let mut same = definition();
+    let first = same["rootAssembly"]["instances"][0].clone();
+    same["rootAssembly"]["instances"]
+        .as_array_mut()
+        .unwrap()
+        .push(first.clone());
+    let (_, report) = read(same);
+    assert!(
+        charges(&report, &repeat).is_empty(),
+        "{:?}",
+        report.losses()
+    );
+    let mut different = definition();
+    let mut other = first;
+    other["name"] = json!("renamed");
+    different["rootAssembly"]["instances"]
+        .as_array_mut()
+        .unwrap()
+        .push(other);
+    let (model, report) = read(different);
+    assert_eq!(charges(&report, &repeat).len(), 1, "{:?}", report.losses());
+    assert_eq!(model.ir.model.occurrences.len(), 2);
+}
+
+#[test]
+fn assembly_rows_that_are_no_array_are_given_up() {
+    for (path, address) in [
+        (
+            ["rootAssembly", "instances"].as_slice(),
+            "#/rootAssembly/instances",
+        ),
+        (["parts"].as_slice(), "#/parts"),
+        (
+            ["rootAssembly", "features"].as_slice(),
+            "#/rootAssembly/features",
+        ),
+    ] {
+        let mut definition = definition();
+        let field = path
+            .iter()
+            .fold(&mut definition, |value, key| &mut value[*key]);
+        *field = json!(path.last());
+        let (_, report) = read(definition);
+        assert_eq!(
+            charges(&report, &format!("{DEFINITION}{address}")).len(),
+            1,
+            "{address}: {:?}",
+            report.losses()
+        );
+    }
+}
+
+#[test]
+fn a_repeated_mate_id_is_given_up_only_where_its_content_differs() {
+    let repeat = format!("{DEFINITION}#/rootAssembly/features/1");
+    let mut same = definition();
+    same["rootAssembly"]["features"] =
+        json!([mate("fastened", "FASTENED"), mate("fastened", "FASTENED")]);
+    let (_, report) = read(same);
+    assert!(
+        charges(&report, &repeat).is_empty(),
+        "{:?}",
+        report.losses()
+    );
+    let mut different = definition();
+    different["rootAssembly"]["features"] =
+        json!([mate("fastened", "FASTENED"), mate("fastened", "REVOLUTE")]);
+    let (model, report) = read(different);
+    assert_eq!(charges(&report, &repeat).len(), 1, "{:?}", report.losses());
+    assert_eq!(model.ir.model.assembly_joints.len(), 2);
 }

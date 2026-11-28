@@ -130,6 +130,11 @@ pub(crate) enum NumericPayload<T> {
     },
     /// A complete multidimensional array, retained as source runs.
     Array(numeric_array::NumericArray<T>),
+    /// An array header without element rows, which stores no elements.
+    Empty {
+        /// Declared extents from outermost to innermost dimension.
+        dimensions: Vec<u32>,
+    },
 }
 
 impl<T> NumericPayload<T> {
@@ -143,6 +148,7 @@ impl<T> NumericPayload<T> {
         match self {
             Self::Scalar { .. } => 1,
             Self::Array(array) => array.element_count(),
+            Self::Empty { .. } => 0,
         }
     }
 }
@@ -423,6 +429,24 @@ impl Serialize for StringPayload {
 }
 
 impl StringPayload {
+    /// Whether an array without continuation rows, whose element rows all
+    /// read, holds a direct element count other than its first extent.
+    fn has_wrong_element_count(&self) -> bool {
+        let Self::Array {
+            dimensions,
+            values,
+            continuation: None,
+        } = self
+        else {
+            return false;
+        };
+        values.iter().all(Result::is_ok)
+            && dimensions
+                .first()
+                .and_then(|dimension| usize::try_from(*dimension).ok())
+                .is_some_and(|count| count != values.len())
+    }
+
     /// Whether every declared string row has a supported, complete value.
     fn is_complete(&self) -> bool {
         let Self::Array {
@@ -521,21 +545,55 @@ pub(crate) struct Scope {
     conflicting_declaration_count: usize,
 }
 
-/// Parsed rows and unresolved-row count for one legacy declaration type.
+/// Why a legacy value row forms no typed record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowFault {
+    /// The row uses a form that has no reading here: a continued scalar, a
+    /// type-2 or type-6 array header without element rows, element text
+    /// that does not read, or a non-finite real word.
+    Unread,
+    /// A scalar row without continuation whose text breaks the scalar
+    /// grammar of its type.
+    Malformed,
+    /// An array whose element runs all read and whose run counts do not sum
+    /// to the product of its extents.
+    Miscounted,
+}
+
+/// One legacy value row that forms no typed record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UnresolvedRow {
+    /// Byte offset of the scalar row or array header.
+    pub(crate) offset: usize,
+    pub(crate) fault: RowFault,
+}
+
+/// Parsed rows and unresolved rows for one legacy declaration type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TypedValues<T> {
     /// Complete typed rows in source order.
     pub(crate) rows: Vec<T>,
     /// Source rows not represented by a complete typed value.
-    pub(crate) unresolved_count: usize,
+    pub(crate) unresolved: Vec<UnresolvedRow>,
 }
 
 impl<T> Default for TypedValues<T> {
     fn default() -> Self {
         Self {
             rows: Vec::new(),
-            unresolved_count: 0,
+            unresolved: Vec::new(),
         }
+    }
+}
+
+impl<K: LegacyCode> TypedValues<ValueRecord<K>> {
+    /// The id each unresolved row would hold as a record, with its fault.
+    pub(crate) fn unresolved_ids(
+        &self,
+    ) -> impl Iterator<Item = (SerializedOffsetId, RowFault)> + '_ {
+        self.unresolved
+            .iter()
+            .map(|row| (value_record_id::<K>(row.offset), row.fault))
     }
 }
 
@@ -550,16 +608,20 @@ pub(crate) struct Persistence {
     pub(crate) integer_values: TypedValues<IntegerRecord>,
     /// Type-0 object nodes in source order.
     pub(crate) objects: Vec<ObjectRecord>,
-    /// Type-0 arrays whose direct element count differs from their extents.
+    /// Type-0 arrays with direct element rows whose count differs from
+    /// the product of their extents.
     pub(crate) incomplete_object_array_count: usize,
     /// Type-0 value rows outside the defined object forms.
     pub(crate) unresolved_object_value_count: usize,
     /// Type-10 byte-string scalars and arrays in source order.
     pub(crate) string_values: Vec<StringRecord>,
-    /// Type-10 arrays whose direct element count differs from the first extent.
+    /// Type-10 arrays without continuation rows whose direct element count
+    /// differs from the first extent.
     pub(crate) incomplete_string_array_count: usize,
     /// Type-10 rows that use an undefined continuation form.
     pub(crate) unresolved_string_value_count: usize,
+    /// Offsets of type-10 scalar rows that form no record.
+    pub(crate) unread_string_scalars: Vec<usize>,
     /// Type-3 nullable byte-string scalars in source order.
     pub(crate) type_3_values: TypedValues<Type3Record>,
     /// Type-4 byte-string scalars in source order.
@@ -577,6 +639,13 @@ pub(crate) struct Persistence {
 }
 
 impl Persistence {
+    /// The id each type-10 scalar row that forms no record would hold.
+    pub(crate) fn unread_string_scalar_ids(&self) -> impl Iterator<Item = SerializedOffsetId> + '_ {
+        self.unread_string_scalars
+            .iter()
+            .map(|&offset| value_record_id::<StringCode>(offset))
+    }
+
     /// Resolve one unambiguous native model identity from legacy string rows.
     ///
     /// A legacy persistence tree can carry `model_name` in more than one
@@ -801,7 +870,7 @@ impl Persistence {
         matches.next().is_none().then_some(())?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array(_) => None,
+            NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
         }
     }
 
@@ -815,7 +884,7 @@ impl Persistence {
         matches.next().is_none().then_some(())?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array(_) => None,
+            NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
         }
     }
 
@@ -879,6 +948,13 @@ fn decimal(bytes: &[u8], mut offset: usize) -> Option<(u32, usize)> {
 }
 
 fn compact_real(bytes: &[u8]) -> Option<Real> {
+    compact_real_bits(bytes)
+        .filter(|bits| f64::from_bits(*bits).is_finite())
+        .map(Real)
+}
+
+/// The binary64 word of a compact-real token, finite or not.
+fn compact_real_bits(bytes: &[u8]) -> Option<u64> {
     let (digits, repeat_last) = bytes
         .strip_suffix(b"R")
         .map_or((bytes, false), |digits| (digits, true));
@@ -896,7 +972,20 @@ fn compact_real(bytes: &[u8]) -> Option<Real> {
     for _ in digits.len()..16 {
         bits = bits.checked_shl(4)? | fill;
     }
-    f64::from_bits(bits).is_finite().then_some(Real(bits))
+    Some(bits)
+}
+
+/// Whether `bytes` is a compact-real token. A non-finite word is a token.
+fn is_compact_real(bytes: &[u8]) -> bool {
+    compact_real_bits(bytes).is_some()
+}
+
+fn is_signed_integer(bytes: &[u8]) -> bool {
+    signed_integer(bytes).is_some()
+}
+
+fn is_unsigned_integer(bytes: &[u8]) -> bool {
+    unsigned_integer(bytes).is_some()
 }
 
 fn signed_integer(bytes: &[u8]) -> Option<i32> {
@@ -933,6 +1022,18 @@ fn array_dimensions(bytes: &[u8]) -> Option<Vec<u32>> {
         cursor = after_dimension + 1;
     }
     (!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions)
+}
+
+/// Whether run counts that fit the decoder's index width sum to a value
+/// other than the extent product that also fits it.
+fn runs_break_extents<T>(dimensions: &[u32], runs: &[NumericRun<T>]) -> bool {
+    let product = dimensions.iter().try_fold(1_usize, |count, dimension| {
+        count.checked_mul(usize::try_from(*dimension).ok()?)
+    });
+    let sum = runs.iter().try_fold(0_usize, |count, run| {
+        count.checked_add(usize::try_from(run.count).ok()?)
+    });
+    matches!((product, sum), (Some(product), Some(sum)) if product != sum)
 }
 
 fn numeric_run<T>(bytes: &[u8], scalar: fn(&[u8]) -> Option<T>) -> Option<NumericRun<T>> {
@@ -1108,7 +1209,9 @@ fn object_records(
                     dimensions,
                     elements,
                 };
-                incomplete_arrays += usize::from(!payload.is_complete());
+                // A header without direct element rows is a stored form
+                // that holds no objects.
+                incomplete_arrays += usize::from(!offsets.is_empty() && !payload.is_complete());
                 payload
             } else {
                 unresolved += 1;
@@ -1163,7 +1266,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
     parents: &BTreeMap<usize, usize>,
 ) -> TypedValues<ValueRecord<K>> {
     let mut records = Vec::new();
-    let mut unresolved = 0usize;
+    let mut unresolved = Vec::new();
     for scope in scopes {
         let declarations = declaration_index(scope);
         for value in &scope.values {
@@ -1179,7 +1282,10 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
                 .then(|| data.get(value.payload.clone()))
                 .flatten()
             else {
-                unresolved += 1;
+                unresolved.push(UnresolvedRow {
+                    offset: value.offset,
+                    fault: RowFault::Unread,
+                });
                 continue;
             };
             let payload = byte_string_value(bytes, null_token);
@@ -1197,7 +1303,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
     }
     TypedValues {
         rows: records,
-        unresolved_count: unresolved,
+        unresolved,
     }
 }
 
@@ -1205,10 +1311,11 @@ fn string_records(
     data: &[u8],
     scopes: &[Scope],
     parents: &BTreeMap<usize, usize>,
-) -> (Vec<StringRecord>, usize, usize) {
+) -> (Vec<StringRecord>, usize, usize, Vec<usize>) {
     let mut records = Vec::new();
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
+    let mut unread_scalars = Vec::new();
     for scope in scopes {
         let declarations = declaration_index(scope);
         let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
@@ -1275,11 +1382,12 @@ fn string_records(
                     values,
                     continuation: value.continuation.clone(),
                 };
-                incomplete_arrays += usize::from(!payload.is_complete());
+                incomplete_arrays += usize::from(payload.has_wrong_element_count());
                 payload
             } else {
                 if value.continuation.is_some() {
                     unresolved += 1;
+                    unread_scalars.push(value.offset);
                     continue;
                 }
                 StringPayload::Scalar {
@@ -1298,21 +1406,30 @@ fn string_records(
             });
         }
     }
-    (records, incomplete_arrays, unresolved)
+    (records, incomplete_arrays, unresolved, unread_scalars)
+}
+
+/// The scalar reader of a numeric type and the test of its scalar grammar.
+struct ScalarGrammar<T> {
+    /// The typed value of a scalar token, where it has one.
+    read: fn(&[u8]) -> Option<T>,
+    /// Whether a token is written in the scalar grammar of the type.
+    written: fn(&[u8]) -> bool,
 }
 
 fn numeric_records<K, T>(
     data: &[u8],
     scopes: &[Scope],
     identity_kind: ValueKind<K>,
-    scalar: fn(&[u8]) -> Option<T>,
+    grammar: &ScalarGrammar<T>,
     parents: &BTreeMap<usize, usize>,
 ) -> TypedValues<ValueRecord<K>>
 where
     K: LegacyCode<Payload = NumericPayload<T>>,
 {
+    let scalar = grammar.read;
     let mut records = Vec::new();
-    let mut unresolved = 0usize;
+    let mut unresolved = Vec::new();
     for scope in scopes {
         let declarations = declaration_index(scope);
         let mut index = 0;
@@ -1324,63 +1441,82 @@ where
                 index += 1;
                 continue;
             };
+            let row = |fault| UnresolvedRow {
+                offset: value.offset,
+                fault,
+            };
             let Some(payload_bytes) = data.get(value.payload.clone()) else {
-                unresolved += 1;
+                unresolved.push(row(RowFault::Unread));
                 index += 1;
                 continue;
             };
             let (payload, next_index) = if let Some(dimensions) = array_dimensions(payload_bytes) {
+                // The direct element rows of a one-element array belong to
+                // its header, whether or not they read.
                 let mut next_index = index + 1;
-                let runs = if let Some(continuation) = &value.continuation {
-                    let Some(bytes) = data.get(continuation.rows.clone()) else {
-                        unresolved += 1;
-                        index += 1;
-                        continue;
-                    };
-                    let Some(runs) = continuation_numeric_runs(bytes, scalar) else {
-                        unresolved += 1;
-                        index += 1;
-                        continue;
-                    };
-                    runs
+                let mut runs = Vec::new();
+                let mut elements_read = true;
+                if let Some(continuation) = &value.continuation {
+                    match data
+                        .get(continuation.rows.clone())
+                        .and_then(|bytes| continuation_numeric_runs(bytes, scalar))
+                    {
+                        Some(read) => runs = read,
+                        None => elements_read = false,
+                    }
                 } else if dimensions.as_slice() == [1] {
-                    let mut runs = Vec::new();
                     while let Some(child) = scope.values.get(next_index).filter(|child| {
                         child.attribute_id == value.attribute_id
                             && value.depth.checked_add(1) == Some(child.depth)
                     }) {
-                        let Some(bytes) = data.get(child.payload.clone()) else {
-                            break;
-                        };
-                        let Some(run) = child
+                        let run = child
                             .continuation
                             .is_none()
-                            .then(|| numeric_run(bytes, scalar))
+                            .then(|| data.get(child.payload.clone()))
                             .flatten()
-                        else {
-                            break;
-                        };
-                        runs.push(run);
+                            .and_then(|bytes| numeric_run(bytes, scalar));
+                        match run {
+                            Some(run) => runs.push(run),
+                            None => elements_read = false,
+                        }
                         next_index += 1;
                     }
-                    runs
+                }
+                let fault = if elements_read
+                    && (value.continuation.is_some() || !runs.is_empty())
+                    && runs_break_extents(&dimensions, &runs)
+                {
+                    RowFault::Miscounted
                 } else {
-                    Vec::new()
+                    RowFault::Unread
                 };
-                let Some(payload) = NumericPayload::array(dimensions, runs) else {
-                    unresolved += next_index - index;
+                let header_only = elements_read && value.continuation.is_none() && runs.is_empty();
+                let payload = if header_only {
+                    Some(NumericPayload::Empty { dimensions })
+                } else {
+                    elements_read
+                        .then(|| NumericPayload::array(dimensions, runs))
+                        .flatten()
+                };
+                let Some(payload) = payload else {
+                    unresolved.push(row(fault));
                     index = next_index;
                     continue;
                 };
                 (payload, next_index)
             } else {
+                let fault = if value.continuation.is_none() && !(grammar.written)(payload_bytes) {
+                    RowFault::Malformed
+                } else {
+                    RowFault::Unread
+                };
                 let Some(scalar_value) = value
                     .continuation
                     .is_none()
                     .then(|| scalar(payload_bytes))
                     .flatten()
                 else {
-                    unresolved += 1;
+                    unresolved.push(row(fault));
                     index += 1;
                     continue;
                 };
@@ -1406,7 +1542,7 @@ where
     }
     TypedValues {
         rows: records,
-        unresolved_count: unresolved,
+        unresolved,
     }
 }
 
@@ -1537,8 +1673,12 @@ pub(crate) fn scan(
     let parents = parent_object_offsets(&scopes);
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
         object_records(data, &scopes, &parents);
-    let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
-        string_records(data, &scopes, &parents);
+    let (
+        string_values,
+        incomplete_string_array_count,
+        unresolved_string_value_count,
+        unread_string_scalars,
+    ) = string_records(data, &scopes, &parents);
     let type_3_values = scalar_string_records(
         data,
         &scopes,
@@ -1553,18 +1693,25 @@ pub(crate) fn scan(
         NullToken::RepresentsBytes,
         &parents,
     );
-    let real_values = numeric_records(data, &scopes, ValueKind::REAL, compact_real, &parents);
-    let integer_values =
-        numeric_records(data, &scopes, ValueKind::INTEGER, signed_integer, &parents);
-    let type_5_values =
-        numeric_records(data, &scopes, ValueKind::TYPE5, unsigned_integer, &parents);
-    let type_6_values = numeric_records(data, &scopes, ValueKind::TYPE6, compact_real, &parents);
-    let type_7_values =
-        numeric_records(data, &scopes, ValueKind::TYPE7, unsigned_integer, &parents);
-    let type_9_values =
-        numeric_records(data, &scopes, ValueKind::TYPE9, unsigned_integer, &parents);
-    let type_11_values =
-        numeric_records(data, &scopes, ValueKind::TYPE11, unsigned_integer, &parents);
+    let real = ScalarGrammar {
+        read: compact_real,
+        written: is_compact_real,
+    };
+    let signed = ScalarGrammar {
+        read: signed_integer,
+        written: is_signed_integer,
+    };
+    let unsigned = ScalarGrammar {
+        read: unsigned_integer,
+        written: is_unsigned_integer,
+    };
+    let real_values = numeric_records(data, &scopes, ValueKind::REAL, &real, &parents);
+    let integer_values = numeric_records(data, &scopes, ValueKind::INTEGER, &signed, &parents);
+    let type_5_values = numeric_records(data, &scopes, ValueKind::TYPE5, &unsigned, &parents);
+    let type_6_values = numeric_records(data, &scopes, ValueKind::TYPE6, &real, &parents);
+    let type_7_values = numeric_records(data, &scopes, ValueKind::TYPE7, &unsigned, &parents);
+    let type_9_values = numeric_records(data, &scopes, ValueKind::TYPE9, &unsigned, &parents);
+    let type_11_values = numeric_records(data, &scopes, ValueKind::TYPE11, &unsigned, &parents);
     Ok(Persistence {
         scopes,
         real_values,
@@ -1575,6 +1722,7 @@ pub(crate) fn scan(
         string_values,
         incomplete_string_array_count,
         unresolved_string_value_count,
+        unread_string_scalars,
         type_3_values,
         type_4_values,
         type_5_values,
@@ -1588,11 +1736,15 @@ pub(crate) fn scan(
 impl<K: LegacyCode> ValueRecord<K> {
     /// Native identity derived from the source offset.
     pub(crate) fn id(&self) -> SerializedOffsetId {
-        SerializedOffsetId {
-            namespace: "legacy_ascii",
-            kind: K::CODE.identity_token(),
-            offset: self.offset,
-        }
+        value_record_id::<K>(self.offset)
+    }
+}
+
+fn value_record_id<K: LegacyCode>(offset: usize) -> SerializedOffsetId {
+    SerializedOffsetId {
+        namespace: "legacy_ascii",
+        kind: K::CODE.identity_token(),
+        offset,
     }
 }
 

@@ -622,6 +622,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                             operand_record_index + 1
                         },
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: vec![],
@@ -1818,7 +1819,11 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     .iter()
     .any(invalid_identity));
 
-    let mut native = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
+    let mut native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        ir.native.namespace("f3d").unwrap(),
+    )
+    .unwrap();
     native.design_record_headers.push(DesignRecordHeader {
         id: format!("{stream}:record-header#1315"),
         record_index: 103,

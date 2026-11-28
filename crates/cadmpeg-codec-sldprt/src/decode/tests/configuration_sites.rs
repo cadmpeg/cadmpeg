@@ -533,6 +533,30 @@ fn an_empty_partition_takes_the_bodies_of_its_imported_features() {
 }
 
 #[test]
+fn an_empty_partition_records_the_tolerance_of_its_imported_bodies_for_the_writer() {
+    let mut source = sldprt_with_partition_and_deltas(&[], &[]);
+    source.extend(local_bodies_block(
+        0,
+        &[crate::test_support::parasolid::triangle_body_with_resolution(1.0e-6)],
+    ));
+
+    let decoded = decode(source);
+
+    assert_eq!(
+        Some(decoded.ir().tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-6)
+    );
+    let digest = crate::writer::linear_tolerance_local_sha256(decoded.ir()).unwrap();
+    assert_eq!(
+        crate::codec_digests::baseline(
+            &decoded.source_fidelity().codec_digests,
+            crate::writer::LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE,
+        ),
+        Some(digest.as_str())
+    );
+}
+
+#[test]
 fn an_imported_body_whose_faces_store_a_tolerance_decodes() {
     let mut body = triangle_body();
     let sentinel = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
@@ -675,6 +699,7 @@ fn a_given_up_container_part_names_the_partition_of_its_configuration() {
                 [cadmpeg_core::decode::ArenaClass::Model],
             )
             .named(name),
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
             cadmpeg_core::CodecError::malformed("damaged"),
         )
         .unwrap()
@@ -757,20 +782,6 @@ fn untaken_imported_bodies_of_the_active_configuration_are_an_error() {
             "configuration index 1: the file stores no partition of it, and the 1 imported \
              body stream(s) of its Config-1-FeatureBodies are not decoded."
         )]
-    );
-}
-
-#[test]
-fn imported_body_streams_that_do_not_decode_are_reported() {
-    assert!(super::super::imported_bodies_loss(0, 2).is_none());
-    let loss = super::super::imported_bodies_loss(1, 2).unwrap();
-    assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
-    );
-    assert_eq!(
-        loss.message,
-        "1 of 2 imported body stream(s) do not decode."
     );
 }
 

@@ -90,7 +90,7 @@ fn emit_support(
         Some(surface.clone())
     );
     assert_eq!(sink.out.surfaces.len(), count);
-    prune_rejected_topology(&mut out);
+    prune_rejected_topology(&mut out, &[]);
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.geometry.surfaces = out.surfaces;
     ir.geometry.curves = out.curves;
@@ -202,8 +202,9 @@ fn bounded_offset_faces_require_every_boundary_edge() {
         vertex_loops: Vec::new(),
         unresolved_loop: None,
         unresolved_fins: Vec::new(),
-        withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: None,
     };
     let exact = HashSet::from([8]);
     assert!(face_has_exact_boundary(&face, &tables, &exact));
@@ -221,6 +222,37 @@ fn bounded_offset_faces_require_every_boundary_edge() {
     face.vertex_loops.clear();
     face.loops.clear();
     assert!(!face_has_exact_boundary(&face, &tables, &exact));
+}
+
+#[test]
+fn a_face_that_loses_a_loop_has_no_exact_boundary() {
+    let (bytes, start) = crate::test_support::parasolid::sequence::topology_sequence();
+    let records = topology::nodes::sequence(&bytes).unwrap();
+    let tables = topology::nodes::tables(&records, &bytes, start).unwrap();
+    let face = WalkedFace {
+        bridge_attr: 5,
+        surface_attr: 20,
+        sense: Sense::Forward,
+        loops: vec![(6, vec![7])],
+        vertex_loops: Vec::new(),
+        unresolved_loop: None,
+        unresolved_fins: Vec::new(),
+        unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: None,
+    };
+    let exact = HashSet::from([8]);
+    assert!(face_has_exact_boundary(&face, &tables, &exact));
+    let lost = WalkedFace {
+        lost_loops: vec![(11, super::prune::RingLoss::Open)],
+        ..face.clone()
+    };
+    assert!(!face_has_exact_boundary(&lost, &tables, &exact));
+    let cut = WalkedFace {
+        chain_cut: Some(11),
+        ..face
+    };
+    assert!(!face_has_exact_boundary(&cut, &tables, &exact));
 }
 
 #[test]
@@ -256,8 +288,9 @@ fn offset_support_alias_keeps_a_resolved_sweep_with_chart_boundaries() {
         vertex_loops: Vec::new(),
         unresolved_loop: None,
         unresolved_fins: Vec::new(),
-        withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: None,
     };
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(!face_has_exact_boundary(&face, &tables, &HashSet::new()));

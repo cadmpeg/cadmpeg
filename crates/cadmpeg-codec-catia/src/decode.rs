@@ -18,6 +18,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 use std::collections::BTreeSet;
@@ -89,6 +90,7 @@ fn decode_over_routes(
             ir,
             report,
             (annotations, unknowns, untyped),
+            Vec::new(),
         );
     }
 
@@ -110,6 +112,7 @@ fn decode_over_routes(
                     report: out.report,
                     annotations: out.annotations,
                     unknowns: out.unknowns,
+                    given_up: out.given_up,
                     untyped: BTreeSet::new(),
                     admitted_model_entities: out.admitted_model_entities,
                     standard_face_population: route.standard_face_population,
@@ -123,15 +126,17 @@ fn decode_over_routes(
             let next = applicable
                 .get(index + 1)
                 .map_or("the metadata fallback", |next| next.name);
-            let note = format!(
+            fell_through.push(CatiaLossCode::SourceRouteFellThrough.note(format!(
                 "{} refused {refused} CATIA record(s) and then transferred no model; \
              the decode continued to {next}",
                 route.name
-            );
-            fell_through.push(note);
+            )));
         }
     }
 
+    // The fallback keeps the payload whole as a retained record, so a route
+    // that fell through gives up only the records it refused, each charged
+    // where the route refused it.
     let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
@@ -143,6 +148,7 @@ fn decode_over_routes(
             report,
             annotations,
             unknowns,
+            given_up: Vec::new(),
             untyped,
             admitted_model_entities: 0,
             standard_face_population: false,
@@ -208,12 +214,14 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     report: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    /// Parts the route gave up.
+    given_up: Vec<GivenUpPart>,
     /// Classes every retained unknown holds undecoded; empty when a route
     /// decoded their bytes.
     untyped: BTreeSet<ArenaClass>,
     admitted_model_entities: u64,
     standard_face_population: bool,
-    fell_through: &'input2 [String],
+    fell_through: &'input2 [cadmpeg_ir::report::loss::LossNote],
     refusal: &'input3 mut crate::nurbs::LaneRefusals,
 }
 
@@ -228,6 +236,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
+        mut given_up,
         untyped,
         mut admitted_model_entities,
         standard_face_population,
@@ -241,15 +250,15 @@ fn finish_decode(
     // `CodecError`: a refusal note is subordinate to a hard failure by design.
     // The fall-through statements say which route refused and where the decode
     // went next.
-    for statement in fell_through {
-        let message = (statement).to_owned();
-        report
-            .losses
-            .push(CatiaLossCode::SourceRouteFellThrough.note(message));
-    }
+    report.losses.extend(fell_through.iter().cloned());
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    let image = unknowns
+        .iter()
+        .find(|record| record.data() == Some(scan.data.as_ref()))
+        .map(|record| cadmpeg_ir::ids::Identity::from(record.id().clone()));
+    given_up.extend(refusal.take_given_up(ctx, image.as_ref())?);
     ctx.admit_entities(
         u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
@@ -266,6 +275,7 @@ fn finish_decode(
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
+    given_up.extend(refusal.take_given_up(ctx, image.as_ref())?);
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
     crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
@@ -855,7 +865,15 @@ fn finish_decode(
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
     for record in &native.entity_records {
-        let fields = record.value_fields();
+        let owned_fields;
+        let owned_packets;
+        let (fields, packets) = if let Some((fields, packets)) = record.cached_value_views() {
+            (fields, packets)
+        } else {
+            owned_fields = record.value_fields();
+            owned_packets = record.value_packets(&owned_fields);
+            (owned_fields.as_slice(), owned_packets.as_slice())
+        };
         entity_value_field_count = entity_value_field_count
             .checked_add(fields.len())
             .ok_or_else(|| {
@@ -864,7 +882,7 @@ fn finish_decode(
                     "catia_entity_value_field_count"
                 ))
             })?;
-        for packet in record.value_packets(&fields) {
+        for packet in packets {
             match packet {
                 entity_table::EntityValuePacket::Compact { .. } => {
                     compact_entity_value_packet_count += 1;
@@ -3702,7 +3720,9 @@ fn finish_decode(
             "catia",
             &mut ir,
             &mut report.losses,
-            |ir, losses| crate::design_v11::project(ctx, ir, losses),
+            |ir, losses| {
+                crate::design_v11::project(ctx, ir, &native, &modeling_graph_scope, losses)
+            },
         )?;
         let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
         crate::design_v11::restate_exactness(&ir, &mut restated)?;
@@ -3716,6 +3736,7 @@ fn finish_decode(
         ir,
         report,
         (annotations, unknowns, untyped),
+        given_up,
     )
 }
 
@@ -3786,6 +3807,7 @@ fn decode_result(
     mut ir: CadIr,
     mut body: DecodeBody,
     retained: (Annotations, Vec<UnknownRecord>, BTreeSet<ArenaClass>),
+    given_up: Vec<GivenUpPart>,
 ) -> Result<Decoded, CodecError> {
     let (annotations, unknowns, untyped) = retained;
     ir.state_root_definition(
@@ -3815,6 +3837,10 @@ fn decode_result(
         for id in &ids {
             source_fidelity.mark_untyped(id.as_str(), untyped.iter().copied())?;
         }
+    }
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
     Ok(Decoded {
         ir,

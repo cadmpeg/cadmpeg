@@ -2,6 +2,7 @@
 //! Bounded exchange statement recovery and DATA dependency closure.
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::{
     AnchorEntry, BTreeMap, BTreeSet, BoundedExpansions, DecodeContext, ExpansionOmissions,
@@ -21,6 +22,9 @@ impl Parser<'_, '_, '_> {
             Ok(Ok(value)) => Ok(Ok(value)),
             Ok(Err(error @ ParseError::Syntax { .. })) => {
                 Ok(Err(GiveUpCause::Syntax(error.to_string())))
+            }
+            Ok(Err(error @ ParseError::Unrepresentable { .. })) => {
+                Ok(Err(GiveUpCause::Unrepresentable(error.to_string())))
             }
             Ok(Err(error)) => Err(error),
             Err(CodecError::ResourceLimit(limit)) => Ok(Err(GiveUpCause::Resource(limit))),
@@ -51,10 +55,20 @@ impl Parser<'_, '_, '_> {
         Ok(self.given_up.len() - 1)
     }
 
-    /// Drops the record at `span` because it needs given-up statement `part`.
-    fn drop_for_part(&mut self, part: usize, span: Range<usize>, omitted: &mut Vec<Range<usize>>) {
+    /// Drops the record `name` at `span` because it needs given-up
+    /// statement `part`, and keeps its exact source.
+    fn drop_for_part(
+        &mut self,
+        part: usize,
+        name: String,
+        span: Range<usize>,
+        omitted: &mut Vec<Range<usize>>,
+    ) {
         if let Some(statement) = self.given_up.get_mut(part) {
-            statement.dropped.push(span.start);
+            statement.dropped.push(super::DroppedStatement {
+                name,
+                offset: span.start,
+            });
         }
         omitted.push(span);
     }
@@ -72,14 +86,49 @@ impl Parser<'_, '_, '_> {
         });
     }
 
-    fn omit_record(
+    /// Gives up the statement at `span`, which reads but whose content
+    /// cannot stand, as one part of `kind` for `cause` and `message`.
+    /// Returns the part's index.
+    fn give_up_content(
         &mut self,
+        kind: &'static str,
         span: Range<usize>,
+        cause: Cause,
+        message: String,
+    ) -> usize {
+        self.given_up.push(GivenUpStatement {
+            kind,
+            span,
+            cause: GiveUpCause::Content(cause, message),
+            dropped: Vec::new(),
+            lost: Vec::new(),
+        });
+        self.given_up.len() - 1
+    }
+
+    /// Drops each anchor of `needs`, which needs the given-up statement that
+    /// its entry indexes, and keeps its exact source.
+    pub(super) fn drop_anchors(
+        &mut self,
+        mut needs: BTreeMap<String, usize>,
+        anchors: &mut Vec<AnchorEntry>,
+        anchor_spans: &mut Vec<Range<usize>>,
         omitted: &mut Vec<Range<usize>>,
-        reason: std::fmt::Arguments<'_>,
+        omissions: &mut ExpansionOmissions,
     ) {
-        self.diagnostic(span.start, ParseDiagnosticKind::RecordOmitted, reason);
-        omitted.push(span);
+        if needs.is_empty() {
+            return;
+        }
+        let entries = std::mem::take(anchors).into_iter();
+        for (anchor, span) in entries.zip(std::mem::take(anchor_spans)) {
+            if let Some(part) = needs.remove(&anchor.name) {
+                self.drop_for_part(part, format!("<{}>", anchor.name), span, omitted);
+                omissions.anchors.insert(anchor.name);
+            } else {
+                anchors.push(anchor);
+                anchor_spans.push(span);
+            }
+        }
     }
 
     pub(super) fn recover_header_record(
@@ -150,23 +199,35 @@ impl Parser<'_, '_, '_> {
             }
         };
         if !stated.insert(id) {
-            let span = record.span.clone();
-            self.omit_record(
-                record.span,
-                omitted,
-                format_args!(
-                    "repeated instance name #{id}: the first statement stands; the copy at bytes {}..{} is not stated; exact source retained",
-                    span.start, span.end
-                ),
+            let span = record.span;
+            let message = format!(
+                "repeated instance name #{id}: the first statement stands; the copy at bytes {}..{} is not stated; exact source retained",
+                span.start, span.end
             );
+            // A copy equal to the statement that stands drops nothing.
+            if records
+                .get(&id)
+                .is_some_and(|first| first.partials == record.partials)
+            {
+                self.diagnostic(
+                    span.start,
+                    ParseDiagnosticKind::RecordOmitted,
+                    format_args!("{message}"),
+                );
+                omitted.push(span);
+            } else {
+                self.give_up_content("data_record", span, Cause::Unreadable, message);
+            }
             return Ok(());
         }
         records.insert(id, record);
         Ok(())
     }
 
-    /// Removes each bounded anchor and instance from the interpreted graph,
-    /// keeps its exact source, and records its name in `omissions`.
+    /// Gives up each bounded anchor and instance as one part and removes it
+    /// from the interpreted graph, and records its name in `omissions`. An
+    /// item bounded only because it names an omitted anchor is dropped with
+    /// that anchor.
     pub(super) fn omit_bounded_expansions(
         &mut self,
         mut bounded: BoundedExpansions,
@@ -180,15 +241,19 @@ impl Parser<'_, '_, '_> {
             let entries = std::mem::take(anchors).into_iter();
             for (anchor, span) in entries.zip(std::mem::take(anchor_spans)) {
                 if let Some(bound) = bounded.anchors.remove(&anchor.name) {
-                    self.diagnostic(
-                        span.start,
-                        ParseDiagnosticKind::ExpansionBounded,
-                        format_args!(
-                            "anchor <{}> omitted: {bound}; exact source retained",
-                            anchor.name
-                        ),
-                    );
-                    omitted.push(span);
+                    let name = format!("<{}>", anchor.name);
+                    match self.anchor_part(&bound) {
+                        Some(part) => self.drop_for_part(part, name, span, omitted),
+                        None => {
+                            let part = self.give_up_content(
+                                "anchor_record",
+                                span,
+                                Cause::Undecoded,
+                                format!("anchor {name} omitted: {bound}; exact source retained"),
+                            );
+                            self.given_up_anchors.insert(anchor.name.clone(), part);
+                        }
+                    }
                     omissions.anchors.insert(anchor.name);
                 } else {
                     anchors.push(anchor);
@@ -198,15 +263,28 @@ impl Parser<'_, '_, '_> {
         }
         for (id, bound) in bounded.records {
             if let Some(record) = records.remove(&id) {
-                self.diagnostic(
-                    record.span.start,
-                    ParseDiagnosticKind::ExpansionBounded,
-                    format_args!("instance #{id} omitted: {bound}; exact source retained"),
-                );
-                omitted.push(record.span);
+                let part = match self.anchor_part(&bound) {
+                    Some(part) => {
+                        self.drop_for_part(part, format!("#{id}"), record.span, omitted);
+                        part
+                    }
+                    None => self.give_up_content(
+                        "data_record",
+                        record.span,
+                        Cause::Undecoded,
+                        format!("instance #{id} omitted: {bound}; exact source retained"),
+                    ),
+                };
+                self.given_up_names.insert(id, part);
                 omissions.records.insert(id);
             }
         }
+    }
+
+    /// The given-up statement of the omitted anchor that `bound` names.
+    fn anchor_part(&self, bound: &str) -> Option<usize> {
+        super::omitted_anchor_named(bound)
+            .and_then(|anchor| self.given_up_anchors.get(anchor).copied())
     }
 
     pub(super) fn omit_unresolved_records(
@@ -222,6 +300,7 @@ impl Parser<'_, '_, '_> {
         // it loses those entries. An entry of a positional aggregate, or of
         // a set whose classification carries meaning (a face's bounds, a
         // solid's voids), is needed like a direct reference (§3.3).
+        let mut unresolved = Vec::new();
         let mut pending = Vec::new();
         let mut listing = BTreeSet::new();
         for (&id, record) in records.iter() {
@@ -248,17 +327,24 @@ impl Parser<'_, '_, '_> {
             )?;
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
-                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
-                pending.push((id, None));
-            } else if given_up.is_some() {
-                pending.push((id, given_up));
+                let part = self.give_up_content(
+                    "data_record",
+                    record.span.clone(),
+                    Cause::Unreadable,
+                    format!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"),
+                );
+                unresolved.push((id, part));
+            } else if let Some(part) = given_up {
+                pending.push((id, part));
             } else if listed_given_up {
                 listing.insert(id);
             }
         }
-        let mut dropped_for = BTreeMap::new();
-        if !pending.is_empty() {
-            self.propagate_omissions(records, pending, &mut listing, &mut dropped_for, omitted)?;
+        for &(id, part) in &unresolved {
+            self.given_up_names.insert(id, part);
+        }
+        if !(unresolved.is_empty() && pending.is_empty()) {
+            self.propagate_omissions(records, unresolved, pending, &mut listing, omitted)?;
         }
         for id in listing {
             let Some(mut record) = records.remove(&id) else {
@@ -271,10 +357,7 @@ impl Parser<'_, '_, '_> {
                     if records.contains_key(&target) || external.contains(&target) {
                         return None;
                     }
-                    self.given_up_names
-                        .get(&target)
-                        .or_else(|| dropped_for.get(&target))
-                        .copied()
+                    self.given_up_names.get(&target).copied()
                 },
                 &mut lost,
             );
@@ -288,17 +371,18 @@ impl Parser<'_, '_, '_> {
         Ok(())
     }
 
-    /// Removes each pending record and, transitively, every record that
-    /// needs a removed one, and maps each record removed for a given-up
-    /// statement to that statement in `dropped_for`. A record that names a
-    /// record dropped for a given-up statement only as entries of unordered
-    /// aggregates is added to `listing` instead.
+    /// Removes each record of `given_up`, which is its own given-up
+    /// statement, and each pending record and, transitively, every record
+    /// that needs a removed one, and maps each record removed for a given-up
+    /// statement it needs to that statement. A record that names a removed
+    /// record only as entries of unordered aggregates is added to `listing`
+    /// instead.
     fn propagate_omissions(
         &mut self,
         records: &mut BTreeMap<u64, RawRecord>,
-        mut pending: Vec<(u64, Option<usize>)>,
+        given_up: Vec<(u64, usize)>,
+        pending: Vec<(u64, usize)>,
         listing: &mut BTreeSet<u64>,
-        dropped_for: &mut BTreeMap<u64, usize>,
         omitted: &mut Vec<Range<usize>>,
     ) -> Result<(), ParseError> {
         // Each edge is indexed once; each removed node unlocks its direct
@@ -317,30 +401,27 @@ impl Parser<'_, '_, '_> {
                 },
             )?;
         }
-        let mut queued = pending.iter().map(|&(id, _)| id).collect::<BTreeSet<_>>();
-        while let Some((id, part)) = pending.pop() {
+        let mut queue = given_up
+            .into_iter()
+            .map(|(id, part)| (id, part, true))
+            .chain(pending.into_iter().map(|(id, part)| (id, part, false)))
+            .collect::<Vec<_>>();
+        let mut queued = queue.iter().map(|&(id, ..)| id).collect::<BTreeSet<_>>();
+        while let Some((id, part, own)) = queue.pop() {
             if let Some(record) = records.remove(&id) {
-                match part {
-                    Some(part) => {
-                        dropped_for.insert(id, part);
-                        self.drop_for_part(part, record.span, omitted);
-                    }
-                    None => omitted.push(record.span),
+                if !own {
+                    self.given_up_names.insert(id, part);
+                    self.drop_for_part(part, format!("#{id}"), record.span, omitted);
                 }
             }
             if let Some(users) = reverse.get(&id) {
                 for &(user, unordered) in users {
-                    if part.is_some() && unordered {
+                    if unordered {
                         listing.insert(user);
                         continue;
                     }
-                    if queued.insert(user) {
-                        if let Some(record) = records.get(&user) {
-                            if part.is_none() {
-                                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
-                            }
-                            pending.push((user, part));
-                        }
+                    if queued.insert(user) && records.contains_key(&user) {
+                        queue.push((user, part, false));
                     }
                 }
             }

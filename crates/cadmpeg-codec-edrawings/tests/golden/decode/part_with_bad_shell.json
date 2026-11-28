@@ -1087,7 +1087,16 @@
       "tessellations": [],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "edrawings": {
+        "unknowns": [
+          {
+            "id": "edrawings:source:part#be65bc48dcdac91dcb0107b3bbe2c08e38475fd50f5d25940a96c68b7e3e940e",
+            "links": []
+          }
+        ]
+      }
+    },
     "process": {
       "features": [],
       "groups": [],
@@ -1161,18 +1170,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "model.shell-invalid",
-            "kind": "geometry_not_transferred",
-            "namespace": "edrawings"
-          }
-        },
-        "message": "1 shells were left out of their bodies: object 10 of single: strip index lies outside the shell",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "geometry.reconstructed-from-mesh",
             "kind": "topology_gauge_substituted",
             "namespace": "edrawings"
@@ -1180,6 +1177,25 @@
         },
         "message": "1 bodies were rebuilt from display meshes (12 triangles) as 6 planar faces with straight edges; the source stores no analytic surfaces or curves",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part model-object stream=\"eModel\" offset=469 length=77 record=edrawings:source:part#be65bc48dcdac91dcb0107b3bbe2c08e38475fd50f5d25940a96c68b7e3e940e: malformed container: edrawings/model.shell-invalid: strip index lies outside the shell; dropped=[]",
+        "provenance": {
+          "format": "edrawings",
+          "offset": 469,
+          "stream": "eModel",
+          "tag": "model-object"
+        },
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -1200,7 +1216,21 @@
     "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "6738cb02031f53c887e68213f8a9e6938f8d38fd79dceace735d53ec338142cf",
     "file_digests": {},
-    "retained_records": {},
-    "unrepresented": []
+    "retained_records": {
+      "edrawings:source:part#be65bc48dcdac91dcb0107b3bbe2c08e38475fd50f5d25940a96c68b7e3e940e": {
+        "bytes": {
+          "data": "Uw4KAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBQAAAAgDAAEHAQcMDAAAAEBAQEBAQEBAQEBAQAA=",
+          "kind": "inline"
+        },
+        "offset": 469,
+        "stream": "eModel",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

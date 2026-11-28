@@ -70,8 +70,8 @@ pub(crate) fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRec
 pub(crate) struct UnparsedParameterRecords {
     /// Design `BulkStream` entry name.
     pub(crate) stream: String,
-    /// Number of distinct unparsed frames.
-    pub(crate) count: usize,
+    /// Byte range of each unparsed frame in the stream.
+    pub(crate) frames: Vec<std::ops::Range<usize>>,
 }
 
 /// A count of decoded parameters in one Design `BulkStream`.
@@ -88,7 +88,7 @@ pub(crate) struct StreamParameterCount {
 pub(crate) struct DecodedParameters {
     /// Canonical parameter records, sorted by identity.
     pub(crate) parameters: Vec<DesignParameter>,
-    /// Per-stream counts of parameter frames that match no grammar.
+    /// Per-stream ranges of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
     /// Per-stream counts of decoded parameters with a set uninterpreted
     /// expression-trailer flag.
@@ -105,7 +105,7 @@ pub(crate) struct DecodedParameters {
 /// Decode every indexed parameter record in each Design `BulkStream`.
 ///
 /// A frame whose tail names the stream's parameter collection and that matches
-/// no parameter grammar is counted per stream so the caller reports it instead
+/// no parameter grammar is listed per stream so the caller reports it instead
 /// of dropping it silently.
 pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
     let mut out = Vec::new();
@@ -123,7 +123,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         let tail_targets = parameter_tail_targets(scan, &entry.name)?;
         let mut position = 0usize;
         let mut emitted_record_indices = HashSet::new();
-        let mut unparsed_count = 0usize;
+        let mut unparsed_frames = Vec::new();
         let mut trailer_flag_count = 0usize;
         let mut driven_flag_count = 0usize;
         let mut null_owner_count = 0usize;
@@ -156,7 +156,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                         null_owner_count += usize::from(compact_null_owner);
                         header_flag_count += usize::from(header_flag);
                     }
-                    None => unparsed_count = next_unparsed_count(unparsed_count)?,
+                    None => unparsed_frames.push(at..end),
                 }
                 position = end;
             } else {
@@ -164,15 +164,15 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                     || tail_targets.marks_parameter_frame(frame)
                     || (refused && !tail_targets.collections.is_empty())
                 {
-                    unparsed_count = next_unparsed_count(unparsed_count)?;
+                    unparsed_frames.push(at..end);
                 }
                 position = at + 1;
             }
         }
-        if unparsed_count != 0 {
+        if !unparsed_frames.is_empty() {
             unparsed.push(UnparsedParameterRecords {
                 stream: entry.name.clone(),
-                count: unparsed_count,
+                frames: unparsed_frames,
             });
         }
         if trailer_flag_count != 0 {
@@ -351,12 +351,6 @@ fn locate_design_parameter(
     at: usize,
 ) -> Option<DesignParameter> {
     parsed.into_record(stream, u64::try_from(at).ok()?)
-}
-
-fn next_unparsed_count(count: usize) -> Result<usize, CodecError> {
-    count.checked_add(1).ok_or_else(|| {
-        CodecError::malformed("Fusion Design unparsed parameter count exceeds the platform range")
-    })
 }
 
 pub(in crate::design) fn parse_design_parameter(
@@ -1366,7 +1360,6 @@ pub(crate) fn decode_parameter_owners(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
         let stream = crate::ids::native_scope(&entry.name);
         if streams.contains_key(&stream) {
             return Err(CodecError::Malformed(
@@ -1377,7 +1370,7 @@ pub(crate) fn decode_parameter_owners(
         // Primary frames whose MetaStream type is the parameter-owner type.
         let owner_typed = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
             .and_then(|meta| {
-                super::meta::design_primary_frames(bytes, &meta)
+                super::meta::scan_design_primary_frames(scan, &entry.name, &meta)
                     .ok()
                     .map(|frames| {
                         frames
@@ -1394,9 +1387,9 @@ pub(crate) fn decode_parameter_owners(
                     })
             })
             .unwrap_or_default();
-        streams
-            .entry(stream)
-            .or_insert((entry, IndexedRecordOffsets::build(bytes), owner_typed));
+        if let std::collections::hash_map::Entry::Vacant(slot) = streams.entry(stream) {
+            slot.insert((entry, scan.design_record_offsets(&entry.name)?, owner_typed));
+        }
     }
     let mut out = Vec::new();
     // Pipe scalar owners are canonical records of their scope; they are read
@@ -1552,7 +1545,7 @@ fn pipe_scalar_owners(
         return Ok(Vec::new());
     }
     let bytes = scan.entry_bytes(entry_name)?;
-    let Ok(frames) = super::meta::design_primary_frames(bytes, &meta) else {
+    let Ok(frames) = super::meta::scan_design_primary_frames(scan, entry_name, &meta) else {
         return Ok(Vec::new());
     };
     let mut registrations = HashMap::<u64, usize>::new();

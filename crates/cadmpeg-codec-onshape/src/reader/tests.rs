@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{archive, id, part_bodies, part_studio_bodies, topology, Model, OnshapeLossCode};
 use crate::test_support::{fixture, Report};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
 /// The revolve fixture's bundle with `states` as its bodydetails, each a list of
@@ -251,65 +252,6 @@ fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
 }
 
 #[test]
-fn thin_scope_requires_direct_body_ownership_without_child_insertions() {
-    let mut model = two_part_studio(0.0);
-    model.ir.model.product_definitions.truncate(1);
-    model.ir.model.occurrences.clear();
-    let definition = model.ir.model.product_definitions[0].id.clone();
-    assert_eq!(super::thin::owner(&model.ir).unwrap(), definition);
-
-    model.ir.model.product_definitions[0]
-        .occurrences
-        .push(cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#child").unwrap());
-    assert!(super::thin::owner(&model.ir).is_err());
-    model.ir.model.product_definitions[0].occurrences.clear();
-    model.ir.model.product_definitions[0].bodies.clear();
-    assert!(super::thin::owner(&model.ir).is_err());
-}
-
-#[test]
-fn failed_thin_scope_restores_design_and_downgrades_wall_losses() {
-    let mut report = Report::default();
-    let mut model = crate::test_support::read_bytes(
-        std::path::Path::new("synthetic.onshape-bundle"),
-        &fixture("plate-fillet"),
-        &mut report,
-    )
-    .unwrap();
-    let mut report = super::Report::default();
-    let original = model.ir.design.clone();
-    let feature = &model.ir.model.features[1];
-    super::push(&mut model.ir.design.features, json!({"id":feature.id,"definition":{"operation":{"kind":"native","value":{"kind":"synthetic:thin","native_options":{},"source_settings":{}}}}})).unwrap();
-    report.notes.push(
-        crate::loss::OnshapeLossCode::ThinModelNotSupported
-            .note("design construction carries the proved wall operands"),
-    );
-    let notes = report.notes.len();
-    model.ir.model.product_definitions.clear();
-    super::install_thin_scope(
-        &cadmpeg_core::decode::test_support::service_decode_context(),
-        &mut model.ir,
-        &mut report,
-        original.clone(),
-        &super::RollbackBar::default(),
-    )
-    .unwrap();
-    assert_eq!(model.ir.design, original);
-    assert_eq!(report.notes.len(), notes);
-    assert!(report
-        .notes
-        .iter()
-        .any(|note| crate::loss::OnshapeLossCode::ThinNotSupported.matches(note)));
-    assert!(!report
-        .notes
-        .iter()
-        .any(
-            |note| crate::loss::OnshapeLossCode::ThinModelNotSupported.matches(note)
-                || crate::loss::OnshapeLossCode::DesignOperationNative.matches(note)
-        ));
-}
-
-#[test]
 fn omitted_feature_has_no_placement_or_suppression_annotation() {
     let mut model = crate::test_support::read_bytes(
         std::path::Path::new("synthetic.onshape-bundle"),
@@ -354,4 +296,34 @@ fn sweep_losses_distinguish_support_from_malformed_records_and_budgets() {
     feature["parameters"] = json!(null);
     let malformed = super::mapping_loss_code(&feature, false, true, "malformed parameters");
     assert!(OnshapeLossCode::HistoryNotSupported.matches(&malformed.note("record")));
+}
+
+#[test]
+fn custom_features_keep_the_history_loss_whatever_their_type() {
+    for (kind, extra) in [
+        (
+            "extrude",
+            json!({"parameters":[{"parameterId":"bodyType","value":"THIN"}]}),
+        ),
+        (
+            "sweep",
+            json!({"parameters":[
+                {"parameterId":"bodyType","value":"SOLID"},
+                {"parameterId":"operationType","value":"NEW"},
+                {"parameterId":"profiles","queries":[]},
+                {"parameterId":"path","queries":[]}
+            ]}),
+        ),
+    ] {
+        let mut feature = extra;
+        feature["featureType"] = json!(kind);
+        let built_in = super::mapping_loss_code(&feature, false, true, "unsupported control");
+        assert!(!OnshapeLossCode::HistoryNotSupported.matches(&built_in.note("built-in")));
+        feature["namespace"] = json!("synthetic");
+        let custom = super::mapping_loss_code(&feature, false, true, "custom feature");
+        assert!(OnshapeLossCode::HistoryNotSupported.matches(&custom.note("custom")));
+        feature["namespace"] = json!("");
+        let empty = super::mapping_loss_code(&feature, false, true, "empty namespace");
+        assert!(!OnshapeLossCode::HistoryNotSupported.matches(&empty.note("built-in")));
+    }
 }

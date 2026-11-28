@@ -71,7 +71,11 @@ pub(in crate::validate) fn check_qualified_scope(
 /// that file's definition key and `@` (§2.2, §3.1): the records of the
 /// file's design scope, and the bodies and records its definition owns. The
 /// `File` definition is a record of the placing file.
-pub(in crate::validate) fn check_component_records(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(in crate::validate) fn check_component_records(
+    records: &crate::validate::design::records::DesignRecords<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let ir = records.ir;
     let files = ir
         .model
         .product_definitions
@@ -82,11 +86,14 @@ pub(in crate::validate) fn check_component_records(ir: &CadIr, findings: &mut Ve
     if files.is_empty() {
         return;
     }
-    let records = crate::validate::design::records::DesignRecords::new(ir);
     let topology = TopologyOwners::new(ir);
     for (file, key) in files {
         let mut owned = ComponentRecords::default();
-        for spanned in records.spanned_definitions(file.id.as_str()) {
+        for spanned in records
+            .spanned_definitions(file.id.as_str())
+            .iter()
+            .copied()
+        {
             let Some(&definition) = records.definitions.get(spanned) else {
                 continue;
             };
@@ -99,7 +106,7 @@ pub(in crate::validate) fn check_component_records(ir: &CadIr, findings: &mut Ve
             }
             owned.definition(definition);
         }
-        owned.design_scope(ir, &records, file);
+        owned.design_scope(ir, records, file);
         topology.extend(&mut owned);
         for id in owned.ids {
             if qualifier(id) != Some(key) {

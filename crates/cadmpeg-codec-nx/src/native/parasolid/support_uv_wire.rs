@@ -98,7 +98,7 @@ mod tests {
             );
             for identity in [0, 1] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-                wire["xmt"] = serde_json::json!(identity);
+                wire["xmt"] = cadmpeg_core::json!(identity);
                 assert!(json::from_value::<ParasolidSupportUvRecord>(wire)
                     .unwrap_err()
                     .to_string()
@@ -111,9 +111,9 @@ mod tests {
                 json::to_vec(&super::SupportUvWire::from(record.clone())).unwrap()
             );
             for (field, value) in [
-                ("count", serde_json::json!(1)),
-                ("marker", serde_json::json!(0)),
-                ("values", serde_json::json!([1.0, 2.0, 3.0])),
+                ("count", cadmpeg_core::json!(1)),
+                ("marker", cadmpeg_core::json!(0)),
+                ("values", cadmpeg_core::json!([1.0, 2.0, 3.0])),
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire[field] = value;

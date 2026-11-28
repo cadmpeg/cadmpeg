@@ -71,7 +71,7 @@ fn rmfastload_native_wire_rejects_missing_arrays_and_inconsistent_source_positio
                 "byte_len",
             ] {
                 let mut bad = value.clone();
-                bad[field] = serde_json::json!(u64::MAX);
+                bad[field] = cadmpeg_core::json!(u64::MAX);
                 assert!(
                     json::from_value::<RmFastLoadStorage>(bad).is_err(),
                     "{field}"
@@ -81,10 +81,10 @@ fn rmfastload_native_wire_rejects_missing_arrays_and_inconsistent_source_positio
             bad["header_source_offset"] = bad["source_offset"].clone();
             assert!(json::from_value::<RmFastLoadStorage>(bad).is_err());
             let mut bad = value.clone();
-            bad["physical_spans"][0]["byte_len"] = serde_json::json!(113);
+            bad["physical_spans"][0]["byte_len"] = cadmpeg_core::json!(113);
             assert!(json::from_value::<RmFastLoadStorage>(bad).is_err());
             let mut bad = value;
-            bad["terminal_rows"][0]["source_offset"] = serde_json::json!(0);
+            bad["terminal_rows"][0]["source_offset"] = cadmpeg_core::json!(0);
             assert!(json::from_value::<RmFastLoadStorage>(bad).is_err());
         },
     );
@@ -110,7 +110,7 @@ fn rmfastload_native_admission_checks_the_owning_section_class_count() {
         let original =
             json::to_value(&namespace.arenas()["rmfastload_physical_storages"][0]).unwrap();
         let mut bad = original.clone();
-        bad["header_words"][3] = serde_json::json!(1);
+        bad["header_words"][3] = cadmpeg_core::json!(1);
         assert!(json::from_value::<RmFastLoadStorage>(bad.clone()).is_ok());
         namespace
             .set_arena(ctx, "rmfastload_physical_storages", &[bad])

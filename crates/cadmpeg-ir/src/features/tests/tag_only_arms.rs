@@ -13,14 +13,14 @@ fn reads_its_tag_alone<T>(kind: &str)
 where
     T: Serialize + DeserializeOwned + std::fmt::Debug,
 {
-    let bare = serde_json::json!({ "kind": kind });
+    let bare = cadmpeg_core::json!({ "kind": kind });
     let read: T = json::from_value(bare.clone()).expect("the bare tag reads");
     assert_eq!(json::to_value(read).unwrap(), bare);
 
     for (key, value) in [
-        ("zz_bogus", serde_json::json!(1)),
+        ("zz_bogus", cadmpeg_core::json!(1)),
         ("value", serde_json::Value::Null),
-        ("value", serde_json::json!({})),
+        ("value", cadmpeg_core::json!({})),
     ] {
         let mut stated = bare.clone();
         stated[key] = value;

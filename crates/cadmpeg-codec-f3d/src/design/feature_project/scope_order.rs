@@ -71,7 +71,7 @@ pub(crate) fn authored_scope_ordinals_per_stream<'a>(
     Ok(out)
 }
 
-pub(super) fn authored_scope_ordinals_for_stream<'a>(
+pub(crate) fn authored_scope_ordinals_for_stream<'a>(
     scopes: &[&'a DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
 ) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
@@ -189,29 +189,7 @@ pub(super) fn authored_scope_ordinals_for_stream<'a>(
     for timeline in stream_timelines {
         items.extend(timeline.frame().items().iter().map(|item| item.value));
     }
-    let mut linked_scopes = reverse_normal::linked_scopes_outside(scopes, &items);
-    let shared_links = reverse_normal::shared_timeline_links(&scopes_by_record, &items);
-    let mut item_ordinals = HashMap::<u64, u64>::new();
-    let mut next_ordinal = 0_u64;
-    for item in items {
-        let followers = u32::try_from(item)
-            .ok()
-            .and_then(|record| scopes_by_record.get(&record))
-            .and_then(|scope| reverse_normal::timeline_link(scope))
-            .filter(|link| !shared_links.contains(link))
-            .and_then(|link| linked_scopes.remove(link))
-            .unwrap_or_default();
-        for record in std::iter::once(item).chain(followers) {
-            if item_ordinals.insert(record, next_ordinal).is_some() {
-                return Err(CodecError::Malformed(
-                    "Design timeline item identity is not unique".into(),
-                ));
-            }
-            next_ordinal = next_ordinal.checked_add(1).ok_or_else(|| {
-                CodecError::Malformed("Design feature ordinal exceeds u64".into())
-            })?;
-        }
-    }
+    let item_ordinals = timeline_item_ordinals(scopes, &scopes_by_record, &items)?;
     for scope in scopes {
         if let Some(ordinal) = item_ordinals.get(&u64::from(scope.record_index)).copied() {
             // discarded-value: each scope is visited once in this stream.
@@ -261,6 +239,41 @@ pub(super) fn authored_scope_ordinals_for_stream<'a>(
     }
     thread_companions::insert_positions(stream, &scopes_by_record, &mut out)?;
     Ok(out)
+}
+
+/// The authored position of every record of a Design stream's timeline run:
+/// each item in run order, a reverse-normal linked scope that is no item
+/// directly after the item that links it. `items` are the item records of the
+/// stream's timelines in order.
+pub(crate) fn timeline_item_ordinals(
+    scopes: &[&DesignParameterScope],
+    scopes_by_record: &HashMap<u32, &DesignParameterScope>,
+    items: &[u64],
+) -> Result<HashMap<u64, u64>, CodecError> {
+    let mut linked_scopes = reverse_normal::linked_scopes_outside(scopes, items);
+    let shared_links = reverse_normal::shared_timeline_links(scopes_by_record, items);
+    let mut item_ordinals = HashMap::<u64, u64>::new();
+    let mut next_ordinal = 0_u64;
+    for &item in items {
+        let followers = u32::try_from(item)
+            .ok()
+            .and_then(|record| scopes_by_record.get(&record))
+            .and_then(|scope| reverse_normal::timeline_link(scope))
+            .filter(|link| !shared_links.contains(link))
+            .and_then(|link| linked_scopes.remove(link))
+            .unwrap_or_default();
+        for record in std::iter::once(item).chain(followers) {
+            if item_ordinals.insert(record, next_ordinal).is_some() {
+                return Err(CodecError::Malformed(
+                    "Design timeline item identity is not unique".into(),
+                ));
+            }
+            next_ordinal = next_ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("Design feature ordinal exceeds u64".into())
+            })?;
+        }
+    }
+    Ok(item_ordinals)
 }
 
 /// Result of following one scope's preceding state through internal scopes.

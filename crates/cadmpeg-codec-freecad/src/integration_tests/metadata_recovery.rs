@@ -5,7 +5,7 @@ use crate::native::PropertyRecord;
 use crate::test_support::test_archive::{archive, archive_entries};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fmt::Write as _;
 use std::io::Cursor;
@@ -332,7 +332,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .unwrap();
         let mut written = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(decoded.ir(), None))
             .and_then(|plan| plan.write_to(&mut written))
             .unwrap();
         let roundtrip = FcstdCodec

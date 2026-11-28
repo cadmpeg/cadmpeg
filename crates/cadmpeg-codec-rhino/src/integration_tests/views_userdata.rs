@@ -415,7 +415,7 @@ fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
             "unavailable"
         };
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss
                     .message
                     .contains(&format!("no physical millimetre binding ({label})"))
@@ -499,7 +499,7 @@ fn complete_decode_propagates_nested_view_file_reference_crc_loss() {
 }
 
 #[test]
-fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view() {
+fn malformed_trace_reference_gives_up_its_view_with_one_loss_and_recovers_later_view() {
     let archive = ArchiveVersion::V8;
     let malformed = trace_view(
         archive,
@@ -539,27 +539,14 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
             .and_then(|value| value.as_u64()),
         Some(1)
     );
-    let reference_loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
-                && loss
-                    .provenance
-                    .as_ref()
-                    .and_then(|provenance| provenance.tag.as_deref())
-                    == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
-        })
-        .expect("digest diagnostic survives the later file-reference parse failure");
-    assert!(reference_loss.message.contains("file reference"));
-    assert!(reference_loss.message.contains("SHA-1 hash CRC mismatch"));
-    assert!(reference_loss
-        .provenance
-        .as_ref()
-        .is_some_and(|provenance| provenance.offset > 0));
+    // The given-up view record has one loss: its charge.
+    assert!(
+        !has_tagged_loss(&result, "VIEW/TRACE_IMAGE/FILE_REFERENCE"),
+        "{:#?}",
+        result.report().losses
+    );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("named view record")
     }));
     assert!(result
@@ -571,7 +558,7 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
 }
 
 #[test]
-fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_view() {
+fn malformed_wallpaper_reference_gives_up_its_view_with_one_loss_and_recovers_later_view() {
     let archive = ArchiveVersion::V8;
     let malformed = wallpaper_view(
         archive,
@@ -611,27 +598,14 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
             .and_then(|value| value.as_u64()),
         Some(1)
     );
-    let reference_loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
-                && loss
-                    .provenance
-                    .as_ref()
-                    .and_then(|provenance| provenance.tag.as_deref())
-                    == Some("VIEW/WALLPAPER/FILE_REFERENCE")
-        })
-        .expect("digest diagnostic survives the later wallpaper reference parse failure");
-    assert!(reference_loss.message.contains("file reference"));
-    assert!(reference_loss.message.contains("SHA-1 hash CRC mismatch"));
-    assert!(reference_loss
-        .provenance
-        .as_ref()
-        .is_some_and(|provenance| provenance.offset > 0));
+    // The given-up view record has one loss: its charge.
+    assert!(
+        !has_tagged_loss(&result, "VIEW/WALLPAPER/FILE_REFERENCE"),
+        "{:#?}",
+        result.report().losses
+    );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("named view record")
     }));
     assert!(result
@@ -643,7 +617,7 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
 }
 
 #[test]
-fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fails() {
+fn later_view_recovery_gives_up_a_view_whose_following_child_fails_with_one_loss() {
     let archive = ArchiveVersion::V8;
     let mut corrupt_reference = crate::test_support::test_dump::file_reference(
         archive,
@@ -687,65 +661,21 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         Some(1)
     );
 
-    let reference_losses: Vec<_> = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
-                && loss
-                    .provenance
-                    .as_ref()
-                    .and_then(|provenance| provenance.tag.as_deref())
-                    == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
-        })
-        .collect();
-    assert_eq!(reference_losses.len(), 1);
-    assert!(reference_losses[0].message.contains("file reference"));
-    assert!(reference_losses[0].message.contains("CRC mismatch"));
-    assert_eq!(
-        cadmpeg_core::decode::index_from_u64(
-            reference_losses[0]
-                .provenance
-                .as_ref()
-                .expect("nested checksum loss is located")
-                .offset
-        )
-        .expect("fixture offset fits usize"),
-        source_offset(&document, &corrupt_reference)
-    );
-
-    let target_loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
-                && loss
-                    .provenance
-                    .as_ref()
-                    .and_then(|provenance| provenance.tag.as_deref())
-                    == Some("VIEW/TARGET")
-        })
-        .expect("direct child checksum loss is retained before the later child failure");
-    assert_eq!(
-        cadmpeg_core::decode::index_from_u64(
-            target_loss
-                .provenance
-                .as_ref()
-                .expect("direct child checksum loss is located")
-                .offset
-        )
-        .expect("fixture offset fits usize"),
-        source_offset(&document, &malformed_target)
-    );
+    // The given-up view record has one loss: its charge.
+    for tag in ["VIEW/TRACE_IMAGE/FILE_REFERENCE", "VIEW/TARGET"] {
+        assert!(
+            !has_tagged_loss(&result, tag),
+            "{tag}: {:#?}",
+            result.report().losses
+        );
+    }
 
     let dropped: Vec<_> = result
         .report()
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
                 && loss
                     .message
                     .contains("was omitted after child parsing failed")
@@ -773,7 +703,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
             .provenance
             .as_ref()
             .and_then(|provenance| provenance.tag.as_deref()),
-        Some("VIEW/RECORD")
+        Some("view-record")
     );
     assert!(result
         .source_fidelity()
@@ -784,7 +714,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
 }
 
 #[test]
-fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
+fn later_view_recovery_gives_up_a_view_with_a_bad_end_marker_with_one_loss() {
     let archive = ArchiveVersion::V8;
     for has_invalid_end_marker in [true, false] {
         let malformed_viewport =
@@ -823,39 +753,11 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             "invalid_end={has_invalid_end_marker}"
         );
 
-        let viewport_losses: Vec<_> = result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
-                    && loss.message.contains("viewport retained")
-            })
-            .collect();
-        assert_eq!(
-            viewport_losses.len(),
-            1,
-            "invalid_end={has_invalid_end_marker}"
-        );
-        assert_eq!(
-            cadmpeg_core::decode::index_from_u64(
-                viewport_losses[0]
-                    .provenance
-                    .as_ref()
-                    .expect("viewport warning is located")
-                    .offset
-            )
-            .expect("fixture offset fits usize"),
-            source_offset(&document, &malformed_viewport),
-            "invalid_end={has_invalid_end_marker}"
-        );
-        assert_eq!(
-            viewport_losses[0]
-                .provenance
-                .as_ref()
-                .and_then(|provenance| provenance.tag.as_deref()),
-            Some("VIEW/VIEWPORT"),
-            "invalid_end={has_invalid_end_marker}"
+        // The given-up view record has one loss: its charge.
+        assert!(
+            !has_tagged_loss(&result, "VIEW/VIEWPORT"),
+            "invalid_end={has_invalid_end_marker}: {:#?}",
+            result.report().losses
         );
 
         let end_error = if has_invalid_end_marker {
@@ -868,7 +770,7 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             .losses
             .iter()
             .filter(|loss| {
-                loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
                     && loss
                         .message
                         .contains("was omitted after child parsing failed")
@@ -993,7 +895,7 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
 }
 
 #[test]
-fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
+fn active_view_recovery_gives_up_the_view_with_one_loss_and_keeps_exact_source() {
     for archive in [ArchiveVersion::V5, ArchiveVersion::V8] {
         let mut reference = crate::test_support::test_dump::file_reference(
             archive,
@@ -1032,27 +934,26 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
         assert_eq!(views.len(), 1);
         assert_eq!(
             views[0].field("list_kind"),
-            Some(serde_json::json!("active"))
+            Some(cadmpeg_core::json!("active"))
         );
-        assert_eq!(views[0].field("list_index"), Some(serde_json::json!(1)));
-        for (code, tag, offset) in [
-            (
-                crate::loss::RhinoLossCode::IntegrityFailure,
-                "VIEW/TRACE_IMAGE/FILE_REFERENCE",
-                source_offset(&document, &reference),
-            ),
-            (
-                crate::loss::RhinoLossCode::PresentationRecordDropped,
-                "VIEW/RECORD",
+        assert_eq!(views[0].field("list_index"), Some(cadmpeg_core::json!(1)));
+        assert!(
+            !has_tagged_loss(&result, "VIEW/TRACE_IMAGE/FILE_REFERENCE"),
+            "{archive:?}: {:#?}",
+            result.report().losses
+        );
+        {
+            let (code, tag, offset) = (
+                cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "view-record",
                 source_offset(&document, &rejected),
-            ),
-        ] {
+            );
             let losses = result
                 .report()
                 .losses
                 .iter()
                 .filter(|loss| {
-                    loss.code == code.kind()
+                    loss.code == code
                         && loss
                             .provenance
                             .as_ref()
@@ -1074,4 +975,14 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
             .any(|(_, record)| record.data() == Some(list.as_slice())));
         assert_valid(&result);
     }
+}
+
+/// Whether the report holds a loss whose provenance tag is `tag`.
+fn has_tagged_loss(result: &super::EditableDecodeResult, tag: &str) -> bool {
+    result.report().losses.iter().any(|loss| {
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref())
+            == Some(tag)
+    })
 }

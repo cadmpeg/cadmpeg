@@ -1035,35 +1035,22 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
     let cache = ScalarCache::from_section_checked(payload);
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
-        .windows(PROTOTYPE.len())
-        .position(|window| window == PROTOTYPE)
-        .map(|relative| search + relative)
-    {
+    while let Some(prototype) = cadmpeg_core::bytes::find_from(payload, PROTOTYPE, search) {
         let instance_search = prototype + PROTOTYPE.len();
-        let prototype_end = payload[instance_search..]
-            .windows(LIST.len())
-            .position(|window| window == LIST)
-            .map_or(payload.len(), |relative| instance_search + relative);
-        let Some(instance) = payload[instance_search..prototype_end]
-            .windows(INSTANCE.len())
-            .position(|window| window == INSTANCE)
-            .map(|relative| instance_search + relative)
+        let prototype_end =
+            cadmpeg_core::bytes::find_from(payload, LIST, instance_search).unwrap_or(payload.len());
+        let Some(instance) =
+            cadmpeg_core::bytes::find_in(payload, INSTANCE, instance_search, prototype_end)
         else {
             search = prototype_end.max(instance_search);
             continue;
         };
         let rows_start = instance + INSTANCE.len();
-        let block_end = payload[rows_start..]
-            .windows(ENTITY.len())
-            .position(|window| window == ENTITY)
-            .map_or(payload.len(), |relative| rows_start + relative);
+        let block_end =
+            cadmpeg_core::bytes::find_from(payload, ENTITY, rows_start).unwrap_or(payload.len());
         let mut starts = Vec::new();
         let mut cursor = rows_start;
-        while let Some(start) = payload[cursor..block_end]
-            .windows(ROW_START.len())
-            .position(|window| window == ROW_START)
-            .map(|relative| cursor + relative)
+        while let Some(start) = cadmpeg_core::bytes::find_in(payload, ROW_START, cursor, block_end)
         {
             if starts.is_empty()
                 || match start.checked_sub(1) {
@@ -1173,16 +1160,10 @@ pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
     let cache = ScalarCache::from_section_checked(payload);
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
-        .windows(PROTOTYPE.len())
-        .position(|window| window == PROTOTYPE)
-        .map(|relative| search + relative)
-    {
+    while let Some(prototype) = cadmpeg_core::bytes::find_from(payload, PROTOTYPE, search) {
         let rows_start = prototype + PROTOTYPE.len();
-        let block_end = payload[rows_start..]
-            .windows(LIST.len())
-            .position(|window| window == LIST)
-            .map_or(payload.len(), |relative| rows_start + relative);
+        let block_end =
+            cadmpeg_core::bytes::find_from(payload, LIST, rows_start).unwrap_or(payload.len());
         let mut headers = Vec::new();
         for close in rows_start..block_end {
             if payload.get(close) != Some(&0xe3) {
@@ -1328,16 +1309,10 @@ pub(crate) fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
     let cache = ScalarCache::from_section_checked(payload);
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
-        .windows(PROTOTYPE.len())
-        .position(|window| window == PROTOTYPE)
-        .map(|relative| search + relative)
-    {
+    while let Some(prototype) = cadmpeg_core::bytes::find_from(payload, PROTOTYPE, search) {
         let rows_start = prototype + PROTOTYPE.len();
-        let block_end = payload[rows_start..]
-            .windows(LIST.len())
-            .position(|window| window == LIST)
-            .map_or(payload.len(), |relative| rows_start + relative);
+        let block_end =
+            cadmpeg_core::bytes::find_from(payload, LIST, rows_start).unwrap_or(payload.len());
         let mut headers = Vec::new();
         for close in rows_start..block_end {
             if payload.get(close) != Some(&0xe3) {

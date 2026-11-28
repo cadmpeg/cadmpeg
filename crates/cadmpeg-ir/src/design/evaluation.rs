@@ -150,6 +150,114 @@ pub struct StateDelta {
     pub poses: BTreeMap<OccurrencePath, Option<Transform>>,
 }
 
+/// A state held in full: its records and its name table.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HeldState {
+    /// The state's records, each arena sorted by id.
+    pub records: Topology,
+    /// The state's name table.
+    pub names: BTreeMap<EntityRef, NameEntry>,
+}
+
+impl StateDelta {
+    /// The delta that turns `base` into `state`: each record of `state` that
+    /// `base` does not hold with equal content, a reference to each record of
+    /// `base` whose id `state` does not hold, each name entry of `state` that
+    /// differs from the base's, and `None` for each entity that `base` names
+    /// and `state` does not. A record that both hold with equal content is
+    /// shared through the base. A changed procedural construction also
+    /// needs its carrier. A changed carrier with a solved cache also
+    /// needs its construction.
+    #[must_use]
+    pub fn between(state: &HeldState, base: &HeldState) -> Self {
+        let mut names = state
+            .names
+            .iter()
+            .filter(|(entity, entry)| base.names.get(*entity) != Some(*entry))
+            .map(|(entity, entry)| (entity.clone(), Some(entry.clone())))
+            .collect::<BTreeMap<_, _>>();
+        names.extend(
+            base.names
+                .keys()
+                .filter(|entity| !state.names.contains_key(*entity))
+                .map(|entity| (entity.clone(), None)),
+        );
+        Self {
+            names,
+            ..Self::between_topologies(&state.records, &base.records)
+        }
+    }
+
+    /// The topology delta that turns `base` into `state`, including the
+    /// procedural carriers and constructions needed to write changed records.
+    #[must_use]
+    pub fn between_topologies(state: &Topology, base: &Topology) -> Self {
+        let (records, removed) = super::edit::states::difference(state, base);
+        Self {
+            records,
+            removed,
+            ..Self::default()
+        }
+    }
+}
+
+/// The states of one kernel index space of a format that chains back from
+/// its latest state (§5.4), stated from the latest to the earliest. Each
+/// state is based on the state stated before it, and the first on the base
+/// of the chain. The chain holds one state in full: the latest it stated.
+#[derive(Debug, Clone)]
+pub struct ChainBack {
+    base: StateBase,
+    later: HeldState,
+}
+
+impl ChainBack {
+    /// A chain whose latest state is based on `base`, the state `held` holds
+    /// in full: `Current(p)` with the extent of the current state at `p`, or
+    /// an evaluation with its resolved state.
+    #[must_use]
+    pub fn new(base: StateBase, held: HeldState) -> Self {
+        Self { base, later: held }
+    }
+
+    /// The content of `state`, the next earlier state of the chain, which
+    /// the evaluation `id` holds. `state` is the base of the next state.
+    pub fn push(&mut self, id: EvaluationId, state: HeldState) -> StateContent {
+        let delta = StateDelta::between(&state, &self.later);
+        self.later = state;
+        StateContent {
+            base: std::mem::replace(&mut self.base, StateBase::Evaluation(id)),
+            delta,
+        }
+    }
+
+    /// The names held at the last stated position.
+    pub fn names(&self) -> &BTreeMap<EntityRef, NameEntry> {
+        &self.later.names
+    }
+
+    /// Advance through an unchanged kernel partition. Clear structured names
+    /// of the supplied entities while retaining their native name data.
+    pub fn push_shared(
+        &mut self,
+        id: EvaluationId,
+        clear: impl IntoIterator<Item = EntityRef>,
+    ) -> StateContent {
+        let mut delta = StateDelta::default();
+        for entity in clear {
+            if let Some(entry) = self.later.names.get_mut(&entity) {
+                if entry.name.take().is_some() {
+                    delta.names.insert(entity, Some(entry.clone()));
+                }
+            }
+        }
+        StateContent {
+            base: std::mem::replace(&mut self.base, StateBase::Evaluation(id)),
+            delta,
+        }
+    }
+}
+
 /// A current state of a scope: a position and the bodies of `CadIr.geometry`
 /// that belong to the state there.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -306,6 +414,9 @@ pub(crate) fn chain_depths<T>(
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests;
 
 cadmpeg_core::named_optional_field!(deserialize_configuration<T>, T, "configuration");
 cadmpeg_core::named_optional_field!(deserialize_content<T>, T, "content");

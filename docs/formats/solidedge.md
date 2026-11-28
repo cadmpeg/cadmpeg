@@ -10,6 +10,14 @@ hierarchy. A stream entry identifies its logical byte length and allocation
 chain. Regular streams use the FAT. Small streams use the mini FAT and the
 root storage's mini stream.
 
+The last DIFAT sector links to ENDOFCHAIN, and a stream chain ends with
+ENDOFCHAIN after the sectors its size requires. The reader admits a DIFAT
+chain that ends with FREESECT, reads a stream whose chain is not terminated
+from the sectors its size requires, and opens every other stream when one
+stream's chain cannot be followed. Each such deviation charges
+`solidedge/container.noncanonical`, which carries strict floor Warning
+(CADIR §3.2). No other Solid Edge code carries a strict floor.
+
 ### 1.1 Document identity
 
 A part, sheet-metal, or assembly document has the root entries `JSitesList`
@@ -64,6 +72,12 @@ The binary header and node grammar are specified in
 [`parasolid.md`](parasolid.md). An embedded-schema token names its base schema
 and is followed by the maximum node type and the user-field size.
 
+The decoder gives up a primary partition (CADIR §3.3) whose stream does not
+open, whose text header or binary signature is absent, or whose node framing
+does not read, with `record.unreadable`. It gives up a partition whose header
+names a schema version that it does not read, or whose projected topology does
+not validate, with `record.undecoded`.
+
 ## 4. Geometry
 
 Primary partition node indices identify bodies, regions, shells, faces,
@@ -72,7 +86,9 @@ the partition. Topology ownership and carrier fields use the Parasolid
 schema named in the binary header. Kernel model-space lengths are in metres.
 Direction vectors are dimensionless. A line's distance
 parameter has the model-space length unit. A body's `res_linear` field is
-its positive linear resolution in metres.
+its positive linear resolution in metres. The part's linear and angular
+tolerances follow [`parasolid.md`](parasolid.md) §4 over
+the bodies of every primary partition.
 
 A REGION node has a `type` character, `S` for a solid region or `V` for a
 void region, a `body` pointer, and a `shell` pointer that heads the region's
@@ -94,6 +110,19 @@ carry the edge's topology.
 A FACE whose `loop` pointer is null on a plane, cylinder, or cone states no
 boundary. The face is stated partial with the loss
 `topology.face-boundary-unstated`.
+
+The decoder gives up a face that states no orientation, and a face whose loop
+chain names a node that does not resolve or repeats a loop. The loss of the
+face lists as dropped its loops and their fins. The decoder gives up a loop
+that it cannot read, such as a loop whose fins do not form a ring or a loop
+that uses an edge that it cannot read. The loss of the loop lists as dropped
+its fins, its face, and the other loops of that face with their fins. These
+give-ups charge `record.unreadable`. A loop that uses a vertexless edge with a
+null `curve` whose fins state no SP-curve, and a vertexless edge whose
+SP-curve does not sample to a model-space carrier, give up with
+`record.undecoded`. When the node framing of the partition stops before its
+terminator, a face or loop give-up whose defect is a reference to a node that
+does not resolve charges `record.undecoded`: the node can lie past the stop.
 
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along

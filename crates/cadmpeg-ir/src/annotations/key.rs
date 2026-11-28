@@ -7,6 +7,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::design::ids::{EvaluationId, ProcessStateId};
+use crate::ids::{Identity, NativeId};
 
 /// The separator between a delta record's qualifier and its id.
 const QUALIFIER_SEPARATOR: char = ' ';
@@ -63,17 +64,11 @@ impl AnnotationKey {
     /// The key of `record` in the delta of `qualifier`, an evaluation or a
     /// process state.
     #[must_use]
-    pub fn in_delta(qualifier: &impl Qualifier, record: &str) -> Self {
-        Self::qualified(qualifier.as_qualifier(), record)
+    pub fn in_delta(qualifier: &impl Qualifier, record: &impl AsRef<Identity>) -> Self {
+        Self::qualified(qualifier.as_qualifier(), record.as_ref().as_str())
     }
 
-    /// The key a text states: a text that holds a space is a qualified key,
-    /// and any other text is an entity id.
-    pub(super) fn read(text: String) -> Self {
-        Self(text)
-    }
-
-    fn qualified(qualifier: &str, record: &str) -> Self {
+    pub(super) fn qualified(qualifier: &str, record: &str) -> Self {
         Self(format!("{qualifier}{QUALIFIER_SEPARATOR}{record}"))
     }
 
@@ -119,6 +114,55 @@ impl AnnotationKey {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl From<Identity> for AnnotationKey {
+    /// The key of the top-level entity `id`.
+    fn from(id: Identity) -> Self {
+        Self(id.into_string())
+    }
+}
+
+impl From<&Identity> for AnnotationKey {
+    /// The key of the top-level entity `id`.
+    fn from(id: &Identity) -> Self {
+        Self(id.as_str().to_owned())
+    }
+}
+
+impl From<&NativeId> for AnnotationKey {
+    /// The key of the native record `id`.
+    fn from(id: &NativeId) -> Self {
+        Self(id.as_str().to_owned())
+    }
+}
+
+impl From<&AnnotationKey> for AnnotationKey {
+    fn from(key: &AnnotationKey) -> Self {
+        key.clone()
+    }
+}
+
+/// Builder tests name entities by bare text that no codec mints.
+#[cfg(test)]
+impl From<&str> for AnnotationKey {
+    fn from(key: &str) -> Self {
+        Self(key.to_owned())
+    }
+}
+
+#[cfg(test)]
+impl From<String> for AnnotationKey {
+    fn from(key: String) -> Self {
+        Self(key)
+    }
+}
+
+#[cfg(test)]
+impl From<&String> for AnnotationKey {
+    fn from(key: &String) -> Self {
+        Self(key.clone())
     }
 }
 

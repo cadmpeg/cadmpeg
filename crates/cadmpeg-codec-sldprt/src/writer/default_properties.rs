@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
+use std::rc::Rc;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::Annotations;
 
 use super::Held;
@@ -18,28 +21,91 @@ use crate::metadata::{
 const UNIT_PREFIX: &str = "sldprt:metadata:source_linear_unit_code#";
 const BLOCK_PREFIX: &str = "sldprt:file:block#";
 
+/// The saved-property attributes that the carriers among some retained
+/// records store, as the full decoder reads them, and the source offsets of
+/// those carriers.
+pub(crate) struct StoredProperties {
+    attributes: Rc<crate::metadata::SavedPropertyProjection>,
+    carriers: HashSet<usize>,
+}
+
+type AdmittedMember = (String, String, Sha256Digest);
+
+#[derive(Default)]
+pub(crate) struct PropertyReads {
+    admitted: RefCell<HashSet<AdmittedMember>>,
+    projections: crate::metadata::PropertyReads,
+}
+
+impl PropertyReads {
+    pub(super) fn admit_member(
+        &self,
+        ctx: &DecodeContext<'_>,
+        image: Option<&super::RetainedImage<'_>>,
+        id: &str,
+        stream: &str,
+        payload: &[u8],
+    ) -> Result<(), CodecError> {
+        if image.is_some_and(|image| image.has_member(id, stream, payload)) {
+            return Ok(());
+        }
+        let key = (
+            id.to_owned(),
+            stream.to_owned(),
+            Sha256Digest::digest(payload),
+        );
+        let mut admitted = self.admitted.borrow_mut();
+        if !admitted.contains(&key) {
+            ctx.charge_input(
+                u64_from_index(payload.len()),
+                "SLDPRT retained member payload",
+            )?;
+            admitted.insert(key);
+        }
+        Ok(())
+    }
+
+    pub(super) fn read(
+        &self,
+        records: &[crate::SourceRecord<'_>],
+        annotations: &Annotations,
+        image: Option<&super::RetainedImage<'_>>,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<StoredProperties, CodecError> {
+        let scan = carrier_scan(records, annotations);
+        let arena = DecodeArena::new();
+        let attributes = ctx.with_arena(&arena, |ctx| {
+            for block in &scan.blocks {
+                let member = Section::Block(block);
+                self.admit_member(
+                    ctx,
+                    image,
+                    member.native_id().as_str(),
+                    member.source_stream().as_str(),
+                    member.payload(),
+                )?;
+            }
+            let projections = image.map_or(&self.projections, |image| &image.properties);
+            projections.read(ctx, &scan)
+        })?;
+        Ok(StoredProperties {
+            attributes,
+            carriers: scan.blocks.iter().map(|block| block.offset).collect(),
+        })
+    }
+}
+
 /// Each saved-property attribute the write does not write as the document
 /// states it, and what the output holds for it. No serializer writes a saved
 /// property: `opaque_blocks` emits each carrier block the source fidelity
 /// holds bytes of as stored, so the output holds the properties a decode
-/// reads from those bytes.
-pub(super) fn unwritten(
-    ir: &CadIr,
-    records: &[crate::SourceRecord<'_>],
-    annotations: &Annotations,
-) -> Result<BTreeMap<String, Held>, CodecError> {
-    let scan = carrier_scan(records, annotations);
-    let input = scan.blocks.iter().map(|block| block.payload.len()).sum();
-    let arena = DecodeArena::new();
-    let ctx =
-        DecodeContext::for_loaded_input(&arena, &DecodePolicy::desktop(), u64_from_index(input))?;
-    let stored = crate::metadata::saved_property_rows(&ctx, &scan)?;
-    let carriers = scan
-        .blocks
-        .iter()
-        .map(|block| block.offset)
-        .collect::<HashSet<_>>();
-    Ok(changed(&ir.model.attributes, &stored, &carriers))
+/// reads from those bytes, `stored`.
+pub(super) fn unwritten(ir: &CadIr, stored: &StoredProperties) -> BTreeMap<String, Held> {
+    changed(
+        &ir.model.attributes,
+        &stored.attributes.rows,
+        &stored.carriers,
+    )
 }
 
 /// The saved-property carriers among `records`: each retained block with

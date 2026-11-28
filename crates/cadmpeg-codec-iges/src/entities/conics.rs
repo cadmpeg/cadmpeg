@@ -3,7 +3,8 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use super::push_geometry_loss;
+use super::{push_geometry_loss, push_geometry_loss_needing};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -35,7 +36,7 @@ fn admit_conic<T>(
     match result {
         Ok(value) => Some(value),
         Err(message) => {
-            push_geometry_loss(losses, entry, format_args!("{message}"));
+            push_geometry_loss(losses, entry, Cause::Undecoded, format_args!("{message}"));
             None
         }
     }
@@ -159,6 +160,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -174,6 +176,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("conic coefficients or endpoints are invalid"),
             );
             continue;
@@ -198,6 +201,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic axes or center are not in the required standard position"),
             );
             continue;
@@ -214,7 +218,13 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    message.cause(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -230,6 +240,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic placement collapses the x axis"),
             );
             continue;
@@ -246,6 +257,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic placement collapses the y axis"),
             );
             continue;
@@ -254,6 +266,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic placement produces non-orthogonal principal axes"),
             );
             continue;
@@ -267,6 +280,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic placement collapses its plane"),
             );
             continue;
@@ -276,6 +290,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -288,6 +303,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -300,6 +316,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -476,6 +493,7 @@ pub(super) fn project(
                 push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("parabola focal distance is not representable"),
                 );
                 continue;
@@ -499,6 +517,7 @@ pub(super) fn project(
                 push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("parabola endpoint parameter is not representable"),
                 );
                 continue;
@@ -544,6 +563,7 @@ pub(super) fn project(
                 push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("parabola focal distance is not representable"),
                 );
                 continue;
@@ -567,6 +587,7 @@ pub(super) fn project(
                 push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("parabola endpoint parameter is not representable"),
                 );
                 continue;
@@ -605,6 +626,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "standard-position coefficients do not define a nondegenerate conic arc"
                 ),
@@ -618,6 +640,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic start point cannot be evaluated"),
             );
             continue;
@@ -629,6 +652,7 @@ pub(super) fn project(
             push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("conic terminate point cannot be evaluated"),
             );
             continue;
@@ -637,11 +661,11 @@ pub(super) fn project(
         // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
         if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start.get(), resolution) {
-            push_geometry_loss(&mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"));
+            push_geometry_loss(&mut losses, entry, Cause::Undecoded, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"));
             continue;
         }
         if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end.get(), resolution) {
-            push_geometry_loss(&mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"));
+            push_geometry_loss(&mut losses, entry, Cause::Undecoded, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"));
             continue;
         }
         let tolerance = if resolution > 0.0 {
@@ -649,6 +673,7 @@ pub(super) fn project(
                 push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("conic tolerance must be finite"),
                 );
                 continue;
@@ -673,7 +698,12 @@ pub(super) fn project(
             Ok(edge) => edge,
             Err(error) => {
                 let message = super::non_resource_error(error)?;
-                push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    Cause::Undecoded,
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };

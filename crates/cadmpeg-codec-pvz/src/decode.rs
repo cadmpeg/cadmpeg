@@ -18,13 +18,12 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, SourceMeta, Topology};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{BodyId, Identity};
-use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
-use crate::loss::PvzLossCode;
+use crate::loss::{give_up_cause, PvzLossCode};
 use crate::ol::PackageResidue;
 use crate::package::Package;
 use crate::pvs::Structure;
@@ -32,7 +31,7 @@ use crate::pvs::Structure;
 /// Source attribute naming the structure member.
 const ATTRIBUTE_STRUCTURE_MEMBER: &str = "structure_member";
 /// Most occurrences one package decodes to.
-const MAX_OCCURRENCES: usize = 100_000;
+pub(crate) const MAX_OCCURRENCES: usize = 100_000;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let package = Package::open(ctx, root)?;
@@ -55,8 +54,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let mut annotations = Annotations::default();
     let mut given_up = Vec::new();
     if !ctx.container_only() {
-        match ctx.run_part(|| crate::pvs::read(ctx, structure_member))? {
-            Ok(structure) => {
+        match ctx.run_part(|| crate::pvs::read(ctx, package.structure_name(), structure_member))? {
+            Ok(mut structure) => {
+                given_up.append(&mut structure.given_up);
                 geometry_transferred = decode_model(
                     ctx,
                     &package,
@@ -80,7 +80,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                      geometry members was placed",
                     package.geometry_names().len()
                 ));
-                given_up.push(ctx.give_up_part(part, error)?);
+                given_up.push(ctx.give_up_part(part, give_up_cause(&error), error)?);
             }
         }
     }
@@ -105,7 +105,7 @@ fn give_up_member(
     ctx: &DecodeContext<'_>,
     package: &Package<'_>,
     name: &str,
-    owner: Option<&ProductDefinition>,
+    owner: Option<Identity>,
     error: CodecError,
 ) -> Result<GivenUpPart, CodecError> {
     let mut part = Part::new(
@@ -116,9 +116,16 @@ fn give_up_member(
     )
     .named(name);
     if let Some(owner) = owner {
-        part = part.contained_in(Identity::from(owner.id.clone()));
+        part = part.contained_in(owner);
     }
-    ctx.give_up_part(part, error)
+    ctx.give_up_part(part, give_up_cause(&error), error)
+}
+
+/// One expanded geometry member and its name in the package.
+#[derive(Clone, Copy)]
+struct MemberView<'n, 'm> {
+    name: &'n str,
+    view: View<'m>,
 }
 
 /// Decodes the product structure and the geometry members it names.
@@ -157,22 +164,38 @@ fn decode_model(
         }
         let decoded = ctx.run_part(|| {
             let member = package.member(ctx, name)?;
-            crate::ol::decode(ctx, member).map(|geometry| (member, geometry))
+            crate::ol::decode(ctx, name, member).map(|geometry| (member, geometry))
         })?;
-        let (member, geometry) = match decoded {
+        let owner = owners
+            .get(name)
+            .and_then(|indices| indices.first())
+            .and_then(|index| ir.model.product_definitions.get(*index))
+            .map(|definition| Identity::from(definition.id.clone()));
+        let (member, mut geometry) = match decoded {
             Ok(decoded) => decoded,
             Err(error) => {
-                let owner = owners
-                    .get(name)
-                    .and_then(|indices| indices.first())
-                    .and_then(|index| ir.model.product_definitions.get(*index));
                 given_up.push(give_up_member(ctx, package, name, owner, error)?);
                 continue;
             }
         };
+        for part in geometry.given_up.drain(..) {
+            given_up.push(match &owner {
+                Some(owner) => part.contained_in(owner.clone()),
+                None => part,
+            });
+        }
         residue.absorb(name, &geometry.residue);
         let exact = if geometry.has_exact {
-            exact_geometry(ctx, name, member, ir, annotations, losses)?
+            let member = MemberView { name, view: member };
+            exact_geometry(
+                ctx,
+                member,
+                owner.as_ref(),
+                ir,
+                annotations,
+                losses,
+                given_up,
+            )?
         } else {
             Vec::new()
         };
@@ -228,52 +251,65 @@ fn decode_model(
 }
 
 /// Writes the neutral B-rep of the exact-geometry stream (§8) of geometry
-/// member `name` into `ir` and returns its bodies, the solid body first; a
-/// stream without a bounded face has none. A stream that does not decode
-/// adds nothing to `ir` and reports a loss; the member keeps its
-/// tessellation.
+/// member `member` into `ir` and returns its bodies, the solid body first; a
+/// stream without a bounded face has none. A stored stream that does not
+/// decode is given up as a part, linked to `owner`, and adds nothing to
+/// `ir`; the member keeps its tessellation.
 fn exact_geometry(
     ctx: &DecodeContext<'_>,
-    name: &str,
-    member: View<'_>,
+    member: MemberView<'_, '_>,
+    owner: Option<&Identity>,
     ir: &mut CadIr,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Vec<BodyId>, CodecError> {
-    let exact = match crate::ol::exact_stream(ctx, member) {
-        Ok(Some(exact)) => exact,
-        Ok(None) => return Ok(Vec::new()),
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => {
-            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-                "geometry member {name:?}: the exact-geometry stream was not expanded ({error}); \
-                 the member keeps its tessellation"
-            )));
-            return Ok(Vec::new());
+    let name = member.name;
+    let mut streams = crate::ol::stored_exact_streams(ctx, member.view)?;
+    if streams.len() > 1 {
+        let count = streams.len();
+        for stream in streams {
+            let mut part = crate::ol::stream_part(name, member.view, stream.stored);
+            if let Some(owner) = owner {
+                part = part.contained_in(owner.clone());
+            }
+            given_up.push(ctx.give_up_part(
+                part,
+                Cause::Undecoded,
+                CodecError::malformed(format_args!(
+                    "the geometry member carries {count} exact-geometry streams, and the decode \
+                     takes none of them as its B-rep; the member keeps its tessellation"
+                )),
+            )?);
         }
+        return Ok(Vec::new());
+    }
+    let Some(stored) = streams.pop() else {
+        return Ok(Vec::new());
     };
+    let stream_id = stored.stream_id;
     let mut geometry = Topology::default();
     let mut builder = AnnotationBuilder::new();
     let mut notes = Vec::new();
     let stream = StreamHandle::new(
-        cadmpeg_ir::stream_name!("pvz:")
-            .with_suffix(format_args!("{name}#{:#010x}", exact.stream_id)),
+        cadmpeg_ir::stream_name!("pvz:").with_suffix(format_args!("{name}#{stream_id:#010x}")),
     );
-    let emitted =
-        crate::brep::parse(ctx, exact.stream_id, exact.payload).and_then(|stream_model| {
-            crate::brep::emit(
-                ctx,
-                &stream_model,
-                &crate::ids::member_scope(name),
-                &mut crate::brep::emit::Sink {
-                    geometry: &mut geometry,
-                    annotations: &mut builder,
-                    losses: &mut notes,
-                    stream: &stream,
-                    member: name,
-                },
-            )
-        });
+    let emitted = ctx.run_part(|| {
+        let payload = crate::gzip::expand(ctx, stored.stored)?;
+        let stream_model = crate::brep::parse(ctx, stream_id, payload)?;
+        crate::brep::emit(
+            ctx,
+            &stream_model,
+            &crate::ids::member_scope(name),
+            &mut crate::brep::emit::Sink {
+                geometry: &mut geometry,
+                annotations: &mut builder,
+                losses: &mut notes,
+                stream: &stream,
+                member: name,
+            },
+        )
+    })?;
     match emitted {
         Ok(bodies) => {
             ir.geometry.extend_rewritten(geometry, &mut Unchanged)?;
@@ -281,13 +317,19 @@ fn exact_geometry(
             losses.extend(notes);
             Ok(bodies)
         }
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-                "geometry member {name:?}: exact-geometry stream {:#010x} did not decode into \
-                 B-rep ({error}); the member keeps its tessellation",
-                exact.stream_id
-            )));
+            let mut part = crate::ol::stream_part(name, member.view, stored.stored);
+            if let Some(owner) = owner {
+                part = part.contained_in(owner.clone());
+            }
+            given_up.push(ctx.give_up_part(
+                part,
+                give_up_cause(&error),
+                CodecError::malformed(format_args!(
+                    "the exact-geometry stream did not decode into B-rep: {error}; the member \
+                     keeps its tessellation"
+                )),
+            )?);
             Ok(Vec::new())
         }
     }

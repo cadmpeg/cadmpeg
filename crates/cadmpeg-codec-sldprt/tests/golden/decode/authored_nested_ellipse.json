@@ -2,19 +2,157 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
-      "containers": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#768:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#768:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "position": 0,
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "sldprt:model:container#sketches",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "sldprt:model:sketch#348:0:0"
+            }
+          },
+          "id": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0",
+          "name": "feature input elliptical sketch"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#768:0",
+          "current": [],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "sldprt:model:container#sketches"
+          ],
+          "unproduced": [
+            "sldprt:brep:body#900"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_entities": [
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "ellipse",
+              "value": {
+                "center": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "major": [
+                  6.123233995736766e-17,
+                  1.0
+                ],
+                "radii": [
+                  2000.0,
+                  1000.0
+                ]
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:0",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:edge#40",
+          "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "sldprt:model:sketch#348:0:0",
+          "name": "feature input elliptical sketch",
+          "native_options": {},
+          "native_ref": "sldprt:feature-input:resolved-features#348",
+          "owner": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "current"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -223,6 +361,7 @@
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
           "instance_bodies": [],
+          "kind": "part",
           "occurrences": [],
           "representations": [],
           "storage": {
@@ -506,8 +645,8 @@
       }
     },
     "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
+      "angular": 1e-11,
+      "linear": 0.00001
     },
     "units": {
       "angle": "radian",
@@ -753,6 +892,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "fd1820988138c1b65aece5688a24742971f3cc06c4f02e8b8f71753a184b0af6",
       "sldprt_native_history_sha256": "ebee8efde4e04f88ea862060dd9e941c483e61a595eb18cc2dff9f3d43d543e8",
       "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

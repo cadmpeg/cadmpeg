@@ -24,6 +24,19 @@
               "kind": "end"
             }
           }
+        },
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Parameters"
+              }
+            ]
+          }
         }
       ],
       "evaluations": [
@@ -1376,6 +1389,17 @@
         {
           "definition": {
             "operation": {
+              "kind": "spreadsheet",
+              "value": "fcstd:design:spreadsheet#Parameters"
+            }
+          },
+          "id": "fcstd:design:feature#Parameters",
+          "name": "Parameters",
+          "native_ref": "fcstd:native:object#Parameters"
+        },
+        {
+          "definition": {
+            "operation": {
               "kind": "unresolved",
               "value": {
                 "family": "sketch"
@@ -1393,17 +1417,18 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
+                "measures": [],
+                "refs": [
                   {
-                    "kind": "text",
-                    "value": "Parameters.plate_w / 2"
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Parameters:cell:B1"
+                    }
                   }
-                ]
+                ],
+                "text": "$0 / 2"
               }
             }
           },
@@ -1424,6 +1449,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1460,6 +1486,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1471,17 +1498,83 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
+                "measures": [],
+                "refs": [],
+                "text": "\"plate_w\""
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:A1",
+          "kind": {
+            "kind": "text"
+          },
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "plate_w"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:B1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "plate_w",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [
                   {
-                    "kind": "text",
-                    "value": "Parameters.plate_w"
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Parameters:cell:B1"
+                    }
                   }
-                ]
+                ],
+                "text": "$0"
               }
             }
           },
@@ -1502,6 +1595,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1538,6 +1632,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1571,7 +1666,8 @@
           "definition": "fcstd:model:product_definition#document:root",
           "occurrences": {},
           "roots": [
-            "fcstd:design:container#Body"
+            "fcstd:design:container#Body",
+            "fcstd:design:container#document:group"
           ],
           "unproduced": []
         }
@@ -1583,7 +1679,25 @@
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": []
+      "spreadsheets": [
+        {
+          "cells": [
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
+            }
+          ],
+          "column_widths": [],
+          "id": "fcstd:design:spreadsheet#Parameters",
+          "merged_ranges": [],
+          "native_ref": "fcstd:native:object#Parameters",
+          "row_heights": []
+        }
+      ]
     },
     "fragment": false,
     "geometry": {

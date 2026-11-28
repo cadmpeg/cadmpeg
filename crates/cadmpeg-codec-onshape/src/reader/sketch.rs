@@ -7,8 +7,9 @@ const EPS_FRAME_ROUNDOFF: f64 = 64.0 * f64::EPSILON;
 use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::Report;
 use super::{
@@ -406,6 +407,18 @@ pub(super) fn map(
         }
         let clockwise =
             super::boolean_field(entity.get("geometry").unwrap_or(&Value::Null), "clockwise")?;
+        let stored = |key: &str| {
+            entity
+                .get(key)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        };
+        // A clockwise arc runs counterclockwise from Onshape's end point.
+        let endpoint_refs = match (stored("startPointId"), stored("endPointId")) {
+            (Some(start), Some(end)) if clockwise => vec![end, start],
+            (Some(start), Some(end)) => vec![start, end],
+            _ => Vec::new(),
+        };
         for (key, kind) in [
             ("startPointId", if clockwise { "end" } else { "start" }),
             ("endPointId", if clockwise { "start" } else { "end" }),
@@ -430,7 +443,7 @@ pub(super) fn map(
         push(
             &mut model.sketch_entities,
             json!({"id": entity_id, "sketch": sketch_id,
-            "endpoint_refs": [], "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
+            "endpoint_refs": endpoint_refs, "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
                 json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
                 Ok(geometry)
             }) {
@@ -693,7 +706,7 @@ fn constraint_row(
                     Err(reason)
                 }
             })?;
-            let value = quantity(dimension, kind == "ANGLE", model, unresolved)?;
+            let value = quantity(dimension, kind == "ANGLE", model, unresolved).ok();
             let pid = id(
                 "parameter",
                 &format!("{native}/{}", text(constraint, "entityId")?),
@@ -710,34 +723,28 @@ fn constraint_row(
                         .is_some_and(|scope| scope.as_str() == owner)
                 })
                 .count();
-            let evaluated = dimension
-                .get("expression")
-                .and_then(Value::as_str)
-                .filter(|s| s.contains('#'))
-                .map(|source| {
-                    super::expression::evaluate(
-                        source,
-                        if kind == "ANGLE" {
-                            super::expression::Dimension::Angle
-                        } else {
-                            super::expression::Dimension::Length
-                        },
-                        model,
-                        unresolved,
-                    )
-                })
-                .transpose()?;
-            let expression = evaluated.as_ref().map_or_else(
-                || format!("{value} {}", if kind == "ANGLE" { "rad" } else { "mm" }),
-                |v| v.expression.clone(),
-            );
-            let dependencies = evaluated.map(|v| v.dependencies).unwrap_or_default();
-            push(
-                &mut model.parameters,
-                json!({"id": pid, "owner": owner, "ordinal": ordinal_in_owner, "name": format!("dimension{parameter_ordinal}"),
-                "dependencies": dependencies, "properties": {}, "expression": expression,
-                "value": {"kind": if kind == "ANGLE" { "angle" } else { "length" }, "value": value}}),
+            let stated = super::expression::definition(
+                dimension,
+                if kind == "ANGLE" {
+                    super::expression::Dimension::Angle
+                } else {
+                    super::expression::Dimension::Length
+                },
+                model,
+                unresolved,
             )?;
+            let kind_name = if kind == "ANGLE" { "angle" } else { "length" };
+            let mut properties = stated.properties;
+            if value.is_none() {
+                properties["quantity_kind"] = json!(kind_name);
+            }
+            let mut record = json!({"id": pid, "owner": owner, "ordinal": ordinal_in_owner,
+                "name": format!("dimension{parameter_ordinal}"), "dependencies": stated.dependencies,
+                "properties": properties, "expression": stated.expression});
+            if let Some(value) = value {
+                record["value"] = json!({"kind":kind_name,"value":value});
+            }
+            push(&mut model.parameters, record)?;
             match kind {
                 "LENGTH" => {
                     json!({"kind": "distance", "entities": [entity("localFirst")?], "parameter": pid})

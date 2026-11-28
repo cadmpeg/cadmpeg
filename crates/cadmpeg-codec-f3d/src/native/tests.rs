@@ -3,7 +3,6 @@
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -114,7 +113,11 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
         )
         .unwrap(),
     );
-    let error = crate::native::F3dNative::load(&namespace).unwrap_err();
+    let error = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &namespace,
+    )
+    .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("f3d:native:bulletin#1"));
     assert!(message.contains("f3d:native:missing-state#1"));
@@ -147,7 +150,11 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         )
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
-    let typed = crate::native::F3dNative::load(original).unwrap();
+    let typed = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        original,
+    )
+    .unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
@@ -155,7 +162,14 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             &mut round_trip,
         )
         .unwrap();
-    assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
+    assert_eq!(
+        typed,
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &round_trip
+        )
+        .unwrap()
+    );
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas().get(*name),
@@ -219,7 +233,7 @@ fn diff_reports_design_material_assignment_changes() {
         .get_mut("design_material_assignments")
         .unwrap()[0];
     let mut assignment_fields = assignment.fields().unwrap().clone();
-    assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
+    assignment_fields.insert("entity_suffix".into(), cadmpeg_core::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
         assignment_fields,
@@ -581,7 +595,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         }];
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("source-less embedded use curves");
     let generated = F3dCodec
@@ -859,7 +873,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first spring encode");
     let round_trip = F3dCodec
@@ -925,7 +939,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first parametric encode");
     let round_trip = F3dCodec
@@ -1005,7 +1019,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first surface-offset encode");
     let round_trip = F3dCodec
@@ -1382,33 +1396,137 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("an inconsistent cage must not fail the document decode");
     assert!(result.ir().geometry.subds.is_empty());
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("T-spline control cage not decoded")));
+    // TS-07: the cage failure taxonomy is open, so the entry gives up as a
+    // form the decoder has no reading for.
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::unknown::part::record_undecoded_kind()
+        && loss.message.contains("T-spline control cage not decoded")));
+}
+
+const MALFORMED_PARAMESH: &str =
+    "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
+
+fn malformed_paramesh_archive() -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(MALFORMED_PARAMESH, stored).unwrap();
+    zip.write_all(b"not a paramesh container").unwrap();
+    zip.finish().unwrap().into_inner()
 }
 
 #[test]
 fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+    let entry = MALFORMED_PARAMESH;
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(malformed_paramesh_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect("independent malformed mesh entry must not abort document decode");
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [unreadable] = unreadable.as_slice() else {
+        panic!("one given-up archive entry for the container: {unreadable:?}");
+    };
+    assert_eq!(unreadable.severity, Severity::Error);
+    assert!(
+        unreadable.message.starts_with(&format!(
+            "part {} {entry:?} stream=\"\" offset=",
+            crate::container::ENTRY_PART
+        )),
+        "{}",
+        unreadable.message
+    );
+    assert!(
+        unreadable
+            .message
+            .contains("paramesh container has no magic"),
+        "{}",
+        unreadable.message
+    );
+    // §3.3: the given-up container is the one loss of its failure.
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::MeshContainerUndecoded.kind()));
+}
+
+#[test]
+fn strict_decode_refuses_a_malformed_paramesh_through_record_unreadable() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = F3dCodec
+        .decode(&mut Cursor::new(malformed_paramesh_archive()), &options)
+        .expect_err("a pinned decode refuses the given-up mesh container");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(&format!(
+            "part {} {MALFORMED_PARAMESH:?} ",
+            crate::container::ENTRY_PART
+        )),
+        "{}",
+        rejection.loss().message
+    );
+}
+
+/// f3d.md §1.1.2: a container that declares a version other than 2 is a
+/// container generation the decoder has no reading for. A pinned decode
+/// keeps the document and the entry's one `record.undecoded` loss.
+#[test]
+fn a_pinned_decode_keeps_a_paramesh_container_of_another_version() {
+    const ENTRY: &str = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/later.paramesh";
+    let mut container = crate::paramesh::MAGIC.to_vec();
+    container.extend_from_slice(&3_u32.to_le_bytes());
+    container.extend_from_slice(&[0; 48]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
-    let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
-    zip.start_file(entry, stored).unwrap();
-    zip.write_all(b"not a paramesh container").unwrap();
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&container).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("independent malformed mesh entry must not abort document decode");
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::MeshContainerUndecoded.kind()
-            && loss.severity == Severity::Error
-            && loss.message.contains(entry)
-            && loss.message.contains("paramesh container has no magic")
-    }));
+        .decode(&mut Cursor::new(archive), &options)
+        .expect("a pinned decode keeps a container of another version");
+    let given_up = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up for the container: {given_up:?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message
+            .starts_with(&format!("part {} {ENTRY:?} ", crate::container::ENTRY_PART)),
+        "{}",
+        loss.message
+    );
+    assert!(
+        loss.message
+            .contains("paramesh container declares an unknown version"),
+        "{}",
+        loss.message
+    );
 }
 
 #[test]
@@ -1421,8 +1539,9 @@ fn oversized_zip_entry_declaration_is_given_up_before_allocation() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("a Part refusal refuses no file");
     assert!(decoded.ir().geometry.bodies.is_empty());
+    // §4: a decoder bound refuses the entry, so the give-up is undecoded.
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.to_string() == "decode/record.unreadable"
+        loss.code.to_string() == "decode/record.undecoded"
             && loss.message.starts_with(
                 "part archive-entry \"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\"",
             )
@@ -1456,6 +1575,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
         &protein,
         &std::collections::BTreeMap::new(),
         &mut Vec::new(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));
@@ -1661,4 +1781,25 @@ fn canonical_asm_change_and_history_record_fast_paths_match_serde() {
         let parsed = super::try_parse_canonical_asm_history_record(&json).unwrap();
         assert_eq!(&parsed, record);
     }
+}
+
+/// Geometry-stating Design records count toward the design's content; an empty
+/// native store, and parameters with their scope, owner and companion, state none.
+#[test]
+fn geometry_record_count_counts_geometry_records_only() {
+    use crate::test_support::parameter_machinery::{parameter_machinery_native, record_header};
+
+    assert_eq!(
+        crate::native::F3dNative::default().geometry_record_count(),
+        0
+    );
+    let mut native = parameter_machinery_native();
+    assert_eq!(native.geometry_record_count(), 0);
+
+    native.design_record_headers.push(record_header(20, "300"));
+    assert_eq!(native.geometry_record_count(), 1);
+    native
+        .sketch_texts
+        .push(crate::test_support::sketch_text::neutral_text_record());
+    assert_eq!(native.geometry_record_count(), 2);
 }

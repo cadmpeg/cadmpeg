@@ -155,11 +155,18 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .iter()
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        // The structural fixture has no `RSeDb` stream and no segment, so it
-        // declares neither version this codec gates on and is admitted
-        // unverified.
-        [InventorLossCode::SourceDialectUnverified.kind()]
+        [
+            InventorLossCode::SourceDialectUnverified.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
+    // The fixture declares no database dialect and has an empty registry stream.
+    assert!(container_only.report().losses[1]
+        .message
+        .contains("RSeSegInfo"));
+    assert!(container_only.report().losses[1]
+        .message
+        .contains("segment count"));
     let namespace = container_only
         .ir()
         .native
@@ -174,10 +181,14 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             crate::native::SegmentBulkFrame::Unavailable { .. }
         )
     }));
-    assert!(container_only
-        .source_fidelity()
-        .retained_records()
-        .is_empty());
+    let retained = container_only.source_fidelity().retained_records();
+    assert_eq!(retained.len(), 1);
+    let registry = retained
+        .values()
+        .next()
+        .expect("the given-up registry source");
+    assert_eq!(registry.stream(), "inventor:RSeStorage/RSeSegInfo");
+    assert_eq!(registry.byte_len(), 0);
 }
 
 #[test]
@@ -623,7 +634,7 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
 }
 
 #[test]
-fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
+fn an_undecoded_kernel_carrier_is_given_up_as_untyped_model_content() {
     let marks = |kernel: &[u8]| {
         let bytes = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), kernel);
         let (_, _, fidelity) = InventorCodec
@@ -643,11 +654,49 @@ fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
     };
     let sphere = acis_sphere_kernel_stream(21_800);
     assert!(marks(&sphere).is_empty());
-    assert_eq!(
-        marks(&sphere[..sphere.len() / 2]),
-        [(
-            "inventor:kernel:carrier#seg-0".to_owned(),
-            vec![cadmpeg_core::decode::ArenaClass::Model]
-        )]
-    );
+    let given_up = marks(&sphere[..sphere.len() / 2]);
+    assert_eq!(given_up.len(), 1);
+    assert!(given_up[0].0.starts_with("inventor:source:part#"));
+    assert_eq!(given_up[0].1, [cadmpeg_core::decode::ArenaClass::Model]);
+}
+
+#[test]
+fn a_bound_colour_reaches_the_faces_of_the_current_geometry_and_of_each_state() {
+    use cadmpeg_ir::topology::{Color, Face};
+    let face = |id: &str| -> Face {
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+            "id": id, "shell": "inventor:brep:entity#1", "surface": "inventor:brep:entity#2",
+            "sense": "forward", "loops": {"kind": "unspecified", "loops": []},
+        }))
+        .expect("face")
+    };
+    let topology = |ids: &[&str]| cadmpeg_ir::document::Topology {
+        faces: ids.iter().map(|id| face(id)).collect(),
+        ..Default::default()
+    };
+    let red = Color::new(1.0, 0.0, 0.0, 1.0).expect("red");
+    let blue = Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    let mut geometry = topology(&["inventor:brep:entity#30"]);
+    let mut states = std::collections::BTreeMap::from([(
+        4,
+        crate::feature::history_bodies::StateRecords {
+            geometry: topology(&["inventor:brep:entity#30", "inventor:brep:entity#31"]),
+            ..Default::default()
+        },
+    )]);
+    states.get_mut(&4).expect("state").geometry.faces[1].color = Some(blue);
+    let colours = std::collections::HashMap::from([
+        (face("inventor:brep:entity#30").id, red),
+        (face("inventor:brep:entity#31").id, red),
+    ]);
+    super::colour_faces(&mut geometry, &mut states, &colours);
+    let colours_of = |topology: &cadmpeg_ir::document::Topology| {
+        topology
+            .faces
+            .iter()
+            .map(|face| face.color)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(colours_of(&geometry), [Some(red)]);
+    assert_eq!(colours_of(&states[&4].geometry), [Some(red), Some(blue)]);
 }

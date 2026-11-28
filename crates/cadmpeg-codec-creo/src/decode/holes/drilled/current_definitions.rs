@@ -31,16 +31,10 @@ fn first_entry(data: &[u8], at: usize) -> Option<(usize, u32, usize)> {
 }
 
 fn entry_range(data: &[u8], key: u32, entry_limit: usize) -> Option<Range<usize>> {
-    let array = exactly_one(
-        data.windows(ARRAY.len())
-            .enumerate()
-            .filter_map(|(at, bytes)| (bytes == ARRAY).then_some(at)),
-    )?;
+    let array = cadmpeg_core::bytes::find(data, ARRAY)
+        .filter(|&first| cadmpeg_core::bytes::find_from(data, ARRAY, first + 1).is_none())?;
     let after_name = array + ARRAY.len();
-    let end = data[after_name..]
-        .windows(NEXT_ARRAY.len())
-        .position(|bytes| bytes == NEXT_ARRAY)
-        .map_or(data.len(), |relative| after_name + relative);
+    let end = cadmpeg_core::bytes::find_from(data, NEXT_ARRAY, after_name).unwrap_or(data.len());
     let data = &data[..end];
     let (first_at, first_key, first_end) = first_entry(data, after_name)?;
     let mut entries = vec![(first_at, first_key, first_end, true)];
@@ -73,12 +67,8 @@ fn entry_range(data: &[u8], key: u32, entry_limit: usize) -> Option<Range<usize>
     entries[index].3.then_some(())?;
     let end = entries.get(index + 1).map_or(data.len(), |entry| entry.0);
     let start = entries[index].2;
-    let footer = exactly_one(
-        data[start..end]
-            .windows(ENTRY_END.len())
-            .enumerate()
-            .filter_map(|(offset, bytes)| (bytes == ENTRY_END).then_some(start + offset)),
-    )?;
+    let footer = cadmpeg_core::bytes::find_in(data, ENTRY_END, start, end)
+        .filter(|&first| cadmpeg_core::bytes::find_in(data, ENTRY_END, first + 1, end).is_none())?;
     Some(start..footer + ENTRY_END.len())
 }
 

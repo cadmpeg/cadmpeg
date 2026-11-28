@@ -1006,10 +1006,27 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             )
             .unwrap();
             assert!(decoded.scopes.is_empty());
-            assert_eq!(decoded.losses.len(), 1);
+            assert!(decoded.losses.is_empty(), "{:?}", decoded.losses);
+            // §3.3: the record header through the paired header is the frame
+            // the decoder gives up as a part.
+            let [part] = decoded.given_up.as_slice() else {
+                panic!("one given-up part: {:?}", decoded.given_up);
+            };
             assert_eq!(
-                decoded.losses[0].code,
-                crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()
+                part.kind(),
+                crate::design::decode::record::DESIGN_RECORD_PART
+            );
+            assert!(
+                part.loss().message.starts_with(&format!(
+                    "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=0 length={frame} record={}: ",
+                    part.id()
+                )),
+                "{}",
+                part.loss().message
+            );
+            assert_eq!(
+                part.loss().code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
             );
         });
     }

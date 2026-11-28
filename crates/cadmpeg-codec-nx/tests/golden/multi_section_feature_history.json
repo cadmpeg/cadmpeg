@@ -36,6 +36,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
+            "name": "BLOCK",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
           },
           {
@@ -48,6 +49,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000001-0000000000",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000001-0000000000"
           }
         ],
@@ -513,8 +515,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",

@@ -28,12 +28,12 @@ pub(super) fn set_profiles(ir: &mut CadIr, loops: &[&[(&str, bool)]]) {
         .map(|uses| {
             uses.iter()
                 .map(|(key, reversed)| {
-                    serde_json::json!({"entity": entity(key).as_str(), "reversed": reversed})
+                    cadmpeg_core::json!({"entity": entity(key).as_str(), "reversed": reversed})
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    ir.model.sketches[0].profiles = json::from_value(serde_json::json!(loops)).unwrap();
+    ir.model.sketches[0].profiles = json::from_value(cadmpeg_core::json!(loops)).unwrap();
 }
 
 /// Projects the fixture's design with `outside` read from curve records of
@@ -43,8 +43,9 @@ pub(super) fn project(
     ir: &mut CadIr,
     outside: &HashSet<SketchEntityId>,
 ) -> (Extrude, super::super::typed::Typed) {
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -59,11 +60,15 @@ pub(super) fn project(
         &mut timeline,
         &entries,
         &super::super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
+            angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let FeatureOperation::Extrude(extrude) =
         &timeline_feature(&timeline, "Boss").definition.operation
@@ -90,6 +95,7 @@ pub(super) fn project(
     );
     ir.design.features = timeline.features;
     ir.design.parameters = parameters;
+    typed.sketches.restate_coincidences(&mut ir.model);
     ir.design.sketches = std::mem::take(&mut typed.sketches.records);
     ir.design.sketch_entities = std::mem::take(&mut typed.sketches.entities);
     ir.design.sketch_constraints = std::mem::take(&mut typed.sketches.constraints);
@@ -143,8 +149,8 @@ fn an_extrude_picks_its_whole_sketch() {
 fn a_curve_of_state_zero_is_construction() {
     let (mut ir, _) = sketch_and_extrude();
     let mut diagonal = json::to_value(&ir.model.sketch_entities[4]).unwrap();
-    diagonal["id"] = serde_json::json!(entity("diagonal").as_str());
-    diagonal["geometry"]["end"] = serde_json::json!({"u": 50.0, "v": 30.0});
+    diagonal["id"] = cadmpeg_core::json!(entity("diagonal").as_str());
+    diagonal["geometry"]["end"] = cadmpeg_core::json!({"u": 50.0, "v": 30.0});
     ir.model
         .sketch_entities
         .push(json::from_value(diagonal).unwrap());
@@ -192,7 +198,7 @@ fn a_curve_of_state_zero_is_construction() {
 fn add_c_ring(ir: &mut CadIr) {
     let sketch = ir.model.sketches[0].id.as_str().to_owned();
     let arc = |key: &str, radius: f64| {
-        serde_json::json!({"id": entity(key).as_str(), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key).as_str(), "sketch": sketch, "construction": false,
             "endpoint_refs": [], "geometry": {"kind": "arc", "center": {"u": 100.0, "v": 0.0},
             "radius": radius, "start_angle": 0.0, "end_angle": std::f64::consts::PI}})
     };
@@ -209,7 +215,7 @@ fn add_c_ring(ir: &mut CadIr) {
 }
 
 fn line(sketch: &str, key: &str, from: [f64; 2], to: [f64; 2]) -> serde_json::Value {
-    serde_json::json!({"id": entity(key).as_str(), "sketch": sketch, "construction": false,
+    cadmpeg_core::json!({"id": entity(key).as_str(), "sketch": sketch, "construction": false,
         "endpoint_refs": [], "geometry": {"kind": "line",
         "start": {"u": from[0], "v": from[1]}, "end": {"u": to[0], "v": to[1]}}})
 }
@@ -373,4 +379,19 @@ fn an_extrude_whose_sketch_holds_no_profile_curve_is_reported_empty() {
         "{:?}",
         typed.profile_unchecked
     );
+}
+
+pub(crate) fn project_profile(ir: &mut CadIr, outside: &HashSet<SketchEntityId>) -> Extrude {
+    let (extrude, typed) = project(ir, outside);
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
+    assert!(
+        typed.profile_unchecked.is_none(),
+        "{:?}",
+        typed.profile_unchecked
+    );
+    extrude
 }

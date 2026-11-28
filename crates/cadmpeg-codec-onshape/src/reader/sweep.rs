@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::{document::Model, sketches::SketchGeometryDefinition};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::{definition, features, regions, rows, text, topology, Mapping};
@@ -141,7 +142,25 @@ pub(super) fn map(feature: &Value, model: &Model, inputs: &topology::Inputs<'_>)
             return Err(format!("sweep {key} is not supported yet"));
         }
     }
-    let profile = features::profile(feature, "profiles", model, inputs)?;
+    let (profile, path) = operands(feature, "profiles", model, inputs)?;
+    Ok(definition(
+        "sweep",
+        json!({
+            "shape":{"kind":"solid", "op":features::operation(feature)?,
+                "section":{"kind":"profile", "value":profile}, "sections":[]},
+            "path":path,
+            "path_tangent":false, "linearize":false
+        }),
+    ))
+}
+
+pub(super) fn operands(
+    feature: &Value,
+    profile_key: &str,
+    model: &Model,
+    inputs: &topology::Inputs<'_>,
+) -> Mapping<(Value, Value)> {
+    let profile = features::profile(feature, profile_key, model, inputs)?;
     let selected = features::sketch_entities_in_order(
         features::queries(feature, "path")?,
         model,
@@ -150,14 +169,9 @@ pub(super) fn map(feature: &Value, model: &Model, inputs: &topology::Inputs<'_>)
     )?;
     let selection = selected.get("value").ok_or("the sweep path is missing")?;
     let curves = order_path(rows(selection, "entities")?, model)?;
-    Ok(definition(
-        "sweep",
-        json!({
-            "shape":{"kind":"solid", "op":features::operation(feature)?,
-                "section":{"kind":"profile", "value":profile}, "sections":[]},
-            "path":{"kind":"sketch_curves", "value":{"sketch":selection["sketch"], "curves":curves}},
-            "path_tangent":false, "linearize":false
-        }),
+    Ok((
+        profile,
+        json!({"kind":"sketch_curves", "value":{"sketch":selection["sketch"], "curves":curves}}),
     ))
 }
 

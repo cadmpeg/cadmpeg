@@ -1106,6 +1106,16 @@ pub(crate) fn project_assembly_joints_with_paths(
                 if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
                     native_angular_limits += 1;
                 }
+                // A scope with an additional-owner run (versions 4 and 5) whose
+                // joint record has no decoded motion projects with the fixed
+                // fallback; say so even when it has no additional owners.
+                let undecoded = undecoded.or_else(|| {
+                    (motion.is_none()
+                        && scope.assembly_alignment().is_some_and(|alignment| {
+                            alignment.additional_owner_run.is_some()
+                        }))
+                    .then(|| "the joint record's motion is not decoded".to_owned())
+                });
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -1356,6 +1366,12 @@ fn project_assembly_joint(
     let Some(alignment) = scope.assembly_alignment() else {
         return if rigid_as_built_scope(scope) {
             Err(unresolved_rigid_group())
+        } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble {
+            // A joint scope whose tail grammar does not read is a lost joint,
+            // not an unrelated scope.
+            Err(CodecError::NotImplemented(
+                "Assemble scope tail is unresolved".into(),
+            ))
         } else {
             Ok(None)
         };
@@ -2127,6 +2143,7 @@ mod tests {
         };
         let native = json::from_value(json::to_value(native).unwrap()).unwrap();
         crate::writer::primitives::validate_assembly_projection(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &cadmpeg_ir::document::CadIr::empty(),
             Some(&native),
         )
@@ -2246,7 +2263,7 @@ mod tests {
         );
 
         let mut reference: crate::records::xref::XrefReference =
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id":"f3d:xref:reference#0", "ordinal":0,
                 "from":"root.f3d", "relative_path":"part.f3d",
                 "neutron_role":"shared-role", "neutron_data":"",
@@ -2888,16 +2905,16 @@ mod tests {
         let container = |value: serde_json::Value| -> cadmpeg_ir::OperandContainer {
             json::from_value(value).unwrap()
         };
-        let external = container(serde_json::json!({
+        let external = container(cadmpeg_core::json!({
             "kind": "external",
             "external_document": {"document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
         }));
-        let named = container(serde_json::json!({
+        let named = container(cadmpeg_core::json!({
             "kind": "occurrence",
             "occurrence": "f3d:model:occurrence#xref-1-0",
             "occurrence_path": [],
         }));
-        let missing = container(serde_json::json!({
+        let missing = container(cadmpeg_core::json!({
             "kind": "external",
             "external_document": {},
         }));

@@ -198,7 +198,7 @@ pub(crate) fn decode(
         .into());
     };
     if count > MAX_LOOPS {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             count_offset,
             "hatch loop count exceeds cap",
         ));
@@ -268,11 +268,17 @@ pub(crate) fn decode(
     let basepoint = if minor >= 2 {
         let offset = body.position();
         [
-            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            scaled_coordinate(body.req_f64_le()?, scale).map_err(|unscaled| {
+                unscaled.charge(GeometryError::malformed(
+                    offset,
+                    "scaled hatch basepoint is invalid",
+                ))
             })?,
-            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            scaled_coordinate(body.req_f64_le()?, scale).map_err(|unscaled| {
+                unscaled.charge(GeometryError::malformed(
+                    offset,
+                    "scaled hatch basepoint is invalid",
+                ))
             })?,
         ]
     } else {
@@ -444,15 +450,13 @@ fn gradient_point(
 ) -> Result<[FiniteReal; 3], GeometryError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    let [Some(x), Some(y), Some(z)] =
-        values.map(|value| crate::wire::scaled_coordinate(value, scale))
-    else {
-        return Err(GeometryError::malformed(
-            offset,
-            format!("{label} is invalid"),
-        ));
-    };
-    Ok([x, y, z])
+    let invalid = || GeometryError::malformed(offset, format!("{label} is invalid"));
+    let [x, y, z] = values.map(|value| crate::wire::scaled_coordinate(value, scale));
+    Ok([
+        x.map_err(|unscaled| unscaled.charge(invalid()))?,
+        y.map_err(|unscaled| unscaled.charge(invalid()))?,
+        z.map_err(|unscaled| unscaled.charge(invalid()))?,
+    ])
 }
 
 #[derive(serde::Serialize)]
@@ -504,18 +508,24 @@ fn parse_userdata(
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             payload.body().start,
             "unsupported V5 hatch-extra version",
         ));
     }
     reader.take(16)?;
     let basepoint = [
-        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        crate::wire::scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 8,
+                "invalid V5 hatch base point",
+            ))
         })?,
-        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        crate::wire::scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 8,
+                "invalid V5 hatch base point",
+            ))
         })?,
     ];
     reader.skip_remaining()?;
@@ -802,7 +812,7 @@ pub(crate) mod tests {
                     .expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");
             assert_eq!(semantic["type_value"], 1);
-            assert_eq!(semantic["start"], serde_json::json!([2.0, 4.0, 6.0]));
+            assert_eq!(semantic["start"], cadmpeg_core::json!([2.0, 4.0, 6.0]));
         });
     }
 

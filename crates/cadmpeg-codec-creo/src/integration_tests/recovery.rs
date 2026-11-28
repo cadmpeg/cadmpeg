@@ -8,6 +8,39 @@ use cadmpeg_ir::Exactness;
 use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
+/// A part whose section `name` holds a compressed payload with an undefined
+/// LZW code, followed by a readable compressed section. Returns the bytes,
+/// the damaged section's offset, and its bytes.
+fn damaged_compressed_part(name: &str) -> (Vec<u8>, usize, Vec<u8>) {
+    compressed_part(name, 5)
+}
+
+/// [`damaged_compressed_part`] with the first section's TOC row declaring
+/// `expanded` expanded bytes.
+fn compressed_part(name: &str, expanded: usize) -> (Vec<u8>, usize, Vec<u8>) {
+    let mut bytes = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
+    let header_base = bytes.len();
+    bytes.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 2 81 17").as_bytes());
+    let mut damaged = format!("#{name}\n").into_bytes();
+    damaged.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x58, 0x02]);
+    // A rejected compressed body must not become a raw PSB input.
+    damaged.extend_from_slice(b"srf_array\0\xf8\x05");
+    let mut readable = b"#SolidPersistTable\n".to_vec();
+    readable.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01]);
+    let first_offset = 3 * 81;
+    let second_offset = first_offset + damaged.len();
+    for row in [
+        format!("{name} {first_offset:x} {:x} {expanded:x}", damaged.len()),
+        format!("SolidPersistTable {second_offset:x} {:x} 3", readable.len()),
+    ] {
+        bytes.extend_from_slice(format!("{row:<80}\n").as_bytes());
+    }
+    assert_eq!(bytes.len(), header_base + first_offset);
+    bytes.extend_from_slice(&damaged);
+    bytes.extend(readable);
+    (bytes, header_base + first_offset, damaged)
+}
+
 #[test]
 fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
     for name in [
@@ -17,45 +50,58 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
         "VisibGeom",
         "DEPDB_DATA",
     ] {
-        let mut bytes = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
-        let header_base = bytes.len();
-        bytes.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 2 81 17").as_bytes());
-        let mut damaged = format!("#{name}\n").into_bytes();
-        damaged.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x58, 0x02]);
-        // A rejected compressed body must not become a raw PSB input.
-        damaged.extend_from_slice(b"srf_array\0\xf8\x05");
-        let mut readable = b"#SolidPersistTable\n".to_vec();
-        readable.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01]);
-        let first_offset = 3 * 81;
-        let second_offset = first_offset + damaged.len();
-        for row in [
-            format!("{name} {first_offset:x} {:x} 5", damaged.len()),
-            format!("SolidPersistTable {second_offset:x} {:x} 3", readable.len()),
-        ] {
-            bytes.extend_from_slice(format!("{row:<80}\n").as_bytes());
-        }
-        assert_eq!(bytes.len(), header_base + first_offset);
-        bytes.extend_from_slice(&damaged);
-        bytes.extend(readable);
+        let (bytes, section_offset, damaged) = damaged_compressed_part(name);
         let decoded = CreoCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("independent section is decoded");
         let decoded = EditableDecodeResult::from(decoded);
-        let losses = decoded
+        assert!(!decoded
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.to_string() == "creo/container.compressed-section-unexpanded")
+            .any(|loss| loss.code.to_string() == "creo/container.compressed-section-unexpanded"));
+        let section = format!("creo:compressed:section#{section_offset}");
+        let charges = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
             .collect::<Vec<_>>();
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("undefined code"));
+        assert_eq!(charges.len(), 1, "{charges:#?}");
+        let message = &charges[0].message;
+        assert!(message.contains("undefined code"), "{message}");
+        assert!(
+            message.starts_with(&format!(
+                "part compressed-section stream=\"\" offset={section_offset} length={} record=creo:source:part#",
+                damaged.len()
+            )),
+            "{message}"
+        );
+        assert!(!message.split_whitespace().any(|token| token == section));
+        let unknowns = decoded
+            .ir()
+            .native_unknowns("creo")
+            .expect("native unknowns");
+        let stub = unknowns
+            .iter()
+            .find(|record| message.contains(&format!(" record={}: ", record.id)))
+            .expect("the charge names its part stub");
+        assert_eq!(
+            stub.links,
+            [cadmpeg_ir::ids::Identity::try_from(section.clone()).expect("section id")]
+        );
+        assert!(decoded
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .is_some_and(|record| record.data().is_none()));
         assert!(decoded
             .source_fidelity()
             .retained_records()
             .values()
-            .any(|record| record.offset()
-                == cadmpeg_core::decode::u64_from_index(header_base + first_offset)
-                && record.data() == Some(damaged.as_slice())));
+            .any(
+                |record| record.offset() == cadmpeg_core::decode::u64_from_index(section_offset)
+                    && record.data() == Some(damaged.as_slice())
+            ));
         let scan = crate::container::scan_bytes_ok(bytes);
         assert_eq!(scan.framing.sections.len(), 2);
         assert_eq!(scan.framing.expanded_sections.len(), 1);
@@ -66,6 +112,66 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
             |loss| loss.code.to_string() == "creo/container.physical-geometry-owner-unresolved"
         ));
     }
+}
+
+#[test]
+fn a_pinned_decode_refuses_an_unexpanded_compressed_section() {
+    let (bytes, section_offset, _) = damaged_compressed_part("VisibGeom");
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect_err("a pinned decode refuses a section it could not expand");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(&format!(
+            "part compressed-section stream=\"\" offset={section_offset} "
+        )),
+        "{}",
+        rejection.loss().message
+    );
+}
+
+/// A section that declares an expansion past the section ceiling is a valid
+/// section the decoder does not expand: one `record.undecoded` gives it up,
+/// and a pinned decode admits it.
+#[test]
+fn a_section_past_the_expansion_ceiling_is_given_up_as_undecoded() {
+    let (bytes, section_offset, _) = compressed_part("VisibGeom", 256 * 1024 * 1024 + 1);
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect("a pinned decode admits a section past the expansion ceiling");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_eq!(
+        charges[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        charges[0].message.starts_with(&format!(
+            "part compressed-section stream=\"\" offset={section_offset} "
+        )),
+        "{}",
+        charges[0].message
+    );
+    assert!(
+        charges[0].message.contains("256 MiB section ceiling"),
+        "{}",
+        charges[0].message
+    );
 }
 
 #[test]
