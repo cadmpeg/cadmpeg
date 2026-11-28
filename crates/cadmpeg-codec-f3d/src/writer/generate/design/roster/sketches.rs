@@ -38,7 +38,7 @@ pub(in crate::writer::generate::design) const CURVE_SECONDARY_IDENTITY: u64 = 0;
 /// The first origin plane record, `XY`; `XZ` and `YZ` follow.
 pub(super) const ORIGIN_PLANES: u32 = 29;
 /// The family name of a `Sketch` scope.
-const FAMILY: &str = "Sketch";
+pub(super) const FAMILY: &str = "Sketch";
 /// The zero GUID of a scope frame.
 pub(super) const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 /// The `EntityGenesis` value of a container, a point and a line.

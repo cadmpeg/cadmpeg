@@ -1256,7 +1256,7 @@ fn number(value: f64, unit: &Unit) -> Option<String> {
 
 /// The v10 value of `value`, a value of a parameter of `kind`: the inverse
 /// of [`cache`].
-fn legacy_value(value: &ParameterValue, kind: &ValueKind) -> Option<LegacyValue> {
+pub(crate) fn legacy_value(value: &ParameterValue, kind: &ValueKind) -> Option<LegacyValue> {
     Some(match value {
         ParameterValue::Number(number) if *kind == ValueKind::Quantity(Quantity::LENGTH) => {
             LegacyValue::Length(Length::new(number.get())?)

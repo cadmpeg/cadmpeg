@@ -289,6 +289,7 @@ pub(crate) fn project(
             scopes: &native.design_parameter_scopes,
             neutral_parameters: &ir.model.parameters,
             neutral_features: &ir.model.features,
+            bindings: None,
         },
     )
     .expect("configuration projection")
@@ -456,6 +457,7 @@ impl Natives {
             scopes: &self.scopes,
             neutral_parameters: &self.neutral_parameters,
             neutral_features: &self.neutral_features,
+            bindings: None,
         }
     }
 }

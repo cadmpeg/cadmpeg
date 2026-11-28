@@ -224,7 +224,7 @@ fn dimensioned(plane: PrincipalEntity, x: [f64; 3], y: [f64; 3]) -> CadIr {
 }
 
 /// The fixture on `XY`.
-fn on_xy() -> CadIr {
+pub(super) fn on_xy() -> CadIr {
     dimensioned(PrincipalEntity::XyPlane, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
 }
 
@@ -1214,4 +1214,71 @@ fn a_failure_in_one_dimension_drops_that_dimension_alone() {
         .parameters
         .iter()
         .any(|parameter| parameter.name == "Gap" && parameter.owner.is_none()));
+}
+
+#[test]
+fn a_driven_parameter_patch_retains_the_dimension_measurement() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::design::parameter::ParameterValue as DesignValue;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let mut source = on_xy();
+    drive(&mut source, "gap");
+    let (_, _, original_bytes) = write_bytes(&source);
+    let decode = |bytes: Vec<u8>| {
+        crate::F3dCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap()
+    };
+    let original = decode(original_bytes);
+    let mut requested = CadIr::from_json(&original.ir().to_canonical_json().unwrap()).unwrap();
+    let gap = requested
+        .design
+        .parameters
+        .iter_mut()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str() == "Gap")
+        })
+        .unwrap();
+    assert!(matches!(gap.definition, ParameterDefinition::Driven));
+    assert_eq!(
+        gap.value,
+        Some(DesignValue::Number(FiniteReal::new(20.0).unwrap()))
+    );
+    gap.value = Some(DesignValue::Number(FiniteReal::new(21.0).unwrap()));
+    let id = gap.id.clone();
+    let (report, bytes) = crate::test_support::configuration_table::written_on(
+        &requested,
+        Some(original.source_fidelity()),
+        &["patched"],
+    );
+    let output = decode(bytes);
+    let gap = output
+        .ir()
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == id)
+        .unwrap();
+    assert!(matches!(gap.definition, ParameterDefinition::Driven));
+    assert_eq!(
+        gap.value,
+        Some(DesignValue::Number(FiniteReal::new(20.0).unwrap()))
+    );
+    let native = crate::test_support::native_fixture::f3d_native(output.ir());
+    let record = native
+        .design_parameters
+        .iter()
+        .find(|record| crate::ids::neutral_parameter_id(record) == id)
+        .unwrap();
+    assert_eq!(record.evaluated_value().get(), 2.1);
+    let charges = loss(&report, "export/value.unwritable");
+    assert!(
+        charges.iter().any(|loss| loss.contains(id.as_str())),
+        "{:#?}",
+        report.losses
+    );
 }

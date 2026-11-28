@@ -384,7 +384,7 @@ pub(crate) fn serializer_magic(bytes: &[u8], stream: &str) -> Result<u32, CodecE
         .map_err(|failure| parse_error(failure, stream))
 }
 
-fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
+fn parse_inner(bytes: &[u8]) -> Result<(MetaStream, [usize; 2]), ParseFailure> {
     // Header: short segment type name, segment id, asset GUID, serializer
     // magic and its magic-gated integer group, full segment type name, add-in
     // name, and the segment type code.
@@ -538,16 +538,46 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             offset: at,
         });
     }
-    Ok(MetaStream {
-        types,
-        records,
-        secondary_records,
-    })
+    Ok((
+        MetaStream {
+            types,
+            records,
+            secondary_records,
+        },
+        [primary_index_at, secondary_index_at],
+    ))
 }
 
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
 pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError> {
-    parse_inner(bytes).map_err(|failure| parse_error(failure, stream))
+    parse_inner(bytes)
+        .map(|(meta, _)| meta)
+        .map_err(|failure| parse_error(failure, stream))
+}
+
+/// Change only the `BulkStream` offset of every indexed record.
+pub(crate) fn relocate_records(
+    bytes: &[u8],
+    stream: &str,
+    bulk_len: usize,
+    relocate: impl Fn(u64) -> Option<u64>,
+) -> Result<Vec<u8>, CodecError> {
+    let (meta, offsets) = parse_inner(bytes).map_err(|failure| parse_error(failure, stream))?;
+    primary_record_frames(&meta, bulk_len)?;
+    let mut out = bytes.to_vec();
+    for (index, records) in offsets
+        .into_iter()
+        .zip([meta.records, meta.secondary_records])
+    {
+        let lanes = out[index + 4..].chunks_exact_mut(16);
+        for (entry, lane) in records.into_iter().zip(lanes) {
+            let offset = relocate(entry.bulk_offset).ok_or_else(|| {
+                CodecError::malformed("F3D Design record offset cannot be relocated")
+            })?;
+            lane[8..].copy_from_slice(&offset.to_le_bytes());
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

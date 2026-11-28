@@ -121,6 +121,13 @@ pub(crate) fn root_document(documents: &[DesignConfiguration], table_id: &str) -
     candidates.is_empty().then_some(index)
 }
 
+#[derive(Default)]
+pub(crate) struct ConfigurationBindings {
+    pub(crate) parameters: BTreeMap<u32, cadmpeg_ir::features::ParameterId>,
+    pub(crate) scoped_parameters: BTreeMap<(String, u32), cadmpeg_ir::features::ParameterId>,
+    pub(crate) features: BTreeMap<u32, cadmpeg_ir::features::FeatureId>,
+}
+
 /// Native and neutral records that configured objects name by indexed-record
 /// index.
 pub(crate) struct ConfigurationTargets<'a> {
@@ -129,6 +136,7 @@ pub(crate) struct ConfigurationTargets<'a> {
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     pub(crate) neutral_parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
     pub(crate) neutral_features: &'a [cadmpeg_ir::features::Feature],
+    pub(crate) bindings: Option<&'a ConfigurationBindings>,
 }
 
 /// The one value that every item repeats.
@@ -145,6 +153,20 @@ impl ConfigurationTargets<'_> {
         record_index: u32,
         stream: Option<&str>,
     ) -> Option<cadmpeg_ir::features::ParameterId> {
+        if let Some(id) = stream.and_then(|stream| {
+            self.bindings?
+                .scoped_parameters
+                .get(&(stream.to_owned(), record_index))
+        }) {
+            return Some(id.clone());
+        }
+        if let Some(id) = self
+            .bindings
+            .filter(|_| stream.is_none())
+            .and_then(|bindings| bindings.parameters.get(&record_index))
+        {
+            return Some(id.clone());
+        }
         let id = unique(
             self.parameters
                 .iter()
@@ -184,6 +206,15 @@ impl ConfigurationTargets<'_> {
         &self,
         scope_record_index: u32,
     ) -> Option<&cadmpeg_ir::features::Feature> {
+        if let Some(id) = self
+            .bindings
+            .and_then(|bindings| bindings.features.get(&scope_record_index))
+        {
+            return self
+                .neutral_features
+                .iter()
+                .find(|feature| &feature.id == id);
+        }
         let id = unique(
             self.scopes
                 .iter()
@@ -202,6 +233,14 @@ impl ConfigurationTargets<'_> {
         &self,
         id: &cadmpeg_ir::features::ParameterId,
     ) -> Option<ColumnTarget> {
+        if let Some(record) = self.bindings.and_then(|bindings| {
+            bindings
+                .parameters
+                .iter()
+                .find_map(|(&record, parameter)| (parameter == id).then_some(record))
+        }) {
+            return Some(ColumnTarget::Parameter(record));
+        }
         let records = self
             .parameters
             .iter()
@@ -239,6 +278,14 @@ impl ConfigurationTargets<'_> {
         &self,
         id: &cadmpeg_ir::features::FeatureId,
     ) -> Option<ColumnTarget> {
+        if let Some(record) = self.bindings.and_then(|bindings| {
+            bindings
+                .features
+                .iter()
+                .find_map(|(&record, feature)| (feature == id).then_some(record))
+        }) {
+            return Some(ColumnTarget::Feature(record));
+        }
         let scopes = self
             .scopes
             .iter()
@@ -503,6 +550,7 @@ pub(crate) fn attach(
                 scopes: &native.design_parameter_scopes,
                 neutral_parameters: &model.parameters,
                 neutral_features: &model.features,
+                bindings: None,
             },
         )
         .map(|projection| projection.configurations),

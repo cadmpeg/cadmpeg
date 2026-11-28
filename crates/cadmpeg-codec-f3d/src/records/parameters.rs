@@ -444,7 +444,6 @@ impl DesignParameter {
         self.byte_offset
     }
     /// Expression code-unit offset.
-    #[cfg(test)]
     pub(crate) fn expression_offset(&self) -> u64 {
         self.expression_offset
     }

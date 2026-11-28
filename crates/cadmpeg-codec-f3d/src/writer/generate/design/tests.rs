@@ -1313,7 +1313,6 @@ fn the_root_scopes_configuration_arrangements_and_occurrence_states_are_charged(
     );
     let root = root();
     for value in [
-        format!("{root} active configuration {configuration}"),
         format!("{root} active arrangement {arrangement}"),
         format!("{root} design state of occurrence {occurrence}"),
     ] {
@@ -1323,6 +1322,20 @@ fn the_root_scopes_configuration_arrangements_and_occurrence_states_are_charged(
             report.losses
         );
     }
+    assert!(
+        loss(&report, "export/value.unwritable")
+            .iter()
+            .any(|message| message.contains(configuration.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains(configuration.as_str())),
+        "{:#?}",
+        report.losses
+    );
 }
 
 #[test]
@@ -1566,6 +1579,7 @@ fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
     }
 }
 
+mod configurations;
 /// A Base Feature design written beside native B-rep records checks a body
 /// visibility against the key its body has before the history stream keys
 /// the bodies from `0`.
@@ -1600,6 +1614,7 @@ fn a_base_feature_design_checks_a_body_visibility_before_it_rekeys_the_bodies() 
             fallback: &super::Fallback::default(),
             dropped: &super::super::reduce::DroppedRecords::default(),
             rebased: None,
+            configuration_source: &super::configurations::Source::default(),
         },
         &mut bytes,
     )

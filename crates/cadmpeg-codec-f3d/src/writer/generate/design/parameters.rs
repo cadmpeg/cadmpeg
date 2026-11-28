@@ -31,6 +31,7 @@ use cadmpeg_ir::design::parameter::{
 };
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -170,6 +171,7 @@ impl Unheld {
 /// A parameter a written feature owns, as its record holds it.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct OwnedParameter {
+    pub(super) source: Option<ParameterId>,
     pub(super) name: String,
     pub(super) expression: String,
     pub(super) unit: UnitSymbol,
@@ -237,6 +239,7 @@ impl NativeParameters {
                     crate::ids::neutral_parameter_id(record),
                     DestinationParameter {
                         index: record.record_index,
+                        owner: None,
                         name: record.name(),
                         expression,
                         evaluated,
@@ -573,13 +576,73 @@ pub(in crate::writer::generate) fn plan(
 /// neutral parameters match their projection up to expression and value edits.
 /// Otherwise write the root scope's parameters.
 pub(in crate::writer::generate) fn native_or_neutral(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
     neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
     projected: &[cadmpeg_ir::features::parameters::DesignParameter],
 ) -> Result<ParameterSource, CodecError> {
+    let legacy = projected
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut scopes = std::collections::BTreeMap::new();
+    let mut ambiguous = BTreeSet::new();
+    for parameter in &target.design.parameters {
+        let Some(stream) = legacy
+            .get(&parameter.id)
+            .and_then(|parameter| parameter.native_ref.as_deref())
+            .and_then(crate::ids::native_stream)
+        else {
+            continue;
+        };
+        let prefix = crate::ids::member_key(stream)
+            .map(|key| format!("{key}@"))
+            .unwrap_or_default();
+        if scopes
+            .insert(prefix.clone(), parameter.scope.clone())
+            .is_some_and(|scope| scope != parameter.scope)
+        {
+            ambiguous.insert(prefix);
+        }
+    }
+    scopes.retain(|prefix, _| !ambiguous.contains(prefix));
+    let features = target
+        .design
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect();
+    let places = match target.native.namespace("f3d") {
+        Some(namespace) => crate::design_v11::parameters::owner_places(ctx, namespace)?,
+        None => HashMap::default(),
+    };
+    let matches_projection =
+        |parameters: &[cadmpeg_ir::features::parameters::DesignParameter]| {
+            let scoped = crate::design_v11::parameters::project(
+                parameters,
+                &places,
+                &scopes,
+                &BTreeSet::new(),
+                &features,
+                &mut Vec::new(),
+            );
+            let scoped = scoped
+                .iter()
+                .map(|parameter| (&parameter.id, parameter))
+                .collect::<BTreeMap<_, _>>();
+            target
+                .design
+                .parameters
+                .iter()
+                .all(|parameter| scoped.get(&parameter.id).copied() == Some(parameter))
+        };
+    let unchanged = matches_projection(projected) || matches_projection(neutral);
     let root = super::root_scope(target);
-    let mut parameter_plan = if let Some(edits) = value_edits(neutral, projected, native) {
+    let mut parameter_plan = if let Some(edits) = unchanged
+        .then(|| value_edits(neutral, projected, native))
+        .flatten()
+    {
         if let Some(configured) = root
             .filter(|_| {
                 native
@@ -611,6 +674,7 @@ pub(in crate::writer::generate) fn native_or_neutral(
             |scope| plan(target, &scope.definition),
         )
     };
+
     let restated = super::restated_parameters(target);
     parameter_plan.losses.extend(named_loss(
         F3dLossCode::WriterParameterOmitted,
@@ -838,6 +902,64 @@ pub(in crate::writer::generate) fn encode(
 }
 
 impl ParameterPlan {
+    pub(super) fn configuration_parameters(
+        &self,
+        target: &CadIr,
+    ) -> Vec<cadmpeg_ir::features::parameters::DesignParameter> {
+        let planned = self.written.iter().chain(&self.claimed).map(|parameter| {
+            (
+                &parameter.source,
+                parameter.name.as_str(),
+                parameter.expression.as_str(),
+                parameter.evaluated,
+            )
+        });
+        let driven = self
+            .driven
+            .iter()
+            .filter(|parameter| parameter.taken)
+            .filter_map(|parameter| {
+                let literal = parameter.literal.as_ref()?;
+                Some((
+                    &parameter.source,
+                    parameter.name.as_str(),
+                    literal.text.as_str(),
+                    literal.value,
+                ))
+            });
+        planned
+            .chain(driven)
+            .filter_map(|(id, name, expression, evaluated)| {
+                let source = target
+                    .design
+                    .parameters
+                    .iter()
+                    .find(|source| &source.id == id)?;
+                let form = Form::of(&source.kind)?;
+                let value = ParameterValue::Number(cadmpeg_ir::scalar::FiniteReal::new(
+                    form.canonical(evaluated),
+                )?);
+                Some(cadmpeg_ir::features::parameters::DesignParameter {
+                    product_definition: Some(source.scope.clone()),
+                    id: source.id.clone(),
+                    owner: match &source.owner {
+                        Some(ParameterOwner::Feature(owner)) => Some(owner.clone()),
+                        _ => None,
+                    },
+                    ordinal: 0,
+                    name: name.to_owned(),
+                    expression: expression.to_owned(),
+                    display: None,
+                    value: crate::design_v11::configurations::legacy_value(&value, &source.kind),
+                    dependencies: DistinctMembers::default(),
+                    properties: BTreeMap::default(),
+                    pmi: None,
+                    native_ref: source.native_ref.clone(),
+                })
+            })
+            .collect()
+    }
+
     /// The records and names assigned to source parameters in the new stream.
     pub(in crate::writer::generate) fn destinations(
         &self,
@@ -851,6 +973,7 @@ impl ParameterPlan {
                     parameter.source.clone(),
                     DestinationParameter {
                         index,
+                        owner: None,
                         name: &parameter.name,
                         expression: &parameter.expression,
                         evaluated: parameter.evaluated,
@@ -1059,7 +1182,12 @@ impl ParameterPlan {
     ) -> OwnedParameter {
         let parameter = &mut self.driven[driven.index];
         parameter.taken = true;
+        parameter.literal = Some(RecordLiteral {
+            text: expression.clone(),
+            value,
+        });
         OwnedParameter {
+            source: Some(parameter.source.clone()),
             name: parameter.name.clone(),
             expression,
             unit: driven.unit,
@@ -1128,6 +1256,7 @@ impl ParameterPlan {
         }
         let parameter = self.written.remove(position);
         let owned = OwnedParameter {
+            source: Some(parameter.source.clone()),
             name: parameter.name.clone(),
             expression: parameter.expression.clone(),
             unit,
@@ -1158,6 +1287,7 @@ impl ParameterPlan {
             .unwrap_or(base);
         self.owned.push(name.clone());
         OwnedParameter {
+            source: None,
             name,
             expression,
             unit,
@@ -1220,6 +1350,20 @@ impl PlannedParameter {
     }
 }
 
+/// A decoded numeric parameter cache in the Design record's database units.
+pub(in crate::writer) fn database_value(
+    value: &cadmpeg_ir::features::parameters::ParameterValue,
+) -> Option<f64> {
+    use cadmpeg_ir::features::parameters::ParameterValue as Legacy;
+    let (form, value) = match value {
+        Legacy::Length(value) => (Form::Length, value.get()),
+        Legacy::Angle(value) => (Form::Angle, value.get()),
+        Legacy::Real(value) => (Form::Real, value.get()),
+        Legacy::Integer(_) | Legacy::Boolean(_) | Legacy::String(_) => return None,
+    };
+    Some(form.database(value))
+}
+
 /// The parameter's cached value in canonical units.
 fn cached(parameter: &DesignParameter) -> Option<f64> {
     match parameter.value.as_ref()? {
@@ -1231,7 +1375,7 @@ fn cached(parameter: &DesignParameter) -> Option<f64> {
 
 /// The Fusion text of a definition, with each reference written as `name`
 /// gives it.
-fn printed_expression<'a>(
+pub(in crate::writer) fn printed_expression<'a>(
     definition: &ParameterDefinition,
     name: &impl Fn(&ParameterId) -> Option<&'a str>,
 ) -> Option<String> {
@@ -1248,6 +1392,13 @@ fn printed_expression<'a>(
         | ParameterDefinition::Assigned(_)
         | ParameterDefinition::Unset => None,
     }
+}
+
+pub(in crate::writer) fn reference_ids(definition: &ParameterDefinition) -> BTreeSet<&ParameterId> {
+    references(definition)
+        .into_iter()
+        .filter_map(expression::referenced)
+        .collect()
 }
 
 /// The parameters a definition references.

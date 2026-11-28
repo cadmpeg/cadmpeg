@@ -3,6 +3,7 @@
 //! with its decode sidecar: the written table states the configurations of
 //! the `design` records (cadir-v11.md §5.11).
 
+mod parameter_patch;
 pub(crate) mod read_back;
 
 use std::io::{Cursor, Write};
@@ -95,6 +96,7 @@ fn targets<'a>(ir: &'a CadIr, native: &'a crate::native::F3dNative) -> Configura
         scopes: &native.design_parameter_scopes,
         neutral_parameters: &ir.model.parameters,
         neutral_features: &ir.model.features,
+        bindings: None,
     }
 }
 
@@ -741,11 +743,8 @@ fn an_expression_that_names_a_parameter_caches_its_override_in_the_same_row() {
     assert!((cached.get() - 4.5).abs() < 1e-9, "{cached:?}: {losses:#?}");
 }
 
-/// An active row moved in the design, of a held decode and through CADIR:
-/// the patch writes no Design stream parameter, and the Design stream stores
-/// the state of the active row (f3d.md §1.2), so the stored root record keeps
-/// row `a` active, row `b` keeps its cells, the `testRowData` entries keep
-/// the values of row `a`, and the move is charged once.
+/// The retained Design root selects the active row. Moving the selection in
+/// CADIR still keeps row `a` and its `testRowData` on the patch path.
 #[test]
 fn an_active_row_moved_in_the_design_keeps_the_stored_row_and_is_charged() {
     let (decoded, fixture) = fixture(true);
@@ -790,11 +789,9 @@ fn an_active_row_moved_in_the_design_keeps_the_stored_row_and_is_charged() {
     }
 }
 
-/// The editor's switch to row `b` marks the current state stale, so the
-/// write regenerates the design, and the generator charges the
-/// configuration it does not write.
+/// The editor marks the current state stale when it selects a different row.
 #[test]
-fn an_active_row_moved_through_the_editor_is_charged_where_it_is_not_written() {
+fn synthesis_writes_the_active_row_selected_through_the_editor() {
     let (decoded, _) = fixture(true);
     let mut ir = decoded.ir().clone();
     let b = named(&ir, "B").id.clone();
@@ -810,15 +807,18 @@ fn an_active_row_moved_through_the_editor_is_charged_where_it_is_not_written() {
         .unwrap()
         .set_active_configuration(&scope, &b)
         .unwrap();
-    let (report, _) = written_on(&ir, Some(decoded.source_fidelity()), &["synthesized"]);
-    assert!(
-        report
-            .losses
+    let (_, bytes) = written_on(&ir, Some(decoded.source_fidelity()), &["synthesized"]);
+    let round_trip = decode(&bytes);
+    assert_eq!(
+        round_trip
+            .ir()
+            .model
+            .configurations
             .iter()
-            .any(|loss| loss.message.contains("active configuration")
-                && loss.message.contains(b.as_str())),
-        "{:#?}",
-        report.losses
+            .filter(|configuration| configuration.active)
+            .map(|configuration| configuration.name.as_deref())
+            .collect::<Vec<_>>(),
+        [Some("B")],
     );
 }
 
@@ -1008,42 +1008,6 @@ pub(crate) fn pinned<'a>(
                 && loss.message.contains(parameter.as_str())
         })
         .collect()
-}
-
-/// An override that the active configuration states, written by the patch,
-/// which writes no Design stream parameter: the Design stream stores the
-/// state of the active row (f3d.md §1.2), so the active row's cell holds the
-/// Design stream's expression and value, and the override is charged once.
-/// Each configuration reads back at the value the written archive resolves.
-#[test]
-fn an_override_of_the_active_configuration_the_patch_cannot_write_is_charged() {
-    let (decoded, fixture) = fixture(true);
-    let (expression, millimetres) = own(decoded.ir(), &fixture.width);
-    let a = named(decoded.ir(), "A").id.clone();
-    for (path, mut ir) in [
-        ("decode", decoded.ir().clone()),
-        ("CADIR read", saved(decoded.ir())),
-    ] {
-        named_mut(&mut ir, "A")
-            .overrides
-            .parameters
-            .insert(fixture.width.clone(), length_override(9.0));
-        let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
-        let back = round_trip.ir();
-        assert_eq!(own(back, &fixture.width), (expression.clone(), millimetres));
-        let (text, value) = parameter_cell(back, &fixture.entry, "a", &fixture.width);
-        assert_eq!(text, expression, "{path}");
-        assert!((value - millimetres / 10.0).abs() < 1e-9, "{path}: {value}");
-        for (name, stated) in [("A", millimetres), ("B", 7.0), ("C", 12.0)] {
-            let read = resolved_millimetres(back, name, &fixture.width);
-            assert!((read - stated).abs() < 1e-9, "{path}: {name} reads {read}");
-        }
-        assert_eq!(
-            pinned(&losses, &a, &fixture.width).len(),
-            1,
-            "{path}: {losses:#?}"
-        );
-    }
 }
 
 /// The roles of the other configurations when the Design stream takes the

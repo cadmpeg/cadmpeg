@@ -3,6 +3,8 @@
 //! patch path, on a held decode whose table names row `a` active: the Design
 //! stream stores the state of the active row (f3d.md §1.2).
 
+use std::collections::BTreeSet;
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::report::loss::LossNote;
@@ -56,7 +58,7 @@ fn generated_on(ir: &CadIr) -> (CadIr, Option<String>, Vec<LossNote>) {
 /// whether it writes them, and the losses of the tables.
 fn patched_on(ir: &CadIr) -> (CadIr, bool, Vec<LossNote>) {
     let native = f3d_native(ir);
-    let patched = patched(ir, &native).unwrap();
+    let patched = patched(ir, &native, &ir.model.parameters, &BTreeSet::new()).unwrap();
     let mut out = ir.clone();
     let written = matches!(&patched.destination.documents, std::borrow::Cow::Owned(_));
     if let std::borrow::Cow::Owned(documents) = patched.destination.documents {

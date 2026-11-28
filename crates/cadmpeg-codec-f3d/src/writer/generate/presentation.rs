@@ -325,15 +325,20 @@ impl GeneratedDesignRegistry {
     }
 
     /// A registry of `types` alone, with no body map or browser node.
-    #[cfg(test)]
     pub(super) fn from_types(types: Vec<GeneratedDesignType>) -> Self {
+        let used_record_indices = types
+            .iter()
+            .flat_map(|row| &row.entity_ids)
+            .filter_map(|&index| u32::try_from(index).ok())
+            .collect::<BTreeSet<_>>();
+        let next_record_index = used_record_indices.last().copied().unwrap_or(0);
         Self {
             types,
             body_map: None,
             browser_nodes: None,
             guessed_visible: Vec::new(),
-            used_record_indices: BTreeSet::new(),
-            next_record_index: 0,
+            used_record_indices,
+            next_record_index,
         }
     }
 

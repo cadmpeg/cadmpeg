@@ -53,7 +53,15 @@ impl<'a> Destination<'a> {
         written: Written<'a, '_>,
         part_numbers: BTreeMap<ConfigurationId, PartNumber>,
     ) -> Self {
-        Self::new(written, None, part_numbers, None, None, None)
+        Self::new(
+            written,
+            None,
+            part_numbers,
+            None,
+            None,
+            None,
+            super::super::DESIGN_BULK,
+        )
     }
 
     pub(in crate::writer::generate) fn synthesized(
@@ -63,6 +71,7 @@ impl<'a> Destination<'a> {
         part_numbers: BTreeMap<ConfigurationId, PartNumber>,
         targets: &DestinationParameters<'_>,
         source_root: Option<ProductDefinitionId>,
+        bulk_stream: &str,
     ) -> Result<Self, CodecError> {
         if let Some((table, row)) = root.active_ids() {
             if let Some(index) = root_document(&documents, table) {
@@ -80,7 +89,15 @@ impl<'a> Destination<'a> {
             Some(root),
             Some(targets),
             source_root,
+            bulk_stream,
         ))
+    }
+
+    pub(in crate::writer::generate) fn into_owned(self) -> Destination<'static> {
+        Destination {
+            documents: Cow::Owned(self.documents.into_owned()),
+            ..self
+        }
     }
 
     fn new(
@@ -90,8 +107,9 @@ impl<'a> Destination<'a> {
         root: Option<&super::Plan>,
         destinations: Option<&DestinationParameters<'_>>,
         source_root: Option<ProductDefinitionId>,
+        bulk_stream: &str,
     ) -> Self {
-        let stream = crate::ids::native_scope(super::super::DESIGN_BULK);
+        let stream = crate::ids::native_scope(bulk_stream);
         let parameters: BTreeMap<_, _> = destinations
             .into_iter()
             .flatten()
@@ -301,6 +319,7 @@ impl<'a> Destination<'a> {
                 scopes,
                 neutral_parameters: &[],
                 neutral_features: &neutral,
+                bindings: None,
             },
             &configured,
         ));

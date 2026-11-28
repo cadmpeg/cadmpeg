@@ -80,7 +80,7 @@ pub(crate) struct OwnerPlace {
 /// The [`OwnerPlace`] of each owned native parameter, by the native
 /// parameter's id. A parameter whose owner record index names no owner
 /// record, or more than one, has none.
-pub(super) fn owner_places(
+pub(crate) fn owner_places(
     ctx: &DecodeContext<'_>,
     namespace: &NativeNamespace,
 ) -> Result<HashMap<String, OwnerPlace>, CodecError> {

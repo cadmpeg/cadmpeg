@@ -42,6 +42,7 @@ pub(super) fn configuration_targets<'a>(
         scopes: &native.design_parameter_scopes,
         neutral_parameters: &target.model.parameters,
         neutral_features: &target.model.features,
+        bindings: None,
     }
 }
 

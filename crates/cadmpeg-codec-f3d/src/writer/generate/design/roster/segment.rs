@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 
 use super::super::frames::DesignRecords;
 use crate::records::references::DesignClassTag;
-use crate::writer::generate::presentation::{dynamic_class_tag, TypeRow};
+use crate::writer::generate::presentation::{dynamic_class_tag, GeneratedDesignRegistry, TypeRow};
 
 /// The three segments of a Base Feature design.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -53,7 +53,7 @@ impl SegmentKind {
 
 /// A type table: rows in class-tag order with the record indices of each.
 pub(in crate::writer::generate) struct TypeTable {
-    rows: Vec<(TypeRow, Vec<u64>)>,
+    registry: GeneratedDesignRegistry,
 }
 
 impl TypeTable {
@@ -72,45 +72,94 @@ impl TypeTable {
                 .find(|row| row.guid.eq_ignore_ascii_case(guid))
                 .copied()
         };
-        let mut table = Self { rows: Vec::new() };
+        let mut rows = Vec::<(TypeRow, Vec<u32>)>::new();
+        let insert = |rows: &mut Vec<(TypeRow, Vec<u32>)>, row: TypeRow| {
+            rows.iter()
+                .position(|(known, _)| known.guid.eq_ignore_ascii_case(row.guid))
+                .unwrap_or_else(|| {
+                    rows.push((row, Vec::new()));
+                    rows.len() - 1
+                })
+        };
         for (index, row) in &ordered {
-            let position = table.insert(*row);
-            table.rows[position].1.push(u64::from(*index));
+            let position = insert(&mut rows, *row);
+            rows[position].1.push(*index);
             let mut base = row.base;
             while let Some(guid) = base {
                 let Some(ancestor) = lookup(guid) else {
                     break;
                 };
-                if table.position(ancestor.guid).is_some() {
+                if rows
+                    .iter()
+                    .any(|(known, _)| known.guid.eq_ignore_ascii_case(ancestor.guid))
+                {
                     break;
                 }
-                table.insert(ancestor);
+                insert(&mut rows, ancestor);
                 base = ancestor.base;
             }
         }
         for row in known {
-            table.insert(*row);
+            insert(&mut rows, *row);
         }
-        if table.rows.len() > 999 - 256 {
+        if rows.len() > 999 - 256 {
             return Err(CodecError::NotImplemented(
                 "a Base Feature type table exceeds three-digit class tags".into(),
             ));
         }
-        Ok(table)
+        let mut registry = GeneratedDesignRegistry::from_types(Vec::new());
+        for (row, indices) in rows {
+            registry.register(row, &indices)?;
+        }
+        Ok(Self { registry })
     }
 
     fn position(&self, guid: &str) -> Option<usize> {
-        self.rows
+        self.registry
+            .types
             .iter()
-            .position(|(row, _)| row.guid.eq_ignore_ascii_case(guid))
+            .position(|row| row.type_guid.as_str().eq_ignore_ascii_case(guid))
     }
 
-    /// The position of `row`, appended when no row has its GUID.
-    fn insert(&mut self, row: TypeRow) -> usize {
-        self.position(row.guid).unwrap_or_else(|| {
-            self.rows.push((row, Vec::new()));
-            self.rows.len() - 1
-        })
+    pub(in crate::writer::generate::design) fn write_configuration_root(
+        &mut self,
+        plan: crate::writer::generate::configuration_root::Plan,
+        out: &mut DesignRecords,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+        let types = std::mem::take(&mut self.registry.types);
+        self.registry = GeneratedDesignRegistry::from_types(types);
+        let mut bulk = None;
+        let losses = plan.without_source().write(&mut self.registry, &mut bulk)?;
+        if let Some(bulk) = bulk {
+            let start = out.bytes.len();
+            for record in bulk.primary_records {
+                let index = u32::try_from(record.entity_id).map_err(|_| {
+                    CodecError::NotImplemented("Design record index exceeds u32".into())
+                })?;
+                let offset = usize::try_from(record.bulk_offset)
+                    .ok()
+                    .and_then(|offset| start.checked_add(offset))
+                    .ok_or_else(|| {
+                        CodecError::NotImplemented("Design record offset exceeds usize".into())
+                    })?;
+                out.primaries.push((index, offset));
+            }
+            out.bytes.extend(bulk.bytes);
+        }
+        Ok(losses)
+    }
+
+    pub(super) fn next_entity(&self) -> Result<u64, CodecError> {
+        self.registry
+            .types
+            .iter()
+            .flat_map(|row| &row.entity_ids)
+            .max()
+            .map_or(Ok(0), |index| {
+                index.checked_add(1).ok_or_else(|| {
+                    CodecError::NotImplemented("F3D Design entity ID space is full".into())
+                })
+            })
     }
 
     /// The class tag of the row of `guid`: `256` plus its position.
@@ -163,14 +212,14 @@ impl Segment<'_> {
             .lp_ascii("Fusion")?
             .u32(self.kind.code())
             .u32(0)
-            .u32(count(self.table.rows.len())?);
-        for (row, ids) in &self.table.rows {
-            out.lp_ascii(row.guid)?
-                .lp_ascii(row.base.unwrap_or(""))?
+            .u32(count(self.table.registry.types.len())?);
+        for row in &self.table.registry.types {
+            out.lp_ascii(row.type_guid.as_str())?
+                .lp_ascii(row.base_type_guid.as_ref().map_or("", |guid| guid.as_str()))?
                 .u32(row.version)
-                .lp_ascii(row.module)?
-                .u32(count(ids.len())?);
-            for id in ids {
+                .lp_ascii(&row.module)?
+                .u32(count(row.entity_ids.len())?);
+            for id in &row.entity_ids {
                 out.u64(*id);
             }
         }
