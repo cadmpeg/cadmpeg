@@ -142,6 +142,15 @@ fn selection_overlap_preserves_every_membership_form() {
         bodies: NativeSelections(vec![name.into()]),
         native: "native".to_owned().try_into().expect("native selection"),
     };
+    let occurrence_body = |occurrence: &str, name: &str| BodySelection::Occurrence {
+        occurrence: crate::ids::OccurrenceId::mint(format!("test:model:occurrence#{occurrence}"))
+            .expect("occurrence identity"),
+        occurrence_path: Vec::new(),
+        bodies: vec![BodyId::mint(format!("test:model:body#{name}")).expect("body identity")]
+            .try_into()
+            .expect("distinct bodies"),
+        native: "native".into(),
+    };
     let body_cases = [
         (bodies("same"), paired_body(false, false), true),
         (paired_body(false, false), bodies("same"), true),
@@ -182,6 +191,22 @@ fn selection_overlap_preserves_every_membership_form() {
         ),
         (local_body("same"), local_body("same"), true),
         (local_body("same"), local_body("other"), false),
+        (
+            occurrence_body("same", "same"),
+            occurrence_body("same", "same"),
+            true,
+        ),
+        (
+            occurrence_body("same", "same"),
+            occurrence_body("other", "same"),
+            false,
+        ),
+        (
+            occurrence_body("same", "same"),
+            occurrence_body("same", "other"),
+            false,
+        ),
+        (bodies("same"), occurrence_body("same", "same"), false),
         (bodies("same"), historical_body(), false),
     ];
     for (first, second, expected) in face_cases {

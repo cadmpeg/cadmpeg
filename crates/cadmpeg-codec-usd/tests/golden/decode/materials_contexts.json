@@ -373,8 +373,7 @@
     "source": {
       "attributes": {
         "default_prim": "Root",
-        "meters_per_unit": "0.01",
-        "up_axis": "Z"
+        "meters_per_unit": "0.01"
       },
       "identity": {
         "dialects": {
@@ -401,7 +400,8 @@
       "length": "millimeter",
       "mass": "kilogram",
       "time": "second"
-    }
+    },
+    "up_axis": "z"
   },
   "report": {
     "coverage": {},

@@ -45,8 +45,7 @@ fn decodes(bytes: &[u8]) -> bool {
                 crate::history::binding::MAX_HISTORY_BINDING_WORK,
             ),
         )
-        .expect("decode the history stream")
-        .is_some()
+        .is_ok_and(|history| history.is_some())
     })
 }
 

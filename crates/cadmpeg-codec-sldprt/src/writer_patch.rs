@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -11,28 +11,21 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::Annotations;
 
-use crate::SourceRecord;
-
 pub(crate) fn patch_partition(
     ir: &CadIr,
     annotations: &Annotations,
-    retained_records: &[SourceRecord<'_>],
+    source: Option<&crate::writer::RetainedImage<'_>>,
     scale: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     if !crate::writer::requires_native_partition(ir) {
         return Ok(None);
     }
-    let Some(source) = retained_records
-        .iter()
-        .find(|record| record.id.as_str() == "sldprt:file:source-image#0")
-        .and_then(|record| record.data)
-    else {
+    let Some(image) = source else {
         return Ok(None);
     };
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())?;
-    let scan = crate::container::scan(&ctx, root)?;
-    let Some(selected) = crate::container::select_active_parasolid_site(&scan) else {
+    let scan = &image.scan;
+    let Some(selected) = crate::container::select_active_parasolid_site(scan) else {
         return Ok(None);
     };
     let crate::container::Section::Block(block) = selected.section else {
@@ -47,45 +40,31 @@ pub(crate) fn patch_partition(
     {
         return Ok(None);
     }
-    let site = site_key(block);
+    let key = named_site(block);
     let mut streams = scan
         .blocks
         .iter()
-        .filter(|candidate| site_key(candidate) == site)
+        .filter(|candidate| named_site(candidate) == key)
         .flat_map(|candidate| {
+            let section = crate::container::Section::Block(candidate);
             candidate.ps_streams.iter().filter_map(move |stream| {
-                crate::parasolid::is_body_stream(&stream.header).then_some((
-                    candidate,
-                    &stream.payload,
-                    &stream.header,
-                ))
+                crate::parasolid::is_body_stream(&stream.header).then_some(
+                    crate::container::ActiveParasolidSite {
+                        section,
+                        offset: stream.offset,
+                        payload: &stream.payload,
+                        header: &stream.header,
+                    },
+                )
             })
         })
         .collect::<Vec<_>>();
-    let mut ordered = Vec::new();
-    for (candidate, payload, header) in streams.drain(..) {
-        let section = candidate.section.name().unwrap_or("");
-        let partition = section
-            .as_bytes()
-            .windows(9)
-            .any(|part| part.eq_ignore_ascii_case(b"partition"));
-        let body_partition = header
-            .description
-            .as_bytes()
-            .windows(9)
-            .any(|part| part.eq_ignore_ascii_case(b"partition"));
-        ordered.push(((!partition, !body_partition), (candidate, payload, header)));
-    }
-    ordered.sort_by_key(|left| left.0);
-    let bodies = ordered
-        .iter()
-        .map(|(_, (_, payload, header))| (payload.as_slice(), *header))
-        .collect::<Vec<_>>();
-    let native = crate::brep::graph::decode_bodies(
-        &ctx,
-        &bodies,
-        &cadmpeg_ir::stream_name!("native-patch-baseline"),
-    )?;
+    crate::decode::order_partition_streams(&mut streams);
+    let native = match ctx.run_part(|| image.partition(ctx, &streams))? {
+        Ok(native) => native,
+        Err(error) => return Err(CodecError::malformed(error)),
+    };
+    let native = native.as_ref();
     let colors = crate::writer::face_colors(ir);
     if native
         .faces
@@ -96,18 +75,18 @@ pub(crate) fn patch_partition(
             "SLDPRT native partition patch cannot write changed face colours".into(),
         ));
     }
-    if !same_pcurves(ir, &native) {
+    if !same_pcurves(ir, native) {
         return Err(CodecError::NotImplemented(
             "SLDPRT native partition patch cannot write changed pcurve geometry or metadata".into(),
         ));
     }
-    if !same_graph(ir, &native) {
+    if !same_graph(ir, native) {
         return Ok(None);
     }
     validate_changed_annotations(
         ir,
         annotations,
-        &native,
+        native,
         block.section.source_stream().as_str(),
     )?;
 
@@ -117,13 +96,13 @@ pub(crate) fn patch_partition(
     let Some(body) = payload.get_mut(header.body_offset..) else {
         return Ok(None);
     };
-    if patch_points(ir, annotations, &native, &point_values, body, scale)?.is_none() {
+    if patch_points(ir, annotations, native, &point_values, body, scale)?.is_none() {
         return Ok(None);
     }
-    if patch_surfaces(ir, annotations, &native, body, scale)?.is_none() {
+    if patch_surfaces(ir, annotations, native, body, scale)?.is_none() {
         return Ok(None);
     }
-    if patch_curves(ir, annotations, &native, body, scale)?.is_none() {
+    if patch_curves(ir, annotations, native, body, scale)?.is_none() {
         return Ok(None);
     }
     Ok(Some((
@@ -217,7 +196,7 @@ fn raw_annotation_offset(
     })
 }
 
-fn site_key(block: &crate::container::Block) -> String {
+fn named_site(block: &crate::container::Block) -> String {
     let mut key = block.section.source_stream().as_str().to_ascii_lowercase();
     for suffix in ["partition", "deltas"] {
         if let Some(offset) = key.rfind(suffix) {
@@ -225,7 +204,7 @@ fn site_key(block: &crate::container::Block) -> String {
             break;
         }
     }
-    key.trim_end_matches(['-', '/', '_']).to_string()
+    key.trim_end_matches(['-', '/', '_']).to_owned()
 }
 
 fn same_pcurves(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {

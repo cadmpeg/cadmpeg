@@ -70,7 +70,7 @@ fn feature_named<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::design::featu
         .unwrap()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
+pub(crate) fn assert_no_design_findings(ir: &CadIr) {
     let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     let design = report
         .findings
@@ -293,9 +293,32 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
+/// A configuration takes its place in the history's configuration list.
+#[test]
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
+}
+
 /// A configuration is restated without its custom properties, and one other
 /// than the active one without the feature suppressions that differ from the
-/// active one's and that its overrides do not state.
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
 #[test]
 fn a_configuration_is_restated_without_what_its_record_does_not_state() {
     use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
@@ -340,6 +363,7 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         id: id(key),
         scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
         name: key.to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),
@@ -373,13 +397,13 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
     let active = Restater::Record(id("default").as_str().to_owned());
     assert_eq!(
         default.cut_by(|restater| restater == &active),
-        Some(BTreeSet::new())
+        Some(BTreeSet::from(["ordinal"]))
     );
     let short = ir.model.restated().get(id("short").as_str()).unwrap();
     let by = Restater::Record(id("short").as_str().to_owned());
     assert_eq!(
         short.cut_by(|restater| restater == &by).map(Vec::from_iter),
-        Some(vec!["feature_states", "properties"])
+        Some(vec!["feature_states", "ordinal", "properties"])
     );
 
     let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
@@ -410,8 +434,21 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         short.cut_by(|restater| restater == &by).map(Vec::from_iter),
         Some(vec![
             "feature_states.definition",
-            "feature_states.dependencies"
+            "feature_states.dependencies",
+            "ordinal"
         ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
     );
 }
 
@@ -753,7 +790,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -787,8 +824,9 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -986,12 +1024,15 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
     let [sketch] = sketches.records.as_slice() else {
@@ -1125,6 +1166,54 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     assert_no_design_findings(&ir);
 }
 
+#[test]
+fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
+    use cadmpeg_ir::design::ops::sketch::{DefiningRole, EntityRole};
+
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    entities.as_array_mut().unwrap().push(
+        cadmpeg_core::json!({"id": "sldprt:model:sketch-entity#test:center",
+            "sketch": "sldprt:model:sketch#test", "construction": false,
+            "native_ref": "native:center", "endpoint_refs": [],
+            "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+    );
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let definition = ir.design.scopes[0].definition.clone();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
+            angular: ir.tolerances.angular.get(),
+        },
+    )
+    .expect("the session admits the evaluation");
+    let center = typed
+        .sketches
+        .entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(":center"))
+        .unwrap();
+    assert_eq!(
+        center.roles,
+        vec![EntityRole {
+            of: cadmpeg_ir::sketches::SketchEntityId::mint("sldprt:model:sketch-entity#test:hole")
+                .unwrap(),
+            role: DefiningRole::Center,
+        }]
+    );
+}
+
 /// The timeline of `ir`'s design, with its sketches and extrudes typed, and
 /// the parameter entries of its features.
 fn typed_timeline<'a>(
@@ -1144,12 +1233,15 @@ fn typed_timeline<'a>(
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, entries, typed)
 }
 
@@ -1611,7 +1703,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1627,12 +1719,15 @@ fn members_follow_the_features_they_depend_on() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
     assert!(
@@ -1643,10 +1738,34 @@ fn members_follow_the_features_they_depend_on() {
 }
 
 #[test]
+fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::test_support::native::sldprt_native(&ir);
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
+    let id = |name| {
+        timeline.features[member_position(&timeline, name)]
+            .id
+            .clone()
+    };
+    let active = [id("Boss"), id("Fillet1")];
+    let alternate = [id("Boss"), id("Odd"), id("Fillet1")];
+    let reversed = [id("Fillet1"), id("Odd")];
+    super::order::regeneration_order(
+        &mut timeline,
+        &ir.model,
+        [&active[..], &alternate[..], &reversed[..]],
+    );
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Odd"));
+    assert!(member_position(&timeline, "Odd") < member_position(&timeline, "Fillet1"));
+}
+
+#[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -1661,7 +1780,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model);
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1686,7 +1805,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty()).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()
@@ -1835,9 +1954,11 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 mod configuration_states;
 mod datum;
 mod dimension_curves;
-mod outside_history;
+pub(super) mod outside_history;
 mod parameters;
 mod pattern;
+pub(crate) mod restated;
 mod revolve;
 mod rollback;
-mod state_zero;
+mod sketch_kinds;
+pub(crate) mod state_zero;

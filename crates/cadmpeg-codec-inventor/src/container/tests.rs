@@ -92,7 +92,7 @@ fn a_noncanonical_stream_chain_loss_names_the_stream() {
     let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("build the decode context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("the snapshot builds");
-    let losses = super::deviation_losses(&snapshot);
+    let losses = super::deviation_losses(&snapshot, &[]);
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:#?}");
     };

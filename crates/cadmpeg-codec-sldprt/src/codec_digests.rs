@@ -8,7 +8,7 @@
 //! returns, so the document holds none. A write of a part given no sidecar
 //! takes them from the document it writes.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
@@ -82,8 +82,8 @@ pub(crate) fn holds_history(ir: &CadIr) -> bool {
 /// native namespace that does not load under the document's tolerance gives
 /// the digests of a part without native records; the patch refuses such a
 /// namespace, and the write synthesizes the document as it does for any stale
-/// native record.
-pub(crate) fn of_document(ir: &CadIr) -> Result<CodecDigests, CodecError> {
+/// native record. A load that reaches a resource ceiling refuses.
+pub(crate) fn of_document(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<CodecDigests, CodecError> {
     use crate::history::hash::{
         configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
         feature_hash, history_hash, native_configuration_hash, native_parameter_hash,
@@ -91,62 +91,66 @@ pub(crate) fn of_document(ir: &CadIr) -> Result<CodecDigests, CodecError> {
     };
     use crate::resolved_features::hashes::{constraint_hash, lane_hash, sketch_hash};
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
     let native = ir
         .native
         .namespace("sldprt")
-        .and_then(|namespace| {
-            crate::native::SldprtNative::load(namespace, ir.tolerances.linear).ok()
+        .map(|namespace| {
+            crate::native::SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
+                .map_err(CodecError::from)
         })
+        .transpose()
+        .or_else(|error| match error {
+            CodecError::ResourceLimit(_) => Err(error),
+            _ => Ok(None),
+        })?
         .unwrap_or_default();
     let histories = &native.feature_histories;
     let configurations = crate::writer::configurations_without_synthesized_snapshot(ir);
     let lanes = [
         (
             "sldprt_neutral_feature_local_sha256",
-            feature_hash(&ctx, &ir.model)?,
+            feature_hash(ctx, &ir.model)?,
         ),
         (
             "sldprt_native_history_sha256",
-            history_hash(&ctx, histories)?,
+            history_hash(ctx, histories)?,
         ),
         (
             "sldprt_native_configuration_sha256",
-            native_configuration_hash(&ctx, histories)?,
+            native_configuration_hash(ctx, histories)?,
         ),
         (
             "sldprt_neutral_parameter_local_sha256",
-            parameter_hash(&ctx, &ir.model.parameters)?,
+            parameter_hash(ctx, &ir.model.parameters)?,
         ),
         (
             "sldprt_native_parameter_sha256",
-            native_parameter_hash(&ctx, histories)?,
+            native_parameter_hash(ctx, histories)?,
         ),
         (
             "sldprt_neutral_configuration_local_sha256",
-            configuration_hash(&ctx, &configurations)?,
+            configuration_hash(ctx, &configurations)?,
         ),
         (
             "sldprt_configuration_parameter_values_local_sha256",
-            configuration_parameter_value_hash(&ctx, &configurations)?,
+            configuration_parameter_value_hash(ctx, &configurations)?,
         ),
         (
             "sldprt_configuration_feature_states_local_sha256",
-            configuration_feature_state_hash(&ctx, &configurations)?,
+            configuration_feature_state_hash(ctx, &configurations)?,
         ),
-        ("sldprt_neutral_sketch_local_sha256", sketch_hash(&ctx, ir)?),
+        ("sldprt_neutral_sketch_local_sha256", sketch_hash(ctx, ir)?),
         (
             "sldprt_native_sketch_sha256",
-            lane_hash(&ctx, &native.feature_input_lanes)?,
+            lane_hash(ctx, &native.feature_input_lanes)?,
         ),
         (
             "sldprt_neutral_sketch_constraint_local_sha256",
-            constraint_hash(&ctx, ir)?,
+            constraint_hash(ctx, ir)?,
         ),
     ];
     let mut document = ir.clone();
-    crate::decode::stamp_local_digests(&ctx, &mut document)?;
+    crate::decode::stamp_local_digests(ctx, &mut document)?;
     let mut digests = take(&mut document)?;
     for (key, value) in lanes {
         let key = NonBlankString::new(key)

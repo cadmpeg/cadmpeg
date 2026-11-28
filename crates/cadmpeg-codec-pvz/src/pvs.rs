@@ -17,7 +17,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::layout::{pvs_header, pvs_stream_entry_head as stream_entry};
-use crate::loss::PvzLossCode;
+use crate::loss::{give_up_cause, PvzLossCode};
 use crate::read::{at, record};
 use atom::StringPool;
 use element::Element;
@@ -239,8 +239,6 @@ pub(crate) struct Residue {
     typed_properties: usize,
     /// XML elements outside the mapped subset (§3.14), by name.
     xml_elements: BTreeMap<String, usize>,
-    /// Why each property stream whose grammar failed was not transferred.
-    failed_property_streams: Vec<String>,
     /// Directory streams the decoder does not read, with the reason.
     skipped_streams: Vec<String>,
 }
@@ -266,8 +264,6 @@ impl Residue {
         self.occurrences_undecoded += other.occurrences_undecoded;
         self.bounds += other.bounds;
         self.typed_properties += other.typed_properties;
-        self.failed_property_streams
-            .extend(other.failed_property_streams);
         self.skipped_streams.extend(other.skipped_streams);
     }
 
@@ -325,9 +321,6 @@ impl Residue {
                  open item (PVZ-09); the bytes were not transferred",
                 self.typed_properties
             )));
-        }
-        for reason in &self.failed_property_streams {
-            losses.push(PvzLossCode::StructurePropertyStreamMalformed.note(reason.clone()));
         }
         for reason in &self.skipped_streams {
             losses.push(PvzLossCode::StructureStreamUndecoded.note(reason.clone()));
@@ -428,10 +421,6 @@ fn read_binary(
                     Ok(()) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        residue.failed_property_streams.push(format!(
-                            "property stream {:?} was not transferred: {error}",
-                            stream.name
-                        ));
                         let mut part = Part::at(
                             "pvz",
                             "pvs-stream",
@@ -443,7 +432,7 @@ fn read_binary(
                         if !stream.name.is_empty() {
                             part = part.named(stream.name.as_str());
                         }
-                        given_up.push(ctx.give_up_part(part, error)?);
+                        given_up.push(ctx.give_up_part(part, give_up_cause(&error), error)?);
                     }
                 }
             }
@@ -464,7 +453,7 @@ fn read_binary(
 /// Expands one stream payload. Codec 1 is the only defined encoding.
 fn expand<'a>(ctx: &DecodeContext<'a>, stream: &Stream<'_>) -> Result<View<'a>, CodecError> {
     if stream.codec != stream_entry::CODEC_VALUE {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "stream {:?} of type {} uses undefined codec {}",
             stream.name, stream.kind, stream.codec
         )));

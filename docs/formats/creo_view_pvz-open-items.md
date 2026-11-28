@@ -296,7 +296,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each negative loop marker other than −2 mean, and must a decoder that sees one transfer the loop or refuse the stream?
 
-**Known.** `brep/records.rs:241-252` rejects any marker that does not name the first loop of its face as malformed, which includes marker −1. `decode.rs:257-264` maps that refusal to the loss `GeometryExactUndecoded`, so the member keeps its tessellation only.
+**Known.** The decoder gives up the exact stream of a loop record with a negative marker other than −2 as one `record.undecoded` part (§9), and the member keeps its tessellation only.
 
 **Need.** We must know whether marker −1 marks, for example, a planar two-edge loop with zero area that bounds no face region, before deciding between a targeted transfer and the current whole-stream refusal.
 

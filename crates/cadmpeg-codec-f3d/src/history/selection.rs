@@ -574,13 +574,13 @@ pub(super) fn bind_body_recipe_face_selection(
 
 /// Membership in one topology family. Replayed families are in slot order and
 /// are searched in place; any other family is hashed.
-pub(super) enum FamilySlots<'a> {
+pub(crate) enum FamilySlots<'a> {
     Sorted(&'a [i64]),
     Hashed(HashSet<i64>),
 }
 
 impl<'a> FamilySlots<'a> {
-    pub(super) fn new(family: &'a [i64]) -> Self {
+    pub(crate) fn new(family: &'a [i64]) -> Self {
         if family.is_sorted() {
             Self::Sorted(family)
         } else {
@@ -588,7 +588,7 @@ impl<'a> FamilySlots<'a> {
         }
     }
 
-    pub(super) fn contains(&self, slot: i64) -> bool {
+    pub(crate) fn contains(&self, slot: i64) -> bool {
         match self {
             Self::Sorted(family) => family.binary_search(&slot).is_ok(),
             Self::Hashed(family) => family.contains(&slot),
@@ -827,6 +827,7 @@ pub(super) fn historical_identity_kind(
     HistoricalIdentityIndex::build(histories, [local_id]).identity_kind(local_id)
 }
 
+#[cfg(test)]
 pub(super) fn historical_selection_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
@@ -915,22 +916,66 @@ fn component_histories<'a>(
     Some(selected)
 }
 
-pub(crate) fn historical_extrude_selection_identity_kind(
-    member: &DesignExtrudeSelectionMember,
+pub(crate) fn extrude_selection_identity_kinds(
+    members: &[DesignExtrudeSelectionMember],
     naming_spaces: &[DesignComponentNamingSpace],
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
-) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
-    match component_histories(
-        member.context_id.as_str(),
-        naming_spaces,
-        body_bindings,
-        histories,
-    ) {
-        Some(selected) => HistoricalIdentityIndex::build(selected, [member.local_id])
-            .selection_identity_kind(member.local_id),
-        None => historical_selection_identity_kind(histories, member.local_id),
+) -> Vec<Option<(AsmHistoricalEntityKind, i64, Vec<i64>)>> {
+    if members.is_empty() {
+        return Vec::new();
     }
+    let mut resolved = vec![None; members.len()];
+    if naming_spaces.is_empty() {
+        let index =
+            HistoricalIdentityIndex::build(histories, members.iter().map(|member| member.local_id));
+        for (slot, member) in resolved.iter_mut().zip(members) {
+            *slot = index.selection_identity_kind(member.local_id);
+        }
+        return resolved;
+    }
+    let mut by_context: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut grouped_members: HashMap<Vec<usize>, Vec<usize>> = HashMap::new();
+    for (ordinal, member) in members.iter().enumerate() {
+        let context_key = member.context_id.as_str().to_ascii_lowercase();
+        let selected_indices = by_context.entry(context_key).or_insert_with(|| {
+            match component_histories(
+                member.context_id.as_str(),
+                naming_spaces,
+                body_bindings,
+                histories,
+            ) {
+                Some(selected) => selected
+                    .into_iter()
+                    .filter_map(|history| {
+                        histories
+                            .iter()
+                            .position(|candidate| std::ptr::eq(candidate, history))
+                    })
+                    .collect(),
+                None => (0..histories.len()).collect(),
+            }
+        });
+        if selected_indices.is_empty() {
+            continue;
+        }
+        grouped_members
+            .entry(selected_indices.clone())
+            .or_default()
+            .push(ordinal);
+    }
+    for (history_indices, member_ordinals) in grouped_members {
+        let index = HistoricalIdentityIndex::build(
+            history_indices.iter().map(|&idx| &histories[idx]),
+            member_ordinals
+                .iter()
+                .map(|&ordinal| members[ordinal].local_id),
+        );
+        for ordinal in member_ordinals {
+            resolved[ordinal] = index.selection_identity_kind(members[ordinal].local_id);
+        }
+    }
+    resolved
 }
 
 pub(crate) fn bind_extrude_selection_history(
@@ -939,20 +984,16 @@ pub(crate) fn bind_extrude_selection_history(
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
 ) {
-    for member in members {
-        member.historical = None;
-        if let Some((kind, entity_ref, states)) = historical_extrude_selection_identity_kind(
-            member,
-            naming_spaces,
-            body_bindings,
-            histories,
-        ) {
-            member.historical = Some(crate::records::topology::fillet::HistoricalBinding {
+    let resolved =
+        extrude_selection_identity_kinds(members, naming_spaces, body_bindings, histories);
+    for (member, resolved_kind) in members.iter_mut().zip(resolved) {
+        member.historical = resolved_kind.map(|(kind, entity_ref, states)| {
+            crate::records::topology::fillet::HistoricalBinding {
                 kind,
                 entity_ref,
                 state_ids: states,
-            });
-        }
+            }
+        });
     }
 }
 
@@ -964,6 +1005,9 @@ pub(crate) fn bind_entity_selection_history(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    if operands.is_empty() {
+        return;
+    }
     let identities = HistoricalIdentityIndex::build(
         histories,
         operands
@@ -971,12 +1015,22 @@ pub(crate) fn bind_entity_selection_history(
             .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
             .flat_map(|(primary, secondary)| std::iter::once(primary).chain(secondary)),
     );
-    let primaries = operands
-        .iter()
-        .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
-        .map(|(primary, _)| primary)
-        .collect::<Vec<_>>();
-    let identities_by_history = per_history_identities(histories, &primaries);
+    let owned_identities_by_history;
+    let identities_by_history: Vec<(&AsmHistory, &HistoricalIdentityIndex)> = match histories {
+        [only] => vec![(only, &identities)],
+        _ => {
+            let primaries = operands
+                .iter()
+                .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
+                .map(|(primary, _)| primary)
+                .collect::<Vec<_>>();
+            owned_identities_by_history = per_history_identities(histories, &primaries);
+            owned_identities_by_history
+                .iter()
+                .map(|(history, index)| (*history, index))
+                .collect()
+        }
+    };
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.historical_face_candidates.clear();
@@ -985,7 +1039,7 @@ pub(crate) fn bind_entity_selection_history(
             continue;
         };
         operand.historical_face_candidates =
-            entity_selection_face_candidates(primary, &identities_by_history);
+            entity_selection_face_candidates_from_refs(primary, &identities_by_history);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -2013,6 +2067,17 @@ pub(super) fn entity_selection_face_candidates(
     local_id: u64,
     histories: &[(&AsmHistory, HistoricalIdentityIndex)],
 ) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
+    let refs = histories
+        .iter()
+        .map(|(history, index)| (*history, index))
+        .collect::<Vec<_>>();
+    entity_selection_face_candidates_from_refs(local_id, &refs)
+}
+
+fn entity_selection_face_candidates_from_refs(
+    local_id: u64,
+    histories: &[(&AsmHistory, &HistoricalIdentityIndex)],
+) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 
     let mut candidates = Vec::new();
@@ -2152,6 +2217,9 @@ pub(crate) fn bind_edge_identity_history(
             })
             .or_insert(operand.layout().is_compact().then_some(1));
     }
+    if operands.is_empty() {
+        return;
+    }
     let local_ids = operands
         .iter()
         .map(|operand| operand.local_id)
@@ -2163,13 +2231,8 @@ pub(crate) fn bind_edge_identity_history(
         .collect::<Vec<_>>();
     let history_identities =
         HistoricalIdentityIndex::build(histories.get(), local_ids.iter().copied());
-    let identities_by_history = histories
-        .get()
-        .iter()
-        .map(|history| {
-            HistoricalIdentityIndex::build(std::slice::from_ref(history), local_ids.iter().copied())
-        })
-        .collect::<Vec<_>>();
+    let mut identities_by_history: HashMap<usize, HistoricalIdentityIndex> = HashMap::new();
+    let multi_history = histories.get().len() > 1;
     let mut jobs = Vec::new();
     for (position, operand) in operands.iter_mut().enumerate() {
         operand.historical = None;
@@ -2202,9 +2265,17 @@ pub(crate) fn bind_edge_identity_history(
                     .iter()
                     .position(|item| std::ptr::eq(item, history))
             });
-        let scoped_identities = bound_history
-            .and_then(|history_index| identities_by_history.get(history_index))
-            .unwrap_or(&history_identities);
+        let scoped_identities = match bound_history {
+            Some(history_index) if multi_history => identities_by_history
+                .entry(history_index)
+                .or_insert_with(|| {
+                    HistoricalIdentityIndex::build(
+                        std::slice::from_ref(&histories.get()[history_index]),
+                        local_ids.iter().copied(),
+                    )
+                }),
+            _ => &history_identities,
+        };
         if let Some((kind, entity_ref, states)) = scoped_identities
             .selection_identity_kind(operand.local_id)
             .filter(|(_, _, states)| {
@@ -2256,7 +2327,7 @@ pub(crate) fn bind_edge_identity_history(
             };
             let previous_state_id = previous_state.state_id;
             let scoped_identities = identities_by_history
-                .get(history_index)
+                .get(&history_index)
                 .unwrap_or(&history_identities);
             let mut treatment_cache = super::treatment_index::TreatmentCache::default();
             for (position, scope, current_state_id) in group {
@@ -2431,13 +2502,19 @@ pub(super) fn complete_compact_edge_treatment_deletions(
 
 /// Resolve a class-297 edge-treatment member whose persistent local identity
 /// names the member's embedded bounded-face recipe. The rule selects every
-/// deleted treatment edge on the recipe's exact preceding support face.
+/// coedge edge of every loop of the preceding face that the recipe's first
+/// reference names, in the treatment transition edge set. When the first
+/// reference names no unique preceding face, the rule selects the transition
+/// edges on the recipe's exact preceding support face. A Chamfer member drops
+/// each edge whose two adjacent faces meet with tangent continuity, and keeps
+/// each edge whose continuity is undetermined with a loss.
 pub(crate) fn bind_edge_identity_bounded_face_rules(
     operands: &mut [DesignEdgeIdentityOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-) {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::records::recipes::ConstructionRecipeKind;
 
+    let mut losses = Vec::new();
     for operand in operands {
         operand.resolved_edge_slots.clear();
         if operand.resolved_edge_slot.is_some() {
@@ -2457,33 +2534,6 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if matches.next().is_some() {
             continue;
         }
-        let [support] = face.historical_support_contexts.as_slice() else {
-            continue;
-        };
-        let mut unique_faces = HashSet::new();
-        for face in &support.preceding_face_slots {
-            unique_faces.insert(*face);
-        }
-        if support.preceding_face_slots.is_empty()
-            || support.changed_preceding_face_slots != support.preceding_face_slots
-            || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
-            || unique_faces.len() != support.preceding_face_slots.len()
-            || support.preceding_face_boundaries.iter().any(|boundary| {
-                support
-                    .preceding_face_boundaries
-                    .iter()
-                    .filter(|candidate| candidate.face_slot == boundary.face_slot)
-                    .count()
-                    != 1
-                    || !support.preceding_face_slots.contains(&boundary.face_slot)
-                    || boundary
-                        .loops
-                        .iter()
-                        .any(|loop_| loop_.boundary.coedges().next().is_none())
-            })
-        {
-            continue;
-        }
         let mut transition = HashSet::new();
         for edge in &operand.transition_edge_candidates {
             transition.insert(*edge);
@@ -2491,23 +2541,125 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if transition.is_empty() {
             continue;
         }
+        let boundaries =
+            match named_preceding_face_boundaries(&face.first_reference_support_contexts) {
+                NamedFace::Unique(boundaries) => boundaries,
+                NamedFace::Invalid => continue,
+                NamedFace::NotUnique => {
+                    let Some(boundaries) =
+                        support_face_boundaries(&face.historical_support_contexts)
+                    else {
+                        continue;
+                    };
+                    boundaries
+                }
+            };
         let mut seen = HashSet::new();
         let mut resolved = Vec::new();
-        for edge in support
-            .preceding_face_boundaries
+        for edge in boundaries
             .iter()
             .flat_map(|boundary| &boundary.loops)
             .flat_map(|loop_| loop_.boundary.coedges().map(|row| row.edge_slot))
         {
-            if transition.contains(&edge) && seen.insert(edge) {
+            if transition.contains(&edge)
+                && !face.tangent_boundary_edge_slots.contains(&edge)
+                && seen.insert(edge)
+            {
                 resolved.push(edge);
             }
+        }
+        let undetermined = resolved
+            .iter()
+            .filter(|edge| face.undetermined_continuity_edge_slots.contains(edge))
+            .count();
+        if undetermined != 0 {
+            losses.push(
+                crate::loss::F3dLossCode::HistoricalEdgeContinuityAssumedSharp.note(format!(
+                    "Chamfer face member {} keeps {undetermined} loop edge(s) of its face with the assumption that the edge is sharp, because the preceding topology does not give the continuity of the two faces at the edge.",
+                    operand.id
+                )),
+            );
         }
         operand.resolved_edge_slots = resolved;
         if !operand.resolved_edge_slots.is_empty() {
             operand.resolution_identity_id = Some(face.id.clone());
         }
     }
+    losses
+}
+
+/// The preceding face that the first recipe reference of a bounded-face
+/// edge-treatment member names.
+enum NamedFace<'a> {
+    /// The reference names one preceding face, and these are its boundaries.
+    Unique(&'a [crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]),
+    /// The reference names one preceding face without a complete boundary.
+    Invalid,
+    /// The reference names zero or several preceding faces.
+    NotUnique,
+}
+
+fn named_preceding_face_boundaries(
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+) -> NamedFace<'_> {
+    let mut faces = contexts
+        .iter()
+        .flat_map(|context| &context.preceding_face_slots)
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter();
+    let (Some(face_slot), None) = (faces.next(), faces.next()) else {
+        return NamedFace::NotUnique;
+    };
+    let Some(boundary) = contexts
+        .iter()
+        .flat_map(|context| &context.preceding_face_boundaries)
+        .find(|boundary| boundary.face_slot == face_slot)
+    else {
+        return NamedFace::Invalid;
+    };
+    if boundary.loops.is_empty()
+        || boundary
+            .loops
+            .iter()
+            .any(|loop_| loop_.boundary.coedges().next().is_none())
+    {
+        return NamedFace::Invalid;
+    }
+    NamedFace::Unique(std::slice::from_ref(boundary))
+}
+
+fn support_face_boundaries(
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+) -> Option<&[crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]> {
+    let [support] = contexts else {
+        return None;
+    };
+    let mut unique_faces = HashSet::new();
+    for face in &support.preceding_face_slots {
+        unique_faces.insert(*face);
+    }
+    if support.preceding_face_slots.is_empty()
+        || support.changed_preceding_face_slots != support.preceding_face_slots
+        || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
+        || unique_faces.len() != support.preceding_face_slots.len()
+        || support.preceding_face_boundaries.iter().any(|boundary| {
+            support
+                .preceding_face_boundaries
+                .iter()
+                .filter(|candidate| candidate.face_slot == boundary.face_slot)
+                .count()
+                != 1
+                || !support.preceding_face_slots.contains(&boundary.face_slot)
+                || boundary
+                    .loops
+                    .iter()
+                    .any(|loop_| loop_.boundary.coedges().next().is_none())
+        })
+    {
+        return None;
+    }
+    Some(&support.preceding_face_boundaries)
 }
 
 pub(super) fn historical_identity_edge(

@@ -2,7 +2,7 @@
 //! Sketches that no feature of the timeline restates: each is the operation
 //! of a feature of one unordered `Group`, a root of the part's scope, and a
 //! part with no feature history states only them, its bodies unproduced
-//! (§5.2, §5.5; interim).
+//! (§5.2, §5.5).
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::serde_erase::json;
@@ -21,10 +21,25 @@ use crate::loss::SldprtLossCode;
 
 /// Project the design of `ir` again from `histories`, with the rollback at
 /// the end of a timeline whose last feature is `Boss`, and return the losses.
-fn project(
+pub(super) fn project(
     ir: &mut CadIr,
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
+) -> Vec<LossNote> {
+    project_with(
+        ir,
+        histories,
+        lanes,
+        super::super::EquationManagers::default(),
+    )
+}
+
+/// [`project`] with the equation managers `equations`.
+pub(in crate::design_v11) fn project_with(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    equations: super::super::EquationManagers,
 ) -> Vec<LossNote> {
     ir.design = cadmpeg_ir::document::Design::default();
     ir.model
@@ -54,7 +69,7 @@ fn project(
                 bodies: &[],
             },
             length: None,
-            equations: super::super::EquationManagers::default(),
+            equations,
             length_places: None,
             rollback: crate::rollback::Reading::End {
                 last: "Boss".to_owned(),
@@ -62,6 +77,8 @@ fn project(
             },
             outside_profile: &HashSet::new(),
             given_up_configurations: &BTreeSet::new(),
+            scan: None,
+            marks: &crate::rollback::StoredMarks::new(),
         },
         &mut losses,
     )
@@ -75,7 +92,7 @@ fn named(losses: &[LossNote], code: SldprtLossCode, text: &str) -> bool {
         .any(|note| note.code == code.kind() && note.message.contains(text))
 }
 
-fn group(ir: &CadIr) -> (&cadmpeg_ir::design::ids::ContainerId, &BTreeSet<Member>) {
+pub(super) fn group(ir: &CadIr) -> (&cadmpeg_ir::design::ids::ContainerId, &BTreeSet<Member>) {
     let groups = ir
         .design
         .containers
@@ -158,7 +175,7 @@ fn a_sketch_no_timeline_feature_lists_is_owned_by_a_member_of_one_group() {
         .iter()
         .any(|sketch| sketch.id.as_str() == "sldprt:model:sketch#test"));
     assert!(
-        named(&losses, SldprtLossCode::DesignSketchOutsideHistory, EXTRA),
+        losses.iter().all(|note| !note.message.contains(EXTRA)),
         "{losses:#?}"
     );
     assert_no_design_findings(&ir);
@@ -247,10 +264,6 @@ fn a_part_without_history_states_its_sketches_in_one_group_with_its_bodies_unpro
         panic!("a distance of the stored value: {:#?}", width.relation);
     };
     assert_eq!(length.get(), 50.0);
-    assert!(
-        named(&losses, SldprtLossCode::DesignSketchOutsideHistory, SKETCH),
-        "{losses:#?}"
-    );
     assert!(
         named(&losses, SldprtLossCode::DesignSketchDimensionUnbound, WIDTH),
         "{losses:#?}"

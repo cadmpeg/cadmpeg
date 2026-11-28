@@ -363,7 +363,7 @@
       "features": [
         {
           "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
-          "name": "Sketch 1",
+          "name": "Sketch1",
           "suppressed": {
             "kind": "literal",
             "value": false
@@ -381,7 +381,7 @@
         {
           "id": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "owner": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
-          "name": "Sketch 1",
+          "name": "Sketch1",
           "plane": {
             "kind": "placed",
             "inputs": [
@@ -470,7 +470,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006"
         },
@@ -488,7 +496,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212"
         },
@@ -506,7 +522,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418"
         },
@@ -524,7 +548,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624"
         },
@@ -542,7 +574,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070"
         },
@@ -560,7 +600,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3394"
         },
@@ -578,7 +626,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3600"
         }
@@ -592,6 +648,32 @@
             "value": {
               "kind": "f3d:Linear Dimension",
               "operands": [
+                {
+                  "kind": "model",
+                  "value": {
+                    "at": {
+                      "kind": "current"
+                    },
+                    "picks": {
+                      "kind": "named",
+                      "value": [
+                        {
+                          "target": {
+                            "kind": "native",
+                            "value": {}
+                          },
+                          "native": {
+                            "codec": "f3d",
+                            "value": {
+                              "kind": "text",
+                              "value": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
                 {
                   "kind": "entity",
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p501"
@@ -617,10 +699,47 @@
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p801"
                 }
               ],
-              "values": []
+              "values": [
+                {
+                  "kind": "length",
+                  "value": {
+                    "kind": "parameter",
+                    "value": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1201"
+                  }
+                }
+              ]
             }
           },
-          "native_options": {},
+          "native_options": {
+            "f3d:instance_name": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "Linear Dimension-1"
+              }
+            },
+            "f3d:operand.0.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "recipe"
+              }
+            },
+            "f3d:operand.0.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 1305
+              }
+            },
+            "f3d:operand.0.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "construction_recipe"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070"
         },
@@ -666,12 +785,112 @@
                 {
                   "kind": "entity",
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p501"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p501"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p500"
                 }
               ],
               "values": []
             }
           },
-          "native_options": {},
+          "native_options": {
+            "f3d:native_state": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 16
+              }
+            },
+            "f3d:operand.0.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.0.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 100
+              }
+            },
+            "f3d:operand.0.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.1.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.1.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 200
+              }
+            },
+            "f3d:operand.1.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.2.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.2.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 200
+              }
+            },
+            "f3d:operand.2.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.3.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.3.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 100
+              }
+            },
+            "f3d:operand.3.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#33"
         },
@@ -690,12 +909,112 @@
                 {
                   "kind": "entity",
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p503"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p503"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p502"
                 }
               ],
               "values": []
             }
           },
-          "native_options": {},
+          "native_options": {
+            "f3d:native_state": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 4
+              }
+            },
+            "f3d:operand.0.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.0.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 300
+              }
+            },
+            "f3d:operand.0.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.1.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.1.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 400
+              }
+            },
+            "f3d:operand.1.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.2.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.2.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 400
+              }
+            },
+            "f3d:operand.2.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.3.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.3.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 300
+              }
+            },
+            "f3d:operand.3.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#44"
         }
@@ -711,6 +1030,7 @@
             "kind": "feature",
             "value": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100"
           },
+          "position": 0,
           "name": "d1",
           "kind": {
             "kind": "quantity",
@@ -755,6 +1075,7 @@
             "kind": "feature",
             "value": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100"
           },
+          "position": 1,
           "name": "d2",
           "kind": {
             "kind": "quantity",
@@ -919,6 +1240,7 @@
             "asm_body_key": 42,
             "asm_body_key_offset": 25,
             "body": "f3d:brep:entity#1",
+            "browser_node_entity": 900,
             "byte_offset": 719,
             "entity_suffix": 985,
             "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
@@ -2401,6 +2723,42 @@
         },
         "severity": "warning",
         "message": "1 sketch dimension(s) retain native operands because no unique neutral dimension was resolved."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "design.sketch-relation-native",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "warning",
+        "message": "sketch relation f3d:model:sketch-constraint#dimension:59:52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat120112:recipe-group has no typed relation of its operands and value; it states its native kind"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "design.sketch-relation-native",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "warning",
+        "message": "sketch relation f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@33 has no typed relation of its operands and value; it states its native kind"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "design.sketch-relation-native",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "warning",
+        "message": "sketch relation f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@44 has no typed relation of its operands and value; it states its native kind"
       }
     ],
     "notes": [

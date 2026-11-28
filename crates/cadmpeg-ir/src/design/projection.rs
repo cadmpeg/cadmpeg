@@ -4,7 +4,7 @@
 //! The projection reads no source byte: it restates records the decoder
 //! already read. A projection that fails is given up as one part (§3.3 of
 //! the CADIR v11 specification): the design layer stays as it was before the
-//! projection, and one `record.unreadable` loss names the layer.
+//! projection, and one `record.undecoded` loss names the layer.
 
 use std::collections::BTreeSet;
 
@@ -15,8 +15,7 @@ use crate::annotations::{AnnotationBuilder, AnnotationKey, ExactnessNote};
 use crate::document::CadIr;
 use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
-use crate::report::Severity;
-use crate::unknown::part::record_unreadable_kind;
+use crate::unknown::part::Cause;
 
 use self::fields::{
     ArrangementField, FeatureField, Field, ModelConfigurationField, ModelFeatureField,
@@ -26,6 +25,7 @@ use self::fields::{
 pub mod fields;
 pub mod restated;
 pub mod sketch;
+pub mod spatial_sketch;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.
@@ -33,7 +33,7 @@ pub mod sketch;
 /// Where `project` fails with an error that does not end the session, `ir`
 /// holds the design records and product definitions it held before the
 /// projection, `losses` holds the losses it held before the projection and
-/// one `record.unreadable` that names the layer, and the model holds the
+/// one `record.undecoded` that names the layer, and the model holds the
 /// restatements it held before the projection. The geometry and the model
 /// records stand. Where `project` succeeds, each design feature that
 /// restates a model feature under its identity states the fields it leaves
@@ -61,11 +61,7 @@ pub fn project_layer(
         ir.model.restated = restated;
         losses.truncate(reported);
         losses.push(
-            LossNote::new(
-                record_unreadable_kind(),
-                format!("{codec} v11 design layer is not stated: {error}"),
-            )
-            .with_severity(Severity::Error),
+            Cause::Undecoded.note(format!("{codec} v11 design layer is not stated: {error}")),
         );
     } else {
         restated::restate_features(ctx, ir)?;

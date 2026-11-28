@@ -34,6 +34,7 @@
             "name": "length",
             "native_options": {},
             "native_ref": "nx:om-entry-0:expression#97",
+            "position": 0,
             "scope": "nx:document:product-definition#root",
             "source_settings": {},
             "unit": [
@@ -371,6 +372,7 @@
               "definition": "derived",
               "kind": "derived",
               "native_ref": "derived",
+              "position": "derived",
               "unit": "derived",
               "value": "derived"
             },

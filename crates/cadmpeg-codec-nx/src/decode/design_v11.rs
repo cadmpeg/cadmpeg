@@ -77,7 +77,7 @@ pub(super) fn project(
         };
         features.push(Feature {
             id: feature.id.clone(),
-            name: None,
+            name: feature.name.clone(),
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation,
@@ -99,7 +99,7 @@ pub(super) fn project(
         .collect::<Vec<_>>();
     let (arrangements, active_arrangements) = arrangements(ir, &definition, losses)?;
     sketches::project(ir, &owners, losses);
-    parameters::project(ir, &definition, losses);
+    parameters::project(ir, &definition, losses)?;
     if features.is_empty() && arrangements.is_empty() && ir.design.parameters.is_empty() {
         return Ok(());
     }
@@ -147,6 +147,7 @@ pub(super) const RESTATEMENT: Restatement = Restatement {
 #[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
+        FeatureField::Name => &[ModelFeatureField::Name],
         FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
         FeatureField::Definition => &[
             ModelFeatureField::Definition,
@@ -154,10 +155,7 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
             ModelFeatureField::SourceTag,
         ],
         FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
-        FeatureField::Name
-        | FeatureField::Placement
-        | FeatureField::Component
-        | FeatureField::DrivenBy => &[],
+        FeatureField::Placement | FeatureField::Component | FeatureField::DrivenBy => &[],
     }
 }
 
@@ -255,10 +253,7 @@ fn timeline(
 /// The NX arrangements, each a positional arrangement that states no
 /// overrides and restates the model configuration of its id, and the ones
 /// the part names as in use. An arrangement with no name has no design
-/// record. An arrangement restates the configuration without each field it
-/// holds that no arrangement field holds: its properties, material,
-/// parameter values and expressions, feature states and bodies, and a name
-/// the arrangement spells otherwise.
+/// record.
 fn arrangements(
     ir: &mut CadIr,
     scope: &ProductDefinitionId,
@@ -304,6 +299,7 @@ fn arrangements(
                 !configuration.parameter_values.is_empty(),
             ),
             ("feature_states", !configuration.feature_states.is_empty()),
+            ("ordinal", ir.model.configurations.len() > 1),
         ];
         let cut = held
             .into_iter()

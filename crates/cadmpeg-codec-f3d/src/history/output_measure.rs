@@ -47,9 +47,12 @@ pub(super) struct ParallelMeasureTargets<'a> {
 
 struct MeasuredState {
     state_key: (usize, i64),
+    state_index: usize,
+    previous_index: Option<usize>,
     local_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     local_midpoints: Vec<(usize, Vec<cadmpeg_ir::math::Point3>)>,
     whole_deleted: Vec<i64>,
+    whole_deleted_candidates: Option<(i64, Vec<i64>)>,
     face_planes: BTreeMap<i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>,
     incomplete_centers: BTreeSet<i64>,
     vertices_map: BTreeMap<i64, Vec<cadmpeg_ir::math::Point3>>,
@@ -59,7 +62,8 @@ struct MeasuredState {
     bounds_list: Vec<(i64, BodyExtent)>,
     present_bodies: Option<BTreeSet<i64>>,
     solid_bodies: Option<BTreeSet<i64>>,
-    affected: Option<(i64, Option<i64>, Vec<i64>)>,
+    successor_bodies: Option<BTreeSet<i64>>,
+    affected: Option<(i64, Option<i64>, BTreeSet<i64>, bool)>,
 }
 
 pub(super) fn measure_history_states_parallel(
@@ -88,7 +92,7 @@ pub(super) fn measure_history_states_parallel(
         .map(|((pos, idx), reqs)| (pos, idx, reqs))
         .collect();
     let chunk_size = work_items.len().div_ceil(workers);
-    let measured_chunks = std::thread::scope(|scope| {
+    let measured_chunks = crate::scoped::scope(|scope| {
         let mut iter = work_items.into_iter();
         let mut chunks_vec = Vec::new();
         loop {
@@ -117,7 +121,10 @@ pub(super) fn measure_history_states_parallel(
     });
 
     let mut deferred_affected = Vec::new();
+    let mut prev_successor: Option<(usize, Option<BTreeSet<i64>>)> = None;
     for item in measured_chunks {
+        let walked_prev = prev_successor.take();
+        prev_successor = Some((item.state_index, item.successor_bodies));
         let state_key = item.state_key;
         targets.losses.extend(item.local_losses);
         for (feature_index, midpoints) in item.local_midpoints {
@@ -125,10 +132,25 @@ pub(super) fn measure_history_states_parallel(
                 .feature_edge_midpoints
                 .insert(feature_index, midpoints);
         }
-        if !item.whole_deleted.is_empty() {
+        let whole_deleted = if let Some((prev_state_id, deleted)) = item.whole_deleted_candidates {
+            if let Some(prev_solid) = targets
+                .state_solid_bodies
+                .get(&(history_index, prev_state_id))
+            {
+                deleted
+                    .into_iter()
+                    .filter(|b| prev_solid.contains(b))
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            item.whole_deleted
+        };
+        if !whole_deleted.is_empty() {
             targets
                 .state_deleted_bodies
-                .insert(state_key, item.whole_deleted);
+                .insert(state_key, whole_deleted);
         }
         if !item.face_planes.is_empty() {
             targets
@@ -165,8 +187,27 @@ pub(super) fn measure_history_states_parallel(
         if let Some(solid) = item.solid_bodies {
             targets.state_solid_bodies.insert(state_key, solid);
         }
-        if let Some(aff) = item.affected {
-            deferred_affected.push(aff);
+        if let Some((state_id, prev_state_id, mut affected, needs_prev_handoff)) = item.affected {
+            let resolved = if needs_prev_handoff {
+                match (item.previous_index, walked_prev) {
+                    (Some(prev_idx), Some((walked_idx, Some(deleted))))
+                        if walked_idx == prev_idx =>
+                    {
+                        affected.extend(deleted);
+                        true
+                    }
+                    _ => false,
+                }
+            } else {
+                true
+            };
+            if resolved {
+                deferred_affected.push((
+                    state_id,
+                    prev_state_id,
+                    affected.into_iter().collect::<Vec<_>>(),
+                ));
+            }
         }
     }
     for (state_id, prev_state_id, outputs) in deferred_affected {
@@ -215,37 +256,66 @@ fn measure_one_state(
     let mut local_losses = Vec::new();
     let mut local_midpoints = Vec::new();
     let mut whole_deleted = Vec::new();
+    let mut whole_deleted_candidates = None;
     let previous = state.next_ref.and_then(|node| by_node.get(&node).copied());
     if let Some(previous) = previous {
         if output_states.contains(&state_key) {
-            if let (Some(transition), Some(prev_topology)) = (
-                state.transition.as_ref(),
-                history.topology(&history.states()[previous]),
-            ) {
-                let prev_index = HistoricalBodyIndex::new(prev_topology);
-                whole_deleted = transition
-                    .topology
-                    .bodies
-                    .deleted
-                    .iter()
-                    .copied()
-                    .filter(|&b| prev_index.is_solid(b))
-                    .collect();
+            if let Some(transition) = state.transition.as_ref() {
+                if !transition.topology.bodies.deleted.is_empty() {
+                    let prev_state_id = history.states()[previous].state_id;
+                    if measured_states.contains(&(history_index, prev_state_id)) {
+                        whole_deleted_candidates =
+                            Some((prev_state_id, transition.topology.bodies.deleted.clone()));
+                    } else if let Some(prev_topology) =
+                        history.topology(&history.states()[previous])
+                    {
+                        let prev_index = HistoricalBodyIndex::new(prev_topology);
+                        whole_deleted = transition
+                            .topology
+                            .bodies
+                            .deleted
+                            .iter()
+                            .copied()
+                            .filter(|&b| prev_index.is_solid(b))
+                            .collect();
+                    }
+                }
             }
         }
     }
-    let deleted_bodies = previous
-        .filter(|_| output_states.contains(&state_key))
-        .and_then(|previous| {
-            let transition = state.transition.as_ref()?;
-            bodies_touching(
-                history.topology(&history.states()[previous])?,
-                &[&changed_topology_family_refs(&transition.topology, true)],
-            )
-            .and_then(|touched| touched.into_iter().next())
+    let has_prev_handoff = position > 0
+        && previous.is_some_and(|prev_idx| {
+            order[position - 1] == prev_idx && {
+                let prev_state = &history.states()[prev_idx];
+                let prev_prev_id = prev_state
+                    .next_ref
+                    .and_then(|node| by_node.get(&node).copied())
+                    .map(|pp| history.states()[pp].state_id);
+                output_states.contains(&(history_index, prev_state.state_id))
+                    && prev_state
+                        .transition
+                        .as_ref()
+                        .is_some_and(|tr| tr.previous_state_id == prev_prev_id)
+            }
         });
+    let deleted_bodies = if has_prev_handoff {
+        None
+    } else {
+        previous
+            .filter(|_| output_states.contains(&state_key))
+            .and_then(|previous| {
+                let transition = state.transition.as_ref()?;
+                bodies_touching(
+                    history.topology(&history.states()[previous])?,
+                    &[&changed_topology_family_refs(&transition.topology, true)],
+                )
+                .and_then(|touched| touched.into_iter().next())
+            })
+    };
     if let Some(requests) = reqs {
         let topology = history.topology(state);
+        let edge_slots =
+            topology.map(|topology| super::selection::FamilySlots::new(&topology.edges));
         let samples = topology.map(|topology| KeyedRows::new(&topology.edge_samples));
         for EdgeMidpointRequest {
             feature_index,
@@ -254,8 +324,9 @@ fn measure_one_state(
         {
             let mut midpoints = Vec::new();
             for slot in slots {
-                let sample = topology
-                    .filter(|topology| topology.edges.contains(&slot))
+                let sample = edge_slots
+                    .as_ref()
+                    .filter(|edge_slots| edge_slots.contains(slot))
                     .and_then(|_| samples.as_ref()?.get(slot));
                 if let Some(sample) = sample {
                     midpoints.push(sample.interior);
@@ -403,6 +474,7 @@ fn measure_one_state(
             solid_bodies = Some(solid_edges.into_keys().collect());
         }
     }
+    let mut successor_bodies = None;
     let affected = (|| {
         let transition = state.transition.as_ref()?;
         if transition.previous_state_id != previous.map(|p| history.states()[p].state_id) {
@@ -421,7 +493,7 @@ fn measure_one_state(
             .and_then(|next| next.transition.as_ref())
             .map(|next| changed_topology_family_refs(&next.topology, true))
             .unwrap_or_default();
-        let [mut affected, _] = bodies_touching(
+        let [mut affected, walked_successor] = bodies_touching(
             topology,
             &[
                 &changed_topology_family_refs(&transition.topology, false),
@@ -429,20 +501,32 @@ fn measure_one_state(
             ],
         )
         .and_then(|touched| <[_; 2]>::try_from(touched).ok())?;
-        if previous.is_some() {
-            affected.extend(deleted_bodies?);
-        }
+        successor_bodies = Some(walked_successor);
+        let needs_prev_handoff = if previous.is_some() {
+            if has_prev_handoff {
+                true
+            } else {
+                affected.extend(deleted_bodies?);
+                false
+            }
+        } else {
+            false
+        };
         Some((
             cur_state_id,
             previous.map(|p| history.states()[p].state_id),
-            affected.into_iter().collect::<Vec<_>>(),
+            affected,
+            needs_prev_handoff,
         ))
     })();
     MeasuredState {
         state_key,
+        state_index: index,
+        previous_index: previous,
         local_losses,
         local_midpoints,
         whole_deleted,
+        whole_deleted_candidates,
         face_planes,
         incomplete_centers,
         vertices_map,
@@ -452,6 +536,7 @@ fn measure_one_state(
         bounds_list,
         present_bodies,
         solid_bodies,
+        successor_bodies,
         affected,
     }
 }
@@ -461,12 +546,13 @@ pub(super) fn project_input_topologies_parallel(
     histories_ref: &[AsmHistory],
     jobs: Vec<(usize, usize, (usize, i64))>,
     workers: usize,
+    chamfer_senses: &super::chamfer_supports::ChamferSenses,
 ) -> Vec<(
     usize,
     cadmpeg_ir::features::evaluation::FeatureInputTopology,
 )> {
     let chunk_size = jobs.len().div_ceil(workers);
-    std::thread::scope(|scope| {
+    crate::scoped::scope(|scope| {
         let mut iter = jobs.into_iter();
         let mut chunks = Vec::new();
         loop {
@@ -492,12 +578,15 @@ pub(super) fn project_input_topologies_parallel(
                         let Some(feature) = features.get(feature_position) else {
                             continue;
                         };
-                        if let Some(input) = super::input_topologies::project_input_topology(
-                            feature,
-                            history,
-                            state,
-                            previous_state_id,
-                        ) {
+                        if let Some(input) =
+                            super::input_topologies::project_input_topology_with_senses(
+                                feature,
+                                history,
+                                state,
+                                previous_state_id,
+                                chamfer_senses,
+                            )
+                        {
                             out.push((feature_position, input));
                         }
                     }

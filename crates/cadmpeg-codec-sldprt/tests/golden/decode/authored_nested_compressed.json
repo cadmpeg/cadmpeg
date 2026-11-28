@@ -2,7 +2,23 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#980:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#980:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "position": 0,
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [
         {
           "kind": "unordered",
@@ -38,6 +54,7 @@
       "scopes": [
         {
           "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#980:0",
           "current": [],
           "definition": "sldprt:model:product-definition#root",
           "occurrences": {},
@@ -50,77 +67,7 @@
         }
       ],
       "sheet_metal_rules": [],
-      "sketch_constraints": [
-        {
-          "id": "sldprt:model:sketch-constraint#348:0:0:0",
-          "native_options": {},
-          "relation": {
-            "kind": "native",
-            "value": {
-              "kind": "sldprt:coincident_loci",
-              "operands": [
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:0"
-                },
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:2"
-                }
-              ],
-              "values": []
-            }
-          },
-          "sketch": "sldprt:model:sketch#348:0:0",
-          "source_settings": {}
-        },
-        {
-          "id": "sldprt:model:sketch-constraint#348:0:0:1",
-          "native_options": {},
-          "relation": {
-            "kind": "native",
-            "value": {
-              "kind": "sldprt:coincident_loci",
-              "operands": [
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:0"
-                },
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:1"
-                }
-              ],
-              "values": []
-            }
-          },
-          "sketch": "sldprt:model:sketch#348:0:0",
-          "source_settings": {}
-        },
-        {
-          "id": "sldprt:model:sketch-constraint#348:0:0:2",
-          "native_options": {},
-          "relation": {
-            "kind": "native",
-            "value": {
-              "kind": "sldprt:coincident_loci",
-              "operands": [
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:1"
-                },
-                {
-                  "kind": "entity",
-                  "value": "sldprt:model:sketch-entity#348:0:0:2"
-                }
-              ],
-              "values": []
-            }
-          },
-          "sketch": "sldprt:model:sketch#348:0:0",
-          "source_settings": {}
-        }
-      ],
+      "sketch_constraints": [],
       "sketch_entities": [
         {
           "definition": {
@@ -150,6 +97,68 @@
           "definition": {
             "kind": "free",
             "value": {
+              "kind": "point",
+              "value": {
+                "u": 1000.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:0/end-point",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:point#61",
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:0",
+              "role": {
+                "kind": "end"
+              }
+            },
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:1",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:0/start-point",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:point#60",
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:0",
+              "role": {
+                "kind": "start"
+              }
+            },
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:2",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
               "kind": "line",
               "value": {
                 "end": {
@@ -167,6 +176,37 @@
           "native_options": {},
           "native_ref": "0:sldprt:brep:edge#41",
           "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 1000.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:1/end-point",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:point#62",
+          "roles": [
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:1",
+              "role": {
+                "kind": "end"
+              }
+            },
+            {
+              "of": "sldprt:model:sketch-entity#348:0:0:2",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
           "sketch": "sldprt:model:sketch#348:0:0",
           "source_settings": {}
         },
@@ -853,12 +893,12 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "design.sketch-outside-history",
+            "code": "design.sketch-relation-single-point",
             "kind": "decode_diagnostic",
             "namespace": "sldprt"
           }
         },
-        "message": "1 sketches that no feature-history node lists are each the operation of a feature of one unordered Group of the part's scope (interim): sldprt:model:sketch#348:0:0",
+        "message": "3 sketch relations name one point entity for both operands of a coincidence; the point states the coincidence, and the design holds no relation record for them: sldprt:model:sketch-constraint#348:0:0:0, sldprt:model:sketch-constraint#348:0:0:1, sldprt:model:sketch-constraint#348:0:0:2",
         "severity": "warning"
       }
     ],
@@ -885,21 +925,6 @@
           "kind": "fields"
         },
         "sldprt:model:sketch#348:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
           "entity": "derived",
           "fields": {},
           "kind": "entity"
@@ -1075,21 +1100,6 @@
           "offset": 611,
           "stream": "Contents/Config-0-ResolvedFeatures",
           "tag": "feature_input_profile"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:1": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
-        },
-        "sldprt:model:sketch-constraint#348:0:0:2": {
-          "offset": 0,
-          "stream": "Contents/Config-0-ResolvedFeatures",
-          "tag": "feature_input_shared_endpoint"
         },
         "sldprt:model:sketch-entity#348:0:0:0": {
           "offset": 0,

@@ -13,12 +13,14 @@
 //! of the scope that encloses it. A stream that lists no item states no
 //! container.
 //!
-//! Each planar sketch is the operation of the feature that owns it (§6.1). A
-//! sketch whose owner has no item of a listing timeline is the operation of a
-//! member of one unordered `Group` of its document's scope, a root after the
-//! timelines; a document whose streams list no item and hold such a sketch
-//! has a scope whose roots are that group and whose bodies are unproduced
-//! (§5.2, §5.5). A document with neither has no scope.
+//! Each planar and spatial sketch is the operation of the feature that owns
+//! it (§6.1). A sketch whose owner has no item of a listing timeline is the
+//! operation of a member of one unordered `Group` of its document's scope, a
+//! root after the timelines; a document whose streams list no item and hold
+//! such a sketch, or a construction plane, axis, or point, has a scope whose
+//! roots are that group, with its sketches and construction features as
+//! members, and whose bodies are unproduced (§5.2, §5.5). A document with
+//! neither has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
@@ -28,7 +30,7 @@
 //! parameters and configuration rows of a referenced design without a scope
 //! of its own belong to no scope here, and a loss names each of them.
 
-mod configurations;
+pub(crate) mod configurations;
 mod datum;
 mod operation;
 pub(crate) mod parameters;
@@ -46,8 +48,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::features::FeatureId;
@@ -91,9 +95,15 @@ pub(crate) fn project(
     };
     let timelines = namespace.arena_as_for_decode::<DesignFeatureTimeline>(ctx, TIMELINES)?;
     if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
         && timelines
             .iter()
             .all(|timeline| timeline.frame().items().is_empty())
+        && !ir
+            .model
+            .features
+            .iter()
+            .any(|feature| sketch::construction(feature.evaluation.definition().operation()))
     {
         return Ok(());
     }
@@ -134,6 +144,7 @@ pub(crate) fn project(
         &current,
         losses,
     )?;
+    let listing = documents.keys().cloned().collect::<BTreeSet<_>>();
     let mut scopes = BTreeMap::new();
     let mut hosted = Vec::new();
     for (prefix, projected) in documents {
@@ -167,7 +178,7 @@ pub(crate) fn project(
         .flat_map(|(_, projected)| &projected.features)
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
-    for (prefix, owners) in sketch::outside(&ir.model, &restated)? {
+    for (prefix, owners) in sketch::outside(&ir.model, &restated, &listing, losses)? {
         let enclosing = if scopes.contains_key(&prefix) {
             prefix.clone()
         } else if let Some(definition) = scope_definition(&ir.model.product_definitions, &prefix) {
@@ -182,14 +193,14 @@ pub(crate) fn project(
                 timeline::Projected::default(),
             )
         });
-        sketch::hold(ctx, &prefix, owners, into, losses)?;
+        sketch::hold(ctx, &prefix, owners, into)?;
     }
     definitions.extend(
         scopes
             .iter()
             .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone())),
     );
-    let scoped_parameters;
+    let mut scoped_parameters;
     let scoped_configurations;
     {
         let features = scopes
@@ -197,8 +208,13 @@ pub(crate) fn project(
             .flat_map(|(_, projected)| &projected.features)
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
+        let places = match ir.native.namespace("f3d") {
+            Some(namespace) => parameters::owner_places(ctx, namespace)?,
+            None => HashMap::new(),
+        };
         scoped_parameters = parameters::project(
             &ir.model.parameters,
+            &places,
             &definitions,
             &hosted_prefixes,
             &features,
@@ -213,6 +229,16 @@ pub(crate) fn project(
             losses,
         );
     }
+    let curves = namespace
+        .arena_as_for_decode::<crate::records::sketch_geometry::SketchCurveIdentity>(
+            ctx,
+            "sketch_curve_identities",
+        )?;
+    let points = namespace.arena_as_for_decode::<crate::records::sketch_geometry::SketchPoint>(
+        ctx,
+        "sketch_points",
+    )?;
+    let incidence = sketch::Incidence::from_records(&curves, &points);
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let mut sketches = sketch::Sketches::default();
     let owners = ir
@@ -275,13 +301,19 @@ pub(crate) fn project(
             .filter(|parameter| parameter.scope == definition)
             .collect::<Vec<_>>();
         sketch::project(
-            &ir.model,
+            &sketch::Scope {
+                ctx,
+                model: &ir.model,
+                incidence: &incidence,
+                linear: ir.tolerances.linear.get(),
+                definition: &definition,
+                unordered: &unordered,
+                parameters: &in_scope,
+            },
             &mut projected.features,
-            &unordered,
-            &in_scope,
             &mut sketches,
             losses,
-        );
+        )?;
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
@@ -306,7 +338,13 @@ pub(crate) fn project(
     )?;
     ctx.charge_entities(
         u64::try_from(
-            sketches.records.len() + sketches.entities.len() + sketches.constraints.len(),
+            sketches.records.len()
+                + sketches.entities.len()
+                + sketches.constraints.len()
+                + sketches.spatial.len()
+                + sketches.spatial_entities.len()
+                + sketches.spatial_constraints.len()
+                + sketches.parameters.len(),
         )
         .map_err(|_| CodecError::malformed("F3D v11 sketch record count exceeds u64"))?,
         "project F3D v11 sketches",
@@ -314,7 +352,33 @@ pub(crate) fn project(
     ir.design.sketches.extend(sketches.records);
     ir.design.sketch_entities.extend(sketches.entities);
     ir.design.sketch_constraints.extend(sketches.constraints);
+    ir.design.spatial_sketches.extend(sketches.spatial);
+    ir.design
+        .spatial_sketch_entities
+        .extend(sketches.spatial_entities);
+    ir.design
+        .spatial_sketch_constraints
+        .extend(sketches.spatial_constraints);
+    let diameter_parameters = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match &constraint.relation {
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+                ..
+            } => Some(parameter),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    for parameter in &mut scoped_parameters {
+        if diameter_parameters.contains(&parameter.id) {
+            parameter.display = None;
+        }
+    }
     ir.design.parameters.extend(scoped_parameters);
+    ir.design.parameters.extend(sketches.parameters);
     ir.design
         .configurations
         .extend(scoped_configurations.records);

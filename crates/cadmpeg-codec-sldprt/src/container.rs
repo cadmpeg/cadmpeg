@@ -22,7 +22,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 mod configuration_bindings;
@@ -432,7 +432,8 @@ fn completed_scan<'a>(
                 .xml_payload()
                 .map(|payload| (section.name(), payload))
         }),
-        &ScanAdmission::Decode(ctx),
+        ctx,
+        "SLDPRT envelope XML tree",
     )?;
     scan.solidworks = solidworks;
     Ok(scan)
@@ -440,11 +441,6 @@ fn completed_scan<'a>(
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
-enum ScanAdmission<'a, 'ctx> {
-    Probe,
-    Decode(&'ctx DecodeContext<'a>),
-}
-
 #[derive(Default)]
 struct NativeMarkers {
     blocks: Vec<Block>,
@@ -494,7 +490,9 @@ fn walk_native_markers(
             Ok(None) => {}
             Err(error) => {
                 if let Some((_, _, end)) = read_block_frame(bytes, i) {
-                    given_up.push(ctx.give_up_part(native_block_part(bytes, i, end), error)?);
+                    let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                    let part = native_block_part(bytes, i, end);
+                    given_up.push(ctx.give_up_part(part, cause, error)?);
                     i = end;
                     continue;
                 }
@@ -531,6 +529,7 @@ fn walk_native_markers(
         given_up_end = end;
         given_up.push(ctx.give_up_part(
             native_block_part(bytes, offset, end),
+            Cause::Unreadable,
             CodecError::malformed(
                 "declared native local member failed DEFLATE, size or CRC validation",
             ),
@@ -598,15 +597,20 @@ fn extract_streams_for_owner(
                 }
                 given_up.push(ctx.give_up_part(
                     member,
+                    Cause::Unreadable,
                     CodecError::malformed(
-                        "the ZLB-wrapped zlib member does not inflate to its declared size",
+                        "the ZLB-wrapped frames from this offset do not read: a zlib member \
+                         does not inflate to its declared size or passes the frame ceiling, a \
+                         frame runs past its section, or bytes after the frames are neither a \
+                         frame nor zero padding",
                     ),
                 )?);
             }
             Ok(streams)
         }
         Err(error) => {
-            given_up.push(ctx.give_up_part(part, error)?);
+            let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+            given_up.push(ctx.give_up_part(part, cause, error)?);
             Ok(crate::parasolid::ExtractedStreams::of(Vec::new(), false))
         }
     }
@@ -736,7 +740,10 @@ fn compound_streams(
                         bytes.len()
                     ));
                 }
-                compound.given_up.push(ctx.give_up_part(part, error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                compound
+                    .given_up
+                    .push(ctx.give_up_part(part, cause, error)?);
                 continue;
             }
         };
@@ -1183,6 +1190,7 @@ pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 }
 
 /// One selected Parasolid partition stream and its source site.
+#[derive(Clone, Copy)]
 pub(crate) struct ActiveParasolidSite<'a> {
     pub(crate) section: Section<'a>,
     /// Offset of the stream in its section's semantic payload.
@@ -1544,32 +1552,30 @@ impl ManifestActiveConfiguration {
     }
 }
 
+/// Scans the `swSolidWorks` envelopes of `sections`, each parsed in the
+/// session `ctx` under `operation`. A resource refusal ends the scan; a
+/// section that does not parse holds no envelope.
 fn scan_solidworks_envelopes<'a>(
     sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
-    admission: &ScanAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
 ) -> Result<SolidWorksEnvelopeScan, CodecError> {
     let mut scan = SolidWorksEnvelopeScan::default();
     for (section, payload) in sections {
         let Some(text) = xml_text(payload) else {
             continue;
         };
-        let document = match admission {
-            ScanAdmission::Decode(ctx) => match ctx.parse_xml(&text, "SLDPRT envelope XML tree") {
-                Ok(tree) => tree,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => continue,
-            },
-            ScanAdmission::Probe => match roxmltree::Document::parse(&text) {
-                Ok(document) => document,
-                Err(_) => continue,
-            },
+        let document = match ctx.parse_xml(&text, operation) {
+            Ok(tree) => tree,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
-            scan.configuration_bindings.record_features(&document);
+            scan.configuration_bindings.record_features(document.tree());
         }
         if root.tag_name().name().contains("Keywords") {
-            scan.configuration_bindings.record_keywords(&document);
+            scan.configuration_bindings.record_keywords(document.tree());
             for configuration in document
                 .descendants()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
@@ -1657,16 +1663,23 @@ fn scan_solidworks_envelopes<'a>(
     Ok(scan)
 }
 
-/// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
+/// Returns the first parsed `swSolidWorks` envelope of `payloads` even if
+/// an attribute is absent, each payload parsed in the session `ctx`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`] where a parse meets a ceiling of
+/// `ctx`.
 pub(crate) fn first_solidworks_envelope<'a>(
+    ctx: &DecodeContext<'_>,
     payloads: impl IntoIterator<Item = &'a [u8]>,
-) -> Option<SolidWorksEnvelope> {
-    scan_solidworks_envelopes(
+) -> Result<Option<SolidWorksEnvelope>, CodecError> {
+    Ok(scan_solidworks_envelopes(
         payloads.into_iter().map(|payload| (None, payload)),
-        &ScanAdmission::Probe,
-    )
-    .ok()
-    .and_then(|scan| scan.first)
+        ctx,
+        "SLDPRT retained envelope XML tree",
+    )?
+    .first)
 }
 
 pub(crate) fn solidworks_envelope<'a>(

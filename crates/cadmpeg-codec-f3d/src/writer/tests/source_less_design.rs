@@ -11,7 +11,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
 
@@ -115,7 +114,7 @@ fn generated_source_less_writes_design_type_metastream() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design MetaStream encode");
     let mut guid_module = source_less.clone();
@@ -212,7 +211,7 @@ fn decoded_design_types_keep_their_metastream_order() {
         .collect();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design MetaStream encode");
     let round_trip = F3dCodec
@@ -315,7 +314,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design BulkStream encode");
     f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
@@ -421,18 +420,19 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         Some("322")
     );
     assert_eq!(bounded.record_index.map(|index| index.value), Some(102));
-    assert_eq!(native.persistent_references.len(), 3);
+    let mut references = native
+        .persistent_references
+        .iter()
+        .map(|reference| (reference.value, reference.kind))
+        .collect::<Vec<_>>();
+    references.sort_by_key(|&(value, _)| value);
     assert_eq!(
-        native
-            .persistent_references
-            .iter()
-            .map(|reference| reference.value)
-            .collect::<Vec<_>>(),
-        [900, 100, 500]
-    );
-    assert_eq!(
-        native.persistent_references[1].kind,
-        PersistentReferenceKind::CurvePrimary
+        references,
+        [
+            (100, PersistentReferenceKind::CurvePrimary),
+            (500, PersistentReferenceKind::CurveSecondary),
+            (900, PersistentReferenceKind::Point),
+        ]
     );
     assert_eq!(native.lost_edge_references.len(), 1);
     assert_eq!(native.lost_edge_references[0].class_tag.as_str(), "419");
@@ -529,7 +529,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design ownership encode");
     {
@@ -595,8 +595,9 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert_eq!(native.design_record_headers[1].class_tag.as_str(), "351");
 }
 
-#[test]
-fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+/// The unit cube with sketch `0_277`: point `100` with companion `101`,
+/// curves `600` to `602`, and relation `33` between the point and the line.
+pub(super) fn sketch_graph_cube() -> cadmpeg_ir::document::CadIr {
     use crate::records::{
         entity_header::{DesignEntityHeader, SegmentType},
         sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
@@ -904,7 +905,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             })
             .unwrap(),
         ];
+    drop(native);
+    source_less
+}
 
+#[test]
+fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+    use crate::records::sketch_relations::{SketchRelationMember, SketchRelationReturnMember};
+    use cadmpeg_ir::math::Point2;
+
+    let mut source_less = sketch_graph_cube();
+    let native = f3d_native(&source_less);
     let expected_geometries = native
         .sketch_curve_identities
         .iter()
@@ -913,7 +924,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sketch BulkStream encode");
     let mut extended_source_less = source_less.clone();
@@ -996,7 +1007,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     let mut variable_relation = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut variable_relation))
         .expect("source-less variable-width sketch relation encode");
     let variable_round_trip = F3dCodec
@@ -1054,7 +1065,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "share record index 600",
+        "of sketch records that the Design type registration of their class tag does not name",
     );
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     let round_trip = F3dCodec
@@ -1176,10 +1187,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     let mut extended_encoded = Vec::new();
     F3dCodec
-        .plan(
-            EncodeInput::new(&extended_source_less, None),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&extended_source_less, None))
         .and_then(|plan| plan.write_to(&mut extended_encoded))
         .expect("source-less extended sketch point encode");
     let extended_round_trip = F3dCodec
@@ -1259,10 +1267,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     }
     let mut negative_zero_encoded = Vec::new();
     F3dCodec
-        .plan(
-            EncodeInput::new(&negative_zero_marker, None),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&negative_zero_marker, None))
         .and_then(|plan| plan.write_to(&mut negative_zero_encoded))
         .expect("source-less negative-zero sketch point encode");
     let negative_zero_round_trip = F3dCodec
@@ -1426,7 +1431,7 @@ fn written_parameter_records_stay_listed_under_their_type_row() {
     source_less.model.parameters = parameters;
     let mut encoded = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less parameter encode");
     let decoded = F3dCodec

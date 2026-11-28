@@ -4,10 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 
-use super::{parameter_cut, Restatements};
-use crate::design::dimension::{ParameterRef, RefTarget};
+use super::{parameter_cut, Held};
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral};
-use crate::design::options::NativeOptions;
+use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use crate::design::units::{Quantity, ValueKind};
 use crate::features::parameters::{
@@ -55,6 +55,7 @@ fn design(definition: ParameterDefinition) -> DesignParameter {
         id: id(DEPTH),
         scope: scope(),
         owner: None,
+        position: None,
         name: NonBlankString::new("depth".to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -78,7 +79,7 @@ fn width() -> ParameterRef {
 }
 
 fn cut(model: &ModelParameter, design: &DesignParameter) -> BTreeSet<&'static str> {
-    parameter_cut(model, design, false, &Restatements::default())
+    parameter_cut(model, design, &Held::default())
 }
 
 /// A design parameter whose tree states the expression and its reference
@@ -100,6 +101,30 @@ fn a_driven_parameter_leaves_out_the_expression_and_its_references() {
         cut(&model("width + 2"), &design(ParameterDefinition::Driven)),
         BTreeSet::from(["dependencies", "expression"])
     );
+}
+
+#[test]
+fn a_driven_fusion_parameter_carries_the_canonical_value_of_its_record_literal() {
+    let mut model = model("1.2 cm");
+    model.dependencies = DistinctMembers::default();
+    let mut design = design(ParameterDefinition::Driven);
+    design.value = Some(ParameterValue::Number(FiniteReal::new(10.0).unwrap()));
+    for (text, charged) in [
+        ("1.2 cm", false),
+        ("12mm", false),
+        ("12 deg", true),
+        ("12", true),
+        ("13mm", true),
+        ("12 + 0 mm", true),
+    ] {
+        design.source_settings.insert(
+            crate::codec_name!("f3d:literal"),
+            NativeOption::Text(Dimension::Literal(
+                NonBlankString::new(text.to_owned()).unwrap(),
+            )),
+        );
+        assert_eq!(cut(&model, &design).contains("value"), charged, "{text}");
+    }
 }
 
 /// Source tokens state the text they spell, white space aside, with a
@@ -148,7 +173,14 @@ fn a_parameter_leaves_out_each_field_it_does_not_hold() {
     design.name = NonBlankString::new("other".to_owned());
     let model = model("width + 2");
     assert_eq!(
-        parameter_cut(&model, &design, true, &Restatements::default()),
+        parameter_cut(
+            &model,
+            &design,
+            &Held {
+                misplaced: true,
+                ..Held::default()
+            }
+        ),
         BTreeSet::from(["name", "ordinal", "value"])
     );
 }
@@ -173,4 +205,88 @@ fn the_driven_flag_agrees_with_the_definition() {
         Neutral(parse("12", NO_REFS, &[]).unwrap()),
     )));
     assert_eq!(cut(&driven, &assigned), BTreeSet::from(["properties"]));
+}
+
+#[test]
+fn the_same_solidworks_scalar_is_carried_in_canonical_units() {
+    let mut model = model("12");
+    model.dependencies = DistinctMembers::default();
+    model.value = Some(ModelValue::Real(FiniteReal::new(0.012).unwrap()));
+    model.native_ref = Some("sldprt:feature-input:scalar#test".into());
+    let mut design = design(ParameterDefinition::Expression(Expression::Neutral(
+        Neutral(parse("12[mm]", NO_REFS, &[]).unwrap()),
+    )));
+    design.native_ref = model.native_ref.clone();
+    assert!(cut(&model, &design).is_empty());
+
+    design.value = Some(ParameterValue::Number(FiniteReal::new(0.012).unwrap()));
+    assert!(cut(&model, &design).contains("value"));
+
+    design.value = Some(ParameterValue::Number(FiniteReal::new(12.0).unwrap()));
+    design.native_ref = Some("sldprt:feature-input:scalar#other".into());
+    assert!(cut(&model, &design).contains("value"));
+}
+
+#[test]
+fn a_display_modifier_is_carried_by_the_matching_typed_field() {
+    let mut model = model("<MOD-DIAM>12");
+    model.dependencies = DistinctMembers::default();
+    model.display = Some(super::ModelDisplay::Diameter);
+    let mut design = design(ParameterDefinition::Expression(Expression::Neutral(
+        Neutral(parse("12[mm]", NO_REFS, &[]).unwrap()),
+    )));
+    design.display = Some(super::DimensionDisplay::Diameter);
+    assert!(cut(&model, &design).is_empty());
+
+    model.expression = "<MOD-DIAM>13".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "<MOD-DIAM>12 in".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "<MOD-DIAM>12".into();
+    design.display = Some(super::DimensionDisplay::Radius);
+    assert!(cut(&model, &design).contains("expression"));
+}
+
+#[test]
+fn a_diameter_display_can_accompany_a_neutral_equation() {
+    let mut model = model("<MOD-DIAM>12");
+    model.display = Some(super::ModelDisplay::Diameter);
+    let mut design = design(ParameterDefinition::Unset);
+    design.display = Some(super::DimensionDisplay::Diameter);
+    for text in ["$0", "2 * $0"] {
+        design.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(
+            parse(text, &[width()], &[]).unwrap(),
+        )));
+        assert!(cut(&model, &design).is_empty());
+    }
+    design.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(
+        parse("12[mm]", NO_REFS, &[]).unwrap(),
+    )));
+    assert_eq!(
+        cut(&model, &design),
+        BTreeSet::from(["dependencies", "expression"])
+    );
+}
+
+#[test]
+fn a_parenthesized_negation_carries_the_signed_literal() {
+    let mut model = model("-(12 mm)");
+    model.dependencies = DistinctMembers::default();
+    model.value = Some(ModelValue::Length(Length::new(-12.0).unwrap()));
+    let mut design = design(ParameterDefinition::Expression(Expression::Neutral(
+        Neutral(parse("-12[mm]", NO_REFS, &[]).unwrap()),
+    )));
+    design.value = Some(ParameterValue::Number(FiniteReal::new(-12.0).unwrap()));
+    assert!(cut(&model, &design).is_empty());
+
+    model.expression = "-(-12 mm)".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "-(12 mm + 2 mm)".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "-(12 m)".into();
+    assert!(cut(&model, &design).contains("expression"));
 }

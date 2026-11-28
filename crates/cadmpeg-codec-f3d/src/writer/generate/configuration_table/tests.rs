@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 
 use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
@@ -23,6 +24,9 @@ use crate::records::configuration::table::ConfiguredValue;
 use crate::records::configuration::{
     DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
 };
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopeTailFlags,
+};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, neutral_feature, object_target, property_target, scope,
     string_cell, table_document, Natives,
@@ -39,7 +43,7 @@ fn write_scoped<'a>(
     configurations: &'a [Configuration],
     natives: &Natives,
     scoped: Option<&ConfigurationId>,
-) -> (Written<'a>, Vec<LossNote>) {
+) -> (Written<'a, 'a>, Vec<LossNote>) {
     let targets = natives.targets();
     let (written, mut losses) = regenerate(documents, decoded, configurations, &targets).unwrap();
     let mut ir = CadIr::empty();
@@ -59,7 +63,11 @@ fn write_scoped<'a>(
         &written,
         configurations,
     );
-    losses.extend(written.read_back(plan.active(), &targets).unwrap());
+    losses.extend(
+        written
+            .compare_in_memory(plan.active(), &targets, &natives.producers)
+            .unwrap(),
+    );
     (written, losses)
 }
 
@@ -69,7 +77,7 @@ fn write<'a>(
     decoded: &Projection,
     configurations: &'a [Configuration],
     natives: &Natives,
-) -> (Written<'a>, Vec<LossNote>) {
+) -> (Written<'a, 'a>, Vec<LossNote>) {
     write_scoped(documents, decoded, configurations, natives, None)
 }
 
@@ -282,6 +290,9 @@ fn active_row_suppression(state: State, change: Change) -> (Feature, Vec<(String
         }
         State::Decided => natives.neutral_features[0].suppressed = Some(false),
     }
+    if !matches!(state, State::Undecided) {
+        store_active_feature_state(&mut natives.scopes[0]);
+    }
     let feature = natives.neutral_features[0].clone();
     let mut documents = documents();
     documents[0]
@@ -333,7 +344,9 @@ enum Change {
 }
 
 /// The current state of the feature of [`active_row_suppression`]: a
-/// suppression of `None`, a Sketch, or a feature that is not suppressed.
+/// suppression of `None`, a Sketch that is not suppressed, or another feature
+/// that is not suppressed. A stored state decides a Sketch as it decides
+/// every feature.
 #[derive(Debug, Clone, Copy)]
 enum State {
     Undecided,
@@ -349,16 +362,22 @@ fn a_feature_the_written_active_row_suppresses_is_charged() {
             assert_eq!(losses.len(), 1, "{state:?} {change:?}: {losses:#?}");
             let (code, message) = &losses[0];
             assert_eq!(code, "export/value.unwritable");
+            let decided = !matches!(state, State::Undecided);
+            let row = if decided {
+                "the active row states"
+            } else {
+                "reads back"
+            };
             assert!(
                 message.contains(&format!(
-                    "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}",
+                    "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, {row} {{\"kind\":\"suppressed\"}}",
                     feature.id
                 )),
                 "{state:?} {change:?}: {losses:#?}"
             );
             assert_eq!(
-                message.contains("the active row of the written configuration table states"),
-                matches!(state, State::Decided),
+                message.contains("states these features otherwise than the document"),
+                decided,
                 "{state:?} {change:?}: {message}"
             );
         }
@@ -378,12 +397,157 @@ fn a_feature_the_decoder_suppressed_with_the_active_row_is_not_charged() {
         })
         .unwrap();
     let mut decoded = project(&documents, &natives.targets()).unwrap();
-    reconcile_active_configurations(&mut natives.neutral_features, &mut decoded.configurations)
-        .unwrap();
+    let undecided = BTreeSet::from([natives.neutral_features[0].id.clone()]);
+    reconcile_active_configurations(
+        &mut natives.neutral_features,
+        &mut decoded.configurations,
+        &undecided,
+    )
+    .unwrap();
     assert_eq!(natives.neutral_features[0].suppressed, Some(true));
     let (written, losses) = write(&documents, &decoded, &decoded.configurations, &natives);
     assert!(matches!(written.documents, Cow::Borrowed(_)));
     assert!(losses.is_empty(), "{losses:#?}");
+}
+
+/// The Base Feature of column `F`, whose scope stores no suppression and
+/// which feature projection infers active, decoded under active row `tall`,
+/// which suppresses it: the decoder gives it the row's state, and an
+/// unedited write is not charged.
+#[test]
+fn an_unedited_feature_whose_state_the_active_row_supplies_is_not_charged() {
+    let mut natives = natives();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    natives.neutral_features[0] = neutral_feature(&natives.scopes[0], "f3d:model:feature#sketch");
+    assert_eq!(natives.neutral_features[0].suppressed, Some(false));
+    let documents = active_in_source("tall");
+    let configurations = natives.attach(&documents);
+    assert_eq!(natives.neutral_features[0].suppressed, Some(true));
+    let decoded = Projection {
+        configurations,
+        ..project(&documents, &natives.targets()).unwrap()
+    };
+    let (unchanged, losses) = charged(&natives, &documents, &decoded, &decoded.configurations);
+    assert!(unchanged);
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+/// The Base Feature of column `F`, whose scope stores state 8 after state 7
+/// and no suppression, decoded under active row `tall`, which suppresses it.
+/// The body history binds the feature an output body that no product
+/// definition holds: the decoder keeps the feature active and drops the
+/// output link. An unedited write charges the row's contradiction and states
+/// when a feature reads back in the row's state.
+#[test]
+fn a_producer_the_active_row_suppresses_is_charged_with_the_condition_of_the_read_back() {
+    let mut natives = natives();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    natives.scopes[0]
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut producer = neutral_feature(&natives.scopes[0], "f3d:model:feature#sketch");
+    producer.native_ref = Some(natives.scopes[0].id.clone());
+    producer.evaluation.set_outputs(
+        DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
+            "test:model:body#unowned",
+        )
+        .unwrap()])
+        .unwrap(),
+    );
+    natives.neutral_features[0] = producer;
+    let documents = active_in_source("tall");
+    let configurations = natives.attach(&documents);
+    let feature = &natives.neutral_features[0];
+    assert!(feature.evaluation.outputs().is_empty());
+    assert_eq!(feature.suppressed, Some(false));
+    let decoded = Projection {
+        configurations,
+        ..project(&documents, &natives.targets()).unwrap()
+    };
+    let (unchanged, losses) = charged(&natives, &documents, &decoded, &decoded.configurations);
+    assert!(unchanged);
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/value.unwritable");
+    assert!(
+        losses[0].1.contains(
+            "the Design stream stores the state of its active row, so a feature whose scope stores no suppression and to which the body history binds no output body reads back in the row's state"
+        ),
+        "{losses:#?}"
+    );
+    assert!(
+        losses[0].1.contains(&format!(
+            "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, the active row states {{\"kind\":\"suppressed\"}}",
+            feature.id
+        )),
+        "{losses:#?}"
+    );
+}
+
+/// The feature of column `F`, an Extrude and then a Sketch, whose scope
+/// tail stores an active state, under row `tall`, which suppresses it. A
+/// write that keeps that stored state and the cell of the source's active row
+/// is not charged: the source holds the same contradiction. A write that
+/// makes `tall` active over source row `c1`, which computes the feature, is.
+#[test]
+fn a_stored_state_the_source_row_contradicts_is_charged_only_where_the_write_changes_the_row() {
+    for sketch in [false, true] {
+        let mut natives = natives();
+        store_active_feature_state(&mut natives.scopes[0]);
+        if sketch {
+            natives.neutral_features[0]
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }));
+        }
+        let feature = natives.neutral_features[0].id.clone();
+
+        let tall = active_in_source("tall");
+        let configurations = natives.attach(&tall);
+        assert_eq!(natives.neutral_features[0].suppressed, Some(false));
+        let decoded = Projection {
+            configurations,
+            ..project(&tall, &natives.targets()).unwrap()
+        };
+        let (unchanged, losses) = charged(&natives, &tall, &decoded, &decoded.configurations);
+        assert!(unchanged);
+        assert!(losses.is_empty(), "sketch {sketch}: {losses:#?}");
+
+        let c1 = active_in_source("c1");
+        let decoded = reconciled(&natives, &c1);
+        let mut moved = decoded.configurations.clone();
+        configuration(&mut moved, "c1").active = false;
+        configuration(&mut moved, "tall").active = true;
+        let (_, losses) = charged(&natives, &c1, &decoded, &moved);
+        assert_eq!(losses.len(), 1, "sketch {sketch}: {losses:#?}");
+        assert_eq!(losses[0].0, "export/value.unwritable");
+        assert!(
+            losses[0].1.contains(&format!(
+                "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, the active row states {{\"kind\":\"suppressed\"}}"
+            )),
+            "sketch {sketch}: {losses:#?}"
+        );
+    }
+}
+
+fn store_active_feature_state(scope: &mut DesignParameterScope) {
+    let offset = scope.feature_ordinal_offset();
+    scope.tail_flags = Some(DesignScopeTailFlags {
+        suppression: [false, false],
+        unevaluated: false,
+        wide_state: None,
+        state_offset: offset + 1,
+        no_result: false,
+        rolled_back: false,
+        no_result_offset: offset + 4,
+        envelope_offset: None,
+    });
 }
 
 /// The table documents of [`documents`] with `row` active.
@@ -605,10 +769,19 @@ fn ordinals_the_row_order_cannot_hold_are_charged() {
 }
 
 #[test]
-fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
+fn configurations_with_an_empty_table_document_are_written_into_a_new_table() {
     let natives = natives();
     let documents = documents();
     let decoded = project(&documents, &natives.targets()).unwrap();
+    let mut configurations = decoded.configurations;
+    for configuration in &mut configurations {
+        configuration
+            .properties
+            .retain(|key, _| key.as_str().starts_with("property:"));
+    }
+    assert!(configurations.iter().all(|configuration| configuration
+        .properties
+        .contains_key("property:Part Number")));
     let empty = vec![DesignConfiguration::try_new(
         ENTRY.into(),
         DesignConfigurationKind::Table,
@@ -618,13 +791,38 @@ fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
     let (written, losses) = write(
         &empty,
         &crate::design::configurations::Projection::default(),
-        &decoded.configurations,
+        &configurations,
         &natives,
     );
-    assert!(matches!(written.documents, Cow::Borrowed(_)));
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
-    assert!(losses[0].message.contains(id("tall").as_str()));
+    assert!(!losses.is_empty());
+    for loss in &losses {
+        assert_eq!(
+            loss.code.to_string(),
+            "export/record.residual-unavailable",
+            "{losses:#?}"
+        );
+        assert!(loss.message.contains("DR-1069"), "{losses:#?}");
+    }
+    let tables = written.documents[0].tables();
+    assert_eq!(tables.len(), 1);
+    let mut rows = tables[0]
+        .rows
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>();
+    rows.sort_unstable();
+    assert_eq!(rows, ["c1", "tall"]);
+    assert!(projects(&configurations, &written.documents, &natives.targets()).unwrap());
+    for configuration in &configurations {
+        let read = written
+            .projection
+            .configurations
+            .iter()
+            .find(|read| read.id == configuration.id)
+            .unwrap();
+        assert_eq!(read.parameter_overrides, configuration.parameter_overrides);
+        assert_eq!(read.properties, configuration.properties);
+    }
 }
 
 #[test]
@@ -646,6 +844,7 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
     reconcile_active_configurations(
         &mut natives.neutral_features.clone(),
         &mut decoded.configurations,
+        &BTreeSet::new(),
     )
     .unwrap();
     let tall = decoded
@@ -704,6 +903,7 @@ fn reconciled(
     reconcile_active_configurations(
         &mut natives.neutral_features.clone(),
         &mut decoded.configurations,
+        &BTreeSet::new(),
     )
     .unwrap();
     decoded
@@ -759,7 +959,7 @@ fn a_state_the_features_no_longer_hold_is_charged_in_any_configuration() {
 }
 
 #[test]
-fn moving_the_active_row_is_charged_where_the_features_contradict_the_row() {
+fn moving_the_active_row_charges_the_feature_state_the_row_changes() {
     let (mut natives, documents, _, mut configurations) = tall_active();
     let decoded = reconciled(&natives, &documents);
     configuration(&mut configurations, "tall").active = false;
@@ -1182,6 +1382,7 @@ fn configurations_decoded_after_an_owner_conflict_are_written_as_stated() {
             scopes: native.design_parameter_scopes.clone(),
             neutral_parameters: ir.model.parameters.clone(),
             neutral_features: features,
+            producers: BTreeSet::new(),
         };
         assert!(
             projects(&ir.model.configurations, &documents, &natives.targets()).unwrap(),
@@ -1197,3 +1398,79 @@ fn configurations_decoded_after_an_owner_conflict_are_written_as_stated() {
         assert!(losses.is_empty(), "edited {edited}: {losses:#?}");
     }
 }
+
+/// A move of the active row from `c1` to `tall` writes the stored
+/// `testRowData` entry with the value of row `tall`, and charges the rewrite.
+#[test]
+fn a_moved_active_row_writes_the_test_rows_of_its_row() {
+    let natives = natives();
+    let targets = natives.targets();
+    let mut documents = active_in_source("c1");
+    let mut payload = documents[0].payload().clone();
+    payload.insert(
+        "testRowData".into(),
+        json!([json!({
+            "DataType": "StringOptionValue",
+            "ColumnUniqueID": "P",
+            "Value": "Configuration 1",
+            "Option": 1
+        })
+        .to_string()]),
+    );
+    documents[0] = documents[0].with_payload(payload).unwrap();
+    let decoded = project(&documents, &targets).unwrap();
+    let mut configurations = decoded.configurations.clone();
+    configuration(&mut configurations, "c1").active = false;
+    configuration(&mut configurations, "tall").active = true;
+    let (written, _) = regenerate(&documents, &decoded, &configurations, &targets).unwrap();
+    let tall = id("tall");
+    let stored = id("c1");
+    let mut losses = Vec::new();
+    let test_rows = written
+        .test_rows(
+            Some(tall.as_str()),
+            &targets,
+            None,
+            &BTreeSet::new(),
+            &mut losses,
+        )
+        .expect("rewritten testRowData");
+    assert_eq!(test_rows.index, 0);
+    let payload = test_rows.payload.unwrap();
+    let entries = payload["testRowData"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| serde_json::from_str::<serde_json::Value>(entry.as_str().unwrap()).unwrap())
+        .map(|entry| (entry["ColumnUniqueID"].as_str().unwrap().to_owned(), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        entries["P"],
+        json!({
+            "ColumnUniqueID": "P",
+            "DataType": "StringOptionValue",
+            "Option": 1,
+            "Value": "Tall"
+        })
+    );
+    assert_eq!(entries["H"]["Expression"], "35 mm");
+    assert_eq!(entries["D"]["Expression"], "10.00 mm");
+    assert_eq!(entries["F"]["Value"], false);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("writes testRowData entries")),
+        "{losses:#?}"
+    );
+    assert!(written
+        .test_rows(
+            Some(stored.as_str()),
+            &targets,
+            None,
+            &BTreeSet::new(),
+            &mut Vec::new()
+        )
+        .is_none());
+}
+
+mod target;

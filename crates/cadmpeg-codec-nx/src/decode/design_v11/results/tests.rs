@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::features::evaluation::{
     FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
@@ -243,9 +242,7 @@ fn a_result_is_restated_by_its_feature_and_by_the_names_that_hold_its_members() 
 #[test]
 fn a_cadir_write_carries_the_results_the_design_restates() {
     let (ir, _) = project_part();
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    let plan = CadirEncoder.plan(EncodeInput::new(&ir, None)).unwrap();
     let omitted = plan
         .report()
         .losses

@@ -346,6 +346,9 @@ pub(super) struct Geometry<'p> {
     pub(super) curves: &'p [PlannedCurve],
     pub(super) frame: Frame,
     pub(super) angular: f64,
+    /// Whether the source sketch origin is the origin point of Fusion's
+    /// sketch.
+    pub(super) origin: bool,
 }
 
 /// The dimension `constraint` states, measured on `geometry`, with each
@@ -448,6 +451,7 @@ impl Geometry<'_> {
     fn point(&self, entity: Entity) -> Option<[f64; 2]> {
         match entity {
             Entity::Point(point) => self.points.get(point).copied(),
+            Entity::Origin => Some([0.0, 0.0]),
             Entity::Curve(_) => None,
         }
     }

@@ -290,8 +290,8 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
 /// The router states a fall-through by name. A route that refuses records and
 /// then transfers no model leaves both its refusal notes and one fall-through
 /// note in the report of whatever route or fallback finishes the decode. The
-/// metadata fallback keeps the payload whole, so it charges no
-/// `record.unreadable` beyond those of the records the route refused.
+/// metadata fallback keeps the payload whole, so it charges no give-up
+/// beyond those of the records the route refused.
 #[test]
 fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {
@@ -355,7 +355,6 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         }),
         "the fall-through statement: {messages:?}"
     );
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
     let payloads = decoded
         .ir
         .native_unknowns("catia")
@@ -369,12 +368,12 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
             .body
             .losses
             .iter()
-            .filter(|note| note.code == unreadable)
+            .filter(|note| cadmpeg_ir::unknown::part::gives_up(&note.code))
             .all(|note| payloads.iter().all(|payload| !note
                 .message
                 .split_whitespace()
                 .any(|token| token == payload))),
-        "no record.unreadable names the kept payload: {messages:?}"
+        "no give-up names the kept payload: {messages:?}"
     );
     assert!(
         refusal.take_notes().is_empty(),

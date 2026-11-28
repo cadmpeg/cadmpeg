@@ -327,17 +327,6 @@ pub(crate) fn group_feature<'a>(
     })
 }
 
-/// The history state that a derived base group produces and the state it
-/// follows: the state of its last scope and the previous state of its first.
-pub(crate) fn group_history_states(
-    group: &[&super::scope::DesignParameterScope],
-) -> Option<(i64, i64)> {
-    Some((
-        group.last()?.history_state_id()?,
-        group.first()?.previous_history_state_id()?,
-    ))
-}
-
 /// The outputs of a derived base group feature in the record-index order of
 /// its scopes, each scope contributing the outputs of its own history state;
 /// every other feature keeps `outputs`.
