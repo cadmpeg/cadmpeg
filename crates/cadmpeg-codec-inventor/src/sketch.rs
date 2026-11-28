@@ -3468,6 +3468,7 @@ fn place_block_curves(
         return None;
     };
     let placement = BlockPlacement::new(placement)?;
+    let instance_native = instance.id();
     block_definition_curves(instance, &inventory.entities)
         .into_iter()
         .map(|curve| {
@@ -3479,7 +3480,12 @@ fn place_block_curves(
                 )
                 .with_construction(marks_construction(curve))
                 .with_native_ref(Some(curve.id()))
-                .with_endpoint_refs(placed_endpoint_refs(curve, entities, &placement)),
+                .with_endpoint_refs(
+                    placed_endpoint_refs(curve, entities, &placement)
+                        .into_iter()
+                        .map(|endpoint| format!("{instance_native}:{endpoint}"))
+                        .collect(),
+                ),
             )
         })
         .collect()
@@ -3535,7 +3541,8 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 use cadmpeg_core::serde_erase::json as json_wire;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    pub(crate) mod repeated_blocks;
     use super::{
         block_curve_offsets, block_definition_curves, distinct_operand_keys, entity_endpoint_refs,
         inventory, json_wire, parse_constraint, parse_direction, parse_entity, parse_sketch,

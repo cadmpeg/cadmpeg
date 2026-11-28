@@ -583,7 +583,7 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
 }
 
 #[test]
-fn an_absent_flag_carries_only_an_unread_false() {
+fn an_absent_flag_compares_as_false() {
     let mut ir = sketch_fixture();
     let line = ir
         .design
@@ -607,5 +607,12 @@ fn an_absent_flag_carries_only_an_unread_false() {
         .find(|entity| entity.id().as_str() == LINE)
         .unwrap()
         .read_construction(false);
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+    ir.model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap()
+        .read_construction(true);
     assert_eq!(cuts(&ir)[LINE], fields(["construction"]));
 }

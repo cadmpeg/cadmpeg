@@ -180,7 +180,7 @@ fn point_records_supply_points() {
             })
             .unwrap(),
             endpoints: None,
-            construction: false,
+            construction: None,
             outside_profile: false,
             index_basis_loss: None,
         }))
@@ -499,7 +499,7 @@ fn selector_bit_three_marks_construction() {
             let entity = read(&sample.payload, offset, &millimetres)
                 .and_then(Result::ok)
                 .expect("curve record reads");
-            assert_eq!(entity.construction, construction);
+            assert_eq!(entity.construction, Some(construction));
         }
     }
 }

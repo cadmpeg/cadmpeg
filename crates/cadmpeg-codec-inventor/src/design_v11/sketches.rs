@@ -27,7 +27,8 @@ use cadmpeg_ir::CadIr;
 
 mod constraints;
 
-type EndpointRoles<'a> = BTreeMap<(&'a SketchId, &'a str), Vec<(EntityRole<Planar>, FinitePoint2)>>;
+type EndpointRoles<'a> =
+    BTreeMap<&'a SketchId, BTreeMap<&'a str, Vec<(EntityRole<Planar>, FinitePoint2)>>>;
 
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
@@ -41,6 +42,12 @@ pub(super) fn project(
         }
         Some(((&entity.sketch, entity.native_ref.as_deref()?), entity.id()))
     }));
+    let mut taken = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<HashSet<_>>();
     let tolerance = ir.tolerances.linear.get();
     let kinds = ir
         .design
@@ -168,18 +175,28 @@ pub(super) fn project(
                 native_ref: entity.native_ref.clone(),
             });
         }
-        for (id, native, position) in end_points(
-            ir.model
-                .sketch_entities
-                .iter()
-                .filter(|entity| entity.sketch == source.id),
-        ) {
+        for (&native, candidates) in roles.get(&source.id).into_iter().flatten() {
+            if stored_points.contains_key(&(&source.id, native)) {
+                continue;
+            }
+            let Some((id, position)) = candidates.iter().find_map(|(role, position)| {
+                let side = if role.role == DefiningRole::Start {
+                    "start"
+                } else {
+                    "end"
+                };
+                let id = SketchEntityId::mint(format!("{}/{side}-point", role.of)).ok()?;
+                (!taken.contains(&id)).then_some((id, *position))
+            }) else {
+                continue;
+            };
             ctx.charge_entities(1, "project Inventor v11 sketch end point")?;
+            taken.insert(id.clone());
             ir.design.sketch_entities.push(SketchEntity {
                 id,
                 sketch: source.id.clone(),
                 definition: EntityDefinition::Free(PlanarCurve::Point(position)),
-                roles: roles_at(&roles, (&source.id, native), position, tolerance),
+                roles: agreeing_roles(candidates, position, tolerance),
                 construction: None,
                 centerline: None,
                 native: None,
@@ -207,48 +224,6 @@ pub(super) fn project(
     Ok(losses)
 }
 
-/// A point for an endpoint record with no point entity, keyed by the first
-/// curve end that names the record.
-fn end_points<'a>(
-    entities: impl Iterator<Item = &'a LegacyEntity> + Clone,
-) -> Vec<(SketchEntityId, &'a str, FinitePoint2)> {
-    let carried = entities
-        .clone()
-        .filter(|entity| matches!(entity.geometry.definition(), Geometry::Point { .. }))
-        .filter_map(|entity| entity.native_ref.as_deref())
-        .collect::<HashSet<_>>();
-    let taken = entities
-        .clone()
-        .map(|entity| entity.id().as_str())
-        .collect::<HashSet<_>>();
-    let mut minted = HashSet::new();
-    let mut points = Vec::new();
-    for curve in entities {
-        let (Some(ends), [start, end]) =
-            (curve_ends(&curve.geometry), curve.endpoint_refs.as_slice())
-        else {
-            continue;
-        };
-        for ((native, [u, v]), side) in [start, end].into_iter().zip(ends).zip(["start", "end"]) {
-            if carried.contains(native.as_str()) || minted.contains(native.as_str()) {
-                continue;
-            }
-            let (Ok(id), Some(position)) = (
-                SketchEntityId::mint(format!("{}/{side}-point", curve.id())),
-                FinitePoint2::new(Point2::new(u, v)),
-            ) else {
-                continue;
-            };
-            if taken.contains(id.as_str()) {
-                continue;
-            }
-            minted.insert(native.as_str());
-            points.push((id, native.as_str(), position));
-        }
-    }
-    points
-}
-
 fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
     let mut roles: EndpointRoles<'_> = BTreeMap::new();
     for curve in entities {
@@ -265,7 +240,9 @@ fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
                 continue;
             };
             roles
-                .entry((&curve.sketch, reference.as_str()))
+                .entry(&curve.sketch)
+                .or_default()
+                .entry(reference.as_str())
                 .or_default()
                 .push((
                     EntityRole {
@@ -275,9 +252,6 @@ fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
                     position,
                 ));
         }
-    }
-    for roles in roles.values_mut() {
-        roles.sort_by(|(left, _), (right, _)| left.of.cmp(&right.of));
     }
     roles
 }
@@ -289,14 +263,27 @@ fn roles_at(
     tolerance: f64,
 ) -> Vec<EntityRole<Planar>> {
     roles
-        .get(&key)
-        .into_iter()
-        .flatten()
+        .get(key.0)
+        .and_then(|points| points.get(key.1))
+        .map_or_else(Vec::new, |candidates| {
+            agreeing_roles(candidates, point, tolerance)
+        })
+}
+
+fn agreeing_roles(
+    candidates: &[(EntityRole<Planar>, FinitePoint2)],
+    point: FinitePoint2,
+    tolerance: f64,
+) -> Vec<EntityRole<Planar>> {
+    let mut roles = candidates
+        .iter()
         .filter_map(|(role, position)| {
             let distance = (point.u - position.u).portable_hypot(point.v - position.v);
             (distance <= tolerance).then(|| role.clone())
         })
-        .collect()
+        .collect::<Vec<_>>();
+    roles.sort_by(|a, b| a.of.cmp(&b.of));
+    roles
 }
 
 #[cfg(test)]

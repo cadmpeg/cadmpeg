@@ -704,3 +704,38 @@ fn conflicting_endpoint_positions_keep_the_unstated_role_charged() {
         .iter()
         .any(|field| field == "endpoint_refs"));
 }
+
+#[test]
+fn repeated_block_placements_restate_both_pairs_of_ends() {
+    let mut ir = fixture();
+    ir.model.sketch_entities =
+        crate::sketch::tests::repeated_blocks::repeated_block_lines(&sketch_id());
+    assert_eq!(ir.model.sketch_entities.len(), 2);
+    run(&mut ir);
+    assert_eq!(ir.design.sketch_entities.len(), 6);
+    for (curve, start) in ir.model.sketch_entities.iter().zip([0.0, 10.0]) {
+        for (role, u) in [
+            (DefiningRole::Start, start),
+            (DefiningRole::End, start + 5.0),
+        ] {
+            let point = ir
+                .design
+                .sketch_entities
+                .iter()
+                .find(|point| {
+                    point
+                        .roles
+                        .iter()
+                        .any(|held| &held.of == curve.id() && held.role == role)
+                })
+                .expect("placed endpoint");
+            assert_eq!(point.roles.len(), 1);
+            assert!(
+                matches!(&point.definition, EntityDefinition::Free(PlanarCurve::Point(at)) if at.u == u && at.v == 0.0)
+            );
+        }
+        assert!(!entity_charge(&ir, curve.id().as_str())
+            .iter()
+            .any(|field| field == "endpoint_refs"));
+    }
+}

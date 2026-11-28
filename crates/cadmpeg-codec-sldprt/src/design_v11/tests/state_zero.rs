@@ -63,6 +63,7 @@ pub(super) fn project(
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -376,4 +377,19 @@ fn an_extrude_whose_sketch_holds_no_profile_curve_is_reported_empty() {
         "{:?}",
         typed.profile_unchecked
     );
+}
+
+pub(crate) fn project_profile(ir: &mut CadIr, outside: &HashSet<SketchEntityId>) -> Extrude {
+    let (extrude, typed) = project(ir, outside);
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
+    assert!(
+        typed.profile_unchecked.is_none(),
+        "{:?}",
+        typed.profile_unchecked
+    );
+    extrude
 }

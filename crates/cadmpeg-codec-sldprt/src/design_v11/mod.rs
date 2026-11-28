@@ -27,7 +27,7 @@ mod sketch;
 pub(crate) mod states;
 mod swept;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod tree;
 mod typed;
 mod units;
@@ -149,6 +149,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );

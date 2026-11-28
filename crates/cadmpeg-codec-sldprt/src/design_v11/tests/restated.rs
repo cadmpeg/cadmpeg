@@ -12,7 +12,7 @@ use super::state_zero::{entity, project};
 
 /// The fields a CADIR write of `ir` names for the record `id` of the model
 /// arena `arena`: none where it carries the record whole.
-pub(super) fn charge(ir: &CadIr, arena: &str, id: &str) -> Vec<String> {
+pub(crate) fn charge(ir: &CadIr, arena: &str, id: &str) -> Vec<String> {
     use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 
     let plan = CadirEncoder
@@ -130,6 +130,16 @@ fn endpoint_records_without_point_entities_are_stated_as_points() {
         charge(&ir, "sketch_constraints", coincidence.as_str()),
         ["native_ref"]
     );
+    assert!(ir.design.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            &constraint.relation,
+            cadmpeg_ir::design::ops::sketch::SketchRelation::Distance {
+                b: cadmpeg_ir::design::ops::sketch::Operand::Entity(id),
+                along: Some(cadmpeg_ir::design::ops::sketch::DistanceAxis::Horizontal),
+                ..
+            } if id == &shared.id
+        )
+    }));
     for line in 0..4 {
         let id = entity(&format!("l{line}"));
         let fields = charge(&ir, "sketch_entities", id.as_str());
@@ -208,4 +218,87 @@ fn a_bounded_ellipse_carries_its_endpoint_records() {
     assert!(!charge(&ir, "sketch_entities", id.as_str())
         .iter()
         .any(|field| field == "endpoint_refs"));
+}
+
+#[test]
+fn distant_endpoint_witnesses_keep_their_charge_at_large_coordinates() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchGeometryDefinition};
+
+    let (mut ir, _) = sketch_and_extrude();
+    ir.tolerances =
+        cadmpeg_ir::units::Tolerances::new(0.000_001, ir.tolerances.angular.get()).unwrap();
+    for (key, x) in [
+        ("first-witness", 10_000.0),
+        ("second-witness", 10_000.000_005),
+    ] {
+        ir.model.sketch_entities.push(
+            SketchEntity::new(
+                entity(key),
+                ir.model.sketches[0].id.clone(),
+                SketchGeometryDefinition::Line {
+                    start: Point2::new(x, 0.0),
+                    end: Point2::new(x, 5.0),
+                }
+                .try_into()
+                .unwrap(),
+            )
+            .with_endpoint_refs(vec!["common-start".into(), format!("{key}-end")]),
+        );
+    }
+    project(&mut ir, &HashSet::new());
+    assert!(
+        !charge(&ir, "sketch_entities", entity("first-witness").as_str())
+            .iter()
+            .any(|field| field == "endpoint_refs")
+    );
+    assert!(
+        charge(&ir, "sketch_entities", entity("second-witness").as_str())
+            .iter()
+            .any(|field| field == "endpoint_refs")
+    );
+}
+
+#[test]
+fn three_coincident_loci_are_restated_by_their_shared_point() {
+    use cadmpeg_core::serde_erase::json;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput as Kind, SketchEntity, SketchGeometryDefinition,
+    };
+
+    let (mut ir, _) = sketch_and_extrude();
+    let third = entity("third-at-corner");
+    ir.model.sketch_entities.push(
+        SketchEntity::new(
+            third.clone(),
+            ir.model.sketches[0].id.clone(),
+            SketchGeometryDefinition::Line {
+                start: Point2::new(50.0, 0.0),
+                end: Point2::new(60.0, 0.0),
+            }
+            .try_into()
+            .unwrap(),
+        )
+        .with_endpoint_refs(vec!["native:b".into(), "native:new-end".into()]),
+    );
+    let coincidence = ir
+        .model
+        .sketch_constraints
+        .iter_mut()
+        .find(|constraint| matches!(constraint.definition.kind(), Kind::CoincidentLoci { .. }))
+        .unwrap();
+    coincidence.definition = json::from_value(cadmpeg_core::json!({
+        "kind": "coincident_loci",
+        "loci": [
+            {"kind": "end", "value": entity("l0")},
+            {"kind": "start", "value": entity("l1")},
+            {"kind": "start", "value": third},
+        ],
+    }))
+    .unwrap();
+    let constraint = coincidence.id.clone();
+    project(&mut ir, &HashSet::new());
+    assert_eq!(design_entity(&ir, &entity("b")).roles.len(), 3);
+    assert!(charge(&ir, "sketch_constraints", constraint.as_str()).is_empty());
 }

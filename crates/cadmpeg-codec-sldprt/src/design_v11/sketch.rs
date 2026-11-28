@@ -58,7 +58,7 @@ use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{portable::Portable, Point2};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{
     SketchConstraint as LegacyConstraint, SketchConstraintDefinitionInput as Kind,
@@ -71,7 +71,7 @@ use super::profile_check;
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::resolved_features::RELATION_INSTANCE_ID_PREFIX;
 
-/// Distance within which a stored point lies on a plane or at a curve's end,
+/// Distance within which a stored point lies on a plane,
 /// in millimetres per millimetre of the larger coordinate.
 const EPS_SKETCH_INCIDENCE: f64 = 1.0e-9;
 
@@ -277,6 +277,7 @@ pub(super) struct Context<'a> {
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
     /// The surfaces of the current geometry.
     pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    pub(super) linear: f64,
 }
 
 /// Type each `Unresolved` sketch feature of `features` whose sketch the
@@ -335,7 +336,7 @@ fn sketch(
         .iter()
         .filter(|entity| entity.sketch == record.id)
         .collect::<Vec<_>>();
-    let roles = Roles::new(&entities);
+    let roles = Roles::new(&entities, context.linear);
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
@@ -396,7 +397,6 @@ fn sketch(
             context,
             owner: &feature.id,
             roles: &roles,
-            entities: &entities,
         };
         let (relation, binding) = match relations.relation(constraint, &driven) {
             Ok(relation) => relation,
@@ -599,6 +599,8 @@ pub(super) fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static
 /// the record.
 struct Roles {
     ends: HashMap<(SketchEntityId, bool), SketchEntityId>,
+    by_point: HashMap<SketchEntityId, Vec<EntityRole<Planar>>>,
+    positions: HashMap<SketchEntityId, FinitePoint2>,
     minted: Vec<MintedPoint>,
 }
 
@@ -611,16 +613,18 @@ struct MintedPoint {
 }
 
 impl Roles {
-    fn new(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> Self {
-        let mut points = HashMap::<&str, Option<&cadmpeg_ir::sketches::SketchEntity>>::new();
+    fn new(entities: &[&cadmpeg_ir::sketches::SketchEntity], tolerance: f64) -> Self {
+        let mut points = HashMap::<&str, Option<(&SketchEntityId, FinitePoint2)>>::new();
+        let mut positions = HashMap::new();
         for entity in entities {
-            if let (Some(native), Geometry::Point { .. }) =
-                (entity.native_ref.as_deref(), entity.geometry.definition())
-            {
-                points
-                    .entry(native)
-                    .and_modify(|found| *found = None)
-                    .or_insert(Some(entity));
+            if let Geometry::Point { position } = entity.geometry.definition() {
+                positions.insert(entity.id().clone(), *position);
+                if let Some(native) = entity.native_ref.as_deref() {
+                    points
+                        .entry(native)
+                        .and_modify(|found| *found = None)
+                        .or_insert(Some((entity.id(), *position)));
+                }
             }
         }
         let taken = entities
@@ -630,6 +634,7 @@ impl Roles {
         let mut minted_at = HashMap::<&str, usize>::new();
         let mut minted = Vec::<MintedPoint>::new();
         let mut ends = HashMap::new();
+        let mut by_point = HashMap::<SketchEntityId, Vec<EntityRole<Planar>>>::new();
         for curve in entities {
             let Some([start, end]) = curve_ends(&curve.geometry) else {
                 continue;
@@ -642,12 +647,7 @@ impl Roles {
                     continue;
                 };
                 let (id, position) = match points.get(native.as_str()) {
-                    Some(Some(point)) => {
-                        let Geometry::Point { position } = point.geometry.definition() else {
-                            continue;
-                        };
-                        (point.id(), [position.u, position.v])
-                    }
+                    Some(Some(point)) => *point,
                     Some(None) => continue,
                     None => {
                         let index = if let Some(&index) = minted_at.get(native.as_str()) {
@@ -659,9 +659,10 @@ impl Roles {
                             else {
                                 continue;
                             };
-                            if taken.contains(id.as_str()) {
+                            if taken.contains(id.as_str()) || positions.contains_key(&id) {
                                 continue;
                             }
+                            positions.insert(id.clone(), end_point);
                             minted.push(MintedPoint {
                                 id,
                                 native: native.clone(),
@@ -671,15 +672,35 @@ impl Roles {
                             minted.len() - 1
                         };
                         let point = &minted[index];
-                        (&point.id, [point.position.u, point.position.v])
+                        (&point.id, point.position)
                     }
                 };
-                if coincident(position, at) {
+                let distance = (position.u - end_point.u).portable_hypot(position.v - end_point.v);
+                if distance <= tolerance {
                     ends.insert((curve.id().clone(), is_start), id.clone());
+                    by_point.entry(id.clone()).or_default().push(EntityRole {
+                        of: curve.id().clone(),
+                        role: if is_start {
+                            DefiningRole::Start
+                        } else {
+                            DefiningRole::End
+                        },
+                    });
                 }
             }
         }
-        Self { ends, minted }
+        for roles in by_point.values_mut() {
+            roles.sort_by(|a, b| {
+                (a.of.as_str(), matches!(a.role, DefiningRole::End))
+                    .cmp(&(b.of.as_str(), matches!(b.role, DefiningRole::End)))
+            });
+        }
+        Self {
+            ends,
+            by_point,
+            positions,
+            minted,
+        }
     }
 
     /// The minted points, as design entities of `sketch`.
@@ -703,24 +724,7 @@ impl Roles {
 
     /// The roles of the point entity `point`.
     fn of(&self, point: &SketchEntityId) -> Vec<EntityRole<Planar>> {
-        let mut roles = self
-            .ends
-            .iter()
-            .filter(|(_, at)| *at == point)
-            .map(|((curve, is_start), _)| EntityRole {
-                of: curve.clone(),
-                role: if *is_start {
-                    DefiningRole::Start
-                } else {
-                    DefiningRole::End
-                },
-            })
-            .collect::<Vec<_>>();
-        roles.sort_by(|a: &EntityRole<Planar>, b: &EntityRole<Planar>| {
-            (a.of.as_str(), matches!(a.role, DefiningRole::End))
-                .cmp(&(b.of.as_str(), matches!(b.role, DefiningRole::End)))
-        });
-        roles
+        self.by_point.get(point).cloned().unwrap_or_default()
     }
 
     /// The point entity at the start (`true`) or end of `curve`.
@@ -1036,14 +1040,6 @@ fn carrier(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<([f64; 2],
     }
 }
 
-fn coincident(a: [f64; 2], b: [f64; 2]) -> bool {
-    let scale = [a[0], a[1], b[0], b[1]]
-        .iter()
-        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    (a[0] - b[0]).abs() <= EPS_SKETCH_INCIDENCE * scale
-        && (a[1] - b[1]).abs() <= EPS_SKETCH_INCIDENCE * scale
-}
-
 /// The curves of `entities` read from a curve record of state `0`, with
 /// their construction bit clear, where the sketch's other non-construction
 /// curves close only through them (`profile_check::needed`). A built circle
@@ -1067,7 +1063,7 @@ fn needed_state_zero<'a>(
         if entity.construction || (!entity.construction_read() && reading.is_some()) {
             continue;
         }
-        if !entity.construction_read() && outside_profile.contains(entity.id()) {
+        if outside_profile.contains(entity.id()) {
             state_zero.insert(entity.id(), form);
         } else {
             live.insert(entity.id(), form);
@@ -1085,7 +1081,6 @@ struct Relations<'a> {
     context: &'a Context<'a>,
     owner: &'a FeatureId,
     roles: &'a Roles,
-    entities: &'a [&'a cadmpeg_ir::sketches::SketchEntity],
 }
 
 impl Relations<'_> {
@@ -1198,11 +1193,8 @@ impl Relations<'_> {
         let Some(Operand::Entity(id)) = self.locus(locus) else {
             return None;
         };
-        let entity = self.entities.iter().find(|entity| entity.id() == &id)?;
-        match entity.geometry.definition() {
-            Geometry::Point { position } => Some([position.u, position.v]),
-            _ => None,
-        }
+        let position = self.roles.positions.get(&id)?;
+        Some([position.u, position.v])
     }
 
     fn geometric(&self, kind: &Kind) -> Option<SketchRelation<Planar>> {
@@ -1212,10 +1204,22 @@ impl Relations<'_> {
                 a: entity(&entities[0]),
                 b: entity(&entities[1]),
             },
-            Kind::CoincidentLoci { loci } if loci.len() == 2 => SketchRelation::Coincident {
-                a: self.locus(&loci[0])?,
-                b: self.locus(&loci[1])?,
-            },
+            Kind::CoincidentLoci { loci } => {
+                let [first, second, rest @ ..] = loci.as_slice() else {
+                    return None;
+                };
+                let (a, b) = (self.locus(first)?, self.locus(second)?);
+                if !rest.is_empty()
+                    && (a != b
+                        || !matches!(&a, Operand::Entity(id) if self.roles.positions.contains_key(id))
+                        || rest
+                            .iter()
+                            .any(|locus| self.locus(locus).as_ref() != Some(&a)))
+                {
+                    return None;
+                }
+                SketchRelation::Coincident { a, b }
+            }
             Kind::PointOnObject { point, entity: id } => SketchRelation::Coincident {
                 a: self.locus(point)?,
                 b: entity(id),
