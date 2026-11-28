@@ -4133,7 +4133,7 @@ impl<'a> F3dDecodeSession<'a> {
             .occurrences
             .extend(unresolved_component_inserts);
         self.report.losses.extend(component_inserts.losses());
-        let joints = crate::design::assembly::project_assembly_joints_with_paths(
+        let mut joints = crate::design::assembly::project_assembly_joints_with_paths(
             &prereqs.design_parameter_scopes,
             &prereqs.design_component_occurrences,
             &component_inserts,
@@ -4148,8 +4148,18 @@ impl<'a> F3dDecodeSession<'a> {
                 &prereqs.design_parameter_scopes,
             ),
         );
+        self.report
+            .losses
+            .extend(joints.take_losses(self.ctx.depth()));
         self.ir.model.assembly_joints = joints.joints;
-        self.report.losses.extend(joints.losses);
+        self.report
+            .losses
+            .extend(crate::design::decode::joint_motion::assumed_motion_loss(
+                &prereqs.design_parameter_scopes,
+                &prereqs.design_joint_motions,
+                &prereqs.design_unbound_motions,
+                &self.ir.model.assembly_joints,
+            ));
         let joint_placed = crate::design::assembly::joint_placed_identity_occurrences(
             &self.ir.model.occurrences,
             self.ir
@@ -4502,7 +4512,14 @@ pub(crate) fn decode_scanned(
                 &mut decoded.ir,
                 &mut decoded.body.losses,
                 |ir, losses| {
-                    carried = crate::design_v11::project(ctx, ir, depth, Some(&sources), losses)?;
+                    carried = crate::design_v11::project(
+                        ctx,
+                        ir,
+                        depth,
+                        &crate::design_v11::joint::RootOperands::new(),
+                        Some(&sources),
+                        losses,
+                    )?;
                     Ok(())
                 },
             )?;
