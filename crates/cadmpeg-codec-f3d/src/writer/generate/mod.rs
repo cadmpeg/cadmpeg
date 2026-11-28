@@ -570,16 +570,14 @@ fn attempt(
     )
     .map_err(Failure::archive)?;
     if let Some(destination) = destination {
-        destination
-            .read_back(
-                ctx,
-                staged.get_ref(),
-                target,
-                expected_parameters,
-                &native.design_parameter_scopes,
-                &mut configuration_losses,
-            )
-            .map_err(Failure::design)?;
+        destination.read_back(
+            ctx.policy(),
+            staged.get_ref(),
+            target,
+            expected_parameters,
+            &native.design_parameter_scopes,
+            &mut configuration_losses,
+        );
     }
     let parameters = match native_parameters {
         Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,

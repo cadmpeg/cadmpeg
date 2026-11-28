@@ -364,6 +364,38 @@ fn generator_readback_detects_an_archive_cell_changed_after_planning() {
 }
 
 #[test]
+fn generator_keeps_the_archive_when_readback_exhausts_its_budget() {
+    use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+
+    let ir = seed(false);
+    let document = f3d_native(&ir).design_configurations[0].id();
+    let (_, expected) =
+        crate::test_support::configuration_table::written_on(&ir, None, &["synthesized"]);
+    let input = EncodeInput::new(&ir, None).with_limits(ResourceLimits {
+        max_entities: 0,
+        ..ResourceLimits::desktop()
+    });
+    let mut archive = Vec::new();
+    let report = F3dCodec
+        .plan(input)
+        .and_then(|plan| plan.write_to(&mut archive))
+        .unwrap();
+    assert_eq!(report.write_path().to_string(), "synthesized");
+    assert_eq!(archive, expected);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.message
+                .contains("cannot read the written configuration records")
+                && loss.message.contains("resource limit on Entities")
+                && loss.message.contains(&document)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
 fn a_parameter_rename_updates_the_test_row_without_a_value_edit() {
     let mut ir = seed(false);
     authored_width(&mut ir, true);

@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeArena, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::value_unwritable;
 use cadmpeg_ir::design::configuration::PartNumber;
@@ -169,66 +169,64 @@ impl<'a> Destination<'a> {
 
     pub(in crate::writer) fn read_back(
         &self,
-        ctx: &DecodeContext<'_>,
+        policy: &DecodePolicy,
         archive: &[u8],
         target: &CadIr,
         expected_parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
         scopes: &[crate::records::feature::scope::DesignParameterScope],
         losses: &mut Vec<LossNote>,
-    ) -> Result<(), CodecError> {
+    ) {
         if self.documents.is_empty() {
-            return Ok(());
+            return;
         }
         #[cfg(test)]
         let corrupted = crate::integration_tests::configuration_wire::read_back::corrupted(archive);
         #[cfg(test)]
         let archive = corrupted.as_deref().unwrap_or(archive);
         let arena = DecodeArena::new();
-        let back = ctx.with_arena(&arena, |local| {
-            let root = local.register_slice(
-                View::over_retained(archive),
-                ByteRange {
-                    start: 0,
-                    end: u64_from_index(archive.len()),
-                },
-            )?;
-            if self.rows.is_empty() {
-                let scan = crate::container::scan_configurations(local, root)?;
-                let decoded = crate::design::configurations::decode_configurations(
-                    local,
-                    &scan,
-                    &mut Vec::new(),
-                    &mut Vec::new(),
-                )?;
-                return Ok(self.compare_wire(&decoded.documents).losses);
-            }
-            let decoded = crate::decode::decode(local, root)?;
-            let read = decoded.ir;
-            let documents = read
-                .native
-                .namespace("f3d")
-                .map(|namespace| namespace.arena_as_for_decode(local, "design_configurations"))
-                .transpose()?
-                .unwrap_or_default();
-            let NativeComparison {
-                mut losses,
-                matches_plan,
-            } = self.compare_wire(&documents);
-            if matches_plan {
-                self.compare_cadir(target, expected_parameters, scopes, read, &mut losses);
-            }
-            Ok(losses)
-        });
+        let back =
+            DecodeContext::from_root_bytes(archive, &arena, policy).and_then(|(local, root)| {
+                let losses = if self.rows.is_empty() {
+                    let scan = crate::container::scan_configurations(&local, root)?;
+                    let decoded = crate::design::configurations::decode_configurations(
+                        &local,
+                        &scan,
+                        &mut Vec::new(),
+                        &mut Vec::new(),
+                    )?;
+                    self.compare_wire(&decoded.documents).losses
+                } else {
+                    let decoded = crate::decode::decode(&local, root)?;
+                    let read = decoded.ir;
+                    let documents = read
+                        .native
+                        .namespace("f3d")
+                        .map(|namespace| {
+                            namespace.arena_as_for_decode(&local, "design_configurations")
+                        })
+                        .transpose()?
+                        .unwrap_or_default();
+                    let NativeComparison {
+                        mut losses,
+                        matches_plan,
+                    } = self.compare_wire(&documents);
+                    if matches_plan {
+                        self.compare_cadir(target, expected_parameters, scopes, read, &mut losses);
+                    }
+                    losses
+                };
+                local
+                    .resource_refusal()
+                    .map_or(Ok(losses), |limit| Err(limit.into()))
+            });
         match back {
             Ok(notes) => losses.extend(notes),
-            Err(error) if crate::design::decode::record::is_fatal(&error) => return Err(error),
             Err(error) => losses.extend(value_unwritable(
                 "F3D",
                 &format!("cannot read the written configuration records: {error}"),
                 self.documents.iter().map(DesignConfiguration::id),
             )),
         }
-        Ok(())
     }
 
     fn compare_cadir(

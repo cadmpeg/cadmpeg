@@ -852,7 +852,7 @@ pub(crate) fn write_semantic(
         .into_inner();
     if let Some(tables) = tables {
         tables.destination.read_back(
-            ctx,
+            ctx.policy(),
             &output,
             target,
             &target.model.parameters,
@@ -860,7 +860,7 @@ pub(crate) fn write_semantic(
                 .as_ref()
                 .map_or(&[], |native| native.design_parameter_scopes.as_slice()),
             &mut table_losses,
-        )?;
+        );
     }
     writer.write_all(&output)?;
     losses.extend(table_losses);
