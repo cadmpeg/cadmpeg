@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge-curve decode and rejected-loop topology tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

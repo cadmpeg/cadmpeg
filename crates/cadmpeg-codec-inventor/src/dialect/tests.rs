@@ -6,8 +6,6 @@
 //! driven from a synthetic document built by [`crate::test_support`]. The
 //! declarations are the only thing that varies between them.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_test_support::wire;
 
 use cadmpeg_core::decode::InspectOptions;

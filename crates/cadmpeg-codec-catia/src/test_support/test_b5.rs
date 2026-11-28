@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! b5-family synthetic topology stream builders.
 
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_a5a8::{a8_surface_stream, a8_surface_tail};
 use crate::test_support::test_bytes::{le_f32, le_f64};
 

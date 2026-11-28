@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! FEM Parameter Data boundary tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::directory::DirectoryEntry;
 use std::collections::BTreeMap;

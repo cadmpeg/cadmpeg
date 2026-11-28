@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic assembly and `.f3z` ZIP builders.
-#![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Read, Write};
 

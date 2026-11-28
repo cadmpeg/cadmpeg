@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 //! JSON Schema checks for `cadmpeg-core` public types.
 
 use std::collections::BTreeMap;

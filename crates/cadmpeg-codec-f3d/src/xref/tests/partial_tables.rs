@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! An unreadable entry beside an external reference table gives up that
 //! entry alone, and the table decodes.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

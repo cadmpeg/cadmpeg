@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic configuration-table documents and Design configuration root records.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet};
 

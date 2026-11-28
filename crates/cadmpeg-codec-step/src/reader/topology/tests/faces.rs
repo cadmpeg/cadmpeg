@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP B-rep, shell, face, and wire tests.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use crate::ids::kind;

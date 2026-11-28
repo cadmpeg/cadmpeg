@@ -861,7 +861,6 @@ impl Serialize for LowerHex<'_> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::finite_json::CanonicalJsonError;
     use super::{canonical_json_sha256, document_local_sha256, sha256_hex, DigestError};

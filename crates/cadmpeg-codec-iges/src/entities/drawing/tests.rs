@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::unwrap_used)]
-
 use crate::directory::{DirectoryEntry, SourceStatus};
 use std::io::Cursor;
 

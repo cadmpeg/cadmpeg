@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::recover_edge_curves;
 use crate::eval::{admission::EvaluationAdmission, decode};

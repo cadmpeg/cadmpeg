@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unit tests for JT codec primitives.
 
-#![allow(clippy::unwrap_used)]
-
 use super::{decode_arithmetic, parse_probability_context, ArithmeticWorkBound};
 use cadmpeg_ir::scalar::FiniteBinary32;
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Content from another format that the semantic writer degrades and names
 //! instead of refusing the write.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};

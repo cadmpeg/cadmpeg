@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writer-domain synthetic tests.
-#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,

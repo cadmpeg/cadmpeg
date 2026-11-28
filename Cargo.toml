@@ -272,9 +272,9 @@ module_name_repetitions = "allow"
 disallowed_methods = "allow"
 
 # Restriction picks: fail loudly instead of silently panicking or shipping
-# debug scaffolding. Use `expect` with a message where infallibility is a
-# real invariant; `unwrap` is reserved for tests.
+# debug scaffolding.
 unwrap_used = "warn"
+expect_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"

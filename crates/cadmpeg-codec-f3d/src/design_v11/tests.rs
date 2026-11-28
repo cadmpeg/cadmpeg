@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests of the v11 design of a Fusion document.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

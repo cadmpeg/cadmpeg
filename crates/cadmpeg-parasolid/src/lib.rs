@@ -9,8 +9,6 @@
 //! [`topology`] classifies topology node fields, [`precision`] states a part's
 //! modeller tolerances, and [`xmt`] carries stream-local node identity.
 
-#![cfg_attr(test, allow(clippy::unwrap_used))]
-
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};

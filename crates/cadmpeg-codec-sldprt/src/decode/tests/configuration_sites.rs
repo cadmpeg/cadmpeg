@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration site selection and partition-synthesis decode tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::EditableDecodeResult;
 

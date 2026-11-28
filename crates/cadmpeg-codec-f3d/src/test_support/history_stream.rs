@@ -8,7 +8,6 @@
 //! revisions closed by `End-of-ASM-data`. [`DesignScale`] pairs an active
 //! model of independent triangular sheet bodies with a history that builds it
 //! one state at a time.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::smbh_header_test::smbh_header_prefix;
 use crate::test_support::tokens_test::{

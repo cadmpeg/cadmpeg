@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Decode bare Autodesk `ShapeManager` (ASM) B-rep streams.
 //!
 //! A bare stream is an ASM serialization outside any container: a binary

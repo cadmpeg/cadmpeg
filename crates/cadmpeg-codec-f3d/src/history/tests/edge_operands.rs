@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical edge-operand binding tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::edge_operand_history::bind_edge_operand_history_candidates;
 use cadmpeg_core::serde_erase::json;

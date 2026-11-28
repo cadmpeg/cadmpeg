@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Inspect and decode eDrawings `.eprt` and `.easm` packages.
 //!
 //! A package is a ZIP archive. Its `eModel` member holds a HOOPS Stream

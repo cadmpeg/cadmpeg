@@ -8,7 +8,6 @@
 //! closes it. A run belongs to the counted group whose first identity-wrapper
 //! header is the run's final following header, and it can be shorter than the
 //! group's operand list.
-#![allow(clippy::unwrap_used)]
 
 use super::streams_test::{
     generated_design_bulkstream, generated_design_class_tag, GeneratedDesignMetastreamVariant,

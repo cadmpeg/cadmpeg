@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::tokens_test::{push_tagged_i64, t_dbl};
 

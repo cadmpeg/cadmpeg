@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads Alibre Design part files (`.AD_PRT`) and sheet-metal part files
 //! (`.AD_SMP`) into [`cadmpeg_ir::CadIr`].
 //!

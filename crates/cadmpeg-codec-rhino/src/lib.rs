@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
 //! <!-- generated: capability rhino -->

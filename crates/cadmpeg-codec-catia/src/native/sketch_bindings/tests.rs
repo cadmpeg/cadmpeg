@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use super::bind;
 use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
 use crate::test_support::test_sketch_bindings::{

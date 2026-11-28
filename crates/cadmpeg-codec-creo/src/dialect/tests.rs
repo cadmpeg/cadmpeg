@@ -6,8 +6,6 @@
 //! ND, DEPDB, and unknown — so the synthetic frames below are that row's only
 //! evidence that classification reaches it at all.
 
-#![allow(clippy::unwrap_used)]
-
 use super::{
     classify, DECLARED_LEGACY_ASCII_PRODUCT_RELEASE, DECLARED_LEGACY_ASCII_SCHEMA,
     DECLARED_VERSION_LINE, FORMAT,

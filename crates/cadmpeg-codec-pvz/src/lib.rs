@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Inspect and decode PTC Creo View (`ProductView`) `.pvz` packages.
 //!
 //! A `.pvz` package is a ZIP archive. It holds one `.pvs` structure member

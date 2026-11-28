@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter Data quarantine: ownership order, parts, and accounting.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

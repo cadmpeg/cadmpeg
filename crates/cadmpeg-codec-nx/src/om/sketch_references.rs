@@ -206,7 +206,6 @@ impl TryFrom<PositionWire> for SketchReferencePosition {
 #[cfg(test)]
 mod tests {
     // Source fixtures and wire assertions construct checked positions directly.
-    #![allow(clippy::unwrap_used)]
     use super::{
         OperationPayload, SketchReferenceCount, SketchReferenceField, SketchReferencePosition,
     };

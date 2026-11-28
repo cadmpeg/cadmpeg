@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A regenerated Keywords text: what XML cannot hold is left out or replaced
 //! and named, and the written history reads back.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::report::check::Check;

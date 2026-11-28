@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode tests of the v11 design of a part.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use cadmpeg_ir::SourceGeometryRole;

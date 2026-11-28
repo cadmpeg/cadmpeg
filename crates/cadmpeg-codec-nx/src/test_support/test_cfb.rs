@@ -6,7 +6,6 @@
 //! table, directory entries, and the payload. The fixed builders write an
 //! uncompressed payload and pin no compressor output in a golden;
 //! `legacy_cfb_with_ug_payload` writes the payload it is given.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
 

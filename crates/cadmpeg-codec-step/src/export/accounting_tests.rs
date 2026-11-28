@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unrepresented-content accounting charges every check it owns.
 
-#![allow(clippy::unwrap_used)]
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};

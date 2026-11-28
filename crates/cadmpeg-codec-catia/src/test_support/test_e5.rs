@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! e5-family synthetic stream and CATPart builders.
 
-#![allow(clippy::unwrap_used)]
 use crate::container::{DIR_MAGIC, OUTER_MAGIC};
 use crate::test_support::test_bytes::{be32, le_f32, le_f64};
 use crate::test_support::test_container::descriptor;

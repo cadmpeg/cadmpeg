@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic Parasolid stream and B-rep body byte builders for crate tests.
-#![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
 pub(crate) mod mesh;

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;

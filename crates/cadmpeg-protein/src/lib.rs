@@ -873,7 +873,6 @@ fn take<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u8; N]> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)] // A failed synthetic decode is the test failure.
 
     use std::io::{Cursor, Write};
 

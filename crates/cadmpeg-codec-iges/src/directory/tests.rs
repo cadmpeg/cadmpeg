@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::unwrap_used)]
-
 use crate::directory::{Hierarchy, Subordinate, UseFlag};
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;

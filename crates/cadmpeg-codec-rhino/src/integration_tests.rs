@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 //! End-to-end contracts over synthesized `OpenNURBS` archives.
 
 use cadmpeg_test_support::EditableDecodeResult;

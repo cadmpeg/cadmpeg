@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part 21 string codec tests.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use std::io::Cursor;

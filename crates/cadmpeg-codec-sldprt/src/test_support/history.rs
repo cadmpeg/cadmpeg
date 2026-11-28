@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic feature-history and `ResolvedFeatures` payload builders for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use super::container::make_block;
 use super::container::sldprt_with_body;

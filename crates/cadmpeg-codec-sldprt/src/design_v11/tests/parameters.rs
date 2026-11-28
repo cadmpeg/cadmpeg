@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter decode tests of the v11 design of a part.
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 

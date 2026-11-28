@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The semantic writer omits the part stub of a quarantined record and names it.
-#![allow(clippy::unwrap_used)]
 
 use crate::IgesVersion;
 use cadmpeg_ir::codec::write::target::TargetRequest;

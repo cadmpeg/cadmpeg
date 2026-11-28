@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::geometry::procedural_curves::CompoundComponent;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;

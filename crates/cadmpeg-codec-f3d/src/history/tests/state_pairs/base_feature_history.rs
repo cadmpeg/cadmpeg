@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scope history binding through the body entity suffixes of a Base Feature.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::scope_histories::bind_scope_histories;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};

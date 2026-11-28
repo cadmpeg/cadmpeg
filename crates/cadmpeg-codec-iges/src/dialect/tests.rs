@@ -2,8 +2,6 @@
 //! The registry is the oracle for the pinned ids, so the test reads it rather
 //! than a second copy of the list.
 
-#![allow(clippy::unwrap_used)]
-
 use super::{
     classify, dialect_id, dialect_loss, fixed_ascii_id, DECLARED_REPRESENTATION,
     DECLARED_VERSION_FLAG, DECLARED_VERSION_FLAG_DECLARATION, FORMAT, IGES_UNKNOWN,

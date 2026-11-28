@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write Autodesk Shape Manager record streams.
 //!
 //! [`sab`] frames binary ASM and admitted ACIS records, and [`sat`] frames

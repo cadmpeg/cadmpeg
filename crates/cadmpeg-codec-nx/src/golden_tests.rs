@@ -3,7 +3,6 @@
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
 //! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use cadmpeg_core::serde_erase::json;

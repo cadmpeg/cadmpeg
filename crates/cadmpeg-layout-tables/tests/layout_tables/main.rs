@@ -38,7 +38,7 @@
 //! `layout_validator_rejects_broken_tables` runs the same validator over
 //! broken fixtures in `tests/fixtures/layout-invalid/`.
 
-#![allow(clippy::unwrap_used)] // Test code: a failed unwrap is a test failure.
+#![cfg(test)]
 
 mod generate;
 

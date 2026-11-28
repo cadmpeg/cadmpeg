@@ -75,8 +75,6 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
-#![cfg_attr(test, allow(clippy::unwrap_used))]
-
 macro_rules! propagate_resource {
     ($result:expr) => {
         match $result {

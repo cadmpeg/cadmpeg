@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Decode and encode `OpenUSD` layers.
 //!
 //! A layer is a USDA text file or a USDC binary file, alone or as the root

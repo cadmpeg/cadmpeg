@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Procedural-surface payload helpers for synthetic SMBH tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::smbh_blocks_test::{generated_curve_block, generated_surface_block};
 use crate::test_support::tokens_test::{push_tagged_i64, t_dbl, t_ident, t_long};

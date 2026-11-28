@@ -4,7 +4,6 @@
 //! Each body-map carrier names one `.smbh` blob and pairs a body selector with
 //! a Design entity suffix. When the carriers classify every BREP entry exactly
 //! once, every named blob contributes model bodies.
-#![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Write};
 

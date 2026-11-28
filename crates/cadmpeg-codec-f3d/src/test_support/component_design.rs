@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic Design streams with local component definitions, with and
 //! without their occurrence placement records.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::u64_from_index;
 
