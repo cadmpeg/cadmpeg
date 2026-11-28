@@ -541,22 +541,16 @@ pub(in crate::writer::generate) fn plan(
     }
 }
 
-/// The native records when the neutral parameters equal their projection,
-/// or when the document does not hold its neutral parameters (a CADIR read
-/// without its decode sidecar states no parameter edit); otherwise the root
-/// scope's parameters, and a loss naming each neutral parameter that no scope
-/// parameter restates. It never refuses.
+/// The native records when the neutral parameters equal their projection up
+/// to expression and value edits. Otherwise the root scope's parameters
+/// and losses for the neutral parameters the plan cannot restate.
 pub(in crate::writer::generate) fn native_or_neutral(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
+    neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
 ) -> Result<ParameterSource, CodecError> {
-    let edits = if target.model.omitted_arenas_held() {
-        value_edits(ctx, &target.model.parameters, native)?
-    } else {
-        Some(ValueEdits::new())
-    };
-    if let Some(edits) = edits {
+    if let Some(edits) = value_edits(neutral, projected, native) {
         let (form, losses) = user_form(native, &edits)?;
         let records = encode_document_parameters(&form, NATIVE_PARAMETER_COLLECTION)?;
         return Ok(ParameterSource::Native(NativeParameters {
@@ -579,9 +573,7 @@ pub(in crate::writer::generate) fn native_or_neutral(
         F3dLossCode::WriterParameterOmitted,
         "parameter",
         "the neutral parameters differ from the native Design records and no design parameter restates them",
-        target
-            .model
-            .parameters
+        neutral
             .iter()
             .map(|row| row.id.to_string())
             .filter(|id| !restated.contains(id.as_str())),
@@ -593,15 +585,17 @@ pub(in crate::writer::generate) fn native_or_neutral(
 /// whose neutral parameter `neutral` edits, keyed by record id, when
 /// `neutral` equals the native records' projection in everything else.
 fn value_edits(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
+    projection: &[cadmpeg_ir::features::parameters::DesignParameter],
     native: &F3dNative,
-) -> Result<Option<ValueEdits>, CodecError> {
+) -> Option<ValueEdits> {
     use cadmpeg_ir::features::parameters::ParameterValue;
 
-    let projection = native_projection(ctx, native)?;
+    if neutral == projection {
+        return Some(ValueEdits::new());
+    }
     if neutral.len() != projection.len() {
-        return Ok(None);
+        return None;
     }
     let records = native
         .design_parameters
@@ -609,7 +603,7 @@ fn value_edits(
         .map(|record| (crate::ids::neutral_parameter_id(record), record))
         .collect::<HashMap<_, _>>();
     let mut edits = BTreeMap::new();
-    for (stated, projected) in neutral.iter().zip(&projection) {
+    for (stated, projected) in neutral.iter().zip(projection) {
         if stated == projected {
             continue;
         }
@@ -622,56 +616,51 @@ fn value_edits(
             }
             Some(ParameterValue::Angle(angle)) => angle.get(),
             Some(ParameterValue::Real(real)) => real.get(),
-            _ => return Ok(None),
+            _ => return None,
         };
-        let Some(record) = records.get(&stated.id) else {
-            return Ok(None);
-        };
+        let record = records.get(&stated.id)?;
         if edited != *stated || stated.expression.trim().is_empty() {
-            return Ok(None);
+            return None;
         }
         edits.insert(record.id.clone(), (stated.expression.clone(), evaluated));
     }
-    Ok(Some(edits))
+    Some(edits)
 }
 
-/// The native records' parameters as the decoder projects them.
-fn native_projection(
+/// The native records' features and parameters as the decoder projects them.
+pub(in crate::writer::generate) fn native_projection(
     decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
-    Ok(
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native.design_parameters,
-                source_parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                scopes: &native.design_parameter_scopes,
-                timelines: &native.design_feature_timelines,
-                construction_groups: &native.design_construction_operand_groups,
-                fillet_radius_groups: &native.design_fillet_radius_groups,
-                edge_operands: &native.design_edge_operands,
-                edge_identity_operands: &native.design_edge_identity_operands,
-                edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
-                entity_selection_operands: &native.design_entity_selection_operands,
-                design_types: &native.design_types,
-                curve_identities: &native.sketch_curve_identities,
-                face_operands: &native.design_face_operands,
-                face_source_groups: &native.design_face_source_groups,
-                body_recipe_operands: &native.design_body_recipe_operands,
-                placements: &native.design_sketch_placements,
-                placement_constructions: &native.design_placement_constructions,
-                body_bindings: &native.design_body_bindings,
-                component_naming_spaces: &native.design_component_naming_spaces,
-                histories: &native.asm_histories,
-                face_boundaries: &native.asm_face_boundaries,
-                sheet_metal_settings: &native.design_sheet_metal_settings,
-                construction_recipes: &native.construction_recipes,
-                persistent_subentity_tags: &native.persistent_subentity_tags,
-            },
-        )?
-        .parameters,
+) -> Result<crate::design::feature_project::ProjectedParameterDesign, CodecError> {
+    crate::design::feature_project::project_parameter_design_with_edge_identities(
+        decode_ctx,
+        &crate::design::feature_project::ProjectInputs {
+            native: &native.design_parameters,
+            source_parameters: &native.design_parameters,
+            owners: &native.design_parameter_owners,
+            scopes: &native.design_parameter_scopes,
+            timelines: &native.design_feature_timelines,
+            construction_groups: &native.design_construction_operand_groups,
+            fillet_radius_groups: &native.design_fillet_radius_groups,
+            edge_operands: &native.design_edge_operands,
+            edge_identity_operands: &native.design_edge_identity_operands,
+            edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
+            entity_selection_operands: &native.design_entity_selection_operands,
+            design_types: &native.design_types,
+            curve_identities: &native.sketch_curve_identities,
+            face_operands: &native.design_face_operands,
+            face_source_groups: &native.design_face_source_groups,
+            body_recipe_operands: &native.design_body_recipe_operands,
+            placements: &native.design_sketch_placements,
+            placement_constructions: &native.design_placement_constructions,
+            body_bindings: &native.design_body_bindings,
+            component_naming_spaces: &native.design_component_naming_spaces,
+            histories: &native.asm_histories,
+            face_boundaries: &native.asm_face_boundaries,
+            sheet_metal_settings: &native.design_sheet_metal_settings,
+            construction_recipes: &native.construction_recipes,
+            persistent_subentity_tags: &native.persistent_subentity_tags,
+        },
     )
 }
 
@@ -769,6 +758,18 @@ pub(in crate::writer::generate) fn encode(
 }
 
 impl ParameterPlan {
+    /// The records and names assigned to source parameters in the new stream.
+    pub(in crate::writer::generate) fn destinations(
+        &self,
+        indices: &[u32],
+    ) -> super::super::configuration_table::DestinationParameters<'_> {
+        self.written
+            .iter()
+            .zip(indices)
+            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .collect()
+    }
+
     /// The record indices of the written parameters, allocated in
     /// `registry`, in written order.
     pub(in crate::writer::generate) fn allocate(

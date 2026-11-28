@@ -671,12 +671,21 @@ fn decode_container<'a>(
     let mut carrier_given_up = false;
     let mut history_chain = None;
     let mut empty_kernel_stream = false;
+    let mut kernel_withheld = Vec::new();
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => {
-                match ctx.run_part(|| crate::kernel::decode_kernel_carrier(ctx, carrier, header))? {
+                match ctx.run_part(|| {
+                    crate::kernel::decode_kernel_carrier(
+                        ctx,
+                        carrier,
+                        header,
+                        cadmpeg_asm::brep::DecodePurpose::Model,
+                    )
+                })? {
                     Ok(decoded) => {
                         empty_kernel_stream = decoded.model_records == 0;
+                        kernel_withheld = decoded.withheld;
                         apply_kernel_header(
                             &mut ir,
                             carrier.family,
@@ -687,14 +696,14 @@ fn decode_container<'a>(
                     }
                     Err(error) => {
                         geometry_failure = Some(format!("{error}"));
-                        given_up_carrier = Some(carrier_part(carrier)?);
+                        given_up_carrier = Some(carrier_part(carrier));
                         None
                     }
                 }
             }
             Err(detail) => {
                 geometry_failure = Some(detail.to_owned());
-                given_up_carrier = Some(carrier_part(carrier)?);
+                given_up_carrier = Some(carrier_part(carrier));
                 None
             }
         },
@@ -712,8 +721,8 @@ fn decode_container<'a>(
                     *payload_offset,
                     payload.window(),
                     ArenaClass::Model,
-                )?,
-                (segment_token.clone(), *record_ordinal),
+                ),
+                (segment_token.as_str().to_owned(), *record_ordinal),
             ));
             None
         }
@@ -733,7 +742,7 @@ fn decode_container<'a>(
             stats: kernel_stats,
             annotation_records: kernel_annotations,
             unbounded_faces: kernel_unbounded_faces,
-            withheld: kernel_withheld,
+            withheld: _,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
     let history_framing = match &container.rse.active_carrier {
@@ -795,14 +804,17 @@ fn decode_container<'a>(
         needs_parameter = needs;
     }
     let mut stored_body_losses = Vec::new();
-    if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
+    if delivered >= DecodeDepth::Design && (!body_keys.is_empty() || result_states.is_some()) {
         let projection = crate::feature::base::project(
             ctx,
-            &container.rse,
-            &feature_inventory,
-            &design_inventory,
-            &sketch_inventory.transforms,
-            &body_keys,
+            &crate::feature::base::Inputs {
+                document: &container.rse,
+                inventory: &feature_inventory,
+                design: &design_inventory,
+                transforms: &sketch_inventory.transforms,
+                keys: &body_keys,
+                states: result_states,
+            },
             &mut ir,
         )?;
         unresolved.features = unresolved
@@ -1059,8 +1071,10 @@ fn decode_container<'a>(
         if let (ActiveCarrierState::Selected(carrier), false) =
             (&container.rse.active_carrier, carrier_given_up)
         {
-            for record in &kernel_withheld {
-                given_up.push(ctx.give_up_part(withheld_part(carrier, record)?, record.error())?);
+            for (offset, record) in &kernel_withheld {
+                given_up.push(
+                    ctx.give_up_part(withheld_part(carrier, *offset, record), record.error())?,
+                );
             }
         }
         if kernel_stats.unknown_surface_faces() != 0 {
@@ -2213,26 +2227,30 @@ fn rse_record_part<'s>(
     (token, ordinal): (&str, u32),
     holds: ArenaClass,
 ) -> Result<Part<'s>, CodecError> {
-    let frame = rse_record_frame(container, token, ordinal).ok_or_else(|| {
+    let (key, frame) = rse_record_frame(container, token, ordinal).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "Inventor record {token}-{ordinal} names no framed RSe record"
         ))
     })?;
-    crate::rse::bulk_record_part(
+    Ok(crate::rse::bulk_record_part(
         "rse-record",
-        (token, ordinal),
+        (key, ordinal),
         frame.payload_offset,
         frame.payload.window(),
         holds,
-    )
+    ))
 }
 
-/// The framed `RSe` record `ordinal` of the segment whose token is `token`.
+/// The framed `RSe` record `ordinal` of the segment whose token is `token`,
+/// and that token as an identity key.
 fn rse_record_frame<'s, 'a>(
     container: &'s InventorContainer<'a>,
     token: &str,
     ordinal: u32,
-) -> Option<&'s crate::records::RseRecordFrame<'a>> {
+) -> Option<(
+    &'s cadmpeg_ir::ids::IdentityKey,
+    &'s crate::records::RseRecordFrame<'a>,
+)> {
     let segment = container
         .rse
         .segments
@@ -2244,10 +2262,11 @@ fn rse_record_frame<'s, 'a>(
     let crate::rse::RecordFrameState::Framed(table) = &bulk.records else {
         return None;
     };
-    table
+    let frame = table
         .records
         .iter()
-        .find(|record| record.ordinal == ordinal)
+        .find(|record| record.ordinal == ordinal)?;
+    Some((segment.pair.token.key(), frame))
 }
 
 /// Gives up the compound stream `entry` as a part of `kind` holding
@@ -2291,18 +2310,21 @@ fn segment_stream<'s>(
 
 /// The active kernel carrier as a `kernel-carrier` part of its `RSe` record, and
 /// the segment token and ordinal of that record.
-fn carrier_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-) -> Result<(Part<'a>, (String, u32)), CodecError> {
-    let record = (carrier.segment_token.as_str(), carrier.record_ordinal);
+fn carrier_part<'a>(carrier: &crate::kernel::ActiveCarrier<'a>) -> (Part<'a>, (String, u32)) {
     let part = crate::rse::bulk_record_part(
         "kernel-carrier",
-        record,
+        (&carrier.segment_token, carrier.record_ordinal),
         carrier.carrier_offset,
         carrier.bytes.window(),
         ArenaClass::Model,
-    )?;
-    Ok((part, (record.0.to_owned(), record.1)))
+    );
+    (
+        part,
+        (
+            carrier.segment_token.as_str().to_owned(),
+            carrier.record_ordinal,
+        ),
+    )
 }
 
 /// The `delta_state` chain of the active carrier as a `history-chain` part:
@@ -2320,49 +2342,32 @@ fn history_chain_part<'a>(
     let chain = bytes
         .get(start..)
         .ok_or_else(|| CodecError::malformed("Inventor history chain start is out of bounds"))?;
-    let offset = carrier
-        .carrier_offset
-        .checked_add(cadmpeg_core::decode::u64_from_index(start))
-        .ok_or_else(|| CodecError::malformed("Inventor history chain offset overflows"))?;
     Ok(crate::rse::bulk_record_part(
         "history-chain",
-        (carrier.segment_token.as_str(), carrier.record_ordinal),
-        offset,
+        (&carrier.segment_token, carrier.record_ordinal),
+        carrier.stream_offset(start)?,
         chain,
         ArenaClass::Design,
-    )?
+    )
     .costing("the features have no history states"))
 }
 
 /// The topology record `record` that the kernel decode of `carrier` read and
-/// left out, as a part over its bytes in the bulk stream.
-fn withheld_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-    record: &cadmpeg_asm::brep::given_up::WithheldRecord,
-) -> Result<Part<'a>, CodecError> {
-    let span = record
-        .offset
-        .checked_add(record.len)
-        .and_then(|end| carrier.bytes.window().get(record.offset..end))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Inventor kernel {} record at byte {} leaves its carrier",
-                record.kind, record.offset
-            ))
-        })?;
-    let offset = carrier
-        .carrier_offset
-        .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
-        .ok_or_else(|| CodecError::malformed("Inventor kernel record offset overflows"))?;
-    Ok(crate::rse::bulk_record_part(
+/// left out, as a part over its bytes at `offset` in the bulk stream.
+fn withheld_part<'r>(
+    carrier: &crate::kernel::ActiveCarrier<'_>,
+    offset: u64,
+    record: &'r cadmpeg_asm::brep::given_up::WithheldRecord,
+) -> Part<'r> {
+    crate::rse::bulk_record_part(
         record.kind,
-        (carrier.segment_token.as_str(), carrier.record_ordinal),
+        (&carrier.segment_token, carrier.record_ordinal),
         offset,
-        span,
+        &record.bytes,
         ArenaClass::Model,
-    )?
+    )
     .dropping(record.dropped.iter().cloned())
-    .marking(record.marked.iter().cloned()))
+    .marking(record.marked.iter().cloned())
 }
 
 fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {

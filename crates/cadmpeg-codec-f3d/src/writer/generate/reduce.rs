@@ -1736,13 +1736,20 @@ impl<'a> Reduction<'a> {
         self.design_dropped = true;
     }
 
-    /// A native design whose root design scope the generator writes as a
-    /// timeline (a `Base Feature` or feature items, cadir-v11.md §3.4) is
-    /// written from its neutral records: the generator writes a timeline from
-    /// neutral records only (W2). A design with no such scope keeps its
-    /// native Design records.
+    /// Write a timeline from the neutral records (W2). A configured scope
+    /// with no root containers keeps its native tables and parameter bindings.
     fn drop_native_design_beside_neutral_timeline(&mut self) {
         if !self.writes_design() {
+            return;
+        }
+        if super::design::root_scope(&self.ir).is_some_and(|scope| scope.roots.is_empty())
+            && self
+                .ir
+                .native
+                .namespace("f3d")
+                .and_then(|namespace| namespace.arenas().get("design_configurations"))
+                .is_some_and(|tables| !tables.is_empty())
+        {
             return;
         }
         let timeline = super::design::plan(&self.ir, self.missing_states, &self.fallback)

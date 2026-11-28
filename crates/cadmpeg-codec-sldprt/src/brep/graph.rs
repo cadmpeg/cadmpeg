@@ -34,7 +34,8 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Unstated,
+    Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -60,7 +61,11 @@ use crate::parasolid::StreamHeader;
 mod grouping;
 mod prune;
 
-use grouping::{shell_face_components, unclassified_body_kind};
+use grouping::{
+    body_records_of, chain_cut_note, first_lost_face, mark_derived_shells, note_body_precision,
+    region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
+    unclassified_body_kind, withheld_counts,
+};
 use prune::{prune_rejected_topology, RingLoss};
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -574,8 +579,26 @@ pub(crate) struct Stats {
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// Coedges whose derived pcurve stopped at `SURFACE_SOLVER_LOCAL_WORK`.
     pub(crate) surface_solver_capped: crate::loss::NamedCount,
-    /// No explicit body record was available, so one body hierarchy was derived.
+    /// No body record links up with the faces, so one body hierarchy was
+    /// derived.
     pub(crate) synthetic_body_grouping: bool,
+    /// Where the derived bodies take their kind.
+    pub(crate) derived_kind: DerivedKind,
+}
+
+/// Where the bodies of the derived hierarchies take their kind, over one
+/// graph or over merged graphs.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct DerivedKind {
+    /// BODY records that do not link up with the faces agree on one kind,
+    /// which the derived body takes.
+    pub(crate) agreed: bool,
+    /// BODY records that do not link up with the faces state more than one
+    /// kind, so the derived body is classified from its faces.
+    pub(crate) disagree: bool,
+    /// No BODY record names a region, so the derived body is classified from
+    /// its faces.
+    pub(crate) absent: bool,
 }
 
 /// The `sldprt:brep` shell namespace, which three routes mint under.
@@ -764,9 +787,9 @@ struct WalkedFace {
     /// The loop records of the face whose FIN ring does not close, by cause,
     /// in sibling order.
     lost_loops: Vec<(u32, RingLoss)>,
-    /// The loop chain names a loop the walk does not reach: a missing record
-    /// or a loop of another face.
-    chain_cut: bool,
+    /// The loop the face's loop chain names and the walk does not reach: a
+    /// missing record or a loop of another face.
+    chain_cut: Option<u32>,
 }
 
 impl WalkedFace {
@@ -1302,6 +1325,8 @@ fn face_has_exact_boundary(
         && face.vertex_loops.is_empty()
         && face.unresolved_loop.is_none()
         && face.unresolved_fins.is_empty()
+        && face.lost_loops.is_empty()
+        && face.chain_cut.is_none()
         && face.loops.iter().all(|(_, ring)| {
             !ring.is_empty()
                 && ring.iter().all(|fin| {
@@ -1410,7 +1435,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut withheld_forward_links = 0usize;
     let mut unlinked_loops = HashSet::new();
     let mut lost_loops = Vec::new();
-    let mut chain_cut = false;
+    let mut chain_cut = None;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1420,12 +1445,12 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             if t.loop_is_ambiguous(loop_ref) {
                 unresolved_loop = Some(loop_ref);
             }
-            chain_cut = loop_ref > 1;
+            chain_cut = (loop_ref > 1).then_some(loop_ref);
             break;
         };
         let owner_bridge = lp.refs[2];
         if owner_bridge != bridge.attr {
-            chain_cut = true;
+            chain_cut = Some(loop_ref);
             break;
         }
         let first = lp.refs[1];
@@ -3456,78 +3481,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
     for attr in tables.bridges().keys().copied() {
         bridge_attrs.insert(attr);
     }
-    let hierarchies = facts.hierarchies(&bridge_attrs)?;
-    let mut records = Vec::new();
-    for hierarchy in hierarchies {
-        let mut body_refs = Vec::new();
-        for attr in hierarchy
-            .regions
-            .iter()
-            .map(|region| region.attr)
-            .chain(hierarchy.shells.iter().map(|shell| shell.attr))
-            .chain(hierarchy.faces.iter().map(|(face, _)| *face))
-        {
-            body_refs.push(attr);
-        }
-        body_refs.sort_unstable();
-        body_refs.dedup();
-        let mut regions = Vec::new();
-        for region in &hierarchy.regions {
-            let mut shells = Vec::new();
-            for shell in hierarchy
-                .shells
-                .iter()
-                .filter(|shell| shell.refs[6] == region.attr)
-            {
-                let mut refs = Vec::new();
-                for face_attr in hierarchy
-                    .faces
-                    .iter()
-                    .filter(|(_, shell_attr)| *shell_attr == shell.attr)
-                    .map(|(face_attr, _)| *face_attr)
-                {
-                    refs.push(face_attr);
-                }
-                refs.sort_unstable();
-                refs.dedup();
-                shells.push(ShellRecord {
-                    attr: shell.attr,
-                    offset: shell.offset,
-                    refs,
-                });
-            }
-            shells.sort_by_key(|record| record.attr);
-            regions.push((
-                region.kind,
-                RegionRecord {
-                    attr: region.attr,
-                    offset: region.offset,
-                    shells,
-                },
-            ));
-        }
-        let owns_faces =
-            |record: &RegionRecord| record.shells.iter().any(|shell| !shell.refs.is_empty());
-        let body_has_material = regions
-            .iter()
-            .any(|(kind, record)| *kind == RegionKind::Solid || owns_faces(record));
-        // The faces of the neighbouring region's shell bound a void region that
-        // owns no faces, so that region has no neutral boundary of its own.
-        regions.retain(|(kind, record)| {
-            !body_has_material || *kind == RegionKind::Solid || owns_faces(record)
-        });
-        let mut regions: Vec<_> = regions.into_iter().map(|(_, record)| record).collect();
-        regions.sort_by_key(|record| record.attr);
-        records.push(BodyRecord {
-            attr: hierarchy.body.attr,
-            kind: hierarchy.body.kind,
-            linear_resolution: hierarchy.body.linear_resolution,
-            refs: body_refs,
-            offset: hierarchy.body.offset,
-            regions,
-        });
-    }
-    records.sort_by_key(|record| record.attr);
+    let records = body_records_of(&facts.hierarchies(&bridge_attrs)?);
     (!records.is_empty()).then_some(records)
 }
 
@@ -3546,29 +3500,37 @@ fn sorted_graph_attrs(attrs: impl IntoIterator<Item = u32>) -> Vec<u32> {
     sorted
 }
 
+/// Gives up each typed face that names no loop, states the typed shells,
+/// regions and bodies no record states in their partial form, and counts the
+/// typed nodes still withheld. Returns whether a typed face is not stated.
 fn report_withheld_ownership(
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
-) {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(face_nodes) = facts.valid_ownership_faces() else {
-        return;
+        return Ok(false);
     };
     let attrs: HashSet<u32> = face_nodes.keys().copied().collect();
+    let stated = stated_face_ids(out);
+    let typed_face_unstated = attrs
+        .iter()
+        .any(|attr| !stated.contains(id_face(*attr).as_str()));
     // A face a give-up names carries its own charge. A typed face that names
     // no loop is read and left out, so it is given up; the note counts only
     // the face nodes that no record states.
-    let mut accounted: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
+    let mut accounted = stated;
     for dropped in &out.dropped {
         match dropped {
             DroppedRecord::GivenUp {
                 record, dropping, ..
             } => {
-                accounted.insert(record.as_str());
-                accounted.extend(dropping.iter().map(String::as_str));
+                accounted.insert(record.clone());
+                accounted.extend(dropping.iter().cloned());
             }
             DroppedRecord::With { record, .. } => {
-                accounted.insert(record.as_str());
+                accounted.insert(record.clone());
             }
         }
     }
@@ -3593,33 +3555,63 @@ fn report_withheld_ownership(
             &[id_surf(attr)],
         ));
     }
-    out.dropped.extend(given_up);
-    let mut bodies = 0;
-    let mut shells = 0;
+    let (mut bodies, mut regions, mut shells) = (0, 0, 0);
     if let Some(hierarchies) = facts.hierarchies(&attrs) {
-        let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
-        let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
-        bodies = hierarchies
-            .iter()
-            .filter(|hierarchy| {
-                let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
-                !body_ids.contains(id.as_str())
-            })
-            .count();
-        shells = hierarchies
-            .iter()
-            .flat_map(|hierarchy| &hierarchy.shells)
-            .filter(|native| {
-                let id = ShellId::compose(&shell_namespace(), native.attr);
-                !shell_ids.contains(id.as_str())
-            })
-            .count();
+        let records = body_records_of(&hierarchies);
+        // A derived hierarchy holds the faces of every typed body, so a typed
+        // record stated beside it would state those bodies twice.
+        if !out.stats.synthetic_body_grouping {
+            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
+            state_unbuilt_records(ctx, out, &mut annotations, &records, stream)?;
+            out.annotations = annotations.build();
+        }
+        (bodies, regions, shells) = withheld_counts(out, &hierarchies, &records, &accounted);
     }
-    let withheld = bodies + shells + faces;
+    out.dropped.extend(given_up);
+    let withheld = bodies + regions + shells + faces;
     if withheld > 0 {
         out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
-            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {shells} shell node(s), and {faces} face node(s)."
+            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {regions} region node(s), {shells} shell node(s), and {faces} face node(s)."
         )));
+    }
+    Ok(typed_face_unstated)
+}
+
+/// Binds the native identity values and the last modifying feature of each
+/// body `out` states, by its BODY attribute.
+fn bind_body_facts(out: &mut Brep, payloads: Vec<(u32, Vec<u32>)>) {
+    let mut body_ids_by_attr = HashMap::<u32, Option<BodyId>>::new();
+    for body in &out.bodies {
+        let Some(attr) = body
+            .id
+            .as_str()
+            .strip_prefix("sldprt:brep:body#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        match body_ids_by_attr.entry(attr) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(body.id.clone()));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+        }
+    }
+    for (owner, values) in attrib::unique_payloads(payloads) {
+        if let Some(Some(target)) = body_ids_by_attr.get(&owner) {
+            out.native_body_identities.push(attrib::NativeIdentity {
+                target: target.clone(),
+                values,
+            });
+        }
+    }
+    for modifier in &mut out.body_modifiers {
+        modifier.target = body_ids_by_attr
+            .get(&modifier.body_attr)
+            .and_then(Option::as_ref)
+            .map(|id| id.as_str().to_owned());
     }
 }
 
@@ -3627,13 +3619,17 @@ fn decode_graph(
     ctx: &DecodeContext<'_>,
     carriers: &mut CarrierIndex,
     t: &topology::Tables,
-    entity_facts: entity::Facts,
+    mut entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let body_payloads = std::mem::take(&mut entity_facts.body_payloads);
     let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
     out.losses.extend(out.approximations.take_notes());
-    report_withheld_ownership(&mut out, typed_facts, stream);
+    let typed_face_unstated = report_withheld_ownership(ctx, &mut out, typed_facts, stream)?;
+    mark_derived_shells(&mut out, typed_face_unstated);
+    // The bodies `report_withheld_ownership` states keep their facts too.
+    bind_body_facts(&mut out, body_payloads);
     Ok(out)
 }
 
@@ -4757,7 +4753,7 @@ fn decode_graph_inner(
             .filter(|loop_attr| loop_set.contains(loop_attr))
             .map(id_loop)
             .collect();
-        let partial = f.chain_cut
+        let partial = f.chain_cut.is_some()
             || f.unresolved_loop.is_some()
             || !f.lost_loops.is_empty()
             || loops.len() < f.loop_attrs().count();
@@ -5281,6 +5277,9 @@ fn decode_graph_inner(
             u64_from_index(surf_off),
             Some("00_0e"),
         );
+        if let (Some(loop_attr), None) = (f.chain_cut, f.unresolved_loop) {
+            out.losses.push(chain_cut_note(f.bridge_attr, loop_attr, t));
+        }
         admit_brep_entity(ctx)?;
         let shell_attr = match bridge_shell.get(&f.bridge_attr).copied() {
             Some(shell_attr) => shell_attr,
@@ -5390,20 +5389,32 @@ fn decode_graph_inner(
         .filter(|edge| edge.curve().is_none() && tolerant_edges.contains(&edge.id))
         .count();
 
-    if out.faces.is_empty() {
-        return Ok(Brep {
-            approximations: out.approximations,
-            losses: out.losses,
-            dropped: out.dropped,
-            stats: out.stats,
-            ..Brep::default()
-        });
-    }
-    let synthetic_grouping = body_records.is_empty();
+    // Where no face is stated, the body records are stated in their partial
+    // form and the graph keeps the geometry it built (§3.3).
+    let faces_stated = !out.faces.is_empty();
+    let synthetic_grouping = faces_stated && body_records.is_empty();
     out.stats.synthetic_body_grouping = synthetic_grouping;
+    // BODY records that do not link up with the faces still classify the
+    // derived body when they agree.
+    let stored = if synthetic_grouping {
+        typed_facts.stored_body_kind()
+    } else {
+        typed::StoredBodyKind::Absent
+    };
+    let stored_kind = match stored {
+        typed::StoredBodyKind::Agreed(kind) => Some(kind),
+        typed::StoredBodyKind::Absent | typed::StoredBodyKind::Disagree => None,
+    };
+    out.stats.derived_kind = DerivedKind {
+        agreed: stored_kind.is_some(),
+        disagree: stored == typed::StoredBodyKind::Disagree,
+        absent: synthetic_grouping && stored == typed::StoredBodyKind::Absent,
+    };
+    let stated_faces = stated_face_ids(&out);
 
     for (group, body_record) in body_records
         .iter()
+        .filter(|_| faces_stated)
         .map(Some)
         .chain(std::iter::once(None).take(usize::from(synthetic_grouping)))
         .enumerate()
@@ -5428,7 +5439,6 @@ fn decode_graph_inner(
             body_record.map(|record| (record.offset, "00_51_body")),
         )?;
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
-        let mut body_regions = Vec::new();
         let mut body_faces = HashSet::new();
         if native_regions.is_empty() {
             let region_id = RegionId::compose(&region_namespace(), group);
@@ -5462,13 +5472,23 @@ fn decode_graph_inner(
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
-            out.regions.push(Region::new(
+            // No record states the region or its shells, so nothing states
+            // which piece bounds the outside.
+            out.regions.push(region_of(
                 region_id.clone(),
                 body_id.clone(),
                 region_shells,
+                None,
             ));
-            body_regions.push(region_id);
         } else {
+            let exteriors = body_record
+                .filter(|_| native_regions.iter().any(|region| region.shells.len() > 1))
+                .and_then(|record| {
+                    typed_facts.containing_shells(record.attr, |attr| {
+                        stated_faces.contains(id_face(attr).as_str())
+                    })
+                })
+                .unwrap_or_default();
             for region in native_regions {
                 let region_id = RegionId::compose(&region_namespace(), region.attr);
                 annotate_group(
@@ -5476,8 +5496,12 @@ fn decode_graph_inner(
                     Some((region.offset, "00_51_region")),
                 )?;
                 let mut region_shells = Vec::new();
+                let mut exterior_unknown = false;
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
+                    let lost_face = first_lost_face(&shell.refs, &stated_faces);
+                    exterior_unknown |= lost_face.is_some();
+                    let mut pieces = 0_usize;
                     for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                         .into_iter()
                         .enumerate()
@@ -5502,40 +5526,55 @@ fn decode_graph_inner(
                         if faces.is_empty() {
                             continue;
                         }
-                        out.shells
-                            .push(Shell::new(shell_id.clone(), region_id.clone()));
+                        let mut built = Shell::new(shell_id.clone(), region_id.clone());
+                        if lost_face.is_some() {
+                            built.unstated = Some(Unstated::Members);
+                        }
+                        out.shells.push(built);
+                        pieces += 1;
                         region_shells.push(shell_id);
                     }
+                    // One stored SHELL stated as several pieces does not say
+                    // which piece bounds the outside.
+                    exterior_unknown |= pieces > 1;
+                    // A shell none of whose faces is stated holds no face and
+                    // says so; its region and body stay stated (§3.3).
+                    if pieces == 0 && lost_face.is_some() {
+                        annotate_group(
+                            AnnotationKey::from(&native_shell_id),
+                            Some((shell.offset, "00_51_shell")),
+                        )?;
+                        admit_brep_entity(ctx)?;
+                        let mut kept = Shell::new(native_shell_id.clone(), region_id.clone());
+                        kept.unstated = Some(Unstated::Members);
+                        out.shells.push(kept);
+                        region_shells.push(native_shell_id);
+                    }
                 }
+                let exterior = exteriors
+                    .get(&region.attr)
+                    .filter(|(_, count)| !exterior_unknown && *count == region_shells.len())
+                    .and_then(|(attr, _)| {
+                        let exterior = ShellId::compose(&shell_namespace(), *attr);
+                        region_shells.iter().position(|shell| *shell == exterior)
+                    });
                 admit_brep_entity(ctx)?;
-                out.regions.push(Region::new(
-                    region_id.clone(),
+                out.regions.push(region_of(
+                    region_id,
                     body_id.clone(),
                     region_shells,
+                    exterior,
                 ));
-                body_regions.push(region_id);
             }
         }
         admit_brep_entity(ctx)?;
-        let res_linear = body_record.map(|record| record.linear_resolution);
-        match res_linear.and_then(cadmpeg_parasolid::precision::linear_precision) {
-            Some(linear) => out.body_linear_precisions.push(linear),
-            None => {
-                let code = if res_linear.is_some() {
-                    crate::loss::SldprtLossCode::BodyResolutionInvalid
-                } else {
-                    crate::loss::SldprtLossCode::BodyResolutionUnread
-                };
-                out.losses.push(code.note(
-                    cadmpeg_parasolid::precision::unusable_resolution_message(
-                        body_id.as_str(),
-                        res_linear,
-                    ),
-                ));
-            }
-        }
+        note_body_precision(
+            &mut out,
+            &body_id,
+            body_record.map(|record| record.linear_resolution),
+        );
         let kind = body_record.map_or_else(
-            || unclassified_body_kind(&out, &body_faces),
+            || stored_kind.unwrap_or_else(|| unclassified_body_kind(&out, &body_faces)),
             |record| record.kind,
         );
         out.bodies.push(Body {
@@ -5549,44 +5588,8 @@ fn decode_graph_inner(
             unstated: None,
         });
     }
-
-    let mut body_ids_by_attr = HashMap::<u32, Option<&str>>::new();
-    for body in &out.bodies {
-        let Some(attr) = body
-            .id
-            .as_str()
-            .strip_prefix("sldprt:brep:body#")
-            .and_then(|value| value.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        match body_ids_by_attr.entry(attr) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(body.id.as_str()));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = None;
-            }
-        }
-    }
-    for (owner, values) in attrib::unique_payloads(entity_facts.body_payloads) {
-        if let Some(Some(id)) = body_ids_by_attr.get(&owner) {
-            let Some(body) = out.bodies.iter().find(|body| body.id.as_str() == *id) else {
-                continue;
-            };
-            let target = body.id.clone();
-            out.native_body_identities
-                .push(attrib::NativeIdentity { target, values });
-        }
-    }
-    for modifier in &mut out.body_modifiers {
-        modifier.target = if let Some(Some(id)) = body_ids_by_attr.get(&modifier.body_attr) {
-            let mut target = String::new();
-            target.push_str(id);
-            Some(target)
-        } else {
-            None
-        };
+    if !faces_stated {
+        state_unbuilt_records(ctx, &mut out, &mut annotations, &body_records, stream)?;
     }
 
     for curve in &out.curves {
@@ -11114,6 +11117,7 @@ mod tests {
                 attr: 100,
                 node_id: 900,
                 refs: [1, 1, 49, 7, 8],
+                front: None,
                 sense: Sense::Forward,
                 offset: 9,
                 end: 10,
