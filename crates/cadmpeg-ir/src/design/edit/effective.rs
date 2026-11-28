@@ -19,7 +19,7 @@ use std::borrow::Cow;
 use std::cell::Cell;
 
 use super::EditError;
-use crate::appearance::AppearanceTarget;
+use crate::appearance::{AppearancePrecedence, AppearanceTarget};
 use crate::design::configuration::{Arrangement, ArrangementRef, OccurrenceOverride, Overrides};
 use crate::design::refs::{ConfigurationRef, StateRef};
 use crate::design::scope::DesignScope;
@@ -43,6 +43,15 @@ struct Resolved {
     transform: Option<Transform>,
     visible: Option<bool>,
     suppressed: Option<bool>,
+}
+
+#[derive(Clone, Copy)]
+struct ColorStatement {
+    target: usize,
+    distance: usize,
+    priority: u8,
+    color: Option<Color>,
+    outer: bool,
 }
 
 impl Resolved {
@@ -172,6 +181,16 @@ impl CadIr {
                 }
             }
         }
+        Ok(self
+            .target_definition(target)?
+            .as_ref()
+            .is_some_and(|owner| self.definition_inactive(owner)))
+    }
+
+    fn target_definition(
+        &self,
+        target: &InstanceTarget<AppearanceTarget>,
+    ) -> Result<Option<ProductDefinitionId>, EditError> {
         let owner = match &target.entity {
             AppearanceTarget::Definition(id) => Some(id.clone()),
             AppearanceTarget::Occurrence(id) => {
@@ -225,9 +244,7 @@ impl CadIr {
                 }
             }
         };
-        Ok(owner
-            .as_ref()
-            .is_some_and(|owner| self.definition_inactive(owner)))
+        Ok(owner)
     }
 
     fn definition_inactive(&self, id: &ProductDefinitionId) -> bool {
@@ -402,11 +419,7 @@ impl CadIr {
             .any(|layer| hidden.contains(&layer.id) && layer.items.iter().any(listed)))
     }
 
-    /// The display colour of `target`: its own explicit display colour
-    /// (`Face.color`, `Body.color`), else the base colour of the appearance
-    /// bound to it, a binding at its instance standing before one on every
-    /// placement, else its body's colour, resolved the same way (D19).
-    /// `None` where none of them states a colour.
+    /// The colour of the statement that holds at `target` (§4).
     ///
     /// # Errors
     ///
@@ -427,40 +440,217 @@ impl CadIr {
                 .iter()
                 .find(|record| &record.id == id)
                 .and_then(|record| record.color),
+            AppearanceTarget::Tessellation(id) => self
+                .model
+                .tessellations
+                .iter()
+                .find(|mesh| &mesh.id == id)
+                .and_then(|mesh| match &mesh.of {
+                    crate::tessellation::Meshed::Definition { color, .. } => *color,
+                    _ => None,
+                }),
+            AppearanceTarget::Record { arena, id } if arena.as_str() == "point_clouds" => self
+                .model
+                .point_clouds
+                .iter()
+                .find(|cloud| cloud.id.as_ref() == id)
+                .and_then(|cloud| cloud.color),
             _ => None,
         };
-        let bound = |entity: &AppearanceTarget| {
-            let mut found = None;
-            for binding in &self.model.appearance_bindings {
-                let on = &binding.target;
-                if &on.entity != entity || on.state != target.state {
-                    continue;
-                }
-                let rank = match &on.path {
-                    Some(path) if Some(path) == target.path.as_ref() => 0,
-                    None => 1,
-                    Some(_) => continue,
-                };
-                if found.as_ref().is_some_and(|(held, _)| *held <= rank) {
-                    continue;
-                }
-                let color = self
-                    .model
-                    .appearances
-                    .iter()
-                    .find(|appearance| appearance.id == binding.appearance)
-                    .and_then(|appearance| appearance.base_color);
-                found = Some((rank, color));
+        let body = holding_body(&topology, &target.entity);
+        let inherits = match &target.entity {
+            AppearanceTarget::Body(_) | AppearanceTarget::Face(_) => true,
+            AppearanceTarget::Tessellation(id) => self.model.tessellations.iter().any(|mesh| {
+                &mesh.id == id && matches!(mesh.of, crate::tessellation::Meshed::Definition { .. })
+            }),
+            AppearanceTarget::Record { arena, .. } => {
+                matches!(arena.as_str(), "point_clouds" | "subds")
             }
-            found.and_then(|(_, color)| color)
+            AppearanceTarget::Edge(_) | AppearanceTarget::Vertex(_) => {
+                body.as_ref().is_some_and(|body| {
+                    !topology.faces.iter().any(|face| {
+                        holding_body(&topology, &AppearanceTarget::Face(face.id.clone())).as_ref()
+                            == Some(body)
+                    })
+                })
+            }
+            _ => false,
         };
-        if let Some(color) = own(&target.entity).or_else(|| bound(&target.entity)) {
-            return Ok(Some(color));
-        }
-        Ok(holding_body(&topology, &target.entity)
+        let body_target = body
+            .filter(|_| inherits)
             .map(AppearanceTarget::Body)
-            .filter(|body| body != &target.entity)
-            .and_then(|body| own(&body).or_else(|| bound(&body))))
+            .filter(|body| body != &target.entity);
+        let resolver = PathResolver::of(self);
+        let levels = match &target.path {
+            Some(path) => resolver.levels(path)?.map(|(levels, _)| levels),
+            None => None,
+        };
+        let steps = target
+            .path
+            .as_ref()
+            .map_or(&[][..], |path| path.0.as_slice());
+        let owner = self.target_definition(target)?;
+        let color_of = |id: &crate::ids::AppearanceId| {
+            self.model
+                .appearances
+                .iter()
+                .find(|appearance| &appearance.id == id)
+                .and_then(|appearance| appearance.base_color)
+        };
+        let mut held: Option<ColorStatement> = None;
+        for at in (0..=steps.len()).rev() {
+            let mut statements: Vec<ColorStatement> = Vec::new();
+            let mut consider = |statement: ColorStatement| {
+                if let Some(old) = statements
+                    .iter_mut()
+                    .find(|old| old.target == statement.target)
+                {
+                    if statement.priority < old.priority {
+                        *old = statement;
+                    }
+                } else {
+                    statements.push(statement);
+                }
+            };
+            if at == steps.len() {
+                for (entity, distance) in std::iter::once((&target.entity, 0))
+                    .chain(body_target.as_ref().map(|body| (body, 1)))
+                {
+                    if let Some(color) = own(entity) {
+                        consider(ColorStatement {
+                            target: distance,
+                            distance,
+                            priority: 1,
+                            color: Some(color),
+                            outer: false,
+                        });
+                    }
+                }
+            }
+            let relative = (at < steps.len()).then_some(&steps[at..]);
+            for (entity, distance) in std::iter::once((&target.entity, 0))
+                .chain(body_target.as_ref().map(|body| (body, 1)))
+            {
+                for binding in &self.model.appearance_bindings {
+                    if &binding.target.entity == entity
+                        && binding.target.state == target.state
+                        && binding.target.path.as_ref().map(|path| path.0.as_slice()) == relative
+                    {
+                        consider(ColorStatement {
+                            target: distance,
+                            distance,
+                            priority: 2,
+                            color: color_of(&binding.appearance),
+                            outer: binding.precedence == Some(AppearancePrecedence::Outer),
+                        });
+                    }
+                }
+            }
+            if inherits {
+                let definition = if at == steps.len() {
+                    levels
+                        .as_ref()
+                        .and_then(|levels| levels.last())
+                        .map(|level| level.prototype)
+                        .or(owner.as_ref())
+                } else {
+                    levels
+                        .as_ref()
+                        .and_then(|levels| levels.get(at))
+                        .and_then(|level| {
+                            crate::products::owner(
+                                &self.model.product_definitions,
+                                level.occurrence,
+                            )
+                        })
+                        .map(|definition| &definition.id)
+                };
+                if let Some(definition) = definition {
+                    for binding in &self.model.appearance_bindings {
+                        if binding.target.entity == AppearanceTarget::Definition(definition.clone())
+                            && binding.target.path.is_none()
+                            && binding.target.state == target.state
+                        {
+                            consider(ColorStatement {
+                                target: 3 + 2 * (steps.len() - at),
+                                distance: 2 + steps.len() - at,
+                                priority: 2,
+                                color: color_of(&binding.appearance),
+                                outer: binding.precedence == Some(AppearancePrecedence::Outer),
+                            });
+                        }
+                    }
+                }
+                for end in (at + 1)..=steps.len() {
+                    let StepRef::Occurrence(occurrence) = &steps[end - 1].occurrence else {
+                        continue;
+                    };
+                    let distance = 2 + steps.len() - end;
+                    let relative = (end > at + 1).then_some(&steps[at..end - 1]);
+                    for binding in &self.model.appearance_bindings {
+                        if binding.target.entity == AppearanceTarget::Occurrence(occurrence.clone())
+                            && binding.target.state == target.state
+                            && binding.target.path.as_ref().map(|path| path.0.as_slice())
+                                == relative
+                        {
+                            consider(ColorStatement {
+                                target: 2 + 2 * (steps.len() - end),
+                                distance,
+                                priority: 2,
+                                color: color_of(&binding.appearance),
+                                outer: binding.precedence == Some(AppearancePrecedence::Outer),
+                            });
+                        }
+                    }
+                    if let Some(level) =
+                        levels
+                            .as_ref()
+                            .and_then(|levels| levels.get(at))
+                            .filter(|level| {
+                                level.scope.is_some_and(|scope| {
+                                    crate::products::owner(
+                                        &self.model.product_definitions,
+                                        level.occurrence,
+                                    )
+                                    .is_some_and(|owner| owner.id == scope.definition)
+                                })
+                            })
+                    {
+                        for arrangement in &level.arrangements {
+                            if arrangement.kind
+                                != crate::design::configuration::ArrangementKind::Display
+                            {
+                                continue;
+                            }
+                            for entry in &arrangement.appearances {
+                                if entry.path.0 == steps[at..end] {
+                                    if let Some(appearance) = &entry.appearance {
+                                        consider(ColorStatement {
+                                            target: 2 + 2 * (steps.len() - end),
+                                            distance,
+                                            priority: 0,
+                                            color: color_of(&appearance.appearance),
+                                            outer: appearance.precedence
+                                                == AppearancePrecedence::Outer,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(statement) = statements
+                .into_iter()
+                .filter(|statement| {
+                    held.is_none_or(|old| statement.outer || statement.distance <= old.distance)
+                })
+                .min_by_key(|statement| statement.distance)
+            {
+                held = Some(statement);
+            }
+        }
+        Ok(held.and_then(|statement| statement.color))
     }
 
     /// The topology of a state: the current geometry for `None`, else the

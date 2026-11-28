@@ -561,6 +561,283 @@ fn a_display_colour_is_explicit_then_bound_then_the_bodys() {
 }
 
 #[test]
+fn colourless_appearance_is_a_statement_that_blocks_fallback() {
+    let mut document = cube();
+    let face = document.geometry.faces[0].id.clone();
+    document.geometry.faces[0].color = Some(color(0.5));
+    document.model.appearances.push(appearance(1, None));
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Face(face),
+        path: Some(path(&[1])),
+        state: None,
+    };
+    document
+        .model
+        .appearance_bindings
+        .push(binding(1, target.clone(), 1));
+    assert_eq!(document.effective_display_color(&target).unwrap(), None);
+}
+
+#[test]
+fn colour_precedence_resolves_occurrences_and_definitions_from_inside_out() {
+    use crate::appearance::AppearancePrecedence;
+
+    let mut document = cube();
+    let body = document.geometry.bodies[0].id.clone();
+    document.model.product_definitions[3].bodies.push(body);
+    document.geometry.faces[0].color = Some(color(0.1));
+    document.model.appearances = vec![
+        appearance(1, Some(color(0.2))),
+        appearance(2, Some(color(0.3))),
+        appearance(3, Some(color(0.4))),
+    ];
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Face(document.geometry.faces[0].id.clone()),
+        path: Some(path(&[1, 2, 3])),
+        state: None,
+    };
+    let mut occurrence_binding = binding(
+        1,
+        InstanceTarget::new(AppearanceTarget::Occurrence(occurrence(1))),
+        1,
+    );
+    occurrence_binding.precedence = Some(AppearancePrecedence::Nearest);
+    document.model.appearance_bindings.push(occurrence_binding);
+    document.model.appearance_bindings.push(binding(
+        2,
+        InstanceTarget::new(AppearanceTarget::Definition(definition(4))),
+        2,
+    ));
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.1))
+    );
+    document.geometry.faces[0].color = None;
+    document.geometry.bodies[0].color = None;
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.3))
+    );
+    document.model.appearance_bindings[0].precedence = Some(AppearancePrecedence::Outer);
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.2))
+    );
+    document.geometry.faces[0].color = Some(color(0.1));
+    let mut nearer = binding(
+        3,
+        InstanceTarget {
+            entity: AppearanceTarget::Face(document.geometry.faces[0].id.clone()),
+            path: Some(path(&[1, 2, 3])),
+            state: None,
+        },
+        3,
+    );
+    nearer.precedence = None;
+    document.model.appearance_bindings.push(nearer);
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.4))
+    );
+}
+
+#[test]
+fn colour_of_an_instance_body_binding_respects_precedence_and_arena_order() {
+    use crate::appearance::AppearancePrecedence;
+
+    let mut document = cube();
+    document.geometry.faces[0].color = Some(color(0.1));
+    document.model.appearances = vec![
+        appearance(1, Some(color(0.2))),
+        appearance(2, Some(color(0.3))),
+    ];
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Face(document.geometry.faces[0].id.clone()),
+        path: Some(path(&[1])),
+        state: None,
+    };
+    let body = InstanceTarget {
+        entity: AppearanceTarget::Body(document.geometry.bodies[0].id.clone()),
+        path: Some(path(&[1])),
+        state: None,
+    };
+    let mut first = binding(1, body.clone(), 1);
+    first.precedence = Some(AppearancePrecedence::Nearest);
+    let mut second = binding(2, body, 2);
+    second.precedence = Some(AppearancePrecedence::Outer);
+    document.model.appearance_bindings = vec![first, second];
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.1))
+    );
+    document.model.appearance_bindings[0].precedence = Some(AppearancePrecedence::Outer);
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.2))
+    );
+}
+
+#[test]
+fn colour_from_a_display_arrangement_precedes_the_occurrence_binding() {
+    use crate::appearance::AppearancePrecedence;
+    use crate::design::configuration::{ArrangementAppearance, InstanceAppearance};
+
+    let mut document = cube();
+    document.geometry.faces[0].color = Some(color(0.1));
+    document.model.appearances = vec![
+        appearance(1, Some(color(0.2))),
+        appearance(2, Some(color(0.3))),
+    ];
+    let mut bound = binding(
+        1,
+        InstanceTarget::new(AppearanceTarget::Occurrence(occurrence(1))),
+        1,
+    );
+    bound.precedence = Some(AppearancePrecedence::Outer);
+    document.model.appearance_bindings.push(bound);
+    let mut display = arrangement(1, 1, Overrides::default());
+    display.kind = ArrangementKind::Display;
+    display.appearances.push(ArrangementAppearance {
+        path: path(&[1]),
+        appearance: Some(InstanceAppearance {
+            appearance: id("appearance", 2),
+            precedence: AppearancePrecedence::Outer,
+        }),
+        transparency: None,
+    });
+    document.design.arrangements.push(display);
+    document.design.scopes[0]
+        .active_arrangements
+        .insert(id("arrangement", 1));
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Face(document.geometry.faces[0].id.clone()),
+        path: Some(path(&[1])),
+        state: None,
+    };
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.3))
+    );
+    document.design.arrangements[0].appearances[0]
+        .appearance
+        .as_mut()
+        .unwrap()
+        .precedence = AppearancePrecedence::Nearest;
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.1))
+    );
+    document.design.arrangements[0].appearances[0].appearance = None;
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.2))
+    );
+}
+
+#[test]
+fn colour_arrangement_paths_start_at_the_scope_definition() {
+    use crate::appearance::AppearancePrecedence;
+    use crate::design::configuration::{ArrangementAppearance, InstanceAppearance};
+
+    let mut document = cube();
+    document.design.scopes.truncate(1);
+    document.geometry.faces[0].color = Some(color(0.1));
+    document
+        .model
+        .appearances
+        .push(appearance(1, Some(color(0.2))));
+    let mut display = arrangement(1, 1, Overrides::default());
+    display.kind = ArrangementKind::Display;
+    display.appearances.push(ArrangementAppearance {
+        path: path(&[2]),
+        appearance: Some(InstanceAppearance {
+            appearance: id("appearance", 1),
+            precedence: AppearancePrecedence::Outer,
+        }),
+        transparency: None,
+    });
+    document.design.arrangements.push(display);
+    document.design.scopes[0]
+        .active_arrangements
+        .insert(id("arrangement", 1));
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Face(document.geometry.faces[0].id.clone()),
+        path: Some(path(&[1, 2])),
+        state: None,
+    };
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.1))
+    );
+    document.design.arrangements[0].appearances[0].path = path(&[1, 2]);
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.2))
+    );
+}
+
+#[test]
+fn colour_of_a_mesh_and_point_cloud_uses_their_own_display_colour() {
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+
+    let mut document = assembly();
+    let mesh = Tessellation::new(
+        id("tessellation", 1),
+        TessellationMesh::List {
+            vertices: Vec::new(),
+            triangles: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_of(Meshed::Definition {
+        definition: definition(2),
+        name: None,
+        color: Some(color(0.2)),
+        visible: None,
+    });
+    let target = InstanceTarget::new(AppearanceTarget::Tessellation(mesh.id.clone()));
+    document.model.tessellations.push(mesh);
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.2))
+    );
+    let cloud: crate::point_cloud::PointCloud = json::from_value(cadmpeg_core::json!({
+        "id": "test:effective:point-cloud#1", "definition": definition(2), "color": color(0.3),
+        "positions": [], "normals": [], "colors": [], "channels": []
+    }))
+    .unwrap();
+    let target = InstanceTarget::new(AppearanceTarget::Record {
+        arena: NonBlankString::new("point_clouds").unwrap(),
+        id: (&cloud.id).into(),
+    });
+    document.model.point_clouds.push(cloud);
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.3))
+    );
+}
+
+#[test]
+fn colour_of_a_body_reaches_edges_only_when_the_body_has_no_faces() {
+    use crate::topology::ShellMember;
+
+    let mut document = cube();
+    let edge = document.geometry.edges[0].id.clone();
+    let target = InstanceTarget::new(AppearanceTarget::Edge(edge.clone()));
+    document.geometry.bodies[0].color = Some(color(0.4));
+    assert_eq!(document.effective_display_color(&target).unwrap(), None);
+    document.geometry.faces.clear();
+    document.geometry.shells[0]
+        .members
+        .push(ShellMember::WireEdge { id: edge });
+    assert_eq!(
+        document.effective_display_color(&target).unwrap(),
+        Some(color(0.4))
+    );
+}
+
+#[test]
 fn visibility_is_every_stated_gate_combined_with_and() {
     let mut document = cube();
     let body = document.geometry.bodies[0].id.clone();
