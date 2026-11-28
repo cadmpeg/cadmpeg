@@ -492,6 +492,48 @@ fn a_dimension_resolves_through_the_active_configuration() {
 }
 
 #[test]
+fn a_dimension_inherits_the_nearest_configured_cache() {
+    let mut document = timeline();
+    let base = DesignConfiguration {
+        id: configuration(1),
+        scope: definition(),
+        name: "parent".to_owned(),
+        position: None,
+        parent: None,
+        comment: None,
+        overrides: Overrides {
+            parameters: BTreeMap::from([(
+                parameter_id(2),
+                ParameterOverride {
+                    expression: None,
+                    value: Some(ParameterValue::Number(real(35.0))),
+                },
+            )]),
+            ..Overrides::default()
+        },
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    };
+    let mut child = base.clone();
+    child.id = configuration(2);
+    child.parent = Some(configuration(1));
+    child.overrides = Overrides::default();
+    document.design.configurations = vec![base, child];
+    document.design.scopes[0].active_configuration = Some(configuration(2));
+    let dimension = Dimension::<Length>::Negated(parameter_id(2));
+    assert_eq!(
+        document.dimension_value(&dimension),
+        Ok(Some(Length::new(-35.0).unwrap()))
+    );
+    document.design.configurations[1].parent = Some(configuration(2));
+    assert!(matches!(
+        document.dimension_value(&dimension),
+        Err(EditError::ConfigurationCycle(_))
+    ));
+}
+
+#[test]
 fn an_option_enum_binds_by_its_wire_name() {
     let mut document = timeline();
     document.design.parameters.push(parameter(
@@ -563,6 +605,24 @@ fn stateless_features_follow_their_configuration() {
         document.is_stateless(&feature(9), None),
         Err(EditError::UnknownFeature(feature(9)))
     );
+}
+
+#[test]
+fn unresolved_stateless_families_do_not_produce_a_state() {
+    let mut document = timeline();
+    for (family, expected) in [
+        (OperationFamily::Sketch, true),
+        (OperationFamily::SpatialSketch, true),
+        (OperationFamily::Spreadsheet, true),
+        (OperationFamily::Datum, true),
+        (OperationFamily::TemplateInstance, true),
+        (OperationFamily::Decal, true),
+        (OperationFamily::Extrude, false),
+        (OperationFamily::Pattern, false),
+    ] {
+        document.design.features[0] = operation(1, FeatureOperation::Unresolved { family });
+        assert_eq!(document.is_stateless(&feature(1), None), Ok(expected));
+    }
 }
 
 #[test]

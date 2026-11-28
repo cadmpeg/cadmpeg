@@ -81,6 +81,48 @@ fn edit_refuses_a_report_only_at_the_requested_floor() {
 }
 
 #[test]
+fn edit_preserves_the_validation_resource_refusal() {
+    use crate::design::evaluation::{StateBase, StateContent, StateDelta};
+    use crate::design::refs::Evaluated;
+    use crate::report::strictness::Strictness;
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
+
+    let limit = DecodePolicy::default().limits.max_state_chain_depth;
+    let limit_index = u32::try_from(limit).unwrap();
+    let mut document = CadIr::empty();
+    document.design.evaluations = (0..=limit_index)
+        .map(|key| {
+            let base = if key == 0 {
+                StateBase::Empty
+            } else {
+                StateBase::Evaluation(id("evaluation", key - 1))
+            };
+            super::evaluation(
+                key,
+                Evaluated::Tool(feature(1)),
+                None,
+                Some(StateContent {
+                    base,
+                    delta: StateDelta::default(),
+                }),
+            )
+        })
+        .collect();
+    document.design.evaluations.sort_by(|a, b| a.id.cmp(&b.id));
+    let Err(EditError::ResourceLimit(refusal)) = document.edit(&Strictness::default()) else {
+        panic!("the state chain exceeds the validation ceiling");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(refusal.reason, ResourceFailure::BudgetExceeded);
+    assert_eq!(refusal.limit, limit);
+    assert_eq!(refusal.additional, 1);
+    assert_eq!(
+        document.design.evaluations.len(),
+        usize::try_from(limit_index).unwrap() + 1
+    );
+}
+
+#[test]
 fn an_edit_of_a_document_that_holds_an_error_keeps_the_error_and_applies() {
     let mut document = off_its_rollback();
     let held = error_findings(&document);
