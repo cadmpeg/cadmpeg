@@ -711,13 +711,20 @@ fn repeated_block_placements_restate_both_pairs_of_ends() {
     ir.model.sketch_entities =
         crate::sketch::tests::repeated_blocks::repeated_block_lines(&sketch_id());
     assert_eq!(ir.model.sketch_entities.len(), 2);
+    assert_eq!(
+        ir.model.sketch_entities[0].endpoint_refs,
+        ir.model.sketch_entities[1].endpoint_refs
+    );
     run(&mut ir);
     assert_eq!(ir.design.sketch_entities.len(), 6);
     for (curve, start) in ir.model.sketch_entities.iter().zip([0.0, 10.0]) {
-        for (role, u) in [
+        for ((role, u), record) in [
             (DefiningRole::Start, start),
             (DefiningRole::End, start + 5.0),
-        ] {
+        ]
+        .into_iter()
+        .zip(&curve.endpoint_refs)
+        {
             let point = ir
                 .design
                 .sketch_entities
@@ -730,6 +737,7 @@ fn repeated_block_placements_restate_both_pairs_of_ends() {
                 })
                 .expect("placed endpoint");
             assert_eq!(point.roles.len(), 1);
+            assert_eq!(point.native_ref.as_ref(), Some(record));
             assert!(
                 matches!(&point.definition, EntityDefinition::Free(PlanarCurve::Point(at)) if at.u == u && at.v == 0.0)
             );

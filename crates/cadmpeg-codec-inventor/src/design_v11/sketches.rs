@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Planar sketch statements from decoded Inventor geometry.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -27,8 +27,9 @@ use cadmpeg_ir::CadIr;
 
 mod constraints;
 
+/// Curve ends by sketch, endpoint record and placement.
 type EndpointRoles<'a> =
-    BTreeMap<&'a SketchId, BTreeMap<&'a str, Vec<(EntityRole<Planar>, FinitePoint2)>>>;
+    BTreeMap<&'a SketchId, BTreeMap<(&'a str, usize), Vec<(EntityRole<Planar>, FinitePoint2)>>>;
 
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
@@ -175,7 +176,7 @@ pub(super) fn project(
                 native_ref: entity.native_ref.clone(),
             });
         }
-        for (&native, candidates) in roles.get(&source.id).into_iter().flatten() {
+        for (&(native, _), candidates) in roles.get(&source.id).into_iter().flatten() {
             if stored_points.contains_key(&(&source.id, native)) {
                 continue;
             }
@@ -224,9 +225,19 @@ pub(super) fn project(
     Ok(losses)
 }
 
+/// The curve ends that name each endpoint record. The curves of one sketch
+/// that share a native record are the placements of one block curve, numbered
+/// in stored order.
 fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
     let mut roles: EndpointRoles<'_> = BTreeMap::new();
+    let mut placements = HashMap::<(&SketchId, &str), usize>::new();
     for curve in entities {
+        let placement = curve.native_ref.as_deref().map_or(0, |native| {
+            let next = placements.entry((&curve.sketch, native)).or_default();
+            let placement = *next;
+            *next += 1;
+            placement
+        });
         let (Some(ends), [start, end]) =
             (curve_ends(&curve.geometry), curve.endpoint_refs.as_slice())
         else {
@@ -242,7 +253,7 @@ fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
             roles
                 .entry(&curve.sketch)
                 .or_default()
-                .entry(reference.as_str())
+                .entry((reference.as_str(), placement))
                 .or_default()
                 .push((
                     EntityRole {
@@ -262,21 +273,24 @@ fn roles_at(
     point: FinitePoint2,
     tolerance: f64,
 ) -> Vec<EntityRole<Planar>> {
-    roles
-        .get(key.0)
-        .and_then(|points| points.get(key.1))
-        .map_or_else(Vec::new, |candidates| {
-            agreeing_roles(candidates, point, tolerance)
-        })
+    roles.get(key.0).map_or_else(Vec::new, |points| {
+        agreeing_roles(
+            points
+                .range((key.1, 0)..=(key.1, usize::MAX))
+                .flat_map(|(_, candidates)| candidates),
+            point,
+            tolerance,
+        )
+    })
 }
 
-fn agreeing_roles(
-    candidates: &[(EntityRole<Planar>, FinitePoint2)],
+fn agreeing_roles<'a>(
+    candidates: impl IntoIterator<Item = &'a (EntityRole<Planar>, FinitePoint2)>,
     point: FinitePoint2,
     tolerance: f64,
 ) -> Vec<EntityRole<Planar>> {
     let mut roles = candidates
-        .iter()
+        .into_iter()
         .filter_map(|(role, position)| {
             let distance = (point.u - position.u).portable_hypot(point.v - position.v);
             (distance <= tolerance).then(|| role.clone())

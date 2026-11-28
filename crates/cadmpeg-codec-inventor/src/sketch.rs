@@ -3468,7 +3468,6 @@ fn place_block_curves(
         return None;
     };
     let placement = BlockPlacement::new(placement)?;
-    let instance_native = instance.id();
     block_definition_curves(instance, &inventory.entities)
         .into_iter()
         .map(|curve| {
@@ -3480,12 +3479,7 @@ fn place_block_curves(
                 )
                 .with_construction(marks_construction(curve))
                 .with_native_ref(Some(curve.id()))
-                .with_endpoint_refs(
-                    placed_endpoint_refs(curve, entities, &placement)
-                        .into_iter()
-                        .map(|endpoint| format!("{instance_native}:{endpoint}"))
-                        .collect(),
-                ),
+                .with_endpoint_refs(placed_endpoint_refs(curve, entities, &placement)),
             )
         })
         .collect()
