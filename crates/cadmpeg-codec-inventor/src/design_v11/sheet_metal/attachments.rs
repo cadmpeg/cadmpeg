@@ -219,9 +219,7 @@ fn witness(input: &FeatureInputTopology, token: &str, selector: u32) -> Option<W
         .iter()
         .filter(|sample| sample.edge.as_str() == edge);
     match (samples.next(), samples.next()) {
-        (Some(sample), None) => Some(crate::design_v11::operations::selections::edge_witness(
-            sample,
-        )),
+        (Some(sample), None) => Some(Witness::edge_sample(sample)),
         _ => None,
     }
 }

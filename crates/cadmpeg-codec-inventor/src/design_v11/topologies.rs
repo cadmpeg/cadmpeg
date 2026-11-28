@@ -236,7 +236,7 @@ fn input_cut(input: &FeatureInputTopology, operands: &InputOperands<'_>) -> Vec<
             || sample.carrier.is_some()
             || sample.start.is_some() != sample.end.is_some()
             || !edge_witnesses(sample.edge.as_str()).is_some_and(|witnesses| {
-                let witness = super::operations::selections::edge_witness(sample);
+                let witness = Witness::edge_sample(sample);
                 witnesses.iter().any(|held| **held == witness)
             })
     }) {

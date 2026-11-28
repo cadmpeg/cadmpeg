@@ -850,6 +850,7 @@ pub(super) fn give_up_face_rows(
                 )
                 .contained_in(payload.clone())
                 .digest_only(),
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
                 CodecError::malformed(format_args!("{code}: {cause}")),
             )
         })

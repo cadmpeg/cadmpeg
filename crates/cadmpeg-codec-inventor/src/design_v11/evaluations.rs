@@ -210,7 +210,8 @@ pub(crate) fn project(
     let mut unknowns = Vec::new();
     for (body, feature, state) in held {
         if current_records != state.geometry
-            && StateDelta::between(&current_records, &state.geometry) != StateDelta::default()
+            && StateDelta::between_topologies(&state.geometry, &current_records)
+                != StateDelta::default()
         {
             unplaced.push((body, "the state differs from the current geometry".into()));
             continue;
@@ -268,7 +269,7 @@ pub(crate) fn project(
         bodies,
     } in planned.into_values().rev()
     {
-        let delta = StateDelta::between(records, &state.geometry);
+        let delta = StateDelta::between_topologies(&state.geometry, records);
         ctx.charge_entities(1, "state an Inventor history state")?;
         let repeat = minted.entry(ordinal).or_default();
         let id = match *repeat {

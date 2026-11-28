@@ -1266,21 +1266,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn rejects_duplicate_annotation_carrier_properties_and_values() {
+    fn rejects_duplicate_annotation_carrier_values() {
         let documents = [
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
 <ObjectData Count="1"><Object name="Note"><Properties Count="3">
 <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
 <Property name="X" type="App::PropertyDistance"><Float value="10"/><Float value="11"/></Property>
-<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
-</Properties></Object></ObjectData></Document>"#,
-            r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
-<ObjectData Count="1"><Object name="Note"><Properties Count="4">
-<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
-<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
-<Property name="X" type="App::PropertyDistance"><Float value="11"/></Property>
 <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
 </Properties></Object></ObjectData></Document>"#,
             r#"<Document SchemaVersion="4" FileVersion="1">

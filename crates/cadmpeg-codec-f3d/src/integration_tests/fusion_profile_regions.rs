@@ -51,31 +51,31 @@ fn each_selected_profile_of_a_fusion_extrude_is_one_region() {
         // One region that is one face of the sketch arrangement.
         (
             include_bytes!("../../../../corpus/f3d/region_A.f3d"),
-            "Extrude 1",
+            "Extrude1",
             &[0],
         ),
         // One selected region of two arrangement faces: Fusion selects two profiles.
         (
             include_bytes!("../../../../corpus/f3d/region_B.f3d"),
-            "Extrude 1",
+            "Extrude1",
             &[0, 0],
         ),
         // One region with a hole.
         (
             include_bytes!("../../../../corpus/f3d/region_C.f3d"),
-            "Extrude 1",
+            "Extrude1",
             &[1],
         ),
         // Two separate regions.
         (
             include_bytes!("../../../../corpus/f3d/region_D.f3d"),
-            "Extrude 1",
+            "Extrude1",
             &[0, 0],
         ),
         // Three of the five profiles of one sketch.
         (
             include_bytes!("../../../../corpus/f3d/strip_cut.f3d"),
-            "Extrude 2",
+            "Extrude2",
             &[0, 0, 0],
         ),
     ];

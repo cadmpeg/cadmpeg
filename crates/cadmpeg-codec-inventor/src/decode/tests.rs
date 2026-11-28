@@ -155,11 +155,18 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .iter()
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        // The structural fixture has no `RSeDb` stream and no segment, so it
-        // declares neither version this codec gates on and is admitted
-        // unverified.
-        [InventorLossCode::SourceDialectUnverified.kind()]
+        [
+            InventorLossCode::SourceDialectUnverified.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
+    // The fixture declares no database dialect and has an empty registry stream.
+    assert!(container_only.report().losses[1]
+        .message
+        .contains("RSeSegInfo"));
+    assert!(container_only.report().losses[1]
+        .message
+        .contains("segment count"));
     let namespace = container_only
         .ir()
         .native
@@ -174,10 +181,14 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             crate::native::SegmentBulkFrame::Unavailable { .. }
         )
     }));
-    assert!(container_only
-        .source_fidelity()
-        .retained_records()
-        .is_empty());
+    let retained = container_only.source_fidelity().retained_records();
+    assert_eq!(retained.len(), 1);
+    let registry = retained
+        .values()
+        .next()
+        .expect("the given-up registry source");
+    assert_eq!(registry.stream(), "inventor:RSeStorage/RSeSegInfo");
+    assert_eq!(registry.byte_len(), 0);
 }
 
 #[test]

@@ -12,7 +12,7 @@
 //! transformation whose steps bind a dependent parameter. An override with
 //! no expression whose value it clears states nothing, so it is removed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use super::eval::{
     cache_value, check_types, evaluate, kind_type, kind_value, EvalError, ExpressionSite, Type,
@@ -600,6 +600,62 @@ impl CadIr {
         }
         for parameter in pending {
             self.design.parameters[index[&parameter]].value = None;
+        }
+    }
+
+    /// The value each design parameter with no cache and a neutral
+    /// expression evaluates to in the base, in dependency order: a
+    /// reference reads the cache of its parameter or the value this
+    /// evaluation gave it. A parameter it cannot evaluate has no entry.
+    pub(crate) fn uncached_values(
+        &self,
+        written: &HashSet<&str>,
+    ) -> BTreeMap<ParameterId, ParameterValue> {
+        let index = self
+            .design
+            .parameters
+            .iter()
+            .filter(|parameter| written.contains(parameter.id.as_str()))
+            .map(|parameter| (&parameter.id, parameter))
+            .collect::<BTreeMap<_, _>>();
+        let mut pending: BTreeSet<ParameterId> = index
+            .values()
+            .filter(|parameter| {
+                parameter.value.is_none()
+                    && matches!(
+                        parameter.definition,
+                        ParameterDefinition::Expression(Expression::Neutral(_))
+                    )
+            })
+            .map(|parameter| parameter.id.clone())
+            .collect();
+        let mut values = BTreeMap::new();
+        loop {
+            let mut done = Vec::new();
+            for parameter in &pending {
+                let record = index[parameter];
+                let ParameterDefinition::Expression(expression) = &record.definition else {
+                    continue;
+                };
+                let value_of = |target: &ParameterId| {
+                    let target_record = index.get(target)?;
+                    let value = values.get(target).or(target_record.value.as_ref())?;
+                    cache_value(&target_record.kind, value)
+                };
+                if let Attempt::Done(value) = attempt(expression, &record.kind, &pending, &value_of)
+                {
+                    done.push((parameter.clone(), value));
+                }
+            }
+            if done.is_empty() {
+                return values;
+            }
+            for (parameter, value) in done {
+                pending.remove(&parameter);
+                if let Some(value) = value {
+                    values.insert(parameter, value);
+                }
+            }
         }
     }
 

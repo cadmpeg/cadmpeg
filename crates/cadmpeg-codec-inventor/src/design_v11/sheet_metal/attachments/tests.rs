@@ -395,7 +395,7 @@ fn input_cut(ir: &CadIr) -> Vec<&'static str> {
 fn attachment_picks_witness_their_input_edges() {
     let (parent, _, _) = fixture();
     let ir = attached_plate(parent);
-    let witness = crate::design_v11::operations::selections::edge_witness;
+    let witness = Witness::edge_sample;
     assert_eq!(
         witnesses(&ir),
         [Some(witness(&sample(903))), Some(witness(&sample(901)))]
@@ -415,12 +415,7 @@ fn an_input_sample_that_no_pick_witnesses_is_stated_in_part() {
     let ir = attached_plate(parent);
     assert_eq!(
         witnesses(&ir),
-        [
-            Some(crate::design_v11::operations::selections::edge_witness(
-                &sample(903)
-            )),
-            None
-        ]
+        [Some(Witness::edge_sample(&sample(903))), None]
     );
     assert_eq!(input_cut(&ir), ["edge_geometry", "edges"]);
 }

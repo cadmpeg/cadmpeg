@@ -16,7 +16,7 @@ use super::*;
 use crate::feature::history_states::{StateRef, UnboundReason};
 use crate::kernel::parse_carrier;
 use crate::test_support::history_carrier::{
-    carrier_bytes, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
+    carrier_bytes, carrier_bytes_with_name, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
 };
 
 fn feature(native: &str) -> Feature {
@@ -105,7 +105,7 @@ fn requests_over_the_cap_are_counted_as_bounded() {
         .collect::<Vec<_>>();
     let mut built = Built::default();
     let requested = wants(&records, &mut built.outcome);
-    let wants = bound(requested, &mut built).expect("bound");
+    let wants = bound(requested, &mut built, &records).expect("bound");
     assert_eq!(wants.len(), MAX_HISTORY_BODIES);
     assert_eq!(built.outcome.requested, MAX_HISTORY_BODIES + 1);
     assert_eq!(built.outcome.bounded, 1);
@@ -120,7 +120,7 @@ fn given_up(built: &Built) -> Vec<(&str, Unbuilt)> {
     built
         .unbuilt
         .iter()
-        .map(|(id, why)| (id.as_str(), *why))
+        .map(|(id, why, _)| (id.as_str(), *why))
         .collect()
 }
 
@@ -311,9 +311,18 @@ fn build_from(
     features: &[Feature],
 ) -> Built {
     let payload = framed_carrier(&carrier_bytes(width, dangling));
+    build_with_budget(&payload, &DecodePolicy::default(), records, features)
+}
+
+fn build_with_budget(
+    payload: &[u8],
+    policy: &DecodePolicy,
+    records: &[FeatureHistoryState],
+    features: &[Feature],
+) -> Built {
     let arena = DecodeArena::new();
-    let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
-        .expect("carrier fits policy");
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(payload, &arena, policy).expect("carrier fits policy");
     let carrier =
         parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 1, 0, 18).expect("carrier parses");
     let header = carrier.header.as_ref().expect("header parses");
@@ -333,7 +342,9 @@ fn build_from(
         *chain,
         crate::feature::history_states::StateIndex::default(),
     );
-    build(&ctx, &carrier, &closed, records, features).expect("build")
+    let built = build(&ctx, &carrier, &closed, records, features).expect("build");
+    assert!(ctx.resource_refusal().is_none());
+    built
 }
 
 fn split(key: i64) -> FeatureHistoryState {
@@ -410,6 +421,50 @@ fn the_state_before_a_split_gives_the_consumed_body() {
         );
         assert_eq!(built.links.get(&0), Some(&body.id));
     }
+}
+
+#[test]
+fn a_second_named_nest_gives_up_only_the_feature_that_cannot_keep_it() {
+    let name = "n".repeat(1200);
+    let payload = framed_carrier(&carrier_bytes_with_name(
+        RefWidth::Eight,
+        false,
+        Some(&name),
+    ));
+    let records = [
+        record(BASE_TAG, "base", Some(0), Some(CURRENT_BODY_KEY)),
+        split(SPHERE_BODY_KEY),
+    ];
+    let features = [feature("base"), feature("split")];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1800;
+    let built = build_with_budget(&payload, &policy, &records, &features);
+    assert_eq!(built.outcome.requested, 2);
+    assert_eq!(built.outcome.built, 1);
+    assert_eq!(built.outcome.bounded, 1);
+    assert_eq!(
+        built.bodies[0].topology.body.name.as_deref(),
+        Some(name.as_str())
+    );
+    let [(id, Unbuilt::ResourceBounded(limit), feature)] = built.unbuilt.as_slice() else {
+        panic!("one named nest gave up: {:?}", built.unbuilt);
+    };
+    assert!(id.as_str().ends_with("h0001"));
+    assert_eq!(feature, "split");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    let notes = super::super::history_states::losses(&super::super::history_states::Projection {
+        schema_assumed: 0,
+        records: records.to_vec(),
+        unread: None,
+        bodies: built,
+    });
+    assert!(notes
+        .iter()
+        .any(|note| note.message.contains("split history body")
+            && note.message.contains("RetainedBytes")));
 }
 
 #[test]
@@ -555,8 +610,8 @@ fn each_given_up_body_is_charged_by_its_nest() {
         unread: None,
         bodies: Built {
             unbuilt: vec![
-                (nest(1), Unbuilt::NotClosed(Open::Edge)),
-                (nest(9), Unbuilt::Bounded),
+                (nest(1), Unbuilt::NotClosed(Open::Edge), "split".to_string()),
+                (nest(9), Unbuilt::Bounded, "base".to_string()),
             ],
             outcome: Outcome {
                 requested: 10,
@@ -569,7 +624,7 @@ fn each_given_up_body_is_charged_by_its_nest() {
     });
     let charges = notes
         .iter()
-        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .map(|note| note.message.as_str())
         .collect::<Vec<_>>();
     let [closed, bounded] = charges.as_slice() else {

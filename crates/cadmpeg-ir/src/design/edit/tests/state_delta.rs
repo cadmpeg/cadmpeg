@@ -24,11 +24,14 @@ fn bodies(records: Vec<Body>) -> crate::document::Topology {
 fn a_delta_holds_the_new_and_changed_records_and_removes_the_missing_ones() {
     let base = bodies(vec![body(1), body(2), body(3)]);
     let state = bodies(vec![body(1), named(2, "changed"), body(4)]);
-    let delta = StateDelta::between(&base, &state);
+    let delta = StateDelta::between_topologies(&state, &base);
     assert_eq!(delta.records.bodies, vec![named(2, "changed"), body(4)]);
     assert_eq!(delta.removed, vec![RecordRef::Body(id("body", 3))]);
     assert!(delta.names.is_empty() && delta.owners.is_empty() && delta.members.is_empty());
-    assert_eq!(StateDelta::between(&state, &state), StateDelta::default());
+    assert_eq!(
+        StateDelta::between_topologies(&state, &state),
+        StateDelta::default()
+    );
 }
 
 #[test]
@@ -55,7 +58,7 @@ fn a_delta_over_its_base_resolves_to_the_state() {
             None,
             Some(StateContent {
                 base: StateBase::Evaluation(id("evaluation", 1)),
-                delta: StateDelta::between(&base, &state),
+                delta: StateDelta::between_topologies(&state, &base),
             }),
         ),
     ];
@@ -96,7 +99,7 @@ fn a_delta_holds_the_carrier_of_each_procedural_record_it_holds() {
         .expect("resource")
         .expect("owner");
     base.curves.clone_from(&state.curves);
-    let delta = StateDelta::between(&base, &state);
+    let delta = StateDelta::between_topologies(&state, &base);
     assert_eq!(delta.records.procedural_curves, state.procedural_curves);
     assert_eq!(delta.records.curves, vec![state.curves[0].clone()]);
     serde_json::to_string(&delta).expect("the delta has a wire form");

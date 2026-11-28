@@ -117,6 +117,29 @@ fn an_arc_cycle_and_a_missing_target_are_tallied() {
 }
 
 #[test]
+fn a_target_that_an_ancestor_arc_can_add_is_unresolved() {
+    let text = "#usda 1.0\ndef \"Lib\" (\n    references = </Other>\n)\n{\n}\ndef \"Other\"\n{\n}\ndef \"A\" (\n    references = </Lib/Part>\n    inherits = </Gone>\n)\n{\n}\n";
+    with_stage(text, |stage| {
+        assert!(stage.tally.unresolved_targets.contains("/Lib/Part"));
+        assert!(!stage.tally.unresolved_targets.contains("/Gone"));
+        assert!(stage.tally.missing_targets.is_empty());
+    });
+}
+
+#[test]
+fn a_whole_stage_holds_no_prim_outside_its_traversal() {
+    let text = "#usda 1.0\ndef \"A\"\n{\n    def \"B\" (\n        active = false\n    )\n    {\n    }\n}\nclass \"C\"\n{\n}\n";
+    with_stage(text, |stage| {
+        assert!(stage.holds_no_prim("/Missing"));
+        assert!(stage.holds_no_prim("/A/Missing"));
+        assert!(!stage.holds_no_prim("/A"));
+        assert!(!stage.holds_no_prim("/A/B"));
+        assert!(!stage.holds_no_prim("/A/B/D"));
+        assert!(!stage.holds_no_prim("/C"));
+    });
+}
+
+#[test]
 fn instances_share_a_prototype_key_and_ignore_local_children() {
     let text = "#usda 1.0\nclass \"Proto\"\n{\n    def \"Part\" {\n    }\n}\ndef \"I1\" (\n    instanceable = true\n    references = </Proto>\n)\n{\n    def \"Override\" {\n    }\n}\ndef \"I2\" (\n    instanceable = true\n    references = </Proto>\n)\n{\n}\n";
     with_stage(text, |stage| {
