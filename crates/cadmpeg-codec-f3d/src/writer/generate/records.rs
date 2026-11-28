@@ -3,7 +3,7 @@
 
 use crate::records::{
     recipes::ConstructionRecipeKind,
-    references::PersistentReferenceKind,
+    references::{PersistentReference, PersistentReferenceKind},
     sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
 use crate::writer::primitives::zero_fill_to;
@@ -21,7 +21,7 @@ use super::{
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
 #[derive(Default)]
@@ -148,24 +148,19 @@ pub(super) fn native_tolerant_coedge_extension(
     }
 }
 
-/// Whether `native` holds a Design parameter record that the source-less
-/// Design stream has no form for.
-pub(super) fn holds_parameter_records(native: &F3dNative) -> bool {
-    !native.design_parameter_companions.is_empty()
-        || !native.design_dimension_annotation_frames.is_empty()
-        || !native.design_dimension_presentation_frames.is_empty()
-        || !native.design_face_source_groups.is_empty()
-        || !native.design_dimension_locus_pairs.is_empty()
-        || !native.design_dimension_locus_groups.is_empty()
-        || !native.design_dimension_null_locus_pairs.is_empty()
-        || !native.design_dimension_recipe_records.is_empty()
-        || !native.design_parameter_owners.is_empty()
-        || !native.design_parameter_scopes.is_empty()
-        || !native.design_sketch_placements.is_empty()
-        || native
+/// The sketch headers whose member run the written Design stream leaves
+/// out: the written header form stores the reference list and the
+/// base-record slot.
+pub(super) fn member_run_loss(native: &F3dNative) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these sketch headers without their member run: the written header form stores the reference list and the base-record slot",
+        native
             .design_entity_headers
             .iter()
-            .any(|header| header.member_values().next().is_some())
+            .filter(|header| header.member_values().next().is_some())
+            .map(|header| header.id.clone()),
+    )
 }
 
 pub(super) fn encode_design_bulkstream(
@@ -199,45 +194,52 @@ pub(super) fn encode_design_bulkstream(
         return Ok(None);
     }
 
-    let mut out = parameters.bytes;
     let mut primary_records = Vec::new();
     let mut without_primary = parameters
         .indices
         .into_iter()
         .map(u64::from)
         .collect::<BTreeSet<_>>();
-    if let Some(body_map) = &registry.body_map {
-        let class_tag = body_map.class_tag.as_str();
-        let record_index = body_map.record_index;
-        primary_records.push(primary_record(record_index, out.len())?);
-        native_lp_ascii(&mut out, class_tag)?;
-        out.extend_from_slice(&record_index.to_le_bytes());
-        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(body_map.entries.as_map().len())
-            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
-        out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
-            out.extend_from_slice(&body_key.to_le_bytes());
-            out.extend_from_slice(&entity_suffix.to_le_bytes());
-        }
-        out.extend_from_slice(&0u64.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes());
-        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
+    // A primary-indexed record extends to the next primary-indexed record, so
+    // the reference runs, which no primary entry bounds, precede every record.
+    let mut out = Vec::new();
+    for reference in standalone_references(native) {
+        out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&reference.value.to_le_bytes());
     }
-    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
-    if let Some(records) = neutral {
-        let base = out.len();
-        for &(record_index, offset) in &records.primaries {
-            primary_records.push(primary_record(record_index, base + offset)?);
+    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
+        if let Some(previous) = ordinal
+            .checked_sub(1)
+            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
+        {
+            if previous.next_class_tag != reference.class_tag
+                || previous.next_record_index != reference.record_index
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D lost-edge record {} does not continue the preceding indexed run",
+                    reference.id
+                )));
+            }
+        } else {
+            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
+            out.extend_from_slice(&reference.record_index.to_le_bytes());
+            without_primary.insert(u64::from(reference.record_index));
         }
-        without_primary.extend(
-            records
-                .secondaries
-                .iter()
-                .map(|&(record_index, _)| u64::from(record_index)),
-        );
-        out.extend_from_slice(&records.bytes);
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&19u32.to_le_bytes());
+        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
+        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+        without_primary.insert(u64::from(reference.next_record_index));
     }
+    out.extend_from_slice(&parameters.bytes);
+    // The recipes, the `BodiesRoot` record and the record-header stubs hold
+    // no primary index entry, so they precede the first primary record.
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -289,10 +291,48 @@ pub(super) fn encode_design_bulkstream(
         }
         out.push(0);
     }
-    for header in &native.design_record_headers {
+    // The prefix of a typed sketch record is written with that record.
+    let own = super::preconditions::own_record_headers(native);
+    for header in native
+        .design_record_headers
+        .iter()
+        .filter(|header| !own.contains(header.id.as_str()))
+    {
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
         without_primary.insert(u64::from(header.record_index));
+    }
+    if let Some(body_map) = &registry.body_map {
+        let class_tag = body_map.class_tag.as_str();
+        let record_index = body_map.record_index;
+        primary_records.push(primary_record(record_index, out.len())?);
+        native_lp_ascii(&mut out, class_tag)?;
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+        let count = u32::try_from(body_map.entries.as_map().len())
+            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
+        out.extend_from_slice(&count.to_le_bytes());
+        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
+            out.extend_from_slice(&body_key.to_le_bytes());
+            out.extend_from_slice(&entity_suffix.to_le_bytes());
+        }
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
+    }
+    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    if let Some(records) = neutral {
+        let base = out.len();
+        for &(record_index, offset) in &records.primaries {
+            primary_records.push(primary_record(record_index, base + offset)?);
+        }
+        without_primary.extend(
+            records
+                .secondaries
+                .iter()
+                .map(|&(record_index, _)| u64::from(record_index)),
+        );
+        out.extend_from_slice(&records.bytes);
     }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
@@ -390,40 +430,6 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
-    for reference in &native.persistent_references {
-        out.extend_from_slice(persistent_reference_name(reference.kind));
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&14u32.to_le_bytes());
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&reference.value.to_le_bytes());
-    }
-    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
-        if let Some(previous) = ordinal
-            .checked_sub(1)
-            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
-        {
-            if previous.next_class_tag != reference.class_tag
-                || previous.next_record_index != reference.record_index
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D lost-edge record {} does not continue the preceding indexed run",
-                    reference.id
-                )));
-            }
-        } else {
-            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
-            out.extend_from_slice(&reference.record_index.to_le_bytes());
-            without_primary.insert(u64::from(reference.record_index));
-        }
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&19u32.to_le_bytes());
-        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
-        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
-        without_primary.insert(u64::from(reference.next_record_index));
-    }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
@@ -450,27 +456,36 @@ fn primary_record_u64(
     })
 }
 
+/// A parameter record in the user form the Design stream writes, with its
+/// family discriminator, source ordinal, expression and value in database
+/// units.
+pub(super) struct UserParameter<'a> {
+    pub(super) record: &'a crate::records::parameters::DesignParameter,
+    pub(super) family_discriminator: crate::records::parameters::DesignParameterDiscriminator,
+    pub(super) source_ordinal: u32,
+    pub(super) expression: &'a str,
+    pub(super) evaluated: f64,
+}
+
 /// The document parameters as Design records whose tails name the parameter
 /// collection `collection_record_index`.
 pub(super) fn encode_document_parameters(
-    parameters: &[crate::records::parameters::DesignParameter],
+    parameters: &[UserParameter<'_>],
     collection_record_index: u32,
 ) -> Result<ParameterRecords, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
-    for parameter in parameters {
-        let crate::records::parameters::DesignParameterSource::User {
-            family_discriminator: Some(family_discriminator),
-            ..
-        } = parameter.source()
-        else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D owned Design parameter records are not writable".into(),
-            ));
-        };
+    for UserParameter {
+        record: parameter,
+        family_discriminator,
+        source_ordinal,
+        expression,
+        evaluated,
+    } in parameters
+    {
         if !parameter_indices.insert(parameter.record_index)
-            || !parameter_ordinals.insert(parameter.source_ordinal)
+            || !parameter_ordinals.insert(*source_ordinal)
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} duplicates a record index or source ordinal",
@@ -484,12 +499,12 @@ pub(super) fn encode_document_parameters(
         // (empty when none), the ordinal, the null owner, the expression, the
         // ten-byte trailer with the document flag, and the empty text value.
         out.extend_from_slice(&[0; 11]);
-        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
+        out.extend_from_slice(&family_discriminator.code().to_le_bytes());
         out.push(0);
         native_lp_utf16(&mut out, parameter.comment().unwrap_or_default())?;
-        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+        out.extend_from_slice(&source_ordinal.to_le_bytes());
         out.push(0);
-        native_lp_utf16(&mut out, parameter.expression())?;
+        native_lp_utf16(&mut out, expression)?;
         out.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
@@ -499,7 +514,7 @@ pub(super) fn encode_document_parameters(
             out.extend_from_slice(&0u32.to_le_bytes());
         }
         native_lp_utf16(&mut out, parameter.name())?;
-        out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
+        out.extend_from_slice(&evaluated.to_le_bytes());
         out.extend_from_slice(&[0, 1]);
         out.extend_from_slice(&collection_record_index.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
@@ -508,7 +523,7 @@ pub(super) fn encode_document_parameters(
         bytes: out,
         indices: parameters
             .iter()
-            .map(|parameter| parameter.record_index)
+            .map(|parameter| parameter.record.record_index)
             .collect(),
     })
 }
@@ -948,6 +963,53 @@ fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {
         ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data",
         ConstructionRecipeKind::Edge => b"edge_recipe_data",
         ConstructionRecipeKind::Vertex => b"vertex_recipe_data",
+    }
+}
+
+/// The persistent references the written sketch records do not restate. A
+/// written sketch point stores its `pt_tag` reference and a written sketch
+/// curve its `crv_primary_id` and `crv_secondary_id` references, which read
+/// back as persistent references; each restates one reference of its kind
+/// and value.
+fn standalone_references(native: &F3dNative) -> Vec<&PersistentReference> {
+    let mut restated = BTreeMap::<(u8, u64), usize>::new();
+    let mut restate = |kind: PersistentReferenceKind, value: u64| {
+        *restated
+            .entry((reference_kind_key(kind), value))
+            .or_default() += 1;
+    };
+    for point in &native.sketch_points {
+        if let Some(persistent_id) = point.persistent_id() {
+            restate(PersistentReferenceKind::Point, persistent_id);
+        }
+    }
+    for curve in &native.sketch_curve_identities {
+        restate(
+            PersistentReferenceKind::CurvePrimary,
+            curve.primary_id.get(),
+        );
+        restate(PersistentReferenceKind::CurveSecondary, curve.secondary_id);
+    }
+    native
+        .persistent_references
+        .iter()
+        .filter(|reference| {
+            match restated.get_mut(&(reference_kind_key(reference.kind), reference.value)) {
+                Some(count) if *count > 0 => {
+                    *count -= 1;
+                    false
+                }
+                _ => true,
+            }
+        })
+        .collect()
+}
+
+fn reference_kind_key(kind: PersistentReferenceKind) -> u8 {
+    match kind {
+        PersistentReferenceKind::Point => 0,
+        PersistentReferenceKind::CurvePrimary => 1,
+        PersistentReferenceKind::CurveSecondary => 2,
     }
 }
 

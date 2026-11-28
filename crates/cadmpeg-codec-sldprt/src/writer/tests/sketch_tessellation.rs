@@ -209,13 +209,12 @@ fn semantic_writer_applies_line_sketch_edits() {
 fn semantic_writer_applies_compressed_line_sketch_edits() {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    let image = crate::test_support::container::native_envelope_fixture(
+        &sldprt_with_compressed_nested_sketch_profile(&triangle_body()),
+    );
     let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_compressed_nested_sketch_profile(
-                &triangle_body(),
-            )),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(&image), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
@@ -242,12 +241,18 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut written,
-    )
-    .unwrap();
+    let limits = cadmpeg_core::decode::ResourceLimits {
+        max_input_bytes: cadmpeg_core::decode::u64_from_index(image.len()),
+        ..cadmpeg_core::decode::ResourceLimits::desktop()
+    };
+    SldprtCodec
+        .plan(EncodeInput {
+            limits,
+            ..EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+        })
+        .unwrap()
+        .write_to(&mut written)
+        .unwrap();
     let scan = crate::test_support::container::scan(&written);
     let lane = scan
         .blocks

@@ -56,45 +56,45 @@ jobs:
       - name: Materialize writer geometry profile
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/side2/tmp/iges-l9/freecad"
+          mkdir -p "$RUNNER_TEMP/iges-l9/freecad"
           python3 scripts/prepare-iges-freecad-golden.py \
-            --output-dir "$HOME/side2/tmp/iges-l9/freecad"
+            --output-dir "$RUNNER_TEMP/iges-l9/freecad"
 
       - name: Materialize every writable output
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/side2/tmp/iges-l9/freecad-all"
+          mkdir -p "$RUNNER_TEMP/iges-l9/freecad-all"
           python3 scripts/prepare-iges-freecad-golden.py \
             --all-writable \
-            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+            --output-dir "$RUNNER_TEMP/iges-l9/freecad-all"
           python3 scripts/prepare-iges-freecad-edited.py \
             --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
             --iges-target 5.1 \
             --output-name edited_point_v51.igs \
-            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+            --output-dir "$RUNNER_TEMP/iges-l9/freecad-all"
           python3 scripts/prepare-iges-freecad-edited.py \
             --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
             --iges-target 5.2 \
             --output-name edited_point_v52.igs \
-            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+            --output-dir "$RUNNER_TEMP/iges-l9/freecad-all"
           python3 scripts/prepare-iges-freecad-edited.py \
             --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
             --iges-target 5.3 \
             --output-name edited_point_v53.igs \
-            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+            --output-dir "$RUNNER_TEMP/iges-l9/freecad-all"
 
       - name: Run independent FreeCAD geometry gate
         env:
-          CADMPEG_IGES_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad
+          CADMPEG_IGES_INPUT_DIR: ${{ runner.temp }}/iges-l9/freecad
           CADMPEG_IGES_EXPECTATIONS: ${{ github.workspace }}/scripts/iges-freecad-expectations.json
-          CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-report.json
+          CADMPEG_IGES_REPORT: ${{ runner.temp }}/iges-l9/freecad-report.json
         run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
 
       - name: Run independent FreeCAD writer gate
         env:
-          CADMPEG_IGES_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad-all
+          CADMPEG_IGES_INPUT_DIR: ${{ runner.temp }}/iges-l9/freecad-all
           CADMPEG_IGES_ALLOW_EMPTY: "1"
-          CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-all-report.json
+          CADMPEG_IGES_REPORT: ${{ runner.temp }}/iges-l9/freecad-all-report.json
         run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
 
       - name: Upload FreeCAD acceptance report
@@ -102,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: iges-freecad-report-${{ github.run_id }}
-          path: /home/runner/side2/tmp/iges-l9
+          path: ${{ runner.temp }}/iges-l9
           if-no-files-found: warn
 
   schedule-alert:

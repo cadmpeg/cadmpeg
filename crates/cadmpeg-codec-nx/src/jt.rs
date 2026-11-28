@@ -895,8 +895,10 @@ impl CodeBits<'_> {
 }
 
 /// Upper bound on values a single arithmetic-coded lane may declare.
+// resource-cap: MAX_ARITHMETIC_VALUES = 2
 const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
 /// Upper bound on arithmetic decoder table lookups for one lane.
+// resource-cap: MAX_ARITHMETIC_WORK = 4
 pub(crate) const MAX_ARITHMETIC_WORK: usize = 64_000_000;
 
 /// Whether any arithmetic-coded lane was left undecoded at

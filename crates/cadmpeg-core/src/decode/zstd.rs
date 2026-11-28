@@ -57,6 +57,7 @@ use crate::CodecError;
 const BLOCK_BYTES: u64 = 128 * 1024;
 /// The largest window the decoder opens on this target. A larger frame is
 /// outside the reader, not over a session ceiling.
+// resource-cap: MAX_DECODER_WINDOW = 1
 const MAX_DECODER_WINDOW: u64 = 1_u64 << if usize::BITS == 32 { 30 } else { 31 };
 const OUTPUT_STEP_BYTES: usize = 16 * 1024;
 const FRAME_MAGIC: u32 = 0xfd2f_b528;

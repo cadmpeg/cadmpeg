@@ -644,6 +644,7 @@ fn a_record_past_the_expression_bound_is_given_up() {
         scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
             .unwrap(),
         owner: None,
+        position: None,
         name: None,
         kind: crate::design::units::ValueKind::Text,
         unit: None,

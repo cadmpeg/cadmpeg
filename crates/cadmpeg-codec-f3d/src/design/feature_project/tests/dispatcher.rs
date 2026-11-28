@@ -1268,7 +1268,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
 
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     archive.start_file(stream, stored).unwrap();
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
@@ -1318,7 +1318,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         native_ref: None,
     }];
 
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                 ctx,
@@ -1410,7 +1410,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
 
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
         archive.start_file(stream, stored).unwrap();
         archive.write_all(&bulk).unwrap();
         let archive = archive.finish().unwrap().into_inner();
@@ -1461,7 +1461,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             native_ref: None,
         }];
 
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                     ctx,

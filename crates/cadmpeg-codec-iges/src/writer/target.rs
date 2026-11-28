@@ -195,7 +195,7 @@ fn replay_bytes(
     let (Some(_), Some(fidelity)) = (
         ir.source
             .as_ref()
-            .filter(|source| source.format() == crate::dialect::FORMAT),
+            .filter(|source| source.format() == crate::dialect::registry_ids::FORMAT),
         fidelity,
     ) else {
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));

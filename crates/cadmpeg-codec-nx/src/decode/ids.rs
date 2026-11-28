@@ -10,7 +10,7 @@ use cadmpeg_ir::{identity_component, identity_key};
 use std::fmt::Display;
 
 /// The format component every NX identity carries.
-const NX: FormatId = FormatId::new(crate::dialect::FORMAT);
+const NX: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
 /// The `<format>:<scope>` half of every identity the NX decoder mints.
 #[derive(Debug, Clone, PartialEq, Eq)]

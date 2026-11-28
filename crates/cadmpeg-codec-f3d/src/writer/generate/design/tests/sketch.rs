@@ -764,7 +764,7 @@ fn the_id_table_lists_sketches_then_the_base_feature() {
         pairs,
         (300..305).zip(scopes.iter().copied()).collect::<Vec<_>>()
     );
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     assert!(!native.persistent_subentity_tags.is_empty());
     assert!(native
         .persistent_subentity_tags
@@ -809,6 +809,93 @@ fn a_sketch_of_lines_only_is_written_with_its_base_feature() {
             cadmpeg_ir::features::FeatureOperation::BaseFeature { .. }
         )
     )));
+}
+
+/// A sketch on Front (`XY`) whose source origin lies at `origin`, with a
+/// point at the source origin that a relation joins to the sketch origin.
+fn origin_sketch(origin: [f64; 3]) -> (CadIr, SketchConstraintId) {
+    let mut ir = scoped_cube();
+    let mut sketch = Source::new(
+        "origin",
+        picked(principal(PrincipalEntity::XyPlane)),
+        frame(origin, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    sketch.entity("p", PlanarCurve::Point(point2(0.0, 0.0)), &[]);
+    let on_origin = Operand::Frame(PrincipalEntity::Origin);
+    let relation = SketchRelation::Coincident {
+        a: sketch.operand("p"),
+        b: on_origin,
+    };
+    sketch.constraint("on-origin", relation);
+    let id = sketch.add_to(&mut ir);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    members.insert(0, Member::Feature(id));
+    (ir, constraint_id("origin", "on-origin"))
+}
+
+#[test]
+fn a_relation_on_the_sketch_origin_names_the_origin_point_and_decodes_back() {
+    let (ir, constraint) = origin_sketch([0.0, 0.0, 0.0]);
+    let (report, decoded) = write(&ir);
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string(),
+    );
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains(constraint.as_str())),
+        "{omitted:#?}"
+    );
+    let points = decoded
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.definition,
+                EntityDefinition::Free(PlanarCurve::Point(_))
+            )
+        })
+        .map(|entity| entity.id.clone())
+        .collect::<Vec<_>>();
+    let [point] = points.as_slice() else {
+        panic!("one point entity: {points:#?}");
+    };
+    let origin = Operand::Frame(PrincipalEntity::Origin);
+    let point = Operand::Entity(point.clone());
+    assert!(
+        decoded
+            .design
+            .sketch_constraints
+            .iter()
+            .any(|constraint| matches!(
+                &constraint.relation,
+                SketchRelation::Coincident { a, b }
+                    if (*a == point && *b == origin) || (*a == origin && *b == point)
+            )),
+        "{:#?}",
+        decoded.design.sketch_constraints
+    );
+}
+
+#[test]
+fn a_relation_on_a_sketch_origin_off_the_plane_origin_is_omitted_with_its_reason() {
+    let (ir, constraint) = origin_sketch([5.0, 0.0, 0.0]);
+    let (report, _) = write(&ir);
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string(),
+    );
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains(constraint.as_str())
+                && message.contains("lies off the origin of Fusion's sketch plane")),
+        "{omitted:#?}"
+    );
 }
 
 /// A sketch on `plane` with source axes `x` and `y`: a line along each axis

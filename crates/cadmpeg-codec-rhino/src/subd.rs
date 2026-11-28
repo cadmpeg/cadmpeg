@@ -35,9 +35,13 @@ const EMPTY_CONTENT_SHA1: [u8; 20] = [
     0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55, 0xbf, 0xef, 0x95, 0x60, 0x18, 0x90,
     0xaf, 0xd8, 0x07, 0x09,
 ];
+// resource-cap: MAX_LEVELS = 2
 const MAX_LEVELS: usize = 64;
+// resource-cap: MAX_COMPONENTS_PER_LEVEL = 2
 const MAX_COMPONENTS_PER_LEVEL: usize = 4_000_000;
+// resource-cap: MAX_INCIDENT_COMPONENTS = 1
 const MAX_INCIDENT_COMPONENTS: usize = 65_535;
+// resource-cap: MAX_SAVED_LIMIT_POINTS = 1
 const MAX_SAVED_LIMIT_POINTS: usize = 65_535;
 
 /// A validated level-zero Catmull-Clark control cage and its decode metadata.

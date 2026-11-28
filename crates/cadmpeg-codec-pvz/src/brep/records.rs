@@ -24,6 +24,7 @@ const NO_INDEX: u32 = u32::MAX;
 /// Stream index record payload length.
 const STREAM_INDEX_LEN: usize = 4;
 /// Largest admitted B-spline degree of a surface, curve, or pcurve record.
+// resource-cap: MAX_BSPLINE_DEGREE = 1
 pub(crate) const MAX_BSPLINE_DEGREE: usize = 20;
 
 /// Surface `flags` bit that adds the u-range pair.
