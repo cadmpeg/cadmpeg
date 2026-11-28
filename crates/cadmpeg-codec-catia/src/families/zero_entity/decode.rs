@@ -1115,6 +1115,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                     &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
                     ordinal,
                 ),
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
                 format_args!("{code}: the face has no complete allocation graph or face geometry"),
             )
             .loss()

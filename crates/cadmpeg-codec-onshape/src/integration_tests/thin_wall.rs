@@ -328,3 +328,30 @@ fn stored_symmetric_thickness_maps_with_explicit_wall_controls() {
         validate(result);
     }
 }
+
+#[test]
+fn accounting_consumes_thin_domain_and_the_stored_direction() {
+    for custom_direction in [false, true] {
+        let bytes = edit(&stored_thin(true, false, false), |path, response| {
+            if path.ends_with("features.json") {
+                response["features"][1]["parameters"]
+                    .as_array_mut()
+                    .unwrap()
+                    .extend([
+                        json!({"parameterId":"hasExtrudeDirection","value":custom_direction}),
+                        json!({"parameterId":"oppositeExtrudeDirection","value":true}),
+                    ]);
+            }
+        });
+        let result = decode(&bytes);
+        let output = wire(&result);
+        let design = &plate(&output)["definition"]["operation"];
+        assert_eq!(design["kind"], "extrude");
+        assert_eq!(design["value"]["direction"]["reversed"]["value"], true);
+        assert!(!result.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "history.parameter-not-projected"
+                && loss.message.ends_with("; subject: Plate")
+        }));
+        validate(result);
+    }
+}

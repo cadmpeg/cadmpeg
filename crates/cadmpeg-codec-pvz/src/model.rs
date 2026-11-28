@@ -23,7 +23,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh, TessellationTriangleGroup};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 use cadmpeg_ir::CadIr;
 
 use crate::brep::frames::MILLIMETRES_PER_METRE;
@@ -297,42 +297,20 @@ pub(crate) fn occurrences(
             definition.occurrences = occurrences;
         }
     }
-    if !cycles.is_empty() {
-        losses.push(PvzLossCode::StructureOccurrenceCycle.note(format!(
-            "{} child occurrences close a definition cycle and were left out",
-            cycles.len()
-        )));
-        let code = PvzLossCode::StructureOccurrenceCycle.kind();
-        losses.extend(cycles.iter().map(|&(definition, occurrence)| {
-            GivenUpRecord::new(
-                child_occurrence(definition, occurrence),
-                format_args!("{code}: the child occurrence closes a definition cycle"),
-            )
-            .loss()
-        }));
-    }
-    let mut truncation = Vec::new();
-    if unplaced > 0 {
-        truncation.push(format!(
-            "decoding stopped at the limit of {max_occurrences} occurrences"
-        ));
-    }
-    if !past_depth.is_empty() {
-        truncation.push(format!(
-            "{} child occurrences lie past the recursion depth limit of \
-             {max_depth} definitions and were left out",
-            past_depth.len()
-        ));
-    }
-    if !truncation.is_empty() {
-        losses.push(PvzLossCode::StructureOccurrenceTruncated.note(truncation.join("; ")));
-    }
-    let code = PvzLossCode::StructureOccurrenceTruncated.kind();
+    losses.extend(cycles.iter().map(|&(definition, occurrence)| {
+        GivenUpRecord::new(
+            child_occurrence(definition, occurrence),
+            Cause::Unreadable,
+            "the child occurrence closes a definition cycle",
+        )
+        .loss()
+    }));
     if unplaced > 0 {
         let loss = GivenUpRecord::new(
             crate::ids::occurrence(emitted),
+            Cause::Undecoded,
             format_args!(
-                "{code}: decoding stopped at this occurrence, at the limit of \
+                "decoding stopped at this occurrence, at the limit of \
                  {max_occurrences} occurrences"
             ),
         )
@@ -347,8 +325,9 @@ pub(crate) fn occurrences(
     losses.extend(past_depth.iter().map(|&(definition, occurrence)| {
         GivenUpRecord::new(
             child_occurrence(definition, occurrence),
+            Cause::Undecoded,
             format_args!(
-                "{code}: the child occurrence lies past the recursion depth limit of \
+                "the child occurrence lies past the recursion depth limit of \
                  {max_depth} definitions"
             ),
         )
@@ -556,22 +535,14 @@ pub(crate) fn display_geometry(
              them"
         )));
     }
-    if !rejected.is_empty() {
-        losses.push(PvzLossCode::TessellationMeshRejected.note(format!(
-            "geometry member {member:?}: {}",
-            rejected
-                .iter()
-                .map(|(_, reason)| reason.as_str())
-                .collect::<Vec<_>>()
-                .join("; ")
-        )));
-        let code = PvzLossCode::TessellationMeshRejected.kind();
-        losses.extend(
-            rejected.iter().map(|(id, reason)| {
-                GivenUpRecord::new(id, format_args!("{code}: {reason}")).loss()
-            }),
-        );
-    }
+    losses.extend(rejected.iter().map(|(id, reason)| {
+        GivenUpRecord::new(
+            id,
+            Cause::Unreadable,
+            format_args!("geometry member {member:?}: {reason}"),
+        )
+        .loss()
+    }));
     if colors_rejected > 0 {
         losses.push(PvzLossCode::AttributeAppearanceColorRejected.note(format!(
             "geometry member {member:?}: {colors_rejected} appearance values lie outside their \

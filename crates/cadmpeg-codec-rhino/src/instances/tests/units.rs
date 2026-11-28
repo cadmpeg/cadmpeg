@@ -141,19 +141,28 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                             )
                             .unwrap(),
                     );
+                    let failure = |loss: &&cadmpeg_ir::report::loss::LossNote| {
+                        if container_only {
+                            loss.code == RhinoLossCode::ContainerInstanceDefinitionDegraded.kind()
+                        } else {
+                            cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                        }
+                    };
                     for (code, count) in [
-                        (RhinoLossCode::IntegrityFailure, 0),
+                        (Some(RhinoLossCode::IntegrityFailure), 0),
+                        (None, usize::from(!admitted)),
                         (
-                            RhinoLossCode::ContainerInstanceDefinitionDegraded,
-                            usize::from(!admitted),
+                            Some(RhinoLossCode::RedundantFieldRepaired),
+                            usize::from(repaired),
                         ),
-                        (RhinoLossCode::RedundantFieldRepaired, usize::from(repaired)),
                     ] {
                         let losses: Vec<_> = result
                             .report()
                             .losses
                             .iter()
-                            .filter(|loss| loss.code == code.kind())
+                            .filter(|loss| {
+                                code.map_or_else(|| failure(loss), |code| loss.code == code.kind())
+                            })
                             .collect();
                         assert_eq!(losses.len(), count, "{archive:?} unit={unit} scale={scale} container_only={container_only}: {losses:?}");
                         for loss in losses {

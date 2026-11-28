@@ -23,6 +23,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::convert::truncate_f64_to_u8;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::walk::{Instance, Record, Shell, SlotKind, WalkError, Walker};
 use crate::dialect::Grammar;
@@ -300,6 +301,7 @@ impl<'a> Scene<'a> {
             builder.record(record, span).map_err(|reason| WalkError {
                 offset: walker.offset(),
                 reason,
+                cause: Cause::Undecoded,
             })?;
         }
         Ok(builder.finish())

@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, ScratchContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::given_up::WithheldRecord;
@@ -85,6 +86,22 @@ pub(crate) enum ActiveCarrierState<'a> {
     },
 }
 
+/// Why a kernel carrier does not decode: the cause of its give-up, and the
+/// error. A carrier whose record stream does not frame breaks the kernel
+/// format; a framed stream that the ACIS decode does not read is a form the
+/// decoder does not decode.
+#[derive(Debug)]
+pub(crate) struct CarrierFailure {
+    pub(crate) cause: Cause,
+    pub(crate) error: CodecError,
+}
+
+impl From<CarrierFailure> for CodecError {
+    fn from(failure: CarrierFailure) -> Self {
+        failure.error
+    }
+}
+
 pub(crate) struct DecodedKernelCarrier {
     pub(crate) header: BinaryHeader,
     pub(crate) brep: AsmBrep,
@@ -113,8 +130,12 @@ pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
     header: &BinaryHeader,
-) -> Result<DecodedKernelCarrier, CodecError> {
-    let records = frame_kernel_records(ctx, carrier, header)?;
+) -> Result<DecodedKernelCarrier, CarrierFailure> {
+    let unreadable = |error: CodecError| CarrierFailure {
+        cause: Cause::Unreadable,
+        error,
+    };
+    let records = frame_kernel_records(ctx, carrier, header).map_err(unreadable)?;
     let mut brep = decode_with_header(
         ctx,
         &records,
@@ -123,11 +144,16 @@ pub(crate) fn decode_kernel_carrier(
         &carrier_stream(carrier),
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
-    )?;
+    )
+    .map_err(|error| CarrierFailure {
+        cause: Cause::Undecoded,
+        error,
+    })?;
     let withheld = std::mem::take(&mut brep.withheld)
         .into_iter()
         .map(|record| Ok((carrier.stream_offset(record.offset)?, record)))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, CodecError>>()
+        .map_err(unreadable)?;
     Ok(DecodedKernelCarrier {
         header: header.clone(),
         brep,
@@ -428,7 +454,12 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("carrier fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let inventory = RseInventory::build(
+            &setup_ctx,
+            &snapshot,
+            &mut crate::container::streams::Streams::default(),
+        )
+        .expect("RSe fixture");
         assert!(matches!(
             select_active_carrier(&inventory.segments, &DocumentKind::Part),
             ActiveCarrierState::Selected(_)
@@ -443,7 +474,7 @@ mod tests {
             .header
             .as_ref()
             .map_err(|detail| CodecError::Malformed(detail.clone()))?;
-        decode_kernel_carrier(ctx, carrier, header)
+        Ok(decode_kernel_carrier(ctx, carrier, header)?)
     }
 
     #[test]

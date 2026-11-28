@@ -532,7 +532,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What do the typed compact parameter frames with other expression trailers or a null owner on a feature input encode?
 
-**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder gives up these frames as `parameter-frame` parts with `record.undecoded`.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown. A rule must bind the document trailer to a localized `User Parameter` source kind before such a frame forms a document parameter.
 
@@ -570,11 +570,11 @@ option `2`, and side extents `[1, 0]`.
 
 ### DR-115. Mesh container decode-failure taxonomy
 
-**Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?
+**Question.** Which container failures are malformed input and which are an unsupported container generation, and does the retained error identify the failing stage?
 
-**Known.** `f3d.md` §1.1.2 "When a document's mesh-body metadata" defines the omission: a mesh body whose metadata or referenced `.paramesh` container fails the container grammar transfers no tessellation and reports `mesh.container-undecoded` with the entry name and the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+**Known.** `f3d.md` §1.1.2 "When a referenced `.paramesh` container" defines the omission: a `.paramesh` container that fails the container grammar transfers no tessellation. The decoder gives up its entry as an `archive-entry` part, and the loss carries the decode error. B-rep evaluation then proceeds. A container that declares a version other than 2, or a stream whose descriptor is outside the version-2 descriptor grammar, gives up with `record.undecoded`: these are the generation stages. A failure at every other stage gives up with `record.unreadable`. The specification gives the container layout; the taxonomy of the other stages awaits definition.
 
-**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures this loss covers and whether the retained error text identifies the failing stage, before a reader can distinguish malformed input from an unsupported container generation.
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which of the other failures break the format and which are a later container generation, and whether the retained error text identifies the failing stage. Each stage found to be a generation stage gives up with `record.undecoded`.
 
 **Note.** A resource-limit failure returns an error through the error path.
 
@@ -1380,7 +1380,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
 
-**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode is given up as an `archive-entry` part, and that give-up is the one report entry for every reference to the member. A member that cannot be scanned and whose entry the scan cannot give up reports `xref.member-undecoded` once, at scan time. The merge skips each reference to a given-up or unscannable member. Resource-limit failures return an error.
 
 **Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
 
@@ -1592,11 +1592,11 @@ The first closing reference run identifies a direct contained child by its local
 
 ### TS-07. T-spline cage decode-failure taxonomy
 
-**Question.** Which cage program failures does `tspline.cage-undecoded` cover?
+**Question.** Which cage program failures are malformed cages, and which are unsupported program generations?
 
-**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface and reports `tspline.cage-undecoded` with the entry name and the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
+**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface. The decoder gives up the entry as an `archive-entry` part with `record.undecoded`, and the loss carries the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
 
-**Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
+**Need.** Cage entries that fail at each program stage must show which failures break the program grammar.
 
 **Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
 
@@ -1942,7 +1942,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Conflict.** None.
 
-**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+**Note.** Give up the occurrence record with `record.undecoded` and keep the occurrence out of neutral product structure.
 
 ### DR-142. Thread construction option bytes
 
@@ -4283,7 +4283,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
-**Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+**Note.** The mesh graph requires a Scene node in that slot. The decoder gives up the `.paramesh` entries of such a design with `record.undecoded`.
 
 ### DR-1079. Document body of a keyless pattern copy
 
