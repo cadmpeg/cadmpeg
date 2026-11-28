@@ -572,15 +572,14 @@ const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 /// has the active configuration and B-rep required to exercise the edit guard.
 const LEGACY_FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 
-/// A geometry-depth decode agrees with the full decode outside the design
-/// arenas. This codec has no geometry-depth cut, so every input delivers full.
+/// Geometry depth states the current model without its design or saved states.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
         &SldprtCodec,
         &harness().fixture_inputs(),
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");
 }
 
 /// One frozen historical container intentionally has a cache header at the

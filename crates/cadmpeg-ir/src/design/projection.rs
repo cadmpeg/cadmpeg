@@ -22,6 +22,7 @@ use self::fields::{FeatureField, Field, ModelFeatureField, ModelParameterField, 
 pub mod fields;
 pub mod restated;
 pub mod sketch;
+pub mod spatial_sketch;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.

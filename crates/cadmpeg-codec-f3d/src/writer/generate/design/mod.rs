@@ -60,7 +60,7 @@ use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchConstraintId;
@@ -1200,6 +1200,12 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
+    /// Whether the design writes a feature of the scope as a timeline item:
+    /// a `Sketch` item, a geometry item, or a rolled-back item.
+    pub(super) fn writes_features(&self) -> bool {
+        self.writes_sketches() || !self.item.items().is_empty() || !self.rolled.is_empty()
+    }
+
     /// Whether the design writes a `Sketch` item.
     pub(super) fn writes_sketches(&self) -> bool {
         !self.sketches.items.is_empty()
@@ -1211,6 +1217,11 @@ impl NeutralDesign<'_> {
             .items
             .iter()
             .any(|item| !item.dimensions.is_empty())
+    }
+
+    /// The ids of the parameters a written record restates.
+    pub(super) fn restated_parameters(&self) -> BTreeSet<ParameterId> {
+        self.parameters.restated()
     }
 
     pub(super) fn into_losses(self) -> Vec<LossNote> {
@@ -1243,6 +1254,16 @@ fn sketch_plan<'a>(
 /// the scope whose definition no occurrence places.
 pub(super) fn root_scope(target: &CadIr) -> Option<&DesignScope> {
     root_scope_at(target).map(|at| &target.design.scopes[at])
+}
+
+/// Whether the root scope states a timeline: an ordered container among its
+/// roots.
+pub(super) fn states_timeline(target: &CadIr) -> bool {
+    root_scope(target).is_some_and(|scope| {
+        target.design.containers.iter().any(|container| {
+            matches!(container, Container::Ordered { .. }) && scope.roots.contains(container.id())
+        })
+    })
 }
 
 /// The position of [`root_scope`] among the document's scopes.
