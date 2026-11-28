@@ -398,9 +398,9 @@ fn translated(
     let names = Names::new(&parameters, &[]);
     let tree = translate::tree(
         expression,
+        &names,
         &Typing {
             parameters: &parameters,
-            names: &names,
             target: &ValueKind::Quantity(target),
             length_unit,
         },

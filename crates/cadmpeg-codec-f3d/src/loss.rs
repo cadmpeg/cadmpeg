@@ -206,6 +206,9 @@ pub(crate) enum F3dLossCode {
     /// Sketches take the Feature label composed from the scope kind spelling
     /// and feature ordinal instead of a stored name.
     SketchNameComposedFromFeatureOrdinal,
+    /// A construction Feature takes the name composed from the scope kind
+    /// spelling and feature ordinal instead of a stored name.
+    FeatureConstructionNameComposed,
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
@@ -695,6 +698,33 @@ pub(crate) enum F3dLossCode {
     HistoryRollbackUnread,
     /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
     HistoryRollbackBoundUnread,
+    /// The stored state after a timeline item has no evaluation.
+    HistoryStateUnread,
+    /// The stored states after the items of a timeline have no evaluations.
+    HistoryStatesUnread,
+    /// The evaluations of a timeline's states omit a body of the history
+    /// head that the current geometry omits and that no timeline item
+    /// consumes.
+    HistoryStateBodyOmitted,
+    /// A history stores states after the state of its last timeline item;
+    /// the current state holds their change.
+    HistoryStateTailAssumed,
+    /// An evaluation gives a body the owner of the current bodies of its
+    /// history, which the file does not state for it.
+    HistoryStateOwnerAssumed,
+    /// The evaluations of a timeline's states hold a current body that lies
+    /// in no model blob with a history as the current geometry does.
+    HistoryStateBodyInherited,
+    /// An evaluation keeps the current state's name of an entity whose
+    /// record it changes.
+    HistoryStateNameInherited,
+    /// An evaluation before an unread timeline item that moves, creates, or
+    /// re-owns occurrences takes the current poses and occurrence membership.
+    HistoryStatePosesAssumed,
+    /// The state after a timeline item is taken from the chain of the
+    /// history that the walk places it in, which its scope tail does not
+    /// state.
+    HistoryStateInferred,
     /// A timeline item matches its v10 feature by its position in its Design stream because no scope record states the pairing.
     HistoryItemMatchedByPosition,
     /// An archive member's feature does not name the component that owns it, because the member's scope does not span the owner's definition.
@@ -1586,6 +1616,7 @@ impl F3dLossCode {
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
         Self::SketchNameComposedFromFeatureOrdinal,
+        Self::FeatureConstructionNameComposed,
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
@@ -1889,6 +1920,15 @@ impl F3dLossCode {
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackBoundUnread,
+        Self::HistoryStateUnread,
+        Self::HistoryStatesUnread,
+        Self::HistoryStateBodyOmitted,
+        Self::HistoryStateTailAssumed,
+        Self::HistoryStateOwnerAssumed,
+        Self::HistoryStateBodyInherited,
+        Self::HistoryStateNameInherited,
+        Self::HistoryStatePosesAssumed,
+        Self::HistoryStateInferred,
         Self::HistoryItemMatchedByPosition,
         Self::HistoryMemberComponentUnstated,
         Self::CoordinateSystemConstructionNative,
@@ -2473,6 +2513,7 @@ impl F3dLossCode {
             Self::SketchNameComposedFromFeatureOrdinal => {
                 "sketch.name-composed-from-feature-ordinal"
             }
+            Self::FeatureConstructionNameComposed => "feature.construction-name-composed",
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
@@ -2938,6 +2979,15 @@ impl F3dLossCode {
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
+            Self::HistoryStateUnread => "history.state-unread",
+            Self::HistoryStatesUnread => "history.states-unread",
+            Self::HistoryStateBodyOmitted => "history.state-body-omitted",
+            Self::HistoryStateTailAssumed => "history.state-tail-assumed",
+            Self::HistoryStateOwnerAssumed => "history.state-owner-assumed",
+            Self::HistoryStateBodyInherited => "history.state-body-inherited",
+            Self::HistoryStateNameInherited => "history.state-name-inherited",
+            Self::HistoryStatePosesAssumed => "history.state-poses-assumed",
+            Self::HistoryStateInferred => "history.state-inferred",
             Self::HistoryItemMatchedByPosition => "history.item-matched-by-position",
             Self::HistoryMemberComponentUnstated => "history.member-component-unstated",
             Self::CoordinateSystemConstructionNative => {
@@ -3741,6 +3791,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
             | Self::SketchNameComposedFromFeatureOrdinal
+            | Self::FeatureConstructionNameComposed
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
@@ -4026,6 +4077,15 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryStateUnread
+            | Self::HistoryStatesUnread
+            | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateTailAssumed
+            | Self::HistoryStateOwnerAssumed
+            | Self::HistoryStateBodyInherited
+            | Self::HistoryStateNameInherited
+            | Self::HistoryStatePosesAssumed
+            | Self::HistoryStateInferred
             | Self::HistoryItemMatchedByPosition
             | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
@@ -4820,6 +4880,15 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryStateUnread
+            | Self::HistoryStatesUnread
+            | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateTailAssumed
+            | Self::HistoryStateOwnerAssumed
+            | Self::HistoryStateBodyInherited
+            | Self::HistoryStateNameInherited
+            | Self::HistoryStatePosesAssumed
+            | Self::HistoryStateInferred
             | Self::HistoryItemMatchedByPosition
             | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
@@ -5171,6 +5240,7 @@ impl F3dLossCode {
             | Self::DesignBodyBindingUnresolved
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::SketchNameComposedFromFeatureOrdinal
+            | Self::FeatureConstructionNameComposed
             | Self::ReferenceImageNativeRetained
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
@@ -5438,6 +5508,7 @@ mod tests {
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
                 "sketch.name-composed-from-feature-ordinal",
+                "feature.construction-name-composed",
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
@@ -5741,6 +5812,15 @@ mod tests {
                 "configuration.property-unprojected",
                 "history.rollback-unread",
                 "history.rollback-bound-unread",
+                "history.state-unread",
+                "history.states-unread",
+                "history.state-body-omitted",
+                "history.state-tail-assumed",
+                "history.state-owner-assumed",
+                "history.state-body-inherited",
+                "history.state-name-inherited",
+                "history.state-poses-assumed",
+                "history.state-inferred",
                 "history.item-matched-by-position",
                 "history.member-component-unstated",
                 "feature.coordinate-system-construction-native",

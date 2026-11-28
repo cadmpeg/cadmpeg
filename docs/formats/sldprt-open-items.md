@@ -929,6 +929,14 @@ resolve a seed feature?
 
 **Note.** Each primary cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
 
+### DI-110. Suppression of a feature in one configuration
+
+**Question.** Which stored field states that a feature is suppressed in one configuration and built in another?
+
+**Known.** A Keywords history element stores one `Suppressed` attribute, with the value `1`, `true` or `True` for a suppressed feature. The part stores one history for all of its configurations. A configuration snapshot changes the suppression of a feature-tree node (`sldprt.md` §2). Each configuration also stores its own `Config-N-ResolvedFeatures` lane and its own `Config-N-Partition` B-rep. The decoder applies the history's `Suppressed` attribute to every configuration, and the design states no suppression override of a configuration.
+
+**Need.** A part with two configurations and one feature, saved with the feature suppressed in the configuration that is not active and built in the active one, beside the same part saved with the feature built in both. Compare the feature's Keywords element, the `Config-N-ResolvedFeatures` lane of each configuration, and the `Contents/Features` configuration list of the two saves byte for byte.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content

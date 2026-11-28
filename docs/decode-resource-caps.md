@@ -189,6 +189,26 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+F3D stored states are the second user. The walk of the stored states of a
+scope runs as a task of the decode (`DecodeContext::checkpoint`). Where a
+charge of the walk reaches a limit, the scope states no evaluation,
+`history.states-unread` names it, and the decode goes on with the
+allowance that it had before the walk. In the walk, the read of each
+history and its record archive, the read of its head, and the read of the
+record table of each stored state are tasks of their own. A read that does
+not fit the allowance left gives up the states of that history: the chain
+stops at the latest evaluation that needs one of them, and
+`history.state-unread` names the state of that feature and of each earlier
+feature of the scope, because each evaluation holds the state of every
+history. Before it states an evaluation, the walk adds an upper bound of
+the retained bytes that the attachment of its native records to the
+document charges: six bytes for each byte of each record identity and link,
+32 bytes for each record, and 3 bytes for each link. The chain stops before
+the evaluation where the sum exceeds the allowance left. The charge of the
+records, removed records and identity of each evaluation to the entity
+limit is a task of its own: where it does not fit, the chain stops before
+that evaluation in the same way.
+
 ## Scratch decodes
 
 `DecodeContext::scratch` runs optional evidence work in a separate arena
@@ -450,6 +470,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/body_history_tail.rs` | `MAX_HISTORY_TAIL_WORK` | `1 << 21` | 4 | State and topology slots examined in one body's tail after its last linked feature. Exhaustion retains a native body-history operation with `feature.body-history-incomplete`. |
 | `cadmpeg-codec-f3d` | `src/design/decode/scopes/hole.rs` | `MAX_SELECTION_CHAIN` | `16` | 4 | Records after a Hole's direct persistent selection scanned for the records that belong to it. A chain longer than the window leaves the Hole's plane reference unread. |
+| `cadmpeg-codec-f3d` | `src/history/stored_states.rs` | `MAX_STATE_WORK` | `1 << 22` | 4 | Floor of the record-table entries of the stored history states that one decode reads as evaluations, across all histories of the root scope. The budget is the larger of this floor and `STATE_WORK_PER_BYTE` (4) entries for each byte of those model blobs. Exhaustion stops the state chain at that state with `history.state-unread`. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |

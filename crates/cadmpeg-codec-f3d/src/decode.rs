@@ -3285,7 +3285,8 @@ enum SessionPath {
 
 /// Store a bodyless design's records and attach its owners. The body history
 /// tails collected for the design are reported here, as the geometry path
-/// reports them through the consumed-history fill.
+/// reports them through the consumed-history fill. Returns the ASM history
+/// of each parameter scope that binds one, by scope id.
 fn store_bodyless_design(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -3293,11 +3294,12 @@ fn store_bodyless_design(
     native: &mut F3dNative,
     ir: &mut CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<std::collections::HashMap<String, String>, CodecError> {
     let consumers = std::mem::take(&mut design.history_body_consumers);
     design.store(native);
     attach_design(ctx, scan, native, ir, losses)?;
-    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
+    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)?;
+    Ok(consumers.bindings)
 }
 
 /// Bind the stored design's sketches and features to their product
@@ -3394,6 +3396,11 @@ struct F3dDecodeSession<'a> {
     admitted_entities: u64,
     component_definitions_by_record:
         std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    scope_histories: std::collections::HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    history_owners: std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -3514,6 +3521,8 @@ impl<'a> F3dDecodeSession<'a> {
                 untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
+                scope_histories: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -3577,6 +3586,8 @@ impl<'a> F3dDecodeSession<'a> {
                 untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
+                scope_histories: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -4052,6 +4063,11 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
+        self.history_owners = crate::design::components::history_pair_owners(
+            &prereqs.design_body_bindings,
+            &local_components,
+            bodies.as_ref(),
+        );
         let external = match prereqs.xref_table() {
             Some(table) => Some(crate::xref::project_occurrences(
                 table,
@@ -4201,6 +4217,7 @@ impl<'a> F3dDecodeSession<'a> {
                         &consumers,
                         &mut self.report.losses,
                     )?;
+                    self.scope_histories = consumers.bindings;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -4217,7 +4234,7 @@ impl<'a> F3dDecodeSession<'a> {
                 let projected = match design {
                     DesignState::Projected(design) => {
                         let roots_unbound = design.configuration_roots_unbound;
-                        store_bodyless_design(
+                        self.scope_histories = store_bodyless_design(
                             ctx,
                             scan,
                             *design,
@@ -4324,6 +4341,8 @@ impl<'a> F3dDecodeSession<'a> {
                         source_image,
                         untyped: self.untyped,
                         source_attributes: self.source_attributes,
+                        scope_histories: self.scope_histories,
+                        history_owners: self.history_owners,
                     },
                     &mut admitted_entities,
                 );
@@ -4381,6 +4400,8 @@ impl<'a> F3dDecodeSession<'a> {
                 source_image,
                 untyped: self.untyped,
                 source_attributes: self.source_attributes,
+                scope_histories: self.scope_histories,
+                history_owners: self.history_owners,
             },
             &mut admitted_entities,
         )
@@ -4411,7 +4432,7 @@ fn cuts_design_intent(
         })
 }
 
-fn brep_identity_namespace(entry: &str) -> Option<&str> {
+pub(crate) fn brep_identity_namespace(entry: &str) -> Option<&str> {
     entry.rsplit('/').next()?.strip_prefix("BREP.")
 }
 
@@ -4468,12 +4489,28 @@ pub(crate) fn decode_scanned(
             let root_identity = crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
             decoded.body.losses.extend(root_identity);
             let depth = decoded.body.transfer.depth();
+            let mut carried = Vec::new();
+            let sources = crate::design_v11::StoredStates {
+                scan,
+                scope_histories: &decoded.scope_histories,
+                history_owners: &decoded.history_owners,
+                fidelity: &decoded.source_fidelity,
+            };
             cadmpeg_ir::design::projection::project_layer(
                 ctx,
                 "f3d",
                 &mut decoded.ir,
                 &mut decoded.body.losses,
-                |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+                |ir, losses| {
+                    carried = crate::design_v11::project(ctx, ir, depth, Some(&sources), losses)?;
+                    Ok(())
+                },
+            )?;
+            decoded.source_fidelity.attach_native_unknown_records(
+                &mut decoded.ir,
+                "f3d",
+                carried,
+                ctx,
             )?;
             decoded.ir.finalize();
             Ok(decoded.into_decoded())
@@ -4563,6 +4600,8 @@ fn decode_scanned_document<'a>(
                 source_image,
                 untyped,
                 source_attributes,
+                scope_histories: std::collections::HashMap::new(),
+                history_owners: std::collections::HashMap::new(),
             },
             &mut admitted_entities,
         );
@@ -5742,6 +5781,12 @@ pub(crate) struct AuthoredDecoded {
     pub(crate) source: cadmpeg_ir::SourceMeta,
     pub(crate) body: DecodeBody,
     pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    pub(crate) scope_histories: std::collections::HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    pub(crate) history_owners:
+        std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 impl AuthoredDecoded {
@@ -5763,6 +5808,11 @@ struct RetainedArtifacts {
     /// Classes of the content the source image holds that no arena carries.
     untyped: std::collections::BTreeSet<cadmpeg_core::decode::ArenaClass>,
     source_attributes: std::collections::BTreeMap<String, String>,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    scope_histories: std::collections::HashMap<String, String>,
+    /// The owner that the component-ownership rule gives each history-only
+    /// body-map pair, by pair id.
+    history_owners: std::collections::HashMap<String, crate::design::components::HistoryPairOwner>,
 }
 
 fn decode_result(
@@ -5824,6 +5874,8 @@ fn decode_result(
         source,
         body: report,
         source_fidelity,
+        scope_histories: retained.scope_histories,
+        history_owners: retained.history_owners,
     })
 }
 
@@ -7163,7 +7215,7 @@ pub(crate) fn apply_body_presentation_names(
 }
 
 pub(crate) mod design_intent;
-mod geometry_admission;
+pub(crate) mod geometry_admission;
 mod mesh_import;
 mod mesh_operations;
 mod prereqs;
