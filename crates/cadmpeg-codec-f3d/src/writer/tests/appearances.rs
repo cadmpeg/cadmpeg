@@ -18,10 +18,10 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native_mut, update_f3d_native};
-use crate::test_support::protein_test::generated_prism_instance_properties;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::{
+use crate::test_support::native_fixture::{f3d_native_mut, update_f3d_native};
+use crate::test_support::protein_fixture::generated_prism_instance_properties;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::{
     f3d_with_smbh_and_instance_properties, f3d_with_smbh_and_protein,
     f3d_with_smbh_and_protein_guids,
 };
@@ -197,7 +197,7 @@ fn generated_source_less_charges_the_second_visibility_of_a_body() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("source-less round trip");
     let visibilities =
-        &crate::test_support::native_test::f3d_native(decoded.ir()).body_visibilities;
+        &crate::test_support::native_fixture::f3d_native(decoded.ir()).body_visibilities;
     assert_eq!(visibilities.len(), 1);
     assert!(!visibilities[0].visible);
     assert_eq!(visibilities[0].entity_suffix, 985);

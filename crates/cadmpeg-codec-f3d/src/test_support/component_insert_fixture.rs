@@ -10,7 +10,7 @@
 //! Its 57-byte relation names a carrier that stores an LP-UTF16 role GUID, two
 //! zero bytes and the same transform.
 
-use super::streams_test::design_metastream_with_records;
+use super::streams_fixture::design_metastream_with_records;
 use crate::test_support::lp_utf16;
 
 /// One envelope of the shared scope record.

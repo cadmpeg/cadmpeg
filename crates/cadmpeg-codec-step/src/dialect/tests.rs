@@ -2,10 +2,11 @@
 //! The registry is the oracle for the pinned ids, so the test reads it rather
 //! than a second copy of the list.
 
+use super::registry_ids::FORMAT;
 use super::{
     dialect_loss, schema_edition_loss, AlternateEncoding, StepDialect,
     DECLARED_FILE_SCHEMA_IDENTIFIER, DECLARED_FILE_SCHEMA_IDENTIFIERS,
-    DECLARED_IMPLEMENTATION_LEVEL, DECLARED_LONG_FORM_ARCS, FORMAT, NEAREST_STRATEGY,
+    DECLARED_IMPLEMENTATION_LEVEL, DECLARED_LONG_FORM_ARCS, NEAREST_STRATEGY,
 };
 use crate::loss::StepLossCode;
 use crate::options::StepSchema;

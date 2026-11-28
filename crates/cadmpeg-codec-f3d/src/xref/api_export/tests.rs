@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::test_support::manifest_test::api_reference_extension;
+use crate::test_support::manifest_fixture::api_reference_extension;
 
 #[test]
 fn manifest_reference_roles_select_named_document_identity() {

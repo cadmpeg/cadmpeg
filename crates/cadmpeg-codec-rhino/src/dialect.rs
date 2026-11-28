@@ -44,7 +44,13 @@ use crate::chunks::ArchiveVersion;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    RHINO_ARCHIVE_1, RHINO_ARCHIVE_2, RHINO_ARCHIVE_3, RHINO_ARCHIVE_4, RHINO_ARCHIVE_5,
+    RHINO_ARCHIVE_50, RHINO_ARCHIVE_60, RHINO_ARCHIVE_70, RHINO_ARCHIVE_80, RHINO_ARCHIVE_90,
+    RHINO_UNKNOWN,
+};
 
 /// Key of the archive-version word in [`DialectMatch::declared`].
 ///

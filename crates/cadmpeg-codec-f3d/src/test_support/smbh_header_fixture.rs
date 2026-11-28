@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::tokens_test::{push_u8_string, t_dbl};
+use crate::test_support::tokens_fixture::{push_u8_string, t_dbl};
 
 /// Build a synthetic ASM `BinaryFile8` BREP stream: a spec-shaped header
 /// followed by a couple of filler records and a `delta_state` history marker.

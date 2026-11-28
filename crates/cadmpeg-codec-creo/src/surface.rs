@@ -3042,7 +3042,9 @@ fn envelope_bounds_match_frame(record: &PlaneEnvelopeRecord, frame: &PlaneFrame)
     else {
         return false;
     };
-    let v = crate::vecmath::cross(normal, u);
+    let v = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(u)),
+    );
     let [[Some(u0), Some(v0)], [Some(u1), Some(v1)]] = *bounds_2d else {
         return false;
     };

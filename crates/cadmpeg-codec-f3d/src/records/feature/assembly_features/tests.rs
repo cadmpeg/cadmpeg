@@ -33,7 +33,7 @@ fn component_occurrence_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn component_occurrence_native_retained_limit_refuses_before_record_clone() {
     let record = occurrence(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_component_occurrences",
         || COMPONENT_OCCURRENCE_CLONE_COUNT.with(|count| count.set(0)),
@@ -82,7 +82,7 @@ fn component_insert_native_retained_limit_refuses_before_record_clone() {
         id: "f3d:native:component-insert#0",
         construction: &construction,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || COMPONENT_INSERT_CLONE_COUNT.with(|count| count.set(0)),

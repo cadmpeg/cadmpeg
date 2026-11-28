@@ -20,16 +20,16 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_mesh_surface_smbh;
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_mesh_surface_smbh;
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_comp_spl_sur_smbh, synthetic_exact_spl_sur_smbh, synthetic_helix_surface_smbh,
     synthetic_loft_spl_sur_smbh, synthetic_net_spl_sur_smbh, synthetic_off_spl_sur_smbh,
     synthetic_profile_first_sweep_smbh, synthetic_rot_spl_sur_smbh, synthetic_ruled_spl_sur_smbh,
     synthetic_sum_spl_sur_smbh, synthetic_t_spl_sur_smbh, synthetic_taper_spl_sur_smbh,
 };
-use crate::test_support::tokens_test::{push_tagged_i64, t_dbl};
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::tokens_fixture::{push_tagged_i64, t_dbl};
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

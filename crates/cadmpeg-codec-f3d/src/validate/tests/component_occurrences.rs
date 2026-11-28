@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Component-occurrence identity and placement validation.
 
-use crate::test_support::native_test::f3d_native_mut;
+use crate::test_support::native_fixture::f3d_native_mut;
 
 #[test]
 fn validation_admits_ordinal_one_placement_outside_class_256() {

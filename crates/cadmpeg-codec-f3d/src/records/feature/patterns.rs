@@ -1421,7 +1421,7 @@ mod tests {
             id: "f3d:native:circular-pattern-axis#0",
             value: &axis,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || CIRCULAR_PATTERN_AXIS_CLONE_COUNT.with(|count| count.set(0)),
@@ -1450,7 +1450,7 @@ mod tests {
             id: "f3d:native:pattern-instances#0",
             value: &instances,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT.with(|count| count.set(0)),
@@ -1476,7 +1476,7 @@ mod tests {
             id: "f3d:native:pattern-construction#0",
             value: &construction,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT.with(|count| count.set(0)),

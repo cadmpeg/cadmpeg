@@ -35,7 +35,7 @@ use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
 
-use super::vecmath::{add, components, coordinates, cross, scale};
+use super::vecmath::{add, components, coordinates, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
 use crate::families::chamfer::{ChamferParameters, ChamferResultKind};
@@ -3741,12 +3741,14 @@ fn cone_offset_construction_agrees(
     let axial = delta.into_iter().zip(axis).map(|(x, a)| x * a).sum::<f64>();
     let radial = reference_radius.get() - source_radius.get();
     let (sin, cos) = radial_angle.get().sin_cos();
-    let handedness = cross(components(frame.reference()), components(direction_y))
-        .into_iter()
-        .zip(axis)
-        .map(|(x, a)| x * a)
-        .sum::<f64>()
-        .signum();
+    let handedness = <[f64; 3]>::from(
+        Vector3::from(components(frame.reference())).cross(Vector3::from(components(direction_y))),
+    )
+    .into_iter()
+    .zip(axis)
+    .map(|(x, a)| x * a)
+    .sum::<f64>()
+    .signum();
     let translation = axial * sin + radial * cos;
     let measured = handedness * (radial * sin - axial * cos);
     let transverse = std::array::from_fn::<_, 3, _>(|i| delta[i] - axial * axis[i]);
@@ -4783,7 +4785,7 @@ fn lift_pcurve_endpoints(
                     components(frame.axis()),
                     components(frame.reference()),
                 );
-                let reference_y = cross(axis, reference_x);
+                let reference_y = Vector3::from(axis).cross(Vector3::from(reference_x)).into();
                 Some(endpoints.map(|[u, v]| {
                     let angle = u / angular_scale.get();
                     add(
@@ -4929,7 +4931,7 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
         point[1] - origin[1],
         point[2] - origin[2],
     ];
-    let cross_term = cross(axis, relative);
+    let cross_term = Vector3::from(axis).cross(Vector3::from(relative)).into();
     let dot = axis[0] * relative[0] + axis[1] * relative[1] + axis[2] * relative[2];
     add(
         origin,

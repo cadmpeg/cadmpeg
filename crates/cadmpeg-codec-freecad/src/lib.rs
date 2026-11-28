@@ -837,7 +837,7 @@ fn validate_logical_chain(
 }
 
 impl CodecBackend for FcstdCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn validate_native(
         ctx: &DecodeContext<'_>,

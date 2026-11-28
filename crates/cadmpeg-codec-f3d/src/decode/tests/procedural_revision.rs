@@ -23,32 +23,32 @@ use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeom
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::TestEncode;
-use crate::test_support::procedural_test::{
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::native_fixture::TestEncode;
+use crate::test_support::procedural_fixture::{
     generated_form_two_par_int_cur, push_optional_value_quartet, push_revision_cl_scale,
 };
-use crate::test_support::smbh_blends_test::{
+use crate::test_support::smbh_blends_fixture::{
     append_generated_variable_blend_side, synthetic_rational_cyl_spl_sur_smbh,
     synthetic_ref_cyl_spl_sur_smbh, synthetic_revision_ref_directrix_cyl_spl_sur_smbh,
     synthetic_variable_blend_smbh_with_selector, synthetic_vertex_blend_smbh,
 };
-use crate::test_support::smbh_blocks_test::{
+use crate::test_support::smbh_blocks_fixture::{
     generated_curve_block, generated_pcurve_block, generated_surface_block,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::smbh_revision_test::{
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::smbh_revision_fixture::{
     assert_parameterized_tail, push_parameterized_revision_surface_tail,
     push_revision_surface_tail, synthetic_revision_surface_smbh,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
     synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh,
 };
-use crate::test_support::tokens_test::{
+use crate::test_support::tokens_fixture::{
     push_tagged_i64, t_dbl, t_ident, t_long, t_pos, t_u16_string, t_vec,
 };
-use crate::test_support::zip_test::{assert_revision_surface_round_trip, f3d_with_smbh};
+use crate::test_support::zip_fixture::{assert_revision_surface_round_trip, f3d_with_smbh};
 use crate::F3dCodec;
 
 #[test]

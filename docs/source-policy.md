@@ -149,6 +149,7 @@ The module-level expectation in `cadmpeg-core/src/convert.rs` covers
 expectations, nested module expectations and additional lints are rejected.
 The root of `cadmpeg-test-support` allows `expect_used` and `unwrap_used` for
 its test helpers.
+Generated dialect ID modules each permit one module-level `expect(dead_code)`.
 
 ## Integer limits
 

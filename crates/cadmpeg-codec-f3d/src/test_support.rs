@@ -425,55 +425,55 @@ pub(crate) fn push_marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
     bytes.extend_from_slice(&[0; 6]);
 }
 
-pub(crate) mod tokens_test;
+pub(crate) mod tokens_fixture;
 
-pub(crate) mod smbh_header_test;
+pub(crate) mod smbh_header_fixture;
 
-pub(crate) mod smbh_blocks_test;
+pub(crate) mod smbh_blocks_fixture;
 
-pub(crate) mod sketch_region_test;
-pub(crate) mod smbh_geometry_test;
+pub(crate) mod sketch_region_fixture;
+pub(crate) mod smbh_geometry_fixture;
 
-pub(crate) mod smbh_pcurves_test;
+pub(crate) mod smbh_pcurves_fixture;
 
-pub(crate) mod smbh_curves_test;
+pub(crate) mod smbh_curves_fixture;
 
-pub(crate) mod smbh_surfaces_test;
+pub(crate) mod smbh_surfaces_fixture;
 
-pub(crate) mod smbh_revision_test;
+pub(crate) mod smbh_revision_fixture;
 
-pub(crate) mod smbh_blends_test;
+pub(crate) mod smbh_blends_fixture;
 
-pub(crate) mod smbh_bf4_test;
+pub(crate) mod smbh_bf4_fixture;
 
-pub(crate) mod native_test;
+pub(crate) mod native_fixture;
 
-pub(crate) mod manifest_test;
+pub(crate) mod manifest_fixture;
 
-pub(crate) mod protein_test;
+pub(crate) mod protein_fixture;
 
 pub(crate) mod empty_attribute_occurrences;
-pub(crate) mod streams_test;
+pub(crate) mod streams_fixture;
 
-pub(crate) mod zip_test;
+pub(crate) mod zip_fixture;
 
-pub(crate) mod assembly_test;
+pub(crate) mod assembly_fixture;
 
-pub(crate) mod procedural_test;
+pub(crate) mod procedural_fixture;
 
 pub(crate) mod history;
 
 pub(crate) mod history_stream;
 
-pub(crate) mod body_map_test;
+pub(crate) mod body_map_fixture;
 
-pub(crate) mod component_insert_test;
+pub(crate) mod component_insert_fixture;
 
-pub(crate) mod lost_edge_test;
+pub(crate) mod lost_edge_fixture;
 
 pub(crate) mod step_conversion;
 
-pub(crate) mod body_reference_tail_test;
+pub(crate) mod body_reference_tail_fixture;
 
 pub(crate) mod placement_construction;
 
@@ -481,7 +481,7 @@ pub(crate) mod pipe;
 
 pub(crate) mod work_plane;
 
-pub(crate) mod component_body_test;
+pub(crate) mod component_body_fixture;
 pub(crate) mod component_design;
 
 pub(crate) mod scan_counts;

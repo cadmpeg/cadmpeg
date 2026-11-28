@@ -2,12 +2,12 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::smbh_blocks_test::{
+use crate::test_support::smbh_blocks_fixture::{
     generated_curve_block, generated_pcurve_block, generated_planar_pcurve_block,
     generated_planar_rational_pcurve_block, generated_surface_block,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::tokens_test::{t_dbl, t_end, t_ident, t_long, t_ref, t_subident};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::tokens_fixture::{t_dbl, t_end, t_ident, t_long, t_ref, t_subident};
 
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
@@ -399,7 +399,7 @@ pub(crate) fn with_pcurve_uv_offset(mut bytes: Vec<u8>, offset: [f64; 2]) -> Vec
 }
 
 pub(crate) fn synthetic_periodic_pcurve_with_uv_offset_smbh(offset: [f64; 2]) -> Vec<u8> {
-    use crate::test_support::tokens_test::{t_pos, t_vec};
+    use crate::test_support::tokens_fixture::{t_pos, t_vec};
     let mut bytes = with_pcurve_uv_offset(synthetic_geometry_with_pcurve_smbh(), offset);
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,

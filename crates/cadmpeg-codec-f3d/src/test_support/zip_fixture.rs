@@ -11,18 +11,18 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::container;
-use crate::test_support::lost_edge_test::remove_body_lost_edge_bulkstream;
-use crate::test_support::manifest_test::{
+use crate::test_support::lost_edge_fixture::remove_body_lost_edge_bulkstream;
+use crate::test_support::manifest_fixture::{
     write_synthetic_manifests, write_synthetic_manifests_with_version,
 };
-use crate::test_support::protein_test::{
+use crate::test_support::protein_fixture::{
     generated_definition_catalog_for, generated_instance_properties_for,
     generated_schema_from_paged,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::smbh_header_test::synthetic_smbh;
-use crate::test_support::smbh_revision_test::scrubbed_definition;
-use crate::test_support::streams_test::{
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::smbh_header_fixture::synthetic_smbh;
+use crate::test_support::smbh_revision_fixture::scrubbed_definition;
+use crate::test_support::streams_fixture::{
     design_metastream_with_records, generated_act_bulkstream, generated_act_metastream,
     generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
     generated_design_base_flange_bulkstream, generated_design_base_flange_metastream,
@@ -353,12 +353,12 @@ pub(crate) fn f3d_with_smbh_and_remove_body_tracking_path(smbh: &[u8]) -> Vec<u8
     )];
     let mut types = generated_design_types(GeneratedDesignMetastreamVariant::RemoveBody);
     let (design_bulk, design_records, tracking_types) =
-        crate::test_support::lost_edge_test::remove_body_tracking_path_bulkstream(types.len());
+        crate::test_support::lost_edge_fixture::remove_body_tracking_path_bulkstream(types.len());
     let wrapper = [u64::from(
-        crate::test_support::lost_edge_test::TRACKING_WRAPPER,
+        crate::test_support::lost_edge_fixture::TRACKING_WRAPPER,
     )];
     let carrier = [u64::from(
-        crate::test_support::lost_edge_test::TRACKING_WRAPPER + 1,
+        crate::test_support::lost_edge_fixture::TRACKING_WRAPPER + 1,
     )];
     let entities: [&[u64]; 2] = [&wrapper, &carrier];
     for ((guid, base, version), entities) in tracking_types.into_iter().zip(entities) {
@@ -523,7 +523,8 @@ pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
             _ => bulk.extend_from_slice(&[0; 10]),
         }
     }
-    let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
+    let meta =
+        crate::test_support::streams_fixture::design_metastream_with_records(&types, &records);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
         &synthetic_geometry_smbh(),
         &[],
@@ -641,7 +642,8 @@ pub(crate) fn f3d_with_partial_form_body_resource_aliases(tsm: &[u8], literal: &
             _ => bulk.extend_from_slice(&[0; 10]),
         }
     }
-    let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
+    let meta =
+        crate::test_support::streams_fixture::design_metastream_with_records(&types, &records);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
         &synthetic_geometry_smbh(),
         &[],

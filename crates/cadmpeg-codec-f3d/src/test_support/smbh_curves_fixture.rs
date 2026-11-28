@@ -2,15 +2,15 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::smbh_blocks_test::{
+use crate::test_support::smbh_blocks_fixture::{
     generated_curve_block, generated_pcurve_block, generated_rational_pcurve_block,
     generated_surface_block,
 };
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_geometry_smbh_with_points,
 };
-use crate::test_support::smbh_surfaces_test::append_generated_float_array;
-use crate::test_support::tokens_test::{
+use crate::test_support::smbh_surfaces_fixture::append_generated_float_array;
+use crate::test_support::tokens_fixture::{
     push_native_enum, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
     t_u16_string, t_vec,
 };

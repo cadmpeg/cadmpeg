@@ -2,8 +2,8 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::smbh_header_test::smbh_header_prefix;
-use crate::test_support::tokens_test::{
+use crate::test_support::smbh_header_fixture::smbh_header_prefix;
+use crate::test_support::tokens_fixture::{
     push_u8_string, t_attribute_base, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
     t_vec,
 };

@@ -17,9 +17,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_blends_test::synthetic_g2_blend_spl_sur_smbh;
-use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_blends_fixture::synthetic_g2_blend_spl_sur_smbh;
+use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_helix_curve_smbh;
+use crate::test_support::smbh_surfaces_fixture::{
     expected_revision_surface_tail_parameterization,
     synthetic_cacheless_revision_text_law_sweep_smbh, synthetic_comp_spl_sur_smbh,
     synthetic_cyl_spl_sur_smbh, synthetic_explicit_formula_sweep_smbh,
@@ -34,8 +34,8 @@ use crate::test_support::smbh_surfaces_test::{
     synthetic_sum_spl_sur_smbh, synthetic_surface_curve_deformable_smbh,
     synthetic_taper_spl_sur_smbh, synthetic_text_law_driven_sweep_smbh,
 };
-use crate::test_support::tokens_test::renamed_generated_subtype;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::tokens_fixture::renamed_generated_subtype;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

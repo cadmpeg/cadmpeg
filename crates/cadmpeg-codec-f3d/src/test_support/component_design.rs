@@ -4,8 +4,8 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::test_support::component_body_test::{append_body_owners, body_type, container_type};
-use crate::test_support::streams_test::design_metastream_with_records;
+use crate::test_support::component_body_fixture::{append_body_owners, body_type, container_type};
+use crate::test_support::streams_fixture::design_metastream_with_records;
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
 
 /// A repeated local module with two children and one existing body-map binding.

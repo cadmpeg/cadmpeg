@@ -104,7 +104,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
     fn detect_impl(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,

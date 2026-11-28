@@ -145,8 +145,8 @@ fn history_streams_of_one_decode_share_the_remaining_retained_bytes() {
 }
 
 pub(crate) fn geometry_history(split: bool) -> Vec<u8> {
-    use crate::test_support::tokens_test::{t_end, t_ident, t_long, t_ref};
-    let mut bytes = crate::test_support::smbh_geometry_test::synthetic_geometry_smbh();
+    use crate::test_support::tokens_fixture::{t_end, t_ident, t_long, t_ref};
+    let mut bytes = crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh();
     // The fixture ends with the first delta_state name, after 19 active records.
     for node in 0..=i64::from(split) {
         if node != 0 {
