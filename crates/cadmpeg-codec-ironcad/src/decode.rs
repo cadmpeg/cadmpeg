@@ -587,16 +587,74 @@ fn feature_shape(carrier: &str) -> LossNote {
     ))
 }
 
-/// Charges each record that holds a property the reader does not read.
+/// Charges each record that holds a property the reader does not read, and
+/// each part or assembly record of an unrecognized version.
 fn property_losses(records: &[SceneRecord], losses: &mut Vec<LossNote>) {
+    for record in records.iter().filter(|record| record.version_unrecognized) {
+        losses.push(
+            IronCadLossCode::PlacementRecordVersionUnrecognized.note(format!(
+            "record `{}`: the class 0x3de1004a record stores a version other than 2 or 3 and is \
+             read as a version 2 or 3 record",
+            record.name
+        )),
+        );
+    }
     for record in records {
         if let Some(name) = &record.unread_property {
             losses.push(IronCadLossCode::PropertyUnread.note(format!(
                 "record `{}`: property `{name}` stores a value type that is not read; it and \
-                 the properties after it are not transferred",
+                 each later property of such a type are not transferred",
                 record.name
             )));
         }
+    }
+}
+
+/// Names the one body of a part by the `PartName` of the body property set
+/// that its record holds, and charges every other property of a set that a
+/// record holds before its matrix.
+fn embedded_set(
+    ir: &mut CadIr,
+    record: &SceneRecord,
+    bodies: &[BodyId],
+    losses: &mut Vec<LossNote>,
+) {
+    let Some((class, set)) = &record.embedded else {
+        return;
+    };
+    let mut named = None;
+    if let ([body], true) = (bodies, *class == placement::BODY_SET_CLASS) {
+        if let Some((_, PropertyValue::Text(name))) = set.iter().find(|(key, _)| key == "PartName")
+        {
+            if let Some(target) = ir.geometry.bodies.iter_mut().find(|item| item.id == *body) {
+                target.name = Some(name.clone());
+                named = Some("PartName");
+            }
+        }
+    }
+    let rest: Vec<&str> = set
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .filter(|key| Some(*key) != named)
+        .collect();
+    if !rest.is_empty() {
+        losses.push(IronCadLossCode::PropertyUnread.note(format!(
+            "record `{}`: the properties {} of the property set of class {class:#010x} before \
+             the matrix are not transferred",
+            record.name,
+            rest.join(", ")
+        )));
+    }
+}
+
+/// Charges each record whose matrix a search found.
+fn matrix_losses(scene: &[SceneRecord], losses: &mut Vec<LossNote>) {
+    for record in scene.iter().filter(|record| record.matrix_searched) {
+        losses.push(IronCadLossCode::PlacementMatrixSearched.note(format!(
+            "record `{}`: the matrix lies at no fixed offset after the `ModelGUID` text; the \
+             first rigid matrix after a flag byte `1` is read as the record matrix",
+            record.name
+        )));
     }
 }
 
@@ -630,10 +688,12 @@ fn place(
         return Ok(Vec::new());
     }
     losses.push(IronCadLossCode::PlacementBoundByOrder.note(
-        "each `Public Access` part record is bound to the `Brep Data` part result record of \
-         the same rank, and its matrix places the part frame in its assembly as a row-vector \
+        "each `Public Access` part record, a part record after its feature records or a \
+         version 2 part copy record, is bound to the `Brep Data` part result record of the \
+         same rank, and its matrix places the part frame in its assembly as a row-vector \
          rotation and a translation in metres",
     ));
+    matrix_losses(scene, losses);
     let nested = assembly_records.len() == tree_assemblies.len();
     if nested && !assembly_records.is_empty() {
         losses.push(IronCadLossCode::AssemblyBoundByOrder.note(format!(
@@ -685,6 +745,7 @@ fn place(
         let mut definition = ProductDefinition::new(definition_id.clone(), Storage::Embedded);
         definition.kind = Some(ProductDefinitionKind::Part);
         definition.source_name = Some(part.name.clone());
+        embedded_set(ir, part, &bodies, losses);
         definition.bodies = bodies;
         part_properties(part, &mut definition);
         if let Some(mass) = mass_properties(part, &definition_id, rank) {
@@ -769,6 +830,7 @@ fn part_properties(part: &SceneRecord, definition: &mut ProductDefinition) {
         };
         let value = match value {
             PropertyValue::Real(value) => value.to_string(),
+            PropertyValue::Integer(value) => value.to_string(),
             PropertyValue::Text(text) => text.clone(),
         };
         definition.bom_properties.insert(key, value);

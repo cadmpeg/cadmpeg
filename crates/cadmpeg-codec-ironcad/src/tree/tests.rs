@@ -160,6 +160,23 @@ fn a_record_is_selected_by_a_nonzero_marker_of_any_value() {
 }
 
 #[test]
+fn a_pair_in_the_child_node_of_a_pair_belongs_to_that_part() {
+    let mut items = vec![node(&[node(&[])]), record(ACIS, b"feature")];
+    items.extend(pair(b"inner"));
+    let child = node(&items);
+    let payload = node(&[node(&[child, record(ACIS, b"result")])]);
+    let tree = read(View::over_retained(&payload)).unwrap();
+    let results: Vec<_> = tree
+        .records
+        .iter()
+        .filter(|record| record.follows_node)
+        .map(|record| (record.bytes.window(), record.assembly))
+        .collect();
+    assert_eq!(results, [(b"result".as_slice(), Some(0))]);
+    assert_eq!(tree.assemblies, [Assembly { parent: None }]);
+}
+
+#[test]
 fn a_marker_with_another_low_byte_is_read_and_marked_noncanonical() {
     let mut odd = record(PARASOLID, b"odd");
     odd[4..8].copy_from_slice(&0x0009_b402_u32.to_le_bytes());

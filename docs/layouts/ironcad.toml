@@ -133,19 +133,93 @@ anchor = "The kernel bytes are a native binary Parasolid transmit"
 # --- §5 Scene records -------------------------------------------------------
 
 [[record]]
+name = "scene_object_header"
+kind = "byte"
+section = "5"
+anchor = "A **scene object record** continues after the name with a 20-byte header."
+size = 20
+parsed_by = "crates/cadmpeg-codec-ironcad/src/placement.rs"
+
+[[record.field]]
+name = "version"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `version` |"
+
+[[record.field]]
+name = "class"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `class` |"
+
+[[record.field]]
+name = "class_tail"
+offset = 8
+type = "u8[12]"
+source = "spec"
+anchor = "| 8 | 12 | `class_tail` |"
+
+[[record]]
+name = "scene_record_matrix_short"
+kind = "byte"
+section = "5"
+anchor = "In the **short form**, the flag directly follows 32 bytes."
+size = 161
+parsed_by = "crates/cadmpeg-codec-ironcad/src/placement.rs"
+
+[[record.field]]
+name = "gap"
+offset = 0
+type = "u8[32]"
+source = "spec"
+anchor = "| 0 | 32 | `gap` | Bytes after the `ModelGUID` text. |"
+
+[[record.field]]
+name = "flag"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "| 32 | 1 | `flag` | `1`. |"
+value = 1
+
+[[record.field]]
+name = "matrix"
+offset = 33
+type = "f64[16]"
+source = "spec"
+anchor = "| 33 | 128 | `matrix` |"
+
+[[record]]
 name = "scene_record_matrix"
 kind = "byte"
 section = "5"
-anchor = "The `ModelGUID` value is a brace-enclosed GUID string."
+anchor = "In the **long form**, two `u32` words come between those 32 bytes and the flag."
 size = 169
 parsed_by = "crates/cadmpeg-codec-ironcad/src/placement.rs"
 
 [[record.field]]
 name = "gap"
 offset = 0
-type = "u8[41]"
+type = "u8[32]"
 source = "spec"
-anchor = "| 0 | 41 | `gap` |"
+anchor = "| 0 | 32 | `gap` | Bytes after the `ModelGUID` text. |"
+
+[[record.field]]
+name = "words"
+offset = 32
+type = "u32[2]"
+source = "spec"
+anchor = "| 32 | 8 | `words` |"
+
+[[record.field]]
+name = "flag"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "| 40 | 1 | `flag` | `1`. |"
+value = 1
 
 [[record.field]]
 name = "matrix"

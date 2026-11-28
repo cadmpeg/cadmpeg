@@ -383,9 +383,17 @@ fn a_sole_result_record_gives_up_its_withheld_face_under_the_unqualified_id() {
 
 /// A part or assembly record translated by `z` millimetres.
 fn scene_record(name: &str, has_features: bool, z: f64) -> crate::placement::SceneRecord {
+    use crate::placement::Role;
     crate::placement::SceneRecord {
         name: name.to_owned(),
-        has_features,
+        role: if has_features {
+            Role::Part
+        } else {
+            Role::Assembly
+        },
+        matrix_searched: false,
+        version_unrecognized: false,
+        embedded: None,
         transform: cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -518,4 +526,56 @@ fn unit_notes_are_charged_by_kind() {
     assert!(super::unit_losses(scene, &mut losses).is_none());
     assert_eq!(count(&losses, IronCadLossCode::UnitsUnrecognized), 1);
     assert_eq!(count(&losses, IronCadLossCode::UnitsScaleConflict), 2);
+}
+
+#[test]
+fn a_body_property_set_names_the_body_and_a_searched_matrix_is_charged() {
+    use crate::placement::{PropertyValue, BODY_SET_CLASS};
+    let body = plane_face_body();
+    let payload = part(&body, &body);
+    let (bodies, losses) = classified(&payload);
+    let mut record = scene_record("Part1", true, 0.0);
+    record.matrix_searched = true;
+    record.embedded = Some((
+        BODY_SET_CLASS,
+        vec![
+            (
+                "PartName".to_owned(),
+                PropertyValue::Text("Body<1>".to_owned()),
+            ),
+            (
+                "PartVolume".to_owned(),
+                PropertyValue::Text("0,5".to_owned()),
+            ),
+        ],
+    ));
+    let scene = super::Scene {
+        records: Some(vec![record]),
+        ..super::Scene::default()
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let decoded = transfer(
+        &ctx,
+        CadIr::empty(),
+        bodies,
+        scene,
+        losses,
+        Sha256Digest::digest(&payload),
+    )
+    .unwrap();
+    assert_eq!(
+        decoded.ir.geometry.bodies[0].name.as_deref(),
+        Some("Body<1>")
+    );
+    let losses = &decoded.body.losses;
+    assert_eq!(count(losses, IronCadLossCode::PlacementMatrixSearched), 1);
+    let unread: Vec<_> = losses
+        .iter()
+        .filter(|loss| loss.code == IronCadLossCode::PropertyUnread.note("").code)
+        .map(|loss| loss.message.clone())
+        .collect();
+    assert_eq!(unread.len(), 1);
+    assert!(unread[0].contains("PartVolume") && !unread[0].contains("PartName"));
 }

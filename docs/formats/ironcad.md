@@ -79,10 +79,10 @@ The second `u32` of an item selects its kind. A nonzero value starts a kernel
 record. A node length is less than 2³², so the second `u32` of a node is zero.
 
 The payload node is the scene root. A **pair** is a child node that holds a
-kernel record at any depth, directly followed by a kernel record. In the child
-node of a part, each kernel record follows a node that holds one empty node, so
-the child node of a part holds no pair. A node below the scene root that holds
-pairs is an **assembly**: each pair that it holds is a part of the assembly, and
+kernel record at any depth, directly followed by a kernel record. The child
+node of a pair belongs to the feature tree of its part: a pair that it holds at
+any depth is a feature shape of that part, and a node that it holds is not an
+assembly. A node below the scene root that holds pairs is an **assembly**: each pair that it holds is a part of the assembly, and
 each assembly node that it holds is a member assembly. The pairs that the scene
 root holds are the parts of the scene.
 
@@ -121,35 +121,64 @@ named records. A record name is the bytes `ff ff fe`, a `u8` count of UTF-16
 code units, and that many little-endian UTF-16 code units. A marker with count
 `0` opens no record.
 
-A **part record** and an **assembly record** continue after the name with a
-property set. The property set starts with these 20 bytes:
+A **feature record** continues after the name with `00 00 00 00 01 00`.
 
-```
-02 00 00 00 4a 00 e1 3d 2d 92 cf 11 ac 2e 00 a0 24 58 1e 5c
-```
+A **scene object record** continues after the name with a 20-byte header.
 
-A **feature record** continues after the name with `00 00 00 00 01 00`. The
-feature records of a part come before its part record. An assembly record
-comes after the part records of its parts, and no feature record comes
-between it and the record before it.
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| 0 | 4 | `version` | Record version. |
+| 4 | 4 | `class` | First field of the class GUID. |
+| 8 | 12 | `class_tail` | `2d 92 cf 11 ac 2e 00 a0 24 58 1e 5c`. |
+
+The class GUID is `{<class>-922D-11CF-AC2E-00A024581E5C}`. The header of a
+class `0x3de1004a` record opens a property set; the version is `2` or `3`. A
+class `0x3de1004a` record that follows a feature record, with no class
+`0x3de1004a` record between them, is a **part record**. The feature records of
+a part come before its part record. A class `0x3de1004a` record that follows
+no such feature record is an **assembly record**. An assembly record comes
+after the part records of its parts.
+
+A class `0x3de1004b` record is a **part copy record**. A version `2` part copy
+record is a part record: it holds the `ModelGUID` property, then a property
+set of class `0x3de1004a`, then the part matrix. A version `1` part copy record
+holds the `ModelGUID` property. Scene object records of other classes come
+between feature records.
 
 The property set holds named properties. A property is the bytes `f4 ff`, a
 `u32` name length in bytes, the NUL-terminated little-endian UTF-16 name, a
 `u16` value type, and the value. Type `8` is a string: a `u32` byte length and
 the NUL-terminated UTF-16 text. Type `5` is an f64; the value `-1e300` marks an
-unset property. The properties include `PartName`, `Part Number`,
+unset property. Type `3` is an i32. Type `0` holds no value. The properties include `PartName`, `Part Number`,
 `Description`, `Classification`, `PartVolume`, `PartMass`, `MassDensity`,
 `SizeboxHeight`, `SizeboxLength`, `SizeboxWidth`, `StartTaper`, `EndTaper`,
 and `ModelGUID`. Values are SI: lengths are metres, masses are kilograms, and
 `MassDensity` is kilograms per cubic metre.
 
 The `ModelGUID` value is a brace-enclosed GUID string. The record matrix
-starts 41 bytes after the end of that string.
+follows the end of that string and a flag byte `1`. In a class `0x3de1004a`
+record of version `2`, the flag is at a fixed offset.
+
+In the **short form**, the flag directly follows 32 bytes.
 
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
-| 0 | 41 | `gap` | Bytes between the `ModelGUID` text and the matrix. |
+| 0 | 32 | `gap` | Bytes after the `ModelGUID` text. |
+| 32 | 1 | `flag` | `1`. |
+| 33 | 128 | `matrix` | Sixteen little-endian f64 values in row order. |
+
+In the **long form**, two `u32` words come between those 32 bytes and the flag.
+
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| 0 | 32 | `gap` | Bytes after the `ModelGUID` text. |
+| 32 | 8 | `words` | `0`, `1`. |
+| 40 | 1 | `flag` | `1`. |
 | 41 | 128 | `matrix` | Sixteen little-endian f64 values in row order. |
+
+In a part record of version `3`, a property set of class `0x3de50020` comes
+between the `ModelGUID` text and the flag. In a version `2` part copy record,
+the part property set comes there.
 
 Rows 1 to 3 of `matrix` hold a 3 × 3 block and the value `0`. Row 4 holds a
 translation in metres and the value `1`. The matrix of a part record places
