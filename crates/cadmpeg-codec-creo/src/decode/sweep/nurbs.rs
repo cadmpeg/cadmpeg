@@ -5,7 +5,6 @@ use super::super::holes::placement::ExtrusionSpan;
 use super::super::sketch::intersect::{section_point_in_model, section_xyz_in_model};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::analytic::planes::valid_positive_nurbs_curve;
-use crate::vecmath::cross;
 use crate::vecmath::normalize;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -85,7 +84,10 @@ pub(in super::super) fn extruded_geometry_surface(
             let start = section_point_in_model(transform, [start.u, start.v]);
             let end = section_point_in_model(transform, [end.u, end.v]);
             let line = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
-            let normal = normalize(cross(line, transform.normal()))?;
+            let normal = normalize(<[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(line)
+                    .cross(cadmpeg_ir::math::Vector3::from(transform.normal())),
+            ))?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::from(start),

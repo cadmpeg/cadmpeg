@@ -183,13 +183,13 @@ fn combine_missing_scope_still_binds_a_neutral_feature_and_keeps_parameters() {
     };
     let original_id = feature.id.clone();
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut zip,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
     let bytes = zip.finish().unwrap().into_inner();
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+    crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             bind_features(
                 ctx,

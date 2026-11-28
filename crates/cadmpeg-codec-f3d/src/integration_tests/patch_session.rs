@@ -12,7 +12,7 @@ use zip::CompressionMethod;
 
 use crate::test_support::act_links::f3d_with_act_component_links;
 use crate::test_support::assert_patch_declined;
-use crate::test_support::native_test::update_f3d_native;
+use crate::test_support::native_fixture::update_f3d_native;
 use crate::F3dCodec;
 
 const UNREAD_MEMBER: &str = "FusionAssetName[Active]/Unread.dat";
@@ -94,7 +94,7 @@ fn a_patch_reuses_the_deflated_members_read_by_its_baseline() {
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let read = decode_within(&bytes, ResourceLimits::default()).unwrap();
-    let written = crate::test_support::native_test::f3d_native(read.ir());
+    let written = crate::test_support::native_fixture::f3d_native(read.ir());
     assert_eq!(written.act_component_links[0].references.tracked_entity, 5);
 }
 

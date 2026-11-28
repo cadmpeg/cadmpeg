@@ -13,7 +13,14 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::detect::{Cookie, Header};
 use crate::loss::UsdLossCode;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    USD_SDF_1_4_32, USD_UNKNOWN, USD_USDA_1_0, USD_USDA_1_1, USD_USDA_1_2, USD_USDA_1_3,
+    USD_USDC_0_0_1, USD_USDC_0_10_0, USD_USDC_0_11_0, USD_USDC_0_12_0, USD_USDC_0_13_0,
+    USD_USDC_0_14_0, USD_USDC_0_15_0, USD_USDC_0_1_0, USD_USDC_0_2_0, USD_USDC_0_4_0,
+    USD_USDC_0_5_0, USD_USDC_0_6_0, USD_USDC_0_7_0, USD_USDC_0_8_0, USD_USDC_0_9_0, USD_USDZ,
+};
 
 /// Key of the text header version in [`DialectMatch::declared`].
 const DECLARED_HEADER: &str = "header";

@@ -4964,8 +4964,8 @@ mod native_interval_curve_tests {
 
         let decoded = crate::F3dCodec
             .decode(
-                &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
-                    &crate::test_support::smbh_surfaces_test::synthetic_law_driven_sweep_smbh(),
+                &mut Cursor::new(crate::test_support::zip_fixture::f3d_with_smbh(
+                    &crate::test_support::smbh_surfaces_fixture::synthetic_law_driven_sweep_smbh(),
                 )),
                 &DecodeOptions::default(),
             )
@@ -6191,8 +6191,8 @@ mod pcurve_chart_tests {
 
         let decoded = crate::F3dCodec
             .decode(
-                &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
-                    &crate::test_support::smbh_curves_test::synthetic_geometry_with_null_support_spring_smbh(),
+                &mut Cursor::new(crate::test_support::zip_fixture::f3d_with_smbh(
+                    &crate::test_support::smbh_curves_fixture::synthetic_geometry_with_null_support_spring_smbh(),
                 )),
                 &DecodeOptions::default(),
             )
@@ -7335,8 +7335,8 @@ mod procedural_owners_tests {
     fn procedural_owners_match_the_ir_owner_relation() {
         let decoded = crate::F3dCodec
             .decode(
-                &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
-                    &crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh(),
+                &mut Cursor::new(crate::test_support::zip_fixture::f3d_with_smbh(
+                    &crate::test_support::smbh_surfaces_fixture::synthetic_cyl_spl_sur_smbh(),
                 )),
                 &DecodeOptions::default(),
             )

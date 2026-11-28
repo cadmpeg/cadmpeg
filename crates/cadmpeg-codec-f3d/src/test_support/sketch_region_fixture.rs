@@ -4,9 +4,9 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use super::smbh_header_test::smbh_header_prefix;
-use super::streams_test::design_metastream_with_records;
-use super::tokens_test::{
+use super::smbh_header_fixture::smbh_header_prefix;
+use super::streams_fixture::design_metastream_with_records;
+use super::tokens_fixture::{
     push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident, t_vec,
 };
 use super::{indexed_header, lp_utf16};

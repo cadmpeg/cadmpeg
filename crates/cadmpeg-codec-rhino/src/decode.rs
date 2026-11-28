@@ -6704,7 +6704,7 @@ pub(crate) fn seal_for_test(
     struct TestBackend(Decoded);
 
     impl CodecBackend for TestBackend {
-        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+        const FORMAT: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
         fn detect_impl(
             &self,
