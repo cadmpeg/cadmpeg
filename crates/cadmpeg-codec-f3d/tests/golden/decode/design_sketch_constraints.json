@@ -363,7 +363,7 @@
       "features": [
         {
           "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
-          "name": "Sketch 1",
+          "name": "Sketch1",
           "suppressed": {
             "kind": "literal",
             "value": false
@@ -381,7 +381,7 @@
         {
           "id": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "owner": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
-          "name": "Sketch 1",
+          "name": "Sketch1",
           "plane": {
             "kind": "placed",
             "inputs": [
