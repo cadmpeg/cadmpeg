@@ -7,8 +7,8 @@ use super::nurbs::{oriented_sketch_nurbs_curve, placed_section_nurbs};
 use super::profiles::{circular_pcurve, line_pcurve, profile_arc};
 use super::surfaces::{revolved_nurbs_surface, revolved_section_surface};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
+use crate::vecmath::dot;
 use crate::vecmath::normalize;
-use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
@@ -128,7 +128,10 @@ fn revolution_boundary_pcurve(
     };
     let vector = |value: Vector3| [value.x, value.y, value.z];
     let azimuth = |relative: [f64; 3], carrier_axis: [f64; 3], reference: [f64; 3]| {
-        let tangent = cross(carrier_axis, reference);
+        let tangent = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(carrier_axis)
+                .cross(cadmpeg_ir::math::Vector3::from(reference)),
+        );
         dot(relative, tangent).atan2(dot(relative, reference))
     };
     Ok(match surface {
@@ -138,7 +141,10 @@ fn revolution_boundary_pcurve(
             let u_axis = plane_surface.frame().reference().as_raw();
             let normal = vector(*normal);
             let u_axis = vector(*u_axis);
-            let v_axis = cross(normal, u_axis);
+            let v_axis = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(normal)
+                    .cross(cadmpeg_ir::math::Vector3::from(u_axis)),
+            );
             let axis_relative = [
                 axis_origin[0] - origin.x,
                 axis_origin[1] - origin.y,
@@ -493,7 +499,9 @@ pub(in super::super) fn revolution_face_sense(
         after_v.y - before_v.y,
         after_v.z - before_v.z,
     ];
-    let carrier_normal = require_some!(normalize(cross(du, dv)));
+    let carrier_normal = require_some!(normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(du).cross(cadmpeg_ir::math::Vector3::from(dv))
+    )));
     let alignment = dot(carrier_normal, outward);
     if !matches!(
         (alignment.abs()).partial_cmp(&(EPS_SENSE_ALIGN)),

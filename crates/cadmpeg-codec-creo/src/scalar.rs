@@ -157,7 +157,10 @@ pub(crate) fn decode_compact_plane_rotation(
     {
         return None;
     }
-    if crate::vecmath::cross(u, v) != normal {
+    if <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(u).cross(cadmpeg_ir::math::Vector3::from(v)),
+    ) != normal
+    {
         return Some(Err(
             "compact plane rotation requires a right-handed signed basis",
         ));
@@ -2079,7 +2082,9 @@ pub(crate) fn axis_unit_matrix_slots(body: &[u8], cache: &ScalarCache) -> Option
     .get();
     let u = [slots[0], slots[1], slots[2]];
     let v = [slots[6], slots[7], slots[8]];
-    let n = crate::vecmath::cross(u, v);
+    let n = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(u).cross(cadmpeg_ir::math::Vector3::from(v)),
+    );
     FiniteVector::new([
         u[0], v[0], n[0], u[1], v[1], n[1], u[2], v[2], n[2], slots[9], slots[10], slots[11],
     ])
@@ -2102,7 +2107,13 @@ fn orthogonal_plane_columns(values: &[f64; 12]) -> Option<[[f64; 3]; 3]> {
 
 pub(crate) fn rotation_plane_axes(values: &[f64; 12]) -> Option<([f64; 3], [f64; 3])> {
     let [u, v, n] = orthogonal_plane_columns(values)?;
-    ((crate::vecmath::dot(crate::vecmath::cross(u, v), n) - 1.0).abs()
+    ((crate::vecmath::dot(
+        <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(u).cross(cadmpeg_ir::math::Vector3::from(v)),
+        ),
+        n,
+    ) - 1.0)
+        .abs()
         <= EPS_SUPPORT_FRAME_AGREEMENT)
         .then_some(())?;
     Some((crate::vecmath::normalize(u)?, crate::vecmath::normalize(n)?))
