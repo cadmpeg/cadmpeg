@@ -247,7 +247,7 @@ fn transfer(
     let placed = match &scene.records {
         Some(records) => {
             let places = match (&scene.objects, spans) {
-                (Some(objects), Some(spans)) => Some(identity_binding(
+                (Some(objects), Some(spans)) if !objects.is_empty() => Some(identity_binding(
                     records,
                     objects,
                     &spans,
@@ -805,27 +805,57 @@ fn identity_binding(
          result record or assembly node that ends at its `Brep Data` end; the record matrix \
          places the frame in its parent as a row-vector rotation and a translation in metres",
     ));
-    for ((record, place), repeat) in scene.iter().zip(&bound.places).zip(&bound.repeats) {
-        if place.is_none() && !repeat {
+    for (position, record) in scene.iter().enumerate() {
+        if bound.places[position].is_none() && !bound.repeats[position] {
             losses.push(IronCadLossCode::PlacementUnbound.note(format!(
                 "record `{}`: no `Shape Contents` object binds it to a part result record or \
                  an assembly node; it is not placed",
                 record.name
             )));
         }
+        if bound.unmatched_paths[position] {
+            losses.push(IronCadLossCode::PlacementCopyPathUnmatched.note(format!(
+                "copy record `{}`: no result record of the source identifier lies in the \
+                 assemblies that its copy path names; the copy places a source of its name, \
+                 else the first source",
+                record.name
+            )));
+        }
     }
-    bound
+    let places: Vec<Option<Place>> = bound
         .places
         .into_iter()
         .zip(bound.repeats)
         .map(|(place, repeat)| place.filter(|_| !repeat))
-        .collect()
+        .collect();
+    let mut bound_assemblies = vec![false; tree_assemblies.len()];
+    for place in &places {
+        if let Some(Place::Assembly(tree)) = place {
+            if let Some(slot) = bound_assemblies.get_mut(*tree) {
+                *slot = true;
+            }
+        }
+    }
+    let unowned = spans
+        .iter()
+        .filter_map(|span| span.assembly)
+        .filter(|tree| bound_assemblies.get(*tree) == Some(&false))
+        .count();
+    if unowned > 0 {
+        losses.push(IronCadLossCode::AssemblyFlattened.note(format!(
+            "{unowned} part result record(s) lie in assembly nodes that no assembly record binds; \
+             their parts are placed in the next bound parent by their own matrix"
+        )));
+    }
+    places
 }
 
 /// Places each record by its matrix: a part record as an occurrence of the
 /// definition of its body, and an assembly record as an occurrence of the
-/// definition of its assembly node. Records that place one body share one
-/// definition. Returns the occurrences that the root definition places.
+/// definition of its assembly node. Records that place one body or one
+/// assembly node share one definition, named and described by the first of
+/// them that is not a copy record. Returns the occurrences that the root
+/// definition places.
 fn place(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -844,15 +874,26 @@ fn place(
         "IronCAD part and assembly definitions and occurrences",
     )?;
     matrix_losses(scene, losses);
+    let mut part_owners: Vec<Option<usize>> = vec![None; results.len()];
+    let mut assembly_owners: Vec<Option<usize>> = vec![None; tree_assemblies.len()];
+    for (position, (record, place)) in scene.iter().zip(places).enumerate() {
+        let slot = match place {
+            Some(Place::Part(result)) => part_owners.get_mut(*result),
+            Some(Place::Assembly(tree)) => assembly_owners.get_mut(*tree),
+            None => None,
+        };
+        if let Some(slot) = slot {
+            if slot.is_none_or(|owner| scene[owner].copy && !record.copy) {
+                *slot = Some(position);
+            }
+        }
+    }
     let mut assemblies: Vec<Option<ProductDefinition>> = vec![None; tree_assemblies.len()];
-    for (record, place) in scene.iter().zip(places) {
-        let Some(Place::Assembly(tree)) = place else {
+    for (tree, owner) in assembly_owners.iter().enumerate() {
+        let Some(record) = owner.map(|position| &scene[position]) else {
             continue;
         };
-        if assemblies[*tree].is_some() {
-            continue;
-        }
-        let key = cadmpeg_core::decode::u64_from_index(*tree);
+        let key = cadmpeg_core::decode::u64_from_index(tree);
         let definition_id = ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("ironcad", "model", "assembly-definition"),
             key,
@@ -865,23 +906,7 @@ fn place(
         if let Some(mass) = mass_properties(record, &definition.id, mass_key) {
             ir.model.mass_properties.push(mass);
         }
-        assemblies[*tree] = Some(definition);
-    }
-    let unowned = results
-        .iter()
-        .filter_map(|(assembly, _)| *assembly)
-        .filter(|tree| assemblies.get(*tree).is_some_and(Option::is_none))
-        .count();
-    if unowned > 0
-        && places
-            .iter()
-            .flatten()
-            .any(|place| matches!(place, Place::Assembly(_)))
-    {
-        losses.push(IronCadLossCode::AssemblyFlattened.note(format!(
-            "{unowned} part result record(s) lie in assembly nodes that no assembly record binds; \
-             their parts are placed in the next bound parent by their own matrix"
-        )));
+        assemblies[tree] = Some(definition);
     }
     let owner = |tree: Option<usize>, assemblies: &[Option<ProductDefinition>]| {
         let mut at = tree;
@@ -912,7 +937,8 @@ fn place(
                 let prototype = match &definitions[result] {
                     Some(id) => id.clone(),
                     None => {
-                        let id = part_definition(ir, record, result, bodies, losses);
+                        let owner = part_owners[result].map_or(record, |position| &scene[position]);
+                        let id = part_definition(ir, owner, result, bodies, losses);
                         definitions[result] = Some(id.clone());
                         id
                     }

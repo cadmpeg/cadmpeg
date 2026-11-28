@@ -39,6 +39,9 @@ pub(crate) struct Binding {
     /// Records that repeat an object that an earlier record binds: members
     /// of an assembly copy, which the copy places.
     pub(crate) repeats: Vec<bool>,
+    /// Records whose place comes from a copy path whose assembly identifiers
+    /// match no result record of the source identifier.
+    pub(crate) unmatched_paths: Vec<bool>,
 }
 
 /// Binds each record to its scene object, and each object to a part result
@@ -79,6 +82,7 @@ pub(crate) fn bind(
     let mut binding = Binding {
         places: vec![None; records.len()],
         repeats: vec![false; records.len()],
+        unmatched_paths: vec![false; records.len()],
     };
     let mut assembly_objects: Vec<(usize, usize)> = Vec::new();
     for (position, record) in records.iter().enumerate() {
@@ -108,7 +112,11 @@ pub(crate) fn bind(
         cursor = Some(at);
         let object = scene[at];
         binding.places[position] = match object.kind {
-            ObjectKind::Body => part(record, object, &scene, results, assemblies),
+            ObjectKind::Body => {
+                let (place, unmatched) = part(record, object, &scene, results, assemblies);
+                binding.unmatched_paths[position] = unmatched;
+                place
+            }
             ObjectKind::Assembly => {
                 let place = assembly(record, object, &assembly_objects, &scene, assemblies);
                 if let (Some(Place::Assembly(tree)), false) = (place, record.copy) {
@@ -221,18 +229,20 @@ fn ancestry(tree: Option<usize>, scene: &[&SceneObject], assemblies: &[Assembly]
 
 /// The place of a record bound to a body object: the result record that ends
 /// at the object's end, else the result record of the body object that the
-/// first resolvable copy path names.
+/// first resolvable copy path names. The flag is set when no source result
+/// lies in the assemblies that the path names, and the place falls back to a
+/// source of the object's name or to the first source.
 fn part(
     record: &SceneRecord,
     object: &SceneObject,
     scene: &[&SceneObject],
     results: &[ResultSpan],
     assemblies: &[Assembly],
-) -> Option<Place> {
+) -> (Option<Place>, bool) {
     if let Some(result) = result_at(results, object.end) {
-        return Some(Place::Part(result));
+        return (Some(Place::Part(result)), false);
     }
-    record.paths.iter().find_map(|path| {
+    let resolved = record.paths.iter().find_map(|path| {
         let (&source, prefix) = path.split_last()?;
         let sources = || {
             scene
@@ -241,12 +251,14 @@ fn part(
                 .filter_map(|item| result_at(results, item.end).map(|result| (item, result)))
         };
         let placed = |result: usize| ancestry(results[result].assembly, scene, assemblies);
-        sources()
-            .find(|(_, result)| placed(*result) == prefix)
+        let matched = sources().find(|(_, result)| placed(*result) == prefix);
+        let unmatched = matched.is_none();
+        matched
             .or_else(|| sources().find(|(item, _)| item.name == object.name))
             .or_else(|| sources().next())
-            .map(|(_, result)| Place::Part(result))
-    })
+            .map(|(_, result)| (Place::Part(result), unmatched))
+    });
+    resolved.map_or((None, false), |(place, unmatched)| (Some(place), unmatched))
 }
 
 /// The tree assembly of a record bound to an assembly object. Assembly nodes

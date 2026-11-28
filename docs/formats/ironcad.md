@@ -82,10 +82,12 @@ The payload node is the scene root. A **pair** is a child node that holds a
 kernel record at any depth, directly followed by a kernel record. The child
 node of a pair belongs to the feature tree of its part: a pair that it holds at
 any depth is a feature shape of that part, and a node that it holds is not an
-A node below the scene root that holds
-pairs at any depth is an **assembly**: each pair that it holds is a part of the assembly, and
-each assembly node that it holds is a member assembly. The pairs that the scene
-root holds are the parts of the scene.
+assembly.
+
+A node below the scene root that holds pairs at any depth is an **assembly**:
+each pair that it holds is a part of the assembly, and each assembly node that
+it holds is a member assembly. The pairs that the scene root holds are the
+parts of the scene.
 
 ### 3.1 Parasolid kernel bytes
 
@@ -120,8 +122,8 @@ entry. Parasolid kernel lengths are in metres.
 The `Public Access` stream is framed (§2). Its payload holds a sequence of
 named records. A record name is the bytes `ff ff fe`, a `u8` count of UTF-16
 code units, and that many little-endian UTF-16 code units. A marker with count
-`0` opens a record with an empty name when a scene object header follows it,
-and no record otherwise.
+`0` opens a record with an empty name when the header of a version `1` or `2`
+part copy record follows it, and no record otherwise.
 
 The bytes `ff ff ff ff e1 ff` and a `u32` scene object identifier (§6) come
 before the records of a scene object.

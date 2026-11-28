@@ -569,3 +569,63 @@ fn a_body_property_set_names_the_body_and_a_searched_matrix_is_charged() {
     assert_eq!(unread.len(), 1);
     assert!(unread[0].contains("PartVolume") && !unread[0].contains("PartName"));
 }
+
+#[test]
+fn a_copy_stored_before_its_part_leaves_the_definition_to_the_part_record() {
+    use crate::binding::Place;
+    use crate::placement::PropertyValue;
+    let mut copy = scene_record("", true, 5.0);
+    copy.copy = true;
+    let mut part = scene_record("Stool", true, 1.0);
+    part.properties = vec![(
+        "Part Number".to_owned(),
+        PropertyValue::Text("S-1".to_owned()),
+    )];
+    let scene = [copy, part];
+    let payload = plane_face_body();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    let places = [Some(Place::Part(0)), Some(Place::Part(0))];
+    let placed = super::place(
+        &ctx,
+        &mut ir,
+        &[(None, Vec::new())],
+        &scene,
+        &places,
+        &[],
+        &mut losses,
+    )
+    .unwrap();
+    assert_eq!(placed.len(), 2);
+    assert_eq!(ir.model.product_definitions.len(), 1);
+    let definition = &ir.model.product_definitions[0];
+    assert_eq!(definition.source_name.as_deref(), Some("Stool"));
+    assert_eq!(definition.part_number.as_deref(), Some("S-1"));
+}
+
+#[test]
+fn part_results_in_unbound_assembly_nodes_are_charged_as_flattened() {
+    let scene = [scene_record("a", true, 1.0)];
+    let objects = [crate::shape_contents::SceneObject {
+        id: 1,
+        name: "a".to_owned(),
+        end: 100,
+        kind: crate::shape_contents::ObjectKind::Body,
+    }];
+    let spans = [crate::binding::ResultSpan {
+        child_start: 10,
+        end: 100,
+        assembly: Some(0),
+    }];
+    let tree = [crate::tree::Assembly {
+        parent: None,
+        end: 200,
+    }];
+    let mut losses = Vec::new();
+    let places = super::identity_binding(&scene, &objects, &spans, &tree, &mut losses);
+    assert_eq!(places, [Some(crate::binding::Place::Part(0))]);
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 1);
+}

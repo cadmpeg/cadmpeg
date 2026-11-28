@@ -184,3 +184,21 @@ fn a_feature_object_inside_a_child_node_binds_no_record() {
     assert_eq!(binding.places, [None]);
     assert_eq!(binding.repeats, [false]);
 }
+
+#[test]
+fn a_copy_path_whose_assemblies_match_no_source_is_flagged() {
+    let objects = [
+        object(0x56, "Stool", 208, ObjectKind::Body),
+        object(0x57, "Stool", 300, ObjectKind::Body),
+        object(0x40, "Scene", 500, ObjectKind::Assembly),
+    ];
+    let records = [copy("Stool", Some(0x56), &[&[0x41, 0x57]])];
+    let results = [span(210, 300, Some(0))];
+    let assemblies = [Assembly {
+        parent: None,
+        end: 500,
+    }];
+    let binding = bind(&records, &objects, &results, &assemblies);
+    assert_eq!(binding.places, [Some(Place::Part(0))]);
+    assert_eq!(binding.unmatched_paths, [true]);
+}
