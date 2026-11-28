@@ -423,6 +423,62 @@ fn bounded_face_identity_requires_a_complete_named_face_boundary() {
     assert_eq!(identities[0].resolved_edge_slots, [6]);
 }
 
+/// The support context of preceding face `face_slot` that the transition
+/// leaves unchanged.
+fn unchanged_face_context(
+    active_face_slot: i64,
+    face_slot: i64,
+    loops: &[&[i64]],
+) -> crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
+    let mut context = face_context(active_face_slot, face_slot, loops);
+    context.changed_preceding_face_slots.clear();
+    context
+}
+
+#[test]
+fn bounded_face_identity_selects_the_one_changed_face_that_its_first_reference_names() {
+    let transition = [1, 2, 3, 4, 6];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    face.first_reference_support_contexts = vec![
+        unchanged_face_context(34, 54, &[&[14, 15, 16, 17]]),
+        face_context(30, 50, &[TOP]),
+    ];
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, TOP);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::HistoricalEdgeFaceMemberChangedFaceAssumed.kind()]
+    );
+}
+
+#[test]
+fn bounded_face_identity_without_a_changed_named_face_uses_its_support_context() {
+    let transition = [1, 2, 3, 4, 6];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    face.first_reference_support_contexts = vec![
+        unchanged_face_context(34, 54, &[&[14, 15, 16, 17]]),
+        unchanged_face_context(30, 50, &[TOP]),
+    ];
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, [6]);
+    assert!(losses.is_empty());
+}
+
 #[test]
 fn bounded_face_chamfer_identity_drops_the_tangent_loop_edges_of_the_named_face() {
     let transition = [1, 2, 3, 4];

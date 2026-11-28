@@ -2541,9 +2541,14 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if transition.is_empty() {
             continue;
         }
+        let mut changed_face = None;
         let boundaries =
             match named_preceding_face_boundaries(&face.first_reference_support_contexts) {
                 NamedFace::Unique(boundaries) => boundaries,
+                NamedFace::Changed { boundaries, named } => {
+                    changed_face = Some(named);
+                    boundaries
+                }
                 NamedFace::Invalid => continue,
                 NamedFace::NotUnique => {
                     let Some(boundaries) =
@@ -2580,6 +2585,16 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
                 )),
             );
         }
+        if let (Some(named), Some(boundary)) = (changed_face, boundaries.first()) {
+            if !resolved.is_empty() {
+                losses.push(
+                    crate::loss::F3dLossCode::HistoricalEdgeFaceMemberChangedFaceAssumed.note(format!(
+                        "Face member {} selects the loop edges of preceding face {}, with the assumption that the member names the one face that the transition changes among the {named} faces that its first recipe reference names.",
+                        operand.id, boundary.face_slot
+                    )),
+                );
+            }
+        }
         operand.resolved_edge_slots = resolved;
         if !operand.resolved_edge_slots.is_empty() {
             operand.resolution_identity_id = Some(face.id.clone());
@@ -2593,6 +2608,13 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
 enum NamedFace<'a> {
     /// The reference names one preceding face, and these are its boundaries.
     Unique(&'a [crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]),
+    /// The reference names `named` preceding faces, the transition changes
+    /// exactly one of them, and these are its boundaries.
+    Changed {
+        boundaries:
+            &'a [crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext],
+        named: usize,
+    },
     /// The reference names one preceding face without a complete boundary.
     Invalid,
     /// The reference names zero or several preceding faces.
@@ -2602,31 +2624,56 @@ enum NamedFace<'a> {
 fn named_preceding_face_boundaries(
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> NamedFace<'_> {
-    let mut faces = contexts
+    let faces = contexts
         .iter()
         .flat_map(|context| &context.preceding_face_slots)
         .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter();
-    let (Some(face_slot), None) = (faces.next(), faces.next()) else {
-        return NamedFace::NotUnique;
+        .collect::<BTreeSet<_>>();
+    let face_slot = match faces.iter().copied().collect::<Vec<_>>().as_slice() {
+        [] => return NamedFace::NotUnique,
+        [face_slot] => *face_slot,
+        _ => {
+            let changed = contexts
+                .iter()
+                .flat_map(|context| &context.changed_preceding_face_slots)
+                .copied()
+                .filter(|face| faces.contains(face))
+                .collect::<BTreeSet<_>>();
+            let mut changed = changed.into_iter();
+            let (Some(face_slot), None) = (changed.next(), changed.next()) else {
+                return NamedFace::NotUnique;
+            };
+            return match complete_face_boundary(contexts, face_slot) {
+                Some(boundary) => NamedFace::Changed {
+                    boundaries: std::slice::from_ref(boundary),
+                    named: faces.len(),
+                },
+                None => NamedFace::NotUnique,
+            };
+        }
     };
-    let Some(boundary) = contexts
+    match complete_face_boundary(contexts, face_slot) {
+        Some(boundary) => NamedFace::Unique(std::slice::from_ref(boundary)),
+        None => NamedFace::Invalid,
+    }
+}
+
+/// The boundary of `face_slot` that `contexts` store, when every loop of it
+/// has a coedge.
+fn complete_face_boundary(
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+    face_slot: i64,
+) -> Option<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext> {
+    let boundary = contexts
         .iter()
         .flat_map(|context| &context.preceding_face_boundaries)
-        .find(|boundary| boundary.face_slot == face_slot)
-    else {
-        return NamedFace::Invalid;
-    };
-    if boundary.loops.is_empty()
-        || boundary
+        .find(|boundary| boundary.face_slot == face_slot)?;
+    (!boundary.loops.is_empty()
+        && boundary
             .loops
             .iter()
-            .any(|loop_| loop_.boundary.coedges().next().is_none())
-    {
-        return NamedFace::Invalid;
-    }
-    NamedFace::Unique(std::slice::from_ref(boundary))
+            .all(|loop_| loop_.boundary.coedges().next().is_some()))
+    .then_some(boundary)
 }
 
 fn support_face_boundaries(

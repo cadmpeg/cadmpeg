@@ -464,3 +464,15 @@ fn fixed_fillet_pair_gives_the_face_group_the_leftover_of_a_shared_transition() 
     );
     assert_eq!(losses, vec![leftover_loss(&groups[1].id)]);
 }
+
+#[test]
+fn fillet_scope_keeps_a_resolved_face_group_beside_a_lost_sibling_group() {
+    let mut scope = scope();
+    scope.groups[0].lost_edge_references = vec!["f3d:test:lost-edge-reference#1".to_owned()];
+    scope.identities[1].resolved_edge_slots = vec![101, 102, 103];
+    scope.identities[2].resolved_edge_slots = vec![103, 104, 105];
+    let (selections, losses) = resolve_scope(&scope);
+    assert_eq!(selections[0], EdgeSelection::Unresolved);
+    assert_eq!(selections[1], historical(&scope.groups[1].id, &TRANSITION));
+    assert!(losses.is_empty());
+}

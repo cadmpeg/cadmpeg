@@ -1800,9 +1800,10 @@ pub(crate) struct ScopeGroupSelection {
 /// A group without a construction group has no selection.
 ///
 /// When an identity of one group carries the transition edge set of another
-/// group, the scope is first read with the leftover partition. When the
-/// partition does not apply, every group keeps the selection that its own
-/// proofs give.
+/// group, the scope is first read with the leftover partition. The scope
+/// keeps that first reading when it gives every group a historical
+/// selection, except groups whose every member is a lost reference. When
+/// neither applies, every group keeps the selection that its own proofs give.
 pub(crate) fn resolved_fillet_scope_groups(
     scope_groups: &[ScopeTreatmentGroup<'_>],
     input: ScopeTreatmentInputs<'_>,
@@ -1819,10 +1820,34 @@ pub(crate) fn resolved_fillet_scope_groups(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    if partition_leftover_treatment_groups(scope_groups, &mut selections, input) || !shared {
+    if partition_leftover_treatment_groups(scope_groups, &mut selections, input)
+        || !shared
+        || shared_pass_is_complete(scope_groups, &selections)
+    {
         return Ok(selections.into_iter().map(Some).collect());
     }
     resolved_scope_pass(scope_groups, input, None, ctx)
+}
+
+/// Whether the shared-transition pass gives every group a historical
+/// selection, except groups whose every member is a lost reference.
+fn shared_pass_is_complete(
+    scope_groups: &[ScopeTreatmentGroup<'_>],
+    selections: &[ScopeGroupSelection],
+) -> bool {
+    use cadmpeg_ir::features::selections::EdgeSelection;
+
+    scope_groups.len() == selections.len()
+        && scope_groups
+            .iter()
+            .zip(selections)
+            .all(|(scope_group, selection)| {
+                matches!(selection.edges, EdgeSelection::Historical { .. })
+                    || scope_group.group.is_some_and(|group| {
+                        !group.members().is_empty()
+                            && group.lost_edge_references.len() == group.members().len()
+                    })
+            })
 }
 
 fn resolved_scope_pass(

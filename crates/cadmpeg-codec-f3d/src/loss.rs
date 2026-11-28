@@ -763,6 +763,10 @@ pub(crate) enum F3dLossCode {
     /// with the adjacent face is undetermined, with the assumption that the
     /// edge is sharp.
     HistoricalEdgeContinuityAssumedSharp,
+    /// An edge-treatment face member whose first recipe reference names
+    /// several preceding faces selects the loop edges of the one named face
+    /// that the transition changes.
+    HistoricalEdgeFaceMemberChangedFaceAssumed,
     /// A fillet with no bound history takes the one history, among several
     /// that hold its state pair, in which every edge group resolves.
     HistoricalEdgeHistoryInferred,
@@ -1945,6 +1949,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionLeftoverAssumed,
         Self::HistoricalEdgeSelectionFirstSidePairAssumed,
         Self::HistoricalEdgeContinuityAssumedSharp,
+        Self::HistoricalEdgeFaceMemberChangedFaceAssumed,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalEdgeRecipeHistoryInferred,
@@ -3013,6 +3018,9 @@ impl F3dLossCode {
                 "history.edge-selection-first-side-pair-assumed"
             }
             Self::HistoricalEdgeContinuityAssumedSharp => "history.edge-continuity-assumed-sharp",
+            Self::HistoricalEdgeFaceMemberChangedFaceAssumed => {
+                "history.edge-face-member-changed-face-assumed"
+            }
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalEdgeRecipeHistoryInferred => "history.edge-recipe-history-inferred",
@@ -4102,6 +4110,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionLeftoverAssumed
             | Self::HistoricalEdgeSelectionFirstSidePairAssumed
             | Self::HistoricalEdgeContinuityAssumedSharp
+            | Self::HistoricalEdgeFaceMemberChangedFaceAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::HistoricalEdgeRecipeHistoryInferred
@@ -4905,6 +4914,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionLeftoverAssumed
             | Self::HistoricalEdgeSelectionFirstSidePairAssumed
             | Self::HistoricalEdgeContinuityAssumedSharp
+            | Self::HistoricalEdgeFaceMemberChangedFaceAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::HistoricalEdgeRecipeHistoryInferred
@@ -5837,6 +5847,7 @@ mod tests {
                 "history.edge-selection-leftover-assumed",
                 "history.edge-selection-first-side-pair-assumed",
                 "history.edge-continuity-assumed-sharp",
+                "history.edge-face-member-changed-face-assumed",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
                 "history.edge-recipe-history-inferred",
