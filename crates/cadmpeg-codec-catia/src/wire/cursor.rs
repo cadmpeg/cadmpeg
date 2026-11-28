@@ -72,13 +72,17 @@ impl<'a> Cursor<'a> {
     /// Reads the compact unsigned integer at the cursor, advancing past it.
     ///
     /// A lead byte with `lead % 4 == 1` encodes `(lead - 1) / 4` in one byte.
-    /// A nonzero lead with `lead % 4 == 0` encodes a `lead / 4`-byte
-    /// little-endian value (width at most four). See `wire::tokens::compact_uint`.
+    /// A lead byte in `{0x04, 0x08, 0x0c, 0x10}` encodes a `lead / 4`-byte
+    /// little-endian value. Lead `0x14` encodes a single high byte shifted left
+    /// by 8 (`u8 << 8`, for multiples of 256 with a zero low byte).
+    /// See `wire::tokens::compact_uint`.
     pub(super) fn compact_uint(&mut self) -> Option<u32> {
         let mut view = self.view;
         let lead = view.u8()?;
         let value = if lead % 4 == 1 {
             u32::from((lead - 1) / 4)
+        } else if lead == 0x14 {
+            u32::from(view.u8()?) << 8
         } else if lead != 0 && lead % 4 == 0 {
             let width = usize::from(lead / 4);
             if width > 4 {
@@ -201,5 +205,19 @@ mod tests {
             Cursor::new_at(&[0x08, 0x2a, 0x00], 0).expect("a position inside the payload");
         assert_eq!(cursor.compact_uint(), Some(42));
         assert_eq!(cursor.position(), 3);
+
+        let mut sparse = Cursor::new_at(&[0x14, 0x01], 0).expect("a position inside the payload");
+        assert_eq!(sparse.compact_uint(), Some(256));
+        assert_eq!(sparse.position(), 2);
+
+        let mut sparse_hi =
+            Cursor::new_at(&[0x14, 0x03], 0).expect("a position inside the payload");
+        assert_eq!(sparse_hi.compact_uint(), Some(768));
+        assert_eq!(
+            Cursor::new_at(&[0x14], 0)
+                .expect("a position inside the payload")
+                .compact_uint(),
+            None
+        );
     }
 }

@@ -87,7 +87,7 @@ fn branch_fits_bounds(
         .all(|bounds| branch_bounds_gap(center, cosine, sine, range, bounds).1 == 0.0)
 }
 
-fn branch_bounds_gap(
+pub(in crate::families::standard::decode) fn branch_bounds_gap(
     center: Point3,
     cosine: Vector3,
     sine: Vector3,

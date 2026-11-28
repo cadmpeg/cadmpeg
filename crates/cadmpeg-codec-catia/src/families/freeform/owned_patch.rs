@@ -4,11 +4,11 @@
 mod edge_alignment;
 mod extrusion;
 mod roster;
-mod ruled;
+pub(in crate::families::freeform) mod ruled;
 mod sheet_carrier;
 mod sheet_group;
 mod stations;
-mod surface_fit;
+pub(in crate::families::freeform) mod surface_fit;
 mod transfer;
 mod trim_curves;
 mod trimmed_face;
