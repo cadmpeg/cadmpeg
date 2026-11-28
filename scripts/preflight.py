@@ -18,7 +18,7 @@ The upstream remote is the one whose URL names ``cadmpeg/cadmpeg``, or
 ``origin`` when no remote does. ``--upstream REF`` selects another base.
 
 Usage: scripts/preflight.py [--upstream REF] [--rev REV] [--no-fetch]
-                            [--full] [--run-layout] [--only NAME ...]
+                            [--run-layout] [--only NAME ...]
 With no ``--rev`` it checks the working tree, including uncommitted and
 untracked files. With ``--rev`` it checks that commit; checks that run
 programs over the tree are skipped.
@@ -55,7 +55,6 @@ class Result:
 
 @dataclass
 class Options:
-    full: bool = False
     run_layout: bool = False
 
 
@@ -241,7 +240,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--upstream", help="base ref (default: the upstream default branch)")
     parser.add_argument("--rev", help="check this commit instead of the working tree")
     parser.add_argument("--no-fetch", action="store_true", help="do not fetch the upstream branch")
-    parser.add_argument("--full", action="store_true", help="also run dependent golden tests")
     parser.add_argument("--run-layout", action="store_true",
                         help="regenerate and test the layout tables when they changed")
     parser.add_argument("--only", nargs="+", metavar="NAME", help="run only these checks")
@@ -271,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"preflight: no merge base with {upstream}: {merge_base.stderr.strip()}",
               file=sys.stderr)
         return 2
-    options = Options(full=args.full, run_layout=args.run_layout)
+    options = Options(run_layout=args.run_layout)
     context = Context(root, upstream, merge_base.stdout.strip(), args.rev, options)
     print(f"preflight: {args.rev or 'working tree'} against {upstream} "
           f"(merge base {context.base[:10]}, {len(context.changed_paths())} changed paths)")

@@ -113,7 +113,6 @@ Run the preflight from the branch's worktree before you open or update a pull re
 
 ```sh
 python3 scripts/preflight.py          # static checks against the upstream branch
-python3 scripts/preflight.py --full   # also run dependent golden tests
 python3 scripts/preflight.py --list   # what each check looks for
 ```
 
@@ -121,7 +120,7 @@ The preflight finds the remote that points at `cadmpeg/cadmpeg`, or `origin`. It
 
 Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are an open-item ID that upstream already uses and a branch that conflicts with upstream. A `WARN` needs your judgement.
 
-Without `--full`, nothing compiles. `--run-layout` regenerates changed layout tables; a layout page or `layout.rs` that changed without its table fails unless regeneration reproduces it byte for byte. `--rev REV` checks a commit instead of the working tree.
+`--run-layout` regenerates changed layout tables; a layout page or `layout.rs` that changed without its table fails unless regeneration reproduces it byte for byte. `--rev REV` checks a commit instead of the working tree.
 
 
 The `static checks` job runs `python3 scripts/preflight_open_items.py` on the PR merged into its base, and on main. It fails when an ID occurs more than once in an open-items document. Two pull requests that take one ID both pass and merge, and the main run then reports the duplicate.
