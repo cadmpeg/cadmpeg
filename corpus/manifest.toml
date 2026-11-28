@@ -1675,6 +1675,31 @@ license = "CC0-1.0"
 sha256 = "750d012555e22b4e73ca1c61dc2483e24454558ea04a40201686fcf41844447a"
 notes = "CC0 Fusion API save. Join Combine of a plate target with the seed and two copies of a three-element rectangular body pattern; the tool list names the seed again at its end."
 
+[[file]]
+filename = "sldprt/solidworks-2026_P01a.sldprt"
+format = "sldprt"
+dialect = "sldprt:sw-version-12000-plus"
+author = "f15sim"
+authoring_app = "SolidWorks"
+authoring_app_version = "2026"
+source_url = "https://progress.dutchmancad.xyz/scoreboard/files/solidworks-2026_P01a.sldprt"
+acquisition_date = "2026-11-22"
+license = "CC0-1.0"
+sha256 = "622f4edb16e09c4b7d549fe42d08639c5a6a409f82de3dee1b6daaecbfe0758a"
+notes = "CC0 recipe P01a; a 20 x 30 mm rectangle sketch extruded 10 mm. Its sgSketch lists point records that no curve names, so the curve records index the list by position."
+
+[[file]]
+filename = "sldprt/solidworks-2026_P01a.step"
+format = "step"
+dialect = "step:ap203-e1"
+author = "f15sim"
+authoring_app = "SolidWorks"
+authoring_app_version = "2026"
+source_url = "https://progress.dutchmancad.xyz/scoreboard/files/solidworks-2026_P01a.step"
+acquisition_date = "2026-11-22"
+license = "CC0-1.0"
+sha256 = "7f84472e53c874fab89d6fb625d0c430799ee67e6fb739d9be7b9253c69d4f83"
+notes = "CC0 recipe P01a; the STEP AP203 export of the same part."
 
 [[file]]
 filename = "f3d/timeline_rolled_after_edit.f3d"

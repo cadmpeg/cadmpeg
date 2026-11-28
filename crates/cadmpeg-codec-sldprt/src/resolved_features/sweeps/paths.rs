@@ -1,6 +1,6 @@
 use super::super::sketch_lists::{
-    curve_form, identifier_trailer_line, off_chord_arc, point_record_index_basis_loss, CurveForm,
-    ListedRecord, SketchRecordLists,
+    curve_form, curve_form_in, identifier_trailer_line, off_chord_arc,
+    point_record_index_basis_loss, CurveForm, ListedRecord, SketchRecordLists,
 };
 use crate::layout::{sketch_record_head as head, wide_spatial_marker_coordinate_prefix as xyz};
 use crate::records::FeatureInputLane;
@@ -120,7 +120,7 @@ pub(super) fn spatial(
 ) -> Option<Vec<Curve<SpatialSketchGeometry>>> {
     let payload = &lane.native_payload;
     let lists = SketchRecordLists::new(payload);
-    let points = spatial_primary_points(lane, owner);
+    let points = spatial_primary_points(lane, &lists, owner);
     let mut curves = Vec::new();
     for marker in lane
         .sketch_entities
@@ -150,7 +150,7 @@ pub(super) fn spatial(
             Some(_) => continue,
             None => None,
         };
-        let form = curve_form(payload, offset);
+        let form = curve_form_in(payload, offset, sketch);
         let CurveForm::Line { start, end } = (match (form, sketch) {
             // An unlisted primary point record is read through the point roster; any
             // other unlisted selected record may be a path member, so the path stays native.
@@ -178,7 +178,7 @@ pub(super) fn spatial(
             point3_at(payload, point + xyz::COORDINATES)
         };
         let assumed = match sketch {
-            Some(_) => point_record_index_basis_loss(payload, offset)
+            Some(_) => point_record_index_basis_loss(payload, offset, sketch)
                 .is_some()
                 .then_some(Assumption::IndexBasis),
             None => identifier_trailer_line(payload, offset).then_some(Assumption::Roster),
@@ -205,8 +205,9 @@ pub(super) fn spatial(
     ordered(curves)
 }
 
-fn spatial_primary_points(
+pub(super) fn spatial_primary_points(
     lane: &FeatureInputLane,
+    lists: &SketchRecordLists,
     owner: &str,
 ) -> Option<Vec<(usize, Option<Point3>)>> {
     let payload = &lane.native_payload;
@@ -220,6 +221,7 @@ fn spatial_primary_points(
         if !selected_curve(payload, offset)
             || View::u16_le_at(payload, offset + head::SELECTOR)? & 15 != 4
             || curve_form(payload, offset).is_some()
+            || matches!(lists.record(offset), Some(ListedRecord::Curve { .. }))
         {
             continue;
         }

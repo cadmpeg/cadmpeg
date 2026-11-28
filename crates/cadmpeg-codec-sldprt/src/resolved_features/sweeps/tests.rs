@@ -653,6 +653,71 @@ fn a_spatial_path_line_on_the_geometry_locus_charges_the_index_basis_assumption(
     ));
 }
 
+/// Writes the object index of each point record of the framed spatial
+/// sketch of `input`.
+fn set_object_indices(input: &mut Input, objects: [u32; 3]) {
+    use super::super::sketch_lists::{ListedRecord, SketchRecordLists};
+    let offset = usize::try_from(input.lane.sketch_entities[0].offset()).unwrap();
+    let lists = SketchRecordLists::new(&input.lane.native_payload);
+    let Some(ListedRecord::Curve { sketch, .. }) = lists.record(offset) else {
+        panic!("curve")
+    };
+    let points = (0..3)
+        .map(|index| sketch.point(index).unwrap())
+        .collect::<Vec<_>>();
+    let mut payload = input.lane.native_payload.to_vec();
+    for (point, object) in points.into_iter().zip(objects) {
+        payload[point - 4..point].copy_from_slice(&object.to_le_bytes());
+    }
+    input.lane.native_payload = payload.into();
+}
+
+/// A spatial path line on locus `05 00 01 00` whose values plus one name no
+/// point record of a sketch with a null object index is read by position.
+#[test]
+fn a_spatial_path_of_a_position_indexed_sketch_binds_and_charges_the_index_basis() {
+    let mut input = input(true, false);
+    set(
+        &mut input,
+        0,
+        crate::layout::sketch_record_head::LOCUS,
+        &GEOMETRY_LOCUS,
+    );
+    set_object_indices(&mut input, [1, u32::MAX, 5]);
+    let losses = apply(&mut input);
+    assert!(matches!(
+        bound_path(&input),
+        Some(PathRef::SpatialSketchCurves { curves, .. }) if curves.len() == 2
+    ));
+    assert!(charged(
+        &losses,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed
+    ));
+}
+
+/// The same line keeps the object-index reading, and the path stays native,
+/// when its values plus one name point records.
+#[test]
+fn a_spatial_path_line_that_names_object_indices_keeps_the_object_index_reading() {
+    let mut input = input(true, false);
+    set(
+        &mut input,
+        0,
+        crate::layout::sketch_record_head::LOCUS,
+        &GEOMETRY_LOCUS,
+    );
+    set_object_indices(&mut input, [2, 3, u32::MAX]);
+    let losses = apply(&mut input);
+    assert!(!matches!(
+        bound_path(&input),
+        Some(PathRef::SpatialSketchCurves { .. })
+    ));
+    assert!(!charged(
+        &losses,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed
+    ));
+}
+
 /// `docs/formats/sldprt.md` §2: an unframed spatial path line with an
 /// identifier trailer is read by one-based primary-point position, which no
 /// file establishes for that record form; a line without the trailer is not.
@@ -750,4 +815,26 @@ fn a_declared_reference_curve_path_keeps_its_native_path_and_applies_the_circula
     assert!(losses
         .iter()
         .any(|note| note.code == SldprtLossCode::FeatureSweepMergeAssumed.kind()));
+}
+
+/// A listed curve record is a line of its sketch, not an unlisted primary
+/// point record: the point roster of a spatial path skips it, also when the
+/// record reads only by position and no unlisted reading gives it a form.
+#[test]
+fn the_spatial_primary_points_skip_listed_curve_records() {
+    use super::super::sketch_lists::SketchRecordLists;
+    let mut input = input(true, false);
+    set(
+        &mut input,
+        0,
+        crate::layout::sketch_record_head::LOCUS,
+        &GEOMETRY_LOCUS,
+    );
+    set_object_indices(&mut input, [1, u32::MAX, 5]);
+    let offset = usize::try_from(input.lane.sketch_entities[0].offset()).unwrap();
+    assert!(super::super::sketch_lists::curve_form(&input.lane.native_payload, offset).is_none());
+    let lists = SketchRecordLists::new(&input.lane.native_payload);
+    let points = paths::spatial_primary_points(&input.lane, &lists, "source")
+        .expect("listed curve records are not read as points");
+    assert!(points.iter().all(|(at, _)| *at != offset));
 }

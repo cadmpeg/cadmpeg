@@ -104,12 +104,59 @@ pub(super) enum CurveForm {
 pub(super) struct SketchRecordList {
     points: Vec<usize>,
     curves: Vec<usize>,
+    /// Whether the curve records that §2 would read by object index are read
+    /// by point-record position instead ([`Self::indexed_by_position`]).
+    by_position: bool,
 }
 
 impl SketchRecordList {
     /// The stream offset of point record `index`.
     pub(super) fn point(&self, index: usize) -> Option<usize> {
         self.points.get(index).copied()
+    }
+
+    /// The u32 that stands just before the head of the point record at
+    /// `point`: its object index.
+    fn object_index(payload: &[u8], point: usize) -> Option<u32> {
+        point
+            .checked_sub(size_of::<u32>())
+            .and_then(|at| View::u32_le_at(payload, at))
+    }
+
+    /// The point records of this sketch, without the records projected from
+    /// outside it that stand among them.
+    fn stored_points<'a>(&'a self, payload: &'a [u8]) -> impl Iterator<Item = usize> + 'a {
+        self.points
+            .iter()
+            .copied()
+            .filter(|&point| !external_record(payload, point))
+    }
+
+    /// Whether `index + 1` is the object index of a point record of this
+    /// sketch, for both of `indices`.
+    fn names_object_indices(&self, payload: &[u8], indices: [usize; 2]) -> bool {
+        indices.into_iter().all(|index| {
+            let Some(object) = index.checked_add(1).and_then(|id| u32::try_from(id).ok()) else {
+                return false;
+            };
+            self.stored_points(payload)
+                .any(|point| Self::object_index(payload, point) == Some(object))
+        })
+    }
+
+    /// Whether the sketch holds a point record with a null object index (the
+    /// u32 before its head, `ff ff ff ff`, the first point record's included)
+    /// and a curve record, in its first curve list or in `later` ones, that §2
+    /// would read by object index whose endpoint values plus one are not both
+    /// object indices of point records. The sketch is then indexed by
+    /// position as a whole, so that its records share one reading.
+    fn indexed_by_position(&self, payload: &[u8], later: &[usize]) -> bool {
+        self.stored_points(payload)
+            .any(|point| Self::object_index(payload, point) == Some(u32::MAX))
+            && self.curves.iter().chain(later).any(|&curve| {
+                object_index_line_indices(payload, curve)
+                    .is_some_and(|indices| !self.names_object_indices(payload, indices))
+            })
     }
 }
 
@@ -173,6 +220,7 @@ impl SketchRecordLists {
         }
         let mut owner = None;
         let mut next = 0;
+        let mut later_of = vec![Vec::new(); lists.len()];
         for curve in later_curves {
             while lists
                 .get(next)
@@ -184,7 +232,11 @@ impl SketchRecordLists {
             }
             if let Some(owner) = owner {
                 records.insert(curve, (owner, RecordPlace::LaterCurveList));
+                later_of[owner].push(curve);
             }
+        }
+        for (list, later) in lists.iter_mut().zip(&later_of) {
+            list.by_position = list.indexed_by_position(payload, later);
         }
         Self { lists, records }
     }
@@ -212,7 +264,7 @@ impl SketchRecordLists {
     /// starts at `offset`, when it is in the current layout with selector `4`
     /// or `12` and [`curve_form`] reads it as a line or an arc.
     pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
-        let &(_, RecordPlace::FirstCurveList) = self.records.get(&offset)? else {
+        let &(list, RecordPlace::FirstCurveList) = self.records.get(&offset)? else {
             return None;
         };
         let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
@@ -221,7 +273,7 @@ impl SketchRecordLists {
         {
             return None;
         }
-        curve_form(payload, offset)
+        curve_form_in(payload, offset, self.lists.get(list))
     }
 
     /// The kind of the curve record of a list that starts at `offset`,
@@ -306,6 +358,7 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
     Some(SketchRecordList {
         points: points.to_vec(),
         curves,
+        by_position: false,
     })
 }
 
@@ -451,6 +504,17 @@ fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
 /// §2 reads ([`object_index_line`]), and an arc when the word is `1` or `-1`
 /// and the centre index is followed by i32 `-2`.
 pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
+    curve_form_in(payload, offset, None)
+}
+
+/// [`curve_form`] for a record of `list`: a line that §2 would read by object
+/// index is read by §2 unless the list is indexed by position
+/// ([`SketchRecordList::indexed_by_position`]).
+pub(super) fn curve_form_in(
+    payload: &[u8],
+    offset: usize,
+    list: Option<&SketchRecordList>,
+) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
     let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
     if selector & SELECTOR_OPEN_BIT != 0 {
@@ -476,7 +540,8 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     (sense & LINE_TYPE_MASK == 0
         && start != end
         && !(object_index_line(payload, offset, fields, selector)
-            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some()))
+            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+            && list.is_none_or(|list| !list.by_position)))
     .then_some(CurveForm::Line { start, end })
 }
 
@@ -502,10 +567,32 @@ fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16
         && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
 }
 
+/// The endpoint values of the record at `offset` when it is a line that §2
+/// reads by object index.
+fn object_index_line_indices(payload: &[u8], offset: usize) -> Option<[usize; 2]> {
+    let fields = curve_fields(payload, offset)?;
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    let sense = View::i32_le_at(payload, fields.checked_add(SENSE)?)?;
+    let start = usize::from(View::u16_le_at(payload, fields)?);
+    let end = usize::from(View::u16_le_at(payload, fields.checked_add(2)?)?);
+    (selector & SELECTOR_OPEN_BIT == 0
+        && sense != COUNTERCLOCKWISE
+        && sense != CLOCKWISE
+        && sense & LINE_TYPE_MASK == 0
+        && start != end
+        && object_index_line(payload, offset, fields, selector)
+        && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some())
+    .then_some([start, end])
+}
+
 /// The loss of a curve record on locus `05 00 01 00` that [`curve_form`]
 /// reads: its indices are taken as zero-based point-record positions.
-pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Option<LossNote> {
-    curve_form(payload, offset)?;
+pub(super) fn point_record_index_basis_loss(
+    payload: &[u8],
+    offset: usize,
+    list: Option<&SketchRecordList>,
+) -> Option<LossNote> {
+    curve_form_in(payload, offset, list)?;
     object_index_locus(payload, offset).then(|| {
         SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
             "curve record at {offset}: locus 05 00 01 00 uses assumed zero-based point-record positions in its sgSketch for endpoint and centre indices",
@@ -691,10 +778,11 @@ fn read_listed_entity(
             endpoints,
             construction,
             outside_profile,
-            index_basis_loss: point_record_index_basis_loss(payload, offset),
+            index_basis_loss: point_record_index_basis_loss(payload, offset, Some(sketch)),
         }))
     };
-    let (start, end, center, counterclockwise) = match curve_form(payload, offset) {
+    let (start, end, center, counterclockwise) = match curve_form_in(payload, offset, Some(sketch))
+    {
         None => return unread_form_conflict(payload, offset).map(Err),
         Some(CurveForm::Line { start, end }) => {
             let start = sketch.point(start).filter(|&at| owns(at))?;
@@ -787,10 +875,10 @@ pub(crate) fn unchecked_record_conflict(
     lists: &SketchRecordLists,
     offset: usize,
 ) -> Option<ChordConflict> {
-    let ListedRecord::Curve { .. } = lists.record(offset)? else {
+    let ListedRecord::Curve { sketch, .. } = lists.record(offset)? else {
         return None;
     };
-    match curve_form(payload, offset) {
+    match curve_form_in(payload, offset, Some(sketch)) {
         Some(CurveForm::Arc { .. }) => Some(ChordConflict::Unchecked),
         Some(CurveForm::Line { .. }) => None,
         None => unread_form_conflict(payload, offset),

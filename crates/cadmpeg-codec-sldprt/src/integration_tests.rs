@@ -808,6 +808,7 @@ mod partial_decode;
 mod partition_sketches;
 
 mod configuration_states;
+mod solidworks_2026_sketch;
 
 mod dimension_class_loss;
 
