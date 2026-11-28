@@ -142,6 +142,10 @@ scored = ["inventor:cfb3-rse31-meta8"]
 level = 1
 scored = ["nx:splmsstr", "nx:legacy-cfb"]
 
+[format.alibre]
+level = 3
+scored = ["alibre:cfb-acis-binary"]
+
 [format.sat]
 level = 3
 scored = ["sat:text"]
@@ -898,6 +902,29 @@ an RSeDb schema or Meta Stream version other than 31/8, read with the
 primary row's strategy; the golden that pins it is code-built"""
 
 # --------------------------------------------------------------------------
+# alibre
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "alibre:cfb-acis-binary"
+read = "detected"
+write = "none"
+reason = """
+decoded and pinned by the golden snapshots over the committed `.AD_PRT`
+specimens; the format has no recorded evaluation, so the row stays at the
+snapshot-domain floor"""
+
+[[support]]
+dialect = "alibre:unknown"
+read = "refused"
+refusal = "no-framing-grammar"
+write = "none"
+reason = """
+`alibre:unknown` is a `SAB_DATA` stream without the ACIS binary magic or its
+record-stream boundary; decode returns `UnsupportedDialect`, and a unit test
+patches the magic of a specimen"""
+
+# --------------------------------------------------------------------------
 # sat
 # --------------------------------------------------------------------------
 
@@ -1284,7 +1311,7 @@ reason = """
 Confidence::No and the forced codec path returns WrongFormat"""
 
 [format.onshape]
-level = 0
+level = 4
 scored = ["onshape:bundle-1"]
 
 [[support]]

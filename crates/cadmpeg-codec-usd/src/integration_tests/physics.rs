@@ -624,20 +624,57 @@ fn couplings_of_a_given_up_hinge_are_dropped_with_it() {
         crate::ids::joint("/Rig/Pinion").to_string(),
     ];
     dropped.sort();
+    let charges: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .map(|loss| (&loss.code, loss.message.as_str()))
+        .collect();
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    assert_eq!(
+        charges,
+        [(
+            &unreadable,
+            format!(
+                "record {} given up: the joint names a body that is no prim of the stage; \
+                 dropped=[{}]",
+                crate::ids::joint("/Rig/HingeA"),
+                dropped.join(", ")
+            )
+            .as_str()
+        )]
+    );
+}
+
+/// A coupling relationship that targets a prim that is no transferred joint
+/// gives the coupling up: an empty coupled list would state that it acts on
+/// its connectors directly.
+#[test]
+fn a_coupling_whose_relationship_names_no_joint_is_given_up() {
+    let text = COUPLINGS.replacen(
+        "rel physics:hinge1 = </Rig/HingeB>",
+        "rel physics:hinge1 = </Rig/Base>",
+        1,
+    );
+    assert_ne!(text, COUPLINGS);
+    let result = decode(&text);
+    let model = &result.ir().model;
+    let gear = crate::ids::joint("/Rig/Gear");
+    assert!(model.assembly_joints.iter().all(|joint| joint.id != gear));
+    assert_eq!(coupling(model, false).1.len(), 2);
     let charges: Vec<&str> = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .map(|loss| loss.message.as_str())
         .collect();
     assert_eq!(
         charges,
         [format!(
-            "record {} given up: usd/physics.joint-rejected: the joint names a body that is not a \
-             transferred prim; dropped=[{}]",
-            crate::ids::joint("/Rig/HingeA"),
-            dropped.join(", ")
+            "record {gear} given up: the joint couples a joint that \
+             is not a transferred joint; dropped=[]"
         )]
     );
 }
@@ -1049,6 +1086,39 @@ fn an_infinite_lock_bound_locks_the_axis_as_a_revolute_joint() {
     );
     assert!(
         losses.iter().all(|loss| !loss.contains("limit:transZ")),
+        "{losses:#?}"
+    );
+}
+
+/// A `NaN` limit bound is a value of its float type that has no reading as a
+/// bound: a pinned decode keeps the joint and reports the bound lost.
+#[test]
+fn a_nan_limit_bound_is_reported_lost_under_a_pinned_decode() {
+    use cadmpeg_ir::codec::Codec as _;
+
+    use crate::loss::UsdLossCode;
+
+    let mut limits = LOCKED.to_vec();
+    limits.push(("rotZ", f64::NAN, 60.0));
+    let source = generic_joint(&limits).replace("NaN", "nan");
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = crate::UsdCodec
+        .decode(&mut std::io::Cursor::new(source.as_bytes()), &options)
+        .expect("a pinned decode");
+    let losses = &result.report().losses;
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+    assert!(
+        losses.iter().any(
+            |loss| loss.code == UsdLossCode::JointPropertyNotTransferred.kind()
+                && loss.message.contains("limit:rotZ:physics:low (NaN)")
+        ),
+        "{losses:#?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| loss.code != UsdLossCode::AttributeValueMalformed.kind()),
         "{losses:#?}"
     );
 }

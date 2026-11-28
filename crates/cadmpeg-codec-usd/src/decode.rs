@@ -10,8 +10,6 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::SourceFidelity;
 
-/// Source attribute naming the stage up axis.
-const ATTRIBUTE_UP_AXIS: &str = "up_axis";
 /// Source attribute holding the metres per scene unit.
 const ATTRIBUTE_METERS_PER_UNIT: &str = "meters_per_unit";
 /// Source attribute naming the default prim.
@@ -21,16 +19,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let mut source = crate::usdz::source::source(ctx, root)?;
     let layer = crate::usdz::source::parse(ctx, &mut source)?;
     let metrics = crate::model::metrics(&layer);
-    let mut attributes = BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_const!(ATTRIBUTE_UP_AXIS),
-            metrics.up_axis.clone(),
-        ),
-        (
-            cadmpeg_core::nonblank_const!(ATTRIBUTE_METERS_PER_UNIT),
-            metrics.meters_per_unit.to_string(),
-        ),
-    ]);
+    let mut attributes = BTreeMap::from([(
+        cadmpeg_core::nonblank_const!(ATTRIBUTE_METERS_PER_UNIT),
+        metrics.meters_per_unit.to_string(),
+    )]);
     if let Some(default_prim) = &metrics.default_prim {
         attributes.insert(
             cadmpeg_core::nonblank_const!(ATTRIBUTE_DEFAULT_PRIM),
@@ -38,6 +30,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         );
     }
     let mut ir = CadIr::decoded(SourceMeta::classified(source.layers, attributes));
+    ir.up_axis = Some(metrics.up_axis);
     let mut body = DecodeBody {
         losses: source.losses,
         ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), false))

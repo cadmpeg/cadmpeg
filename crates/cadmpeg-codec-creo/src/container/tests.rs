@@ -360,6 +360,7 @@ fn expanded_section_above_the_local_ceiling_stays_compressed() {
         assert!(expanded.is_empty());
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].section_offset, 0);
+        assert_eq!(losses[0].cause, cadmpeg_ir::unknown::part::Cause::Undecoded);
         assert!(losses[0].message.contains("256 MiB section ceiling"));
         assert!(ctx.resource_refusal().is_none());
     });

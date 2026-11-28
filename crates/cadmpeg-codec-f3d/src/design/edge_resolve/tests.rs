@@ -1970,4 +1970,8 @@ fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
 
 mod candidate_intersection;
 
+mod first_side_pairs;
+
+mod leftover_partition;
+
 mod standard_recipes;

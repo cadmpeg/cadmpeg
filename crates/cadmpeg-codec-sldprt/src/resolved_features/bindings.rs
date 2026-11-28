@@ -114,7 +114,7 @@ pub(crate) fn bind_pattern_inputs(
             // The end of this pattern's object is the next object name's
             // offset, or the end of the payload when this is the last one.
             // Both are inside `native_payload`: an object name states the
-            // payload bytes at its own offset, and `SldprtNative::load`
+            // payload bytes at its own offset, and `SldprtNative::load_with_context`
             // refuses a name whose offset the payload does not state.
             let pattern_object_end = || {
                 let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);

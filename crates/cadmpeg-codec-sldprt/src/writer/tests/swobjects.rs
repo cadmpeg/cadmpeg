@@ -122,10 +122,10 @@ fn a_material_skipped_beside_retained_swobjects_is_named() {
         });
 
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
@@ -159,10 +159,10 @@ fn a_material_skipped_beside_retained_swobjects_is_named() {
     // records drop, named once as dropped and not as omitted.
     decoded.ir_mut().model.appearances[0].base_color = None;
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut Vec::new())
         .unwrap();
@@ -338,7 +338,7 @@ fn encoder_drops_a_source_less_extrusion_with_an_unresolved_profile() {
     });
 
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .report()
         .clone();
@@ -1088,7 +1088,7 @@ fn encoder_drops_a_source_less_sketch_constraint_it_cannot_write() {
     });
 
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .report()
         .clone();
@@ -1491,10 +1491,7 @@ fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
             .values[0] = None;
     }
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap();
     let loss = plan
         .report()

@@ -394,8 +394,9 @@ fn a_trim_of_a_reversed_proxy_is_written_back_along_its_coedge() {
         let mut bytes = Vec::new();
         let report = crate::RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(crate::RhinoArchiveVersion::V8.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                    crate::RhinoArchiveVersion::V8.descriptor().id.as_str(),
+                )),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("write the plane Brep");

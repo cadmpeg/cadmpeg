@@ -8,6 +8,8 @@
 //! unrolled into an open curve that repeats its first points; a pinned curve
 //! carries its phantom points.
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use crate::schema::{index, integers, reals, token, vectors3, Issues};
 use crate::stage::Prim;
 
@@ -22,11 +24,43 @@ pub(crate) struct CurveData {
     pub(crate) range: Option<[f64; 2]>,
 }
 
-/// The curves of a batch and the number of curves that were rejected.
+impl CurveData {
+    /// Whether the curve breaks §13.2: knots that decrease, or a range
+    /// outside `knots[k-1] ≤ min < max ≤ knots[n]`.
+    pub(crate) fn breaks_rules(&self) -> bool {
+        if self.knots.windows(2).any(|pair| pair[1] < pair[0]) {
+            return true;
+        }
+        let Some([min, max]) = self.range else {
+            return false;
+        };
+        let low = usize::try_from(self.degree)
+            .ok()
+            .and_then(|degree| self.knots.get(degree));
+        let (Some(low), Some(high)) = (low, self.knots.get(self.points.len())) else {
+            return false;
+        };
+        let inside = *low <= min && min < max && max <= *high;
+        !inside
+    }
+}
+
+/// The curves of a batch and the number of curves left out: those that
+/// break the rules of §13, and those with a form that has no reading.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct Curves {
+pub(crate) struct Batch {
     pub(crate) curves: Vec<CurveData>,
-    pub(crate) rejected: usize,
+    pub(crate) broken: usize,
+    pub(crate) unread: usize,
+}
+
+/// Why a basis curve has no NURBS data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refusal {
+    /// The vertex count breaks the condition of its type and wrap (§13.1).
+    Broken,
+    /// The curve has a form that the decoder has no reading for.
+    Unread,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,21 +124,27 @@ fn pinned(points: &[[f64; 3]]) -> Option<Vec<[f64; 3]>> {
     Some(out)
 }
 
-/// One basis curve as NURBS data, or `None` when its vertex count does not
-/// satisfy its type and wrap.
-fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<CurveData> {
+/// One basis curve as NURBS data, or why it has none. A cubic curve whose
+/// vertex count breaks the condition of §13.1 is broken; a linear curve
+/// below two points, or three when periodic, and a periodic cubic curve of
+/// no points have no reading.
+fn basis_curve(
+    points: &[[f64; 3]],
+    cubic: Option<Basis>,
+    wrap: Wrap,
+) -> Result<CurveData, Refusal> {
     let count = points.len();
     let Some(basis) = cubic else {
         let mut points = points.to_vec();
         match wrap {
             Wrap::Periodic if count >= 3 => points.push(points[0]),
             Wrap::Nonperiodic | Wrap::Pinned if count >= 2 => {}
-            _ => return None,
+            _ => return Err(Refusal::Unread),
         }
         let mut knots = vec![0.0];
         knots.extend(uniform_knots(points.len()));
-        knots.push(*knots.last()?);
-        return Some(CurveData {
+        knots.push(*knots.last().ok_or(Refusal::Unread)?);
+        return Ok(CurveData {
             degree: 1,
             knots,
             points,
@@ -112,6 +152,9 @@ fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<
             range: None,
         });
     };
+    if wrap == Wrap::Periodic && count == 0 {
+        return Err(Refusal::Unread);
+    }
     let wrap = if basis == Basis::Bezier && wrap == Wrap::Pinned {
         Wrap::Nonperiodic
     } else {
@@ -119,7 +162,7 @@ fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<
     };
     let points: Vec<[f64; 3]> = match wrap {
         Wrap::Nonperiodic => points.to_vec(),
-        Wrap::Pinned => pinned(points)?,
+        Wrap::Pinned => pinned(points).ok_or(Refusal::Broken)?,
         Wrap::Periodic => {
             let repeat = if basis == Basis::Bezier { 1 } else { 3 };
             let mut out = points.to_vec();
@@ -131,10 +174,10 @@ fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<
         Basis::Bezier => {
             let count = points.len();
             if count < 4 || !(count - 1).is_multiple_of(3) {
-                return None;
+                return Err(Refusal::Broken);
             }
             let knots = bezier_knots((count - 1) / 3, 3);
-            Some(CurveData {
+            Ok(CurveData {
                 degree: 3,
                 knots,
                 points,
@@ -144,10 +187,10 @@ fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<
         }
         Basis::Bspline => {
             if points.len() < 4 {
-                return None;
+                return Err(Refusal::Broken);
             }
             let knots = uniform_knots(points.len() + 4);
-            Some(CurveData {
+            Ok(CurveData {
                 degree: 3,
                 knots,
                 points,
@@ -157,7 +200,7 @@ fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<
         }
         Basis::CatmullRom => {
             if points.len() < 4 {
-                return None;
+                return Err(Refusal::Broken);
             }
             let mut out = vec![points[1]];
             for window in points.windows(4) {
@@ -167,7 +210,7 @@ fn basis_curve(points: &[[f64; 3]], cubic: Option<Basis>, wrap: Wrap) -> Option<
                 out.push(p2);
             }
             let segments = points.len() - 3;
-            Some(CurveData {
+            Ok(CurveData {
                 degree: 3,
                 knots: bezier_knots(segments, 3),
                 points: out,
@@ -199,9 +242,10 @@ fn split<'p>(
     )
 }
 
-/// Reads a `BasisCurves` prim.
-pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curves> {
-    let points = vectors3(prim, "points", issues)?;
+/// Reads a `BasisCurves` prim, or returns why it states no curve batch.
+pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Result<Batch, Cause> {
+    let since = issues.malformed.len();
+    let points = vectors3(prim, "points", issues).ok_or_else(|| issues.cause_since(since))?;
     let cubic = match token(prim, "type", issues).as_deref() {
         Some("linear") => None,
         None | Some("cubic") => Some(match token(prim, "basis", issues).as_deref() {
@@ -209,16 +253,16 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
             Some("bspline") => Basis::Bspline,
             Some("catmullRom") => Basis::CatmullRom,
             Some(_) => {
-                return Some(Curves {
-                    curves: Vec::new(),
-                    rejected: 1,
+                return Ok(Batch {
+                    unread: 1,
+                    ..Batch::default()
                 })
             }
         }),
         Some(_) => {
-            return Some(Curves {
-                curves: Vec::new(),
-                rejected: 1,
+            return Ok(Batch {
+                unread: 1,
+                ..Batch::default()
             })
         }
     };
@@ -227,36 +271,42 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
         Some("periodic") => Wrap::Periodic,
         Some("pinned") => Wrap::Pinned,
         Some(_) => {
-            return Some(Curves {
-                curves: Vec::new(),
-                rejected: 1,
+            return Ok(Batch {
+                unread: 1,
+                ..Batch::default()
             })
         }
     };
-    let mut out = Curves::default();
-    for slice in split(prim, &points, issues)? {
-        match slice.and_then(|points| basis_curve(points, cubic, wrap)) {
-            Some(curve) => out.curves.push(curve),
-            None => out.rejected += 1,
+    let mut out = Batch::default();
+    let since = issues.malformed.len();
+    let slices = split(prim, &points, issues).ok_or_else(|| issues.cause_since(since))?;
+    for slice in slices {
+        match slice.map(|points| basis_curve(points, cubic, wrap)) {
+            Some(Ok(curve)) => out.curves.push(curve),
+            Some(Err(Refusal::Unread)) => out.unread += 1,
+            None | Some(Err(Refusal::Broken)) => out.broken += 1,
         }
     }
-    Some(out)
+    Ok(out)
 }
 
-/// Reads a `NurbsCurves` prim.
-pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curves> {
-    let points = vectors3(prim, "points", issues)?;
-    let orders = integers(prim, "order", issues)?;
-    let knots = reals(prim, "knots", 1, issues)?;
+/// Reads a `NurbsCurves` prim, or returns why it states no curve batch.
+pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Result<Batch, Cause> {
+    let since = issues.malformed.len();
+    let points = vectors3(prim, "points", issues).ok_or_else(|| issues.cause_since(since))?;
+    let orders = integers(prim, "order", issues).ok_or_else(|| issues.cause_since(since))?;
+    let knots = reals(prim, "knots", 1, issues).ok_or_else(|| issues.cause_since(since))?;
     let ranges = reals(prim, "ranges", 2, issues);
     let weights =
         reals(prim, "pointWeights", 1, issues).filter(|weights| weights.len() == points.len());
-    let mut out = Curves::default();
+    let mut out = Batch::default();
     let mut point_start = 0_usize;
     let mut knot_start = 0_usize;
-    for (curve, slice) in split(prim, &points, issues)?.into_iter().enumerate() {
+    let since = issues.malformed.len();
+    let slices = split(prim, &points, issues).ok_or_else(|| issues.cause_since(since))?;
+    for (curve, slice) in slices.into_iter().enumerate() {
         let Some(slice) = slice else {
-            out.rejected += 1;
+            out.broken += 1;
             continue;
         };
         let count = slice.len();
@@ -289,16 +339,16 @@ pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
         match knot_end {
             Some(end) => knot_start = end,
             None => {
-                out.rejected += 1;
+                out.broken += 1;
                 break;
             }
         }
         match parsed {
             Some(curve) => out.curves.push(curve),
-            None => out.rejected += 1,
+            None => out.broken += 1,
         }
     }
-    Some(out)
+    Ok(out)
 }
 
 #[cfg(test)]

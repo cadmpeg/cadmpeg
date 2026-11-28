@@ -4,7 +4,7 @@
 
 use cadmpeg_core::decode::index_from_u32;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::native::F3dNative;
 use crate::records::{
@@ -18,7 +18,7 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-use super::attributes::source_less_body_key;
+use super::reduce::{DroppedRecords, Unwritable};
 pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.geometry.procedural_surfaces {
@@ -236,6 +236,537 @@ fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -
         && design_type.module == expected.2
 }
 
+/// The record indices that a sketch-module entity header names in its
+/// reference list and its base-record slot.
+fn sketch_header_indices(native: &F3dNative) -> BTreeSet<u32> {
+    native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.in_sketch_module())
+        .flat_map(|header| {
+            header.reference_values().copied().chain(
+                header
+                    .sketch_references()
+                    .and_then(|list| list.record_reference),
+            )
+        })
+        .collect()
+}
+
+/// The Design record headers that no sketch header or sketch relation
+/// names. The source-less Design stream writes a header as the stub of a
+/// record of the sketch graph, so no written record names these.
+pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritable> {
+    let mut reachable = sketch_header_indices(native);
+    for relation in &native.sketch_relations {
+        reachable.extend(relation.all_member_indices());
+    }
+    Unwritable::of(
+        "of Design record headers that no sketch header or sketch relation names (the source-less Design stream writes the headers of the sketch graph)",
+        native
+            .design_record_headers
+            .iter()
+            .filter(|header| !reachable.contains(&header.record_index))
+            .map(|header| header.id.clone())
+            .collect(),
+    )
+}
+
+/// The sketch records whose sketch owner the document does not hold: the
+/// written record names its owner, and no written sketch header holds it.
+pub(super) fn unowned_sketch_records(native: &F3dNative) -> Option<Unwritable> {
+    let owners = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.in_sketch_module())
+        .map(|header| header.entity_id.suffix())
+        .collect::<BTreeSet<_>>();
+    let owned = |owner: Option<u32>| owner.is_some_and(|owner| owners.contains(&u64::from(owner)));
+    let records = native
+        .sketch_points
+        .iter()
+        .filter(|point| !owned(point.owner_reference))
+        .map(|point| point.id.clone())
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .filter(|curve| !owned(curve.owner_reference))
+                .map(|curve| curve.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .filter(|relation| !owned(Some(relation.owner_reference)))
+                .map(|relation| relation.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .filter(|text| !owned(Some(text.owner_reference)))
+                .map(|text| text.id.clone()),
+        )
+        .collect();
+    Unwritable::of(
+        "of sketch records whose sketch owner the document does not hold (the written record names its owner, and no sketch header holds it)",
+        records,
+    )
+}
+
+/// The sketch records that name the record index of a dropped sketch record
+/// or record header: the written record would name a record the Design
+/// stream does not hold. Each drop adds the indices of its records to
+/// `dropped`, so the attempts drop every record that a chain of references
+/// ties to a dropped one (W1).
+pub(super) fn sketch_records_naming(
+    native: &F3dNative,
+    dropped: &BTreeSet<u32>,
+) -> Option<Unwritable> {
+    use crate::records::sketch_geometry::SketchTextLayout;
+
+    if dropped.is_empty() {
+        return None;
+    }
+    let names = |mut indices: Box<dyn Iterator<Item = u32> + '_>| {
+        indices.any(|index| dropped.contains(&index))
+    };
+    let records = native
+        .sketch_points
+        .iter()
+        .filter(|point| names(Box::new(point.companion().incident_curves.iter().copied())))
+        .map(|point| point.id.clone())
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .filter(|relation| {
+                    names(Box::new(
+                        relation
+                            .all_member_indices()
+                            .chain(relation.auxiliary_references().values().copied()),
+                    ))
+                })
+                .map(|relation| relation.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .filter(|text| match text.layout {
+                    SketchTextLayout::TextexTag {
+                        first_reference,
+                        second_reference,
+                        ..
+                    } => names(Box::new(
+                        [first_reference, second_reference].into_iter().flatten(),
+                    )),
+                    SketchTextLayout::TxtTag { .. } => false,
+                })
+                .map(|text| text.id.clone()),
+        )
+        .collect();
+    Unwritable::of(
+        "of sketch records that name a dropped sketch record (the written record would name a record the Design stream does not hold)",
+        records,
+    )
+}
+
+/// The sketch-curve links and body visibilities the B-rep and Design
+/// streams cannot hold, the first family that holds one.
+pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
+    let coedges = target
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect::<HashSet<_>>();
+    let mut unresolved = BTreeSet::new();
+    for link in &native.sketch_curve_links {
+        // Only a coedge-owned link is regenerated; a link on any other owner is
+        // reported as a source-fidelity loss instead of refusing the write.
+        let AttributeTarget::Coedge(coedge) = &link.target else {
+            continue;
+        };
+        if !coedges.contains(coedge) {
+            unresolved.insert(link.id.clone());
+        }
+    }
+    if let Some(unwritable) = Unwritable::of(
+        "of sketch-curve links that name a coedge the document does not hold",
+        unresolved,
+    ) {
+        return Some(unwritable);
+    }
+    let bodies = target
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<HashSet<_>>();
+    Unwritable::of(
+        "of body visibilities whose body the write omits",
+        native
+            .body_visibilities
+            .iter()
+            .filter(|visibility| !bodies.contains(&visibility.body))
+            .map(|visibility| visibility.id().to_owned())
+            .collect(),
+    )
+}
+
+/// The body visibilities that name the body or the Design entity of an
+/// earlier kept visibility. The Design stream holds one visibility for each
+/// body and one body for each Design entity.
+pub(super) fn shared_body_visibilities(native: &F3dNative) -> Option<Unwritable> {
+    let mut bodies = HashSet::new();
+    let mut entities = HashSet::new();
+    Unwritable::of(
+        "of body visibilities that name the body or the Design entity of an earlier body visibility (the Design stream holds one visibility for each body and one body for each Design entity)",
+        native
+            .body_visibilities
+            .iter()
+            .filter(|visibility| {
+                let kept = !bodies.contains(&visibility.body)
+                    && !entities.contains(&visibility.entity_suffix);
+                if kept {
+                    bodies.insert(&visibility.body);
+                    entities.insert(visibility.entity_suffix);
+                }
+                !kept
+            })
+            .map(|visibility| visibility.id().to_owned())
+            .collect(),
+    )
+}
+
+/// The `BodiesRoot` members that name the Design entity of a dropped body
+/// visibility, where no kept visibility holds that entity: the written
+/// member would name an entity the Design stream does not hold.
+pub(super) fn body_members_naming(
+    native: &F3dNative,
+    dropped: &BTreeSet<u64>,
+) -> Option<Unwritable> {
+    if dropped.is_empty() {
+        return None;
+    }
+    let held = native
+        .body_visibilities
+        .iter()
+        .map(|visibility| visibility.entity_suffix)
+        .collect::<BTreeSet<_>>();
+    Unwritable::of(
+        "of BodiesRoot members that name the Design entity of a dropped body visibility (the written member would name an entity the Design stream does not hold)",
+        native
+            .design_body_members
+            .iter()
+            .filter(|member| {
+                dropped.contains(&member.entity_suffix) && !held.contains(&member.entity_suffix)
+            })
+            .map(|member| member.id().clone())
+            .collect(),
+    )
+}
+
+/// The sketch-curve links whose source-curve key names a dropped sketch
+/// curve or the record of a dropped sketch text, and no kept sketch curve:
+/// the written link would name a record the Design stream does not hold.
+pub(super) fn sketch_curve_links_naming(
+    native: &F3dNative,
+    dropped: &DroppedRecords,
+) -> Option<Unwritable> {
+    if dropped.curve_identities.is_empty() && dropped.texts.is_empty() {
+        return None;
+    }
+    let kept = native
+        .sketch_curve_identities
+        .iter()
+        .map(|curve| (curve.primary_id.get(), curve.secondary_id))
+        .collect::<BTreeSet<_>>();
+    Unwritable::of(
+        "of sketch-curve links that name a dropped sketch curve or sketch text (the written link would name a record the Design stream does not hold)",
+        native
+            .sketch_curve_links
+            .iter()
+            .filter(|link| {
+                let key = (link.sketch_curve_id.cast_unsigned(), link.ref_b);
+                !kept.contains(&key)
+                    && (dropped.curve_identities.contains(&key)
+                        || u32::try_from(link.ref_b)
+                            .is_ok_and(|index| dropped.texts.contains(&index)))
+            })
+            .map(|link| link.id.clone())
+            .collect(),
+    )
+}
+
+/// The lengths of the arenas that the stamp of a regenerated design extends.
+#[derive(Clone, Copy)]
+pub(super) struct StampMark {
+    design_links: usize,
+    subentity_tags: usize,
+    sketch_curve_links: usize,
+}
+
+impl StampMark {
+    pub(super) fn of(native: &F3dNative) -> Self {
+        Self {
+            design_links: native.persistent_design_links.len(),
+            subentity_tags: native.persistent_subentity_tags.len(),
+            sketch_curve_links: native.sketch_curve_links.len(),
+        }
+    }
+}
+
+/// The records before `mark` on an entity that a record after `mark` names.
+/// The regenerated Design stream names these entities, and the records
+/// before the mark name records of the source Design stream (W1, W2).
+pub(super) fn replaced_by_stamp(native: &F3dNative, mark: StampMark) -> Option<Unwritable> {
+    fn replaced<T>(
+        rows: &[T],
+        mark: usize,
+        target: impl Fn(&T) -> &AttributeTarget,
+        id: impl Fn(&T) -> &str,
+        out: &mut BTreeSet<String>,
+    ) {
+        let (source, stamped) = rows.split_at(mark);
+        let named = stamped.iter().map(&target).collect::<BTreeSet<_>>();
+        out.extend(
+            source
+                .iter()
+                .filter(|row| named.contains(target(row)))
+                .map(|row| id(row).to_owned()),
+        );
+    }
+    let mut records = BTreeSet::new();
+    replaced(
+        &native.persistent_design_links,
+        mark.design_links,
+        |link| &link.target,
+        |link| &link.id,
+        &mut records,
+    );
+    replaced(
+        &native.persistent_subentity_tags,
+        mark.subentity_tags,
+        |tag| &tag.target,
+        |tag| &tag.id,
+        &mut records,
+    );
+    replaced(
+        &native.sketch_curve_links,
+        mark.sketch_curve_links,
+        |link| &link.target,
+        |link| &link.id,
+        &mut records,
+    );
+    Unwritable::of(
+        "on an entity that the regenerated Design stream names (the B-rep stream holds the regenerated name, and these records name records of the source Design stream)",
+        records,
+    )
+}
+
+/// The records of the groups that hold more than one record.
+fn shared<K>(groups: BTreeMap<K, Vec<String>>) -> BTreeSet<String> {
+    groups
+        .into_values()
+        .filter(|records| records.len() > 1)
+        .flatten()
+        .collect()
+}
+
+/// Whether the decoder reads `range`, moved onto the knot domain of `curve`,
+/// as the use-curve range `use_range`.
+pub(super) fn reads_as_use_curve_range(
+    range: cadmpeg_ir::units::FiniteVector<2>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    use_range: cadmpeg_ir::topology::ParameterInterval,
+) -> bool {
+    cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(range)
+        .map(|range| cadmpeg_asm::brep::emit::clamp_to_knot_domain(range, curve))
+        .is_ok_and(|range| range.endpoints() == use_range.endpoints())
+}
+
+/// The tolerant-coedge records the B-rep stream cannot hold as they stand,
+/// in groups by reason. The coedge record holds one extension, written
+/// inline, whose embedded curve is the coedge's NURBS use curve. The decoder
+/// reads the use-curve range from the record range moved onto the curve's
+/// knot domain. A record whose moved range is the use-curve range is written
+/// as stored, and any other record is written with the use-curve range where
+/// the decoder reads that range back (W2).
+pub(super) fn unwritable_tolerant_coedges(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Option<Unwritable> {
+    use cadmpeg_asm::brep::records::TolerantCoedgeExtension;
+
+    let coedges = target
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
+    let curves = target
+        .geometry
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<HashMap<_, _>>();
+    let mut missing = BTreeSet::new();
+    let mut by_coedge = BTreeMap::<_, Vec<String>>::new();
+    let mut unwritable_curve = BTreeSet::new();
+    let mut other_range = BTreeSet::new();
+    let mut relocated = BTreeSet::new();
+    for parameters in &native.tolerant_coedge_parameters {
+        let id = parameters.id();
+        let Some(coedge) = coedges.get(&parameters.coedge) else {
+            missing.insert(id);
+            continue;
+        };
+        by_coedge
+            .entry(&parameters.coedge)
+            .or_default()
+            .push(id.clone());
+        match &parameters.extension {
+            TolerantCoedgeExtension::None {} | TolerantCoedgeExtension::Empty { target: None } => {}
+            TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                parameter_range,
+                ..
+            } => {
+                let curve = coedge.use_curve.as_ref().and_then(|use_curve| {
+                    match curves.get(&use_curve.curve)?.geometry.solved() {
+                        Some(SolvedCurveGeometry::Nurbs(curve)) => Some((use_curve, curve)),
+                        _ => None,
+                    }
+                });
+                let Some((use_curve, curve)) = curve else {
+                    unwritable_curve.insert(id);
+                    continue;
+                };
+                let use_range = use_curve.parameter_range;
+                let stored = parameter_range.unwrap_or(parameters.parameter_range);
+                let regenerated = cadmpeg_ir::units::FiniteVector::new(use_range.endpoints());
+                if !reads_as_use_curve_range(stored, curve, use_range)
+                    && !regenerated
+                        .is_some_and(|range| reads_as_use_curve_range(range, curve, use_range))
+                {
+                    other_range.insert(id);
+                }
+            }
+            TolerantCoedgeExtension::Empty { target: Some(_) }
+            | TolerantCoedgeExtension::Reference { .. }
+            | TolerantCoedgeExtension::EmbeddedCurve {
+                target: Some(_), ..
+            } => {
+                relocated.insert(id);
+            }
+        }
+    }
+    [
+        (
+            "of tolerant-coedge records that name a coedge the document does not hold",
+            missing,
+        ),
+        (
+            "of tolerant-coedge records that share their coedge with another record (the coedge record holds one extension, and the records do not state which one it is)",
+            shared(by_coedge),
+        ),
+        (
+            "of tolerant-coedge records whose coedge has no NURBS use curve for the embedded curve",
+            unwritable_curve,
+        ),
+        (
+            "of tolerant-coedge records whose parameter range and use-curve range both read back as another range (the decoder moves the range onto the knot domain of the curve)",
+            other_range,
+        ),
+        (
+            "of tolerant-coedge records whose extension names another record (the written coedge record holds its extension inline)",
+            relocated,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(reason, records)| Unwritable::of(reason, records))
+}
+
+/// The tolerant vertex and edge tails the B-rep stream cannot hold as they
+/// stand, in groups by reason. The written vertex and edge records hold the
+/// tolerance of the neutral vertex or edge, and one tail each.
+pub(super) fn unwritable_tolerant_tails(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
+    let vertices = target
+        .geometry
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect::<HashMap<_, _>>();
+    let edges = target
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let mut vertex_absent = BTreeSet::new();
+    let mut by_vertex = BTreeMap::<_, Vec<String>>::new();
+    let mut slot_disagrees = BTreeSet::new();
+    for tail in &native.tolerant_vertex_tails {
+        let Some(vertex) = vertices.get(&tail.vertex) else {
+            vertex_absent.insert(tail.id());
+            continue;
+        };
+        by_vertex.entry(&tail.vertex).or_default().push(tail.id());
+        if vertex.tolerance.is_some()
+            != matches!(
+                tail.evaluated_slot,
+                EvaluatedToleranceSlot::Evaluated { .. }
+            )
+        {
+            slot_disagrees.insert(tail.id());
+        }
+    }
+    let mut edge_absent = BTreeSet::new();
+    let mut by_edge = BTreeMap::<_, Vec<String>>::new();
+    let mut no_tolerance = BTreeSet::new();
+    for tail in &native.tolerant_edge_tails {
+        let Some(edge) = edges.get(&tail.edge) else {
+            edge_absent.insert(tail.id());
+            continue;
+        };
+        by_edge.entry(&tail.edge).or_default().push(tail.id());
+        if edge.tolerance.is_none() {
+            no_tolerance.insert(tail.id());
+        }
+    }
+    [
+        (
+            "of tolerant-vertex records that name a vertex the document does not hold",
+            vertex_absent,
+        ),
+        (
+            "of tolerant-vertex records that share their vertex with another record (the vertex record holds one tolerance tail, and the records do not state which one it is)",
+            shared(by_vertex),
+        ),
+        (
+            "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex (the written vertex record holds the vertex tolerance)",
+            slot_disagrees,
+        ),
+        (
+            "of tolerant-edge records that name an edge the document does not hold",
+            edge_absent,
+        ),
+        (
+            "of tolerant-edge records that share their edge with another record (the edge record holds one tolerance tail, and the records do not state which one it is)",
+            shared(by_edge),
+        ),
+        (
+            "of tolerant-edge records on an edge with no tolerance (the written edge record holds the edge tolerance)",
+            no_tolerance,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(reason, records)| Unwritable::of(reason, records))
+}
+
 pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
     let sketch_owners = native
         .design_entity_headers
@@ -243,12 +774,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         .filter(|header| header.in_sketch_module())
         .map(|header| header.entity_id.suffix())
         .collect::<BTreeSet<_>>();
-    let root_indices = native
-        .design_entity_headers
-        .iter()
-        .filter(|header| header.in_sketch_module())
-        .flat_map(|header| header.reference_values().copied())
-        .collect::<BTreeSet<_>>();
+    let root_indices = sketch_header_indices(native);
     let mut typed_indices = BTreeMap::<u32, &str>::new();
     let mut typed_records = Vec::new();
     for (record_index, id, class_tag) in native
@@ -484,10 +1010,6 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             )));
         }
     }
-    let mut reachable_headers = root_indices;
-    for relation in &native.sketch_relations {
-        reachable_headers.extend(relation.all_member_indices());
-    }
     let mut explicit_headers = BTreeSet::new();
     for header in &native.design_record_headers {
         if !explicit_headers.insert(header.record_index) {
@@ -499,12 +1021,6 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         if typed_indices.contains_key(&header.record_index) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design record header {} shadows a typed sketch record",
-                header.id
-            )));
-        }
-        if !reachable_headers.contains(&header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design record header {} is unreachable from the sketch graph",
                 header.id
             )));
         }
@@ -577,57 +1093,6 @@ pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
     }
     Ok(())
-}
-
-/// Proof that [`validate_source_less_design_bindings`] ran against the borrowed
-/// `F3dNative`. The private field keeps construction inside this module, so an
-/// encoder that reads binding-validated fields (material physical tokens) cannot
-/// be reached without the check having run on the very native it will read.
-#[derive(Clone, Copy)]
-pub(super) struct DesignBindingsValidated<'a> {
-    native: &'a F3dNative,
-}
-
-impl<'a> DesignBindingsValidated<'a> {
-    /// The native whose design bindings were validated.
-    pub(super) fn native(self) -> &'a F3dNative {
-        self.native
-    }
-}
-
-pub(super) fn validate_source_less_design_bindings(
-    native: &F3dNative,
-) -> Result<DesignBindingsValidated<'_>, CodecError> {
-    let mut by_key = BTreeMap::new();
-    let mut by_suffix = BTreeMap::new();
-    let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), CodecError> {
-        if by_key
-            .insert(key, suffix)
-            .is_some_and(|before| before != suffix)
-            || by_suffix
-                .insert(suffix, key)
-                .is_some_and(|before| before != key)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design body binding {id} conflicts with the body-map key/suffix bijection"
-            )));
-        }
-        Ok(())
-    };
-    if let Some(assignment) = native.design_material_assignments.first() {
-        return Err(CodecError::NotImplemented(format!(
-            "source-less F3D material assignment {} requires a typed body-presentation B-rep and scene graph",
-            assignment.id
-        )));
-    }
-    for visibility in &native.body_visibilities {
-        insert(
-            visibility.asm_body_key(),
-            visibility.entity_suffix,
-            visibility.id(),
-        )?;
-    }
-    Ok(DesignBindingsValidated { native })
 }
 
 pub(super) fn validate_source_less_history_graph(
@@ -735,7 +1200,6 @@ pub(super) fn validate_source_less_history_graph(
 pub(super) fn validate_source_less_design_links(
     target: &CadIr,
     native: &F3dNative,
-    attributes: &super::attributes::AttributeIndex<'_>,
 ) -> Result<(), CodecError> {
     if let Some(sentinel) = native.mesh_surface_sentinels.first() {
         return Err(CodecError::NotImplemented(format!(
@@ -743,34 +1207,6 @@ pub(super) fn validate_source_less_design_links(
             sentinel.id()
         )));
     }
-    let coedges = target
-        .geometry
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect::<HashMap<_, _>>();
-    let mut linked_coedges = BTreeSet::new();
-    for link in &native.sketch_curve_links {
-        // Only a coedge-owned link is regenerated; a link on any other owner is
-        // reported as a source-fidelity loss instead of refusing the write.
-        let AttributeTarget::Coedge(coedge) = &link.target else {
-            continue;
-        };
-        if !coedges.contains_key(coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch-curve link {} targets a missing coedge {}",
-                link.id,
-                coedge.as_str()
-            )));
-        }
-        if !linked_coedges.insert(coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "source-less F3D generation supports one sketch-curve link per coedge: {}",
-                coedge.as_str()
-            )));
-        }
-    }
-
     let bodies = target
         .geometry
         .bodies
@@ -849,82 +1285,6 @@ pub(super) fn validate_source_less_design_links(
         }
     }
 
-    let curve_by_id = target
-        .geometry
-        .curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut tolerant_coedges = BTreeSet::new();
-    for parameters in &native.tolerant_coedge_parameters {
-        let coedge = coedges.get(&parameters.coedge).copied().ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D tolerant-coedge metadata {} targets missing coedge {}",
-                parameters.id(),
-                parameters.coedge
-            ))
-        })?;
-        if !tolerant_coedges.insert(&parameters.coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "multiple F3D tolerant-coedge records target {}",
-                parameters.coedge
-            )));
-        }
-        match &parameters.extension {
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
-            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None } => {}
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-                target: None,
-                parameter_range,
-                ..
-            } => {
-                let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
-                    CodecError::InvalidInput(format!(
-                        "F3D tolerant-coedge extension {} has no use curve",
-                        parameters.id()
-                    ))
-                })?;
-                let curve = curve_by_id
-                    .get(use_curve.curve.as_str())
-                    .copied()
-                    .ok_or_else(|| {
-                        CodecError::InvalidInput(format!(
-                            "F3D tolerant-coedge extension {} references missing use curve {}",
-                            parameters.id(),
-                            use_curve.curve
-                        ))
-                    })?;
-                if !matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-                ) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
-                        parameters.id()
-                    )));
-                }
-                let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
-                if use_curve.parameter_range.endpoints() != effective_range.get() {
-                    return Err(CodecError::InvalidInput(format!(
-                        "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
-                        parameters.id()
-                    )));
-                }
-            }
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: Some(_) }
-            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference { .. }
-            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-                target: Some(_),
-                ..
-            } => {
-                return Err(CodecError::NotImplemented(format!(
-                    "source-less F3D cannot relocate tolerant-coedge extension {}",
-                    parameters.id()
-                )));
-            }
-        }
-    }
-
     let vertices = target
         .geometry
         .vertices
@@ -963,30 +1323,6 @@ pub(super) fn validate_source_less_design_links(
     }
     validate_unique_targets!(&native.body_native_keys, body, bodies, "body-native-key");
     validate_unique_targets!(
-        &native.body_visibilities,
-        body,
-        bodies,
-        "body-visibility",
-        [id()],
-        |visibility, (_, body)| {
-            if body.visible != Some(visibility.visible) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D body visibility {} conflicts with body {} visibility",
-                    visibility.id(),
-                    visibility.body
-                )));
-            }
-            let emitted_key = source_less_body_key(attributes, body)?;
-            if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key()) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D body visibility {} uses an ASM key different from body {}",
-                    visibility.id(),
-                    visibility.body
-                )));
-            }
-        }
-    );
-    validate_unique_targets!(
         &native.transform_hints,
         body,
         bodies,
@@ -1010,41 +1346,6 @@ pub(super) fn validate_source_less_design_links(
         "vertex-ownership"
     );
     validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
-    validate_unique_targets!(
-        &native.tolerant_edge_tails,
-        edge,
-        edges,
-        "tolerant-edge",
-        [id()],
-        |tail, edge| {
-            if edge.tolerance.is_none() {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D tolerant-edge metadata {} requires a tolerant edge",
-                    tail.id()
-                )));
-            }
-        }
-    );
-    validate_unique_targets!(
-        &native.tolerant_vertex_tails,
-        vertex,
-        vertices,
-        "tolerant-vertex",
-        [id()],
-        |tail, vertex| {
-            if vertex.tolerance.is_some()
-                != matches!(
-                    tail.evaluated_slot,
-                    EvaluatedToleranceSlot::Evaluated { .. }
-                )
-            {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
-                    tail.id()
-                )));
-            }
-        }
-    );
     let mut wire_record_indices = BTreeSet::new();
     for wire in &native.wire_topologies {
         let shell = shells.get(&wire.shell).copied().ok_or_else(|| {
@@ -1334,14 +1635,12 @@ pub(super) fn validate_source_less_wire_ownership(
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_source_less_design_links, F3dNative};
-    use crate::writer::generate::attributes::AttributeIndex;
+    use super::{unwritable_tolerant_tails, F3dNative};
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
-    use cadmpeg_core::CodecError;
 
     #[test]
-    fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
+    fn an_unset_tolerant_vertex_tail_on_a_vertex_with_a_tolerance_is_unwritable() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.geometry.vertices[0].tolerance =
             Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).unwrap());
@@ -1358,12 +1657,9 @@ mod tests {
             }],
             ..F3dNative::default()
         };
-        let attributes = AttributeIndex::new(&target, &native);
-        let error = validate_source_less_design_links(&target, &native, &attributes)
-            .expect_err("unset native evaluation must not coexist with a neutral tolerance");
-        assert!(matches!(error, CodecError::InvalidInput(_)));
-        assert!(error
-            .to_string()
-            .contains("requires finite fields and a tolerant vertex"));
+        let id = native.tolerant_vertex_tails[0].id();
+        let unwritable =
+            unwritable_tolerant_tails(&target, &native).expect("the tail is unwritable");
+        assert_eq!(unwritable.records, std::collections::BTreeSet::from([id]));
     }
 }

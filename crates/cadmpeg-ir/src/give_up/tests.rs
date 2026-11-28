@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::json;
 
-use super::{give_up, Arena, Seed};
+use super::{give_up, Arena, References, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::document::CadIr;
 use crate::ids::{FaceId, Identity};
@@ -102,7 +102,7 @@ fn gone(ir: &CadIr, seed: &str, outcome: &Outcome) -> BTreeSet<String> {
 }
 
 fn holds(ir: &CadIr, id: &str) -> bool {
-    ir.references_from(super::References::default())
+    ir.references_from(References::default())
         .held
         .contains_key(id)
 }
@@ -1408,4 +1408,401 @@ fn a_member_entry_of_a_given_up_definition_drops_the_state() {
         outcome.tail
     );
     assert_closed(&ir, other.as_str(), &outcome);
+}
+
+/// The ids each holder of `ir` names by the walk that fills `references`,
+/// other than its own.
+fn names_by_holder(
+    ir: &CadIr,
+    references: super::References,
+) -> BTreeMap<(Arena, String), BTreeSet<String>> {
+    let references = ir.references_from(references);
+    let mut names: BTreeMap<(Arena, String), BTreeSet<String>> = BTreeMap::new();
+    for (target, slots) in &references.named_by {
+        for slot in slots {
+            let holder = &references.holders[*slot];
+            if holder.1 != *target {
+                names
+                    .entry(holder.clone())
+                    .or_default()
+                    .insert(target.clone());
+            }
+        }
+    }
+    names
+}
+
+/// The unit cube whose first face, edge, point, and body project native
+/// records, whose second face states the id of its third face as its
+/// `native_ref`, and whose fourth face states its own.
+fn projected_cube() -> CadIr {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let records = ["face", "edge", "point", "body"]
+        .map(|kind| {
+            crate::NativeRecord::new(
+                Identity::new(format!("test:native:{kind}#1")).unwrap(),
+                serde_json::Map::new(),
+            )
+            .unwrap()
+        })
+        .to_vec();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("records", records)
+        .unwrap();
+    ir.geometry.faces[0].native_ref = Some("test:native:face#1".to_owned());
+    ir.geometry.edges[0].native_ref = Some("test:native:edge#1".to_owned());
+    ir.geometry.points[0].native_ref = Some("test:native:point#1".to_owned());
+    ir.geometry.bodies[0].native_ref = Some("test:native:body#1".to_owned());
+    ir.geometry.faces[1].native_ref = Some(ir.geometry.faces[2].id.as_str().to_owned());
+    ir.geometry.faces[3].native_ref = Some(ir.geometry.faces[3].id.as_str().to_owned());
+    ir
+}
+
+/// The projected cube with a collider on its body and a source attribute
+/// on its first face, each also projecting a native record.
+fn cube_with_model_records() -> CadIr {
+    use crate::attributes::{AttributeTarget, SourceAttribute};
+    use crate::physics::{Collider, ColliderShape, PhysicsTarget};
+
+    let mut ir = projected_cube();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model.colliders.push(Collider {
+        id: crate::ids::ColliderId::mint("test:model:collider#0").unwrap(),
+        target: PhysicsTarget::Body { body }.into(),
+        shape: ColliderShape::ConvexHull,
+        enabled: true,
+        material: None,
+        native_ref: Some("test:native:body#1".to_owned()),
+    });
+    ir.model.attributes.push(SourceAttribute {
+        id: crate::ids::AttributeId::mint("test:model:attribute#1").unwrap(),
+        target: AttributeTarget::Face(ir.geometry.faces[0].id.clone()).into(),
+        name: "Property".into(),
+        values: Vec::new(),
+        native_ref: Some("test:native:face#1".to_owned()),
+    });
+    let face = ir.geometry.faces[0].id.as_str().to_owned();
+    ir.model.presentation_layers.push(
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+            "id": "test:model:layer#1",
+            "name": "Layer",
+            "items": [{"entity": {"kind": "face", "face": face}}],
+            "native_ref": "test:native:face#1",
+        }))
+        .unwrap(),
+    );
+    if ir.model.product_definitions.is_empty() {
+        crate::examples::add_document_root(&mut ir);
+    }
+    let definition = ir.model.product_definitions[0].id.as_str().to_owned();
+    ir.model.point_clouds.push(
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+            "id": "test:model:point-cloud#1",
+            "definition": definition,
+            "positions": [[0.0, 0.0, 0.0]],
+            "normals": [],
+            "colors": [],
+            "channels": [],
+            "native_ref": "test:native:point#1",
+        }))
+        .unwrap(),
+    );
+    let drawing = |id: &str, kind: &str, views: &[&str], source: Option<&str>| {
+        let relationships = source.map_or_else(
+            || cadmpeg_core::json!({}),
+            |source| {
+                cadmpeg_core::json!({"Source": [
+                    {"target": {"kind": "drawing", "value": {"drawing": source}}}
+                ]})
+            },
+        );
+        cadmpeg_core::serde_erase::json::from_value::<crate::drawings::Drawing>(
+            cadmpeg_core::json!({
+                "assets": [],
+                "curves": [],
+                "id": id,
+                "kind": kind,
+                "object": "test:native:body#1",
+                "order": 0,
+                "parameters": {},
+                "relationships": relationships,
+                "runtime_type": kind,
+                "views": views,
+                "native_ref": "test:native:body#1",
+            }),
+        )
+        .unwrap()
+    };
+    ir.model.drawings.extend([
+        drawing(
+            "test:model:drawing#page",
+            "page",
+            &["test:model:drawing#view"],
+            None,
+        ),
+        drawing(
+            "test:model:drawing#view",
+            "view",
+            &[],
+            Some("test:model:drawing#page"),
+        ),
+    ]);
+    ir
+}
+
+/// The holders of `names` whose arena the CADIR wire carries.
+fn on_the_wire(
+    names: BTreeMap<(Arena, String), BTreeSet<String>>,
+) -> BTreeMap<(Arena, String), BTreeSet<String>> {
+    names
+        .into_iter()
+        .filter(|((arena, _), _)| match arena {
+            Arena::Home { home, field } => !super::wire_omitted(home, field),
+            Arena::Native { .. } => true,
+        })
+        .collect()
+}
+
+/// The typed walk of a record names each id that the walk of its JSON,
+/// typed by the CADIR schema, names, other than the record's own, and no
+/// other (§3.3). A record of an arena the wire omits, which the schema
+/// does not type, names the ids of its typed references.
+#[test]
+fn the_typed_walk_names_what_the_schema_walk_names() {
+    use super::{NativeLinks, References, Walk};
+
+    assert_eq!(Walk::of("geometry", "faces"), Walk::Typed);
+    assert_eq!(Walk::of("model", "product_definitions"), Walk::Typed);
+    assert_eq!(Walk::of("model", "pmi"), Walk::Json);
+    assert_eq!(Walk::of("model", "features"), Walk::Typed);
+    assert_eq!(Walk::of("model", "history_bodies"), Walk::Typed);
+
+    let mut pointless = crate::examples::unit_cube().unwrap();
+    let point = pointless.geometry.points.remove(0).id;
+    let (stored, _, _, _) = stored_state();
+    let documents = vec![
+        ("projected cube", projected_cube(), None),
+        ("cube with model records", cube_with_model_records(), None),
+        (
+            "cube without a point",
+            pointless,
+            Some(point.as_str().to_owned()),
+        ),
+        (
+            "cube with a history body",
+            crate::examples::unit_cube_with_history_body().unwrap(),
+            None,
+        ),
+        (
+            "directed subd sum",
+            crate::examples::directed_subd_sum().unwrap(),
+            None,
+        ),
+        ("design", crate::validate::design::fixture::document(), None),
+        ("stored state", stored, None),
+        (
+            "cyclic model",
+            crate::test_support::evaluation_cycles::cyclic_model().0,
+            None,
+        ),
+        (
+            "doubling model",
+            crate::test_support::evaluation_work::doubling_model(3).0,
+            None,
+        ),
+    ];
+    for (label, mut ir, lost) in documents {
+        ir.finalize();
+        let walk = |mut references: References| {
+            if let Some(lost) = &lost {
+                references.name(lost);
+            }
+            names_by_holder(&ir, references)
+        };
+        let typed = walk(References::new(NativeLinks::Unread));
+        let schema = walk(References::json_walk(NativeLinks::Unread));
+        assert!(!typed.is_empty(), "{label}");
+        assert_eq!(on_the_wire(typed), on_the_wire(schema), "{label}");
+    }
+
+    let model = names_by_holder(
+        &cube_with_model_records(),
+        References::new(NativeLinks::Unread),
+    );
+    let holder = |field: &'static str, id: &str| {
+        model[&(Arena::home("model", field).unwrap(), id.to_owned())].clone()
+    };
+    let cube = projected_cube();
+    assert_eq!(
+        holder("colliders", "test:model:collider#0"),
+        BTreeSet::from([
+            cube.geometry.bodies[0].id.as_str().to_owned(),
+            "test:native:body#1".to_owned()
+        ])
+    );
+    assert_eq!(
+        holder("attributes", "test:model:attribute#1"),
+        BTreeSet::from([
+            cube.geometry.faces[0].id.as_str().to_owned(),
+            "test:native:face#1".to_owned()
+        ])
+    );
+    let records = cube_with_model_records();
+    let names = |field: &'static str, id: &str| {
+        model
+            .get(&(Arena::home("model", field).unwrap(), id.to_owned()))
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert!(
+        names("presentation_layers", "test:model:layer#1")
+            .contains(cube.geometry.faces[0].id.as_str()),
+        "{model:?}"
+    );
+    assert!(
+        names("point_clouds", "test:model:point-cloud#1")
+            .contains(records.model.product_definitions[0].id.as_str()),
+        "{model:?}"
+    );
+    assert!(
+        names("drawings", "test:model:drawing#view").contains("test:model:drawing#page"),
+        "{model:?}"
+    );
+    assert!(
+        names("drawings", "test:model:drawing#page").contains("test:model:drawing#view"),
+        "{model:?}"
+    );
+
+    let history = crate::examples::unit_cube_with_history_body().unwrap();
+    let nest = history.model.history_bodies[0].id.as_str().to_owned();
+    let names = names_by_holder(&history, References::new(NativeLinks::Unread));
+    assert_eq!(
+        names[&(Arena::home("model", "history_bodies").unwrap(), nest)],
+        BTreeSet::from(["synthetic:model:feature#base".to_owned()])
+    );
+
+    let typed = names_by_holder(&projected_cube(), References::new(NativeLinks::Unread));
+    let cube = projected_cube();
+    let faces = Arena::home("geometry", "faces").unwrap();
+    let face = |at: usize| {
+        (
+            faces.clone(),
+            cube.geometry.faces[at].id.as_str().to_owned(),
+        )
+    };
+    assert!(typed[&face(0)].contains("test:native:face#1"));
+    assert!(typed[&face(1)].contains(cube.geometry.faces[2].id.as_str()));
+    let point = (
+        Arena::home("geometry", "points").unwrap(),
+        cube.geometry.points[0].id.as_str().to_owned(),
+    );
+    assert_eq!(
+        typed[&point],
+        BTreeSet::from(["test:native:point#1".to_owned()])
+    );
+}
+
+/// A `native_ref` names a native record at any depth of a record, as a
+/// field or as the key of a map; a label whose text is `native_ref` names
+/// nothing (§2).
+#[test]
+fn a_native_ref_names_its_text_at_any_depth() {
+    let value = json!({
+        "native_ref": "test:native:a#1",
+        "label": "native_ref",
+        "nested": {
+            "native_ref": "test:native:b#1",
+            "items": [{"native_ref": "test:native:c#1"}, "native_ref"],
+            "count": {"native_ref": 3},
+        },
+    });
+    let mut found = BTreeSet::new();
+    super::native_refs::visit(&value, &mut |text: &str| {
+        found.insert(text.to_owned());
+    })
+    .unwrap();
+    assert_eq!(
+        found,
+        BTreeSet::from([
+            "test:native:a#1".to_owned(),
+            "test:native:b#1".to_owned(),
+            "test:native:c#1".to_owned(),
+        ])
+    );
+}
+
+/// What one release of lost ids did: by id, the records it dropped and
+/// marked, and its entries for stored states.
+type Releases = Vec<(String, BTreeSet<String>, BTreeSet<String>, Vec<String>)>;
+
+/// Releases the cube's shell, which the stored state of [`stored_state`]
+/// removes and its own face names, and a native record that the cube's
+/// body projects, with both gone from the document, by the walk that fills
+/// `references`. Returns the document and the releases.
+fn release_shell(references: super::References) -> (serde_json::Value, Releases) {
+    let (mut ir, shell, _, _) = stored_state();
+    let native = "test:native:body#lost".to_owned();
+    ir.geometry.shells.retain(|kept| kept.id.as_str() != shell);
+    ir.geometry.bodies[0].native_ref = Some(native.clone());
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("root");
+    let mut released = Vec::new();
+    super::release_lost(&ctx, &mut ir, &[shell, native], references, &mut released)
+        .expect("the release runs");
+    let releases = released
+        .into_iter()
+        .map(|(id, release)| {
+            let stated = release.stated();
+            (id, release.dropped, release.marked, stated)
+        })
+        .collect();
+    (json::to_value(&ir).unwrap(), releases)
+}
+
+/// The release of lost ids by the typed walk drops, marks, and restates
+/// the records that the release by the schema walk does, transitively and
+/// in the delta of a stored state (§3.3).
+#[test]
+fn a_release_by_the_typed_walk_drops_and_marks_what_the_schema_walk_does() {
+    use super::{NativeLinks, References};
+
+    let (typed_ir, typed) = release_shell(References::new(NativeLinks::Unread));
+    let (schema_ir, schema) = release_shell(References::json_walk(NativeLinks::Unread));
+
+    let (cube, shell, _, _) = stored_state();
+    let faces: BTreeSet<String> = cube
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| face.shell.as_str() == shell)
+        .map(|face| face.id.as_str().to_owned())
+        .collect();
+    let loops: BTreeSet<String> = cube
+        .geometry
+        .loops
+        .iter()
+        .filter(|kept| faces.contains(kept.face.as_str()))
+        .map(|kept| kept.id.as_str().to_owned())
+        .collect();
+    let [(_, dropped, _, stated), (_, _, marked, _)] = typed.as_slice() else {
+        panic!("one release of each lost id: {typed:?}");
+    };
+    assert!(
+        !faces.is_empty() && dropped.is_superset(&faces),
+        "{typed:?}"
+    );
+    assert!(
+        !loops.is_empty() && dropped.is_superset(&loops),
+        "{typed:?}"
+    );
+    assert!(!stated.is_empty(), "{typed:?}");
+    assert!(
+        marked.contains(cube.geometry.bodies[0].id.as_str()),
+        "{typed:?}"
+    );
+
+    assert_eq!(typed, schema);
+    assert_eq!(typed_ir, schema_ir);
 }

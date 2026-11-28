@@ -19,6 +19,7 @@ fn entity(payload: Vec<u8>) -> CatiaEntityRecord {
             record_suffix: Vec::new(),
         },
         definition_schema_selections: Vec::new(),
+        compact_class: None,
         entity_id: 1,
         value_schema_selections: Vec::new(),
         object_production: None,
@@ -27,6 +28,7 @@ fn entity(payload: Vec<u8>) -> CatiaEntityRecord {
         reference_signature: None,
         suffix: None,
         suffix_schema_selection: None,
+        cached_value_views: crate::native::entity_record::CachedValueViews::default(),
     }
 }
 

@@ -221,10 +221,15 @@ fn directory_count(decoded: &DecodeResult) -> usize {
         .expect("iges namespace");
     let entities = namespace.arenas().get("entities").map_or(0, Vec::len);
     entities
-        + loss_count(
-            &decoded.report().losses,
-            IgesLossCode::DirectoryRecordQuarantined,
-        )
+        + decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                    && loss.message.starts_with("part directory-entry ")
+            })
+            .count()
 }
 
 fn point_ids(ir: &CadIr) -> BTreeSet<String> {

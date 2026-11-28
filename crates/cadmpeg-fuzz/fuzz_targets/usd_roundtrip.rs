@@ -22,9 +22,7 @@ fuzz_target!(|data: &[u8]| {
     let mut encoded = Vec::new();
     assert!(codec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("usda-1.0")
-        )
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit("usda-1.0")))
         .and_then(|plan| plan.write_to(&mut encoded))
         .is_ok());
     let mut round_trip = Cursor::new(encoded);

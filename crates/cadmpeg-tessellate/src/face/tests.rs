@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -15,7 +16,13 @@ fn surface_normals_follow_the_winding_without_losing_their_direction() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1000);
-    let carrier = Carrier::new(&index, &work, &ir.geometry.faces[0].surface).unwrap();
+    let carrier = Carrier::new(
+        &index,
+        &work,
+        EvaluationAdmission::Standard,
+        &ir.geometry.faces[0].surface,
+    )
+    .unwrap();
     let mesh = Mesh {
         uv: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
         points: vec![
@@ -44,7 +51,13 @@ fn a_triangle_on_one_parameter_line_is_left_out() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1000);
-    let carrier = Carrier::new(&index, &work, &ir.geometry.faces[0].surface).unwrap();
+    let carrier = Carrier::new(
+        &index,
+        &work,
+        EvaluationAdmission::Standard,
+        &ir.geometry.faces[0].surface,
+    )
+    .unwrap();
     let meridian = |v: f64| Point3::new(v.cos(), 0.0, v.sin());
     let mesh = Mesh {
         uv: vec![[1.0, 0.0], [1.0, 0.5], [1.0, 1.0], [0.5, 0.5]],
@@ -72,7 +85,13 @@ fn a_triangle_on_a_diagonal_parameter_line_stays() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1000);
-    let carrier = Carrier::new(&index, &work, &ir.geometry.faces[0].surface).unwrap();
+    let carrier = Carrier::new(
+        &index,
+        &work,
+        EvaluationAdmission::Standard,
+        &ir.geometry.faces[0].surface,
+    )
+    .unwrap();
     let mesh = Mesh {
         uv: vec![[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]],
         points: vec![

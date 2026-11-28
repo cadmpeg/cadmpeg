@@ -146,7 +146,7 @@ fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
 /// operand records and the sketch placements and body bindings each feature
 /// scope resolves against.
-#[cfg_attr(test, derive(Default))]
+#[derive(Default)]
 pub(crate) struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) source_parameters: &'a [DesignParameter],
@@ -1301,7 +1301,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             || {
                                 paste_copy::timeline_name(scope).unwrap_or_else(|| {
                                     format!(
-                                        "{} {}",
+                                        "{}{}",
                                         scope.source_kind_name(),
                                         scope.feature_ordinal
                                     )

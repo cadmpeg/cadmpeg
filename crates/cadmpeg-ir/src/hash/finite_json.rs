@@ -84,6 +84,19 @@ pub(crate) fn write_canonical_json_erased(
     write_json_erased(admission, JsonFloats::Canonical, None, writer, write)
 }
 
+/// Writes an already-erased value as pretty JSON with `serde_json` float
+/// semantics (negative zero normalized to zero, non-finite floats written as
+/// `null`) without adding a second erasure layer.
+pub(crate) fn write_serde_json_erased(
+    admission: CanonicalAdmission<'_, '_>,
+    writer: &mut dyn std::io::Write,
+    write: &dyn Fn(
+        cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError>,
+) -> Result<(), CanonicalJsonError> {
+    write_json_erased(admission, JsonFloats::SerdeJson, None, writer, write)
+}
+
 /// Receives the structs and maps a [`write_serde_json`] walk writes, in
 /// writing order.
 pub(crate) trait Structs {
