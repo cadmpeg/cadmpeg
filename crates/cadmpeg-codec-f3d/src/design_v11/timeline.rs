@@ -7,9 +7,9 @@
 //! feature of the scope that the stream's authored order places at the item's
 //! position: an object's owned `Base Feature` scope takes the object's
 //! position, and a `JointOrigin` scope takes the position of the `Assemble`
-//! envelope bound to it. Else the feature at the item's position in the
-//! stream's item run, counted from the stream's first feature ordinal, which
-//! the archive merge renumbers; a loss names that match. A feature goes to one
+//! envelope bound to it. Else the feature at the item's authored stream
+//! ordinal, which includes linked followers, counted from the stream's first
+//! feature ordinal, which the archive merge renumbers; a loss names that match. A feature goes to one
 //! item. A reverse-normal linked scope that is no item is a member of its own
 //! before the item that follows it. An item with no feature is a feature of
 //! the family its record type establishes, or a native feature named by that
@@ -223,6 +223,7 @@ pub(super) fn project_ordered(
                         let exact = take(record, &consumed)
                             .or_else(|| owned.iter().find_map(|owned| take(*owned, &consumed)));
                         let matched = exact.or_else(|| {
+                            let position = order.records.get(&record).copied().unwrap_or(position);
                             let ordinal = ordinal_base.get(stream)?.checked_add(position)?;
                             let feature = positioned
                                 .get(&(stream, ordinal))?
