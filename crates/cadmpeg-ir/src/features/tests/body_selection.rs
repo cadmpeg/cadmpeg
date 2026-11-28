@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::features::selections::{BodyMember, BodyMembers, BodySelection};
 use crate::ids::{BodyId, HistoricalBodyId};

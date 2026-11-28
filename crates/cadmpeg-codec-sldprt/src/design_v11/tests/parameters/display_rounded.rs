@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bare length displays that no stored record values, near zero included.
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 

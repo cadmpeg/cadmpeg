@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::features::evaluation::HistoricalFaceSurface;
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};

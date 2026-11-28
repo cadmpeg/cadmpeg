@@ -2,8 +2,6 @@
 //! Resolution of a write request against the source: the synthesis catalog and
 //! the rows a source outside it is written as.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 

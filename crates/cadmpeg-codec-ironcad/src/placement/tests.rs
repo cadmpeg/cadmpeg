@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::{records, PropertyValue, NAME_MARKER, PROPERTY_MARKER, PROPERTY_SET, STRING_PROPERTY};
 use crate::layout::scene_record_matrix;

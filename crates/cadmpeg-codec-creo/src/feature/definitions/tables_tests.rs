@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::feature::definitions::decode_variable_scalar;
 use crate::feature::definitions::definitions;

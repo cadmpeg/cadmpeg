@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Keywords duplicate and inferred-state diagnostics.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::container::{make_block, outer_header};
 

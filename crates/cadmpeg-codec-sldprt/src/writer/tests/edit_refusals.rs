@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edits of decoded parts that the writer writes instead of refusing: what it
 //! cannot carry is kept as stored and named.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;

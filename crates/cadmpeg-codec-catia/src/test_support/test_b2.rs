@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! b2/b3-family synthetic stream and CATPart builders.
 
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_a5a8::{a5_pcurve_stream, a5_pcurve_stream_with_jets};
 use crate::test_support::test_bytes::{compact_uint_bytes, le_f64};
 use crate::test_support::test_container::{object_main_catpart, standard_catpart_from_streams};

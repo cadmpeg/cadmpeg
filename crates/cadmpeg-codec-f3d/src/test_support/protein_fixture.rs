@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic Protein instance-property payloads.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::index_from_u32;
 

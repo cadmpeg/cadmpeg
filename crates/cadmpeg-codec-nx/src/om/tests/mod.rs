@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unit and fixture tests for OM wire parsers owned by `om`.
 
-#![allow(clippy::unwrap_used)]
-
 #[test]
 fn unique_candidate_stops_after_second_hit() {
     let mut yielded = 0;

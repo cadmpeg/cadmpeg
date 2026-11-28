@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests of the planar and spatial sketches of a Fusion design.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

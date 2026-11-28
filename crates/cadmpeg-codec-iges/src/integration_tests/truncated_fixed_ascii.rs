@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A Fixed ASCII file with no Terminate card decodes every complete record.
 
-#![allow(clippy::unwrap_used)]
-
 use std::collections::BTreeSet;
 use std::io::Cursor;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! feature identity tests.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use cadmpeg_ir::codec::Codec;
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::{chart_ending_on_edge_vertices, sample, Approximator, Axis, SEED_PATCHES};
 use crate::eval::admission::EvaluationAdmission;

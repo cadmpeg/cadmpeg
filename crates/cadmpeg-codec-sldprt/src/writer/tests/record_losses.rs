@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Individual records in written arenas must appear, charge loss, or refuse.
-#![allow(clippy::unwrap_used)]
 
 use crate::{loss::SldprtLossCode, SldprtCodec};
 use cadmpeg_ir::source_fidelity::CodecDigests;

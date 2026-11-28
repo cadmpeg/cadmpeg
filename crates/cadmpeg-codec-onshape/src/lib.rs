@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::indexing_slicing))]
+#![cfg_attr(test, allow(clippy::indexing_slicing))]
 //! Decode offline Onshape bundles into CADIR.
 //!
 //! <!-- generated: capability onshape -->

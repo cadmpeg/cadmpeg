@@ -483,7 +483,7 @@ impl Write for TempFileWriter<'_> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::default_trait_access)]
+#[allow(clippy::default_trait_access)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     use cadmpeg_core::serde_erase::json;

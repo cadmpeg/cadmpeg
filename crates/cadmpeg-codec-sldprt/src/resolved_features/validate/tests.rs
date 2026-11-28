@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native lane-validation findings.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

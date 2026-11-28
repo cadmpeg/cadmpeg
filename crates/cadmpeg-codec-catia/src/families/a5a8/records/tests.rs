@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `a5a8` family over synthetic byte fixtures.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use cadmpeg_test_support::EditableDecodeResult;
 

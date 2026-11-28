@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonfinite and invalid feature-dimension decode degradation tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

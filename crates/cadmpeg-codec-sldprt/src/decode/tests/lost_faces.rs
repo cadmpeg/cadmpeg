@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode tests of the body, region, and shell records whose faces are lost
 //! (CADIR §3.3, §5.6).
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

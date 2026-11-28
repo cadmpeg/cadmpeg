@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container admission, strict-mode, and resource-limit decode tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

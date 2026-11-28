@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The losses of configurations whose state the file does not store.
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 use crate::loss::SldprtLossCode;

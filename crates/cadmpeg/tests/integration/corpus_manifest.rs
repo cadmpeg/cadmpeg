@@ -20,7 +20,6 @@
 //! `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test integration corpus_manifest`
 //! rewrites the pins in place; review the diff as a classification change.
 //!
-#![allow(clippy::unwrap_used)] // Test code: a failed unwrap is a test failure.
 
 use std::fmt::Write as _;
 use std::io::Cursor;

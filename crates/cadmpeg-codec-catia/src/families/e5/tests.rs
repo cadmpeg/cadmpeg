@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `e5` family over synthetic byte fixtures.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;

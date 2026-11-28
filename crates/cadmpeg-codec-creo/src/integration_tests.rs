@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end Creo decode contracts.
-#![allow(clippy::unwrap_used)]
 
 mod pmi;
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edges the source states with no parameter range.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;

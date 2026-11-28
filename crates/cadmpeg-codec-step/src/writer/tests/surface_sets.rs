@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sheets whose faces are whole bounded surfaces, written as geometric sets.
 
-#![allow(clippy::unwrap_used)]
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};

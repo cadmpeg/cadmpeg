@@ -28,9 +28,7 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   arm. The rule discovers evaluator names from production return signatures,
   resolves function paths and imports, and tracks bound results. Common method
   names require a receiver type or constructor that identifies the evaluator.
-- Loss notes use the owning loss code's `note` method.
 - Codec crates access only their own native namespace (`foreign_native_namespace`).
-- Formatted malformed errors use structured codec errors.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.
 - Vector repeats use a literal size or the length of an existing collection.
   For a different count, use `DecodeContext::alloc_filled` after
@@ -127,27 +125,18 @@ codec's parse error. A session ceiling keeps its own refusal. Elsewhere, the
 overflow branch returns a typed error. Constant expressions must preserve the
 exact value or reject the invalid constant.
 
-## Decode context parameters
-
-`optional_decode_context` rejects production function parameters with type
-`Option<&DecodeContext<...>>`. Qualified paths, explicit borrow lifetimes,
-mutable borrows, trait methods and function-pointer parameters are included.
-The decode path passes its caller context. Context-free reconstruction and
-writers take no context. Fields, local bindings and returned values are not
-function parameters and stay outside this rule. The checker recognizes the
-named type in source and does not resolve type aliases.
-
 ## Lint suppressions
 
 `lint_suppression` rejects production `#[allow(...)]` and `#[expect(...)]`,
 including inner attributes and conditional suppressions active in production.
 Suppressions under `cfg_attr(test, ...)` or a flat `all(..., test, ...)`
-predicate apply only to tests and are exempt. Fix the code covered
-by the lint. Test modules and test files retain their suppressions. The one
-exception is the module-level expectation in `cadmpeg-core/src/convert.rs` for
+predicate apply only to tests and are exempt. Fix the code covered by the lint.
+The module-level expectation in `cadmpeg-core/src/convert.rs` covers
 `as_conversions`, `cast_possible_truncation`, `cast_precision_loss` and
 `cast_sign_loss`. It has a nonempty reason and appears once. Function-level
 expectations, nested module expectations and additional lints are rejected.
+The root of `cadmpeg-test-support` allows `expect_used` and `unwrap_used` for
+its test helpers.
 Generated dialect ID modules each permit one module-level `expect(dead_code)`.
 
 ## Integer limits
@@ -221,7 +210,6 @@ Source-pattern rules inspect production Rust under `crates/**/src`. They exclude
 test, test-support, golden, integration, and bench paths and filenames containing
 `test`. Comments, literals, and `cfg(test)` items are masked before matching.
 Placement rules inspect `crates/**/*.rs`, following test-only module ancestry.
-The test-collection rule reads `scripts/test_*.py` as Python syntax.
 The manifest rule `measurement_dependency` inspects `crates/*/Cargo.toml`.
 Both scans recognize `cfg(test)` and flat `cfg(all(..., test, ...))` gates.
 Other conditions remain production, including `cfg(not(test))`. Comments and literals are masked

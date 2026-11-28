@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::unwrap_used)]
-
 use super::super::report_design_projection_gaps;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;

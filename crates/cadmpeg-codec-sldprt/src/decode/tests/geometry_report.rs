@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report and native-relation design-loss tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::container::ContainerScan;
 use crate::decode::append_design_losses;

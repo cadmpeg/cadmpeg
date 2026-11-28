@@ -3,7 +3,6 @@
 //!
 //! Helpers hand-build `.prt` byte images and embedded-stream payloads. They
 //! construct raw bytes only; no native record type crosses in here.
-#![allow(clippy::unwrap_used)]
 
 use super::test_bytes::encoded_xmt;
 use super::test_bytes::put_f64;

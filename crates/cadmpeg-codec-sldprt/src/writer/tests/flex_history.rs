@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::records::operand_tag::NativeOperandTag;

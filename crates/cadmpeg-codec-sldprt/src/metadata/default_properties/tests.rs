@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 use super::*;
 use crate::test_support::container::{make_block, outer_header};
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};

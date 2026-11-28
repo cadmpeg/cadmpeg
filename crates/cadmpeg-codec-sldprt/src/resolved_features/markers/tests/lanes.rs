@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-marker lane decode, write-back, and native-validation tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::EditableDecodeResult;
 

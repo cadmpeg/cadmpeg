@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Formula expression evaluation tests over synthetic CATPart streams.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use cadmpeg_test_support::wire;
 

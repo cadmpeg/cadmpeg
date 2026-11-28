@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::source_fidelity::CodecDigests;

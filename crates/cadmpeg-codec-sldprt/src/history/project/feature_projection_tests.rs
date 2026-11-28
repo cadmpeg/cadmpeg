@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-class, hole, plane, and profile projection tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::bind::order_model_features_for_regeneration;
 use crate::history::classify::feature_tree_node_role;

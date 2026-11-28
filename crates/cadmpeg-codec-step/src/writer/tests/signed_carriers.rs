@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Written pcurves on a carrier the writer normalizes to a positive radius.
 
-#![allow(clippy::unwrap_used)]
-
 use std::f64::consts::{FRAC_PI_2, PI};
 use std::io::Cursor;
 

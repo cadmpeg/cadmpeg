@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use cadmpeg_ir::design::options::NativeOptions;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! a5 bound-edge and topology-run synthetic stream builders.
 
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_a5a8::{
     a5_native_edge_identity_stream, a5_pcurve_stream, a5_pcurve_stream_with_support_and_uv,
     a5_pcurve_stream_with_uv, a5_surface_stream_with_poles,

@@ -25,7 +25,6 @@ use std::collections::BTreeMap;
 
 #[test]
 // These checked constructors must accept the explicit test fixtures.
-#[allow(clippy::unwrap_used)]
 fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,

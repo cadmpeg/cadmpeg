@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Zero-entity-family synthetic stream builders.
 
-#![allow(clippy::unwrap_used)]
-
 pub(crate) fn zero_entity_support_stream() -> Vec<u8> {
     let mut plane = vec![0u8; 0x6a + 12];
     plane[..4].copy_from_slice(&[0xa9, 0x03, 0x27, 0x6a]);

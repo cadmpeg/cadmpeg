@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The current geometry of a part holds the active configuration's bodies;
 //! the bodies another configuration stores are its evaluation's.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
 

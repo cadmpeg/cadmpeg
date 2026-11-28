@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact delete-body selection decode and native-store tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

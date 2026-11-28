@@ -3,7 +3,6 @@
 //!
 //! Helpers hand-build `.prt` byte images and embedded-stream payloads. They
 //! construct raw bytes only; no native record type crosses in here.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Write;
 
