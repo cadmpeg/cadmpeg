@@ -414,7 +414,7 @@ fn uncertain_item_kinds_in_a_spanned_component_keep_none_with_one_loss() {
             DesignParameterScope::empty(
                 &id,
                 DesignFeatureKind::try_from(kind.to_owned()).unwrap(),
-                100 + index as u32,
+                100 + u32::try_from(index).unwrap(),
             )
         })
         .collect::<Vec<_>>();
