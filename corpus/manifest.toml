@@ -2399,6 +2399,30 @@ sha256 = "98b7e7243a6475bc0ef451d5f84cb76fd9f53c6637a4a75008569d64bc937ce1"
 notes = "Sheet-metal part, one 20 x 30 mm rectangle extruded 1.5 mm: six planar faces, volume 900 mm3. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank sheet-metal part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
 
 [[file]]
+filename = "ironcad/Ironcad_2025_simple_test_parts.sat"
+format = "sat"
+dialect = "sat:text"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "32b6f62837665d52ba53af477496692b85afd355fdda695469b7639d19972c44"
+notes = "ACIS 2021 R31 text export of an IronCAD scene of five parts: a header extension line, extended entity prefixes with the body integer, and one scaled, translated body transform per body."
+
+[[file]]
+filename = "ironcad/Assembly_moved.sat"
+format = "sat"
+dialect = "sat:text"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "1b036c51136d6115ea3cb4abe2f44524c2d581a68a0a930326cf6aa5e7c74287"
+notes = "ACIS 2021 R31 text export of two identical blocks of an IronCAD assembly; each body transform has scale 10 and a millimetre translation."
+
+[[file]]
 filename = "ironcad/Block_ACIS_100x50x20.ics"
 format = "ironcad"
 dialect = "ironcad:cfb"

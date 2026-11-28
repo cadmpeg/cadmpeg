@@ -1004,7 +1004,6 @@ fn container_rows(
             reach: &reach,
             wire: &WireShellTopology::default(),
             stream: "",
-            header_scale: 1.0,
             format: crate::ids::ID_FORMAT,
         },
     )?;
@@ -1045,7 +1044,6 @@ fn container_rows_precollected(
             reach: &reach,
             wire: &WireShellTopology::default(),
             stream: "",
-            header_scale: 1.0,
             format: crate::ids::ID_FORMAT,
         },
     )?;
