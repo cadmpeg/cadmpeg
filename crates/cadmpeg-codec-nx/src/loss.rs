@@ -19,43 +19,14 @@
 //! have no honest common default.
 
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNote},
     Severity,
 };
 
-macro_rules! loss_codes {
-    ($( $(#[$meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident), )*) => {
-        /// Stable NX transfer-loss identifier.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub(crate) enum NxLossCode {
-            $( $(#[$meta])* $variant, )*
-        }
-
-        impl NxLossCode {
-            /// Every code in declaration order.
-            #[cfg(test)]
-            const ALL: &'static [Self] = &[$(Self::$variant),*];
-
-            /// Stable loss code string.
-            #[must_use]
-            pub(crate) const fn code(self) -> &'static str {
-                match self { $(Self::$variant => $code),* }
-            }
-
-            /// Loss severity.
-            #[must_use]
-            const fn severity(self) -> Severity {
-                match self { $(Self::$variant => Severity::$severity),* }
-            }
-
-            const fn shared_taxonomy(self) -> LossTaxonomy {
-                match self { $(Self::$variant => LossTaxonomy::$taxonomy),* }
-            }
-        }
-    };
-}
-
-loss_codes! {
+cadmpeg_ir::loss_codes! {
+    /// Stable NX transfer-loss identifier.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub(crate) enum NxLossCode {
     /// A JT display graph failed native admission.
     DisplayJtGraphRejected => ("container.display-jt-graph-rejected", Blocking, DecodeDiagnostic),
     /// A roll-forward table failed native admission.
@@ -178,6 +149,7 @@ loss_codes! {
     /// The feature recognisers compare evaluated geometry at a floor coarser
     /// than the document tolerances.
     FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
+    }
 }
 
 impl NxLossCode {

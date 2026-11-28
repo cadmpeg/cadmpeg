@@ -19,6 +19,7 @@ use cadmpeg_ir::report::{
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.fcstd` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -178,79 +179,9 @@ pub(crate) enum FreecadLossCode {
     /// Nonempty inline legacy map has no verified file-version interpretation.
     ElementMapVersionUnresolved,
 }
+}
 
 impl FreecadLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [FreecadLossCode] = &[
-        Self::TemplateNotTransferred,
-        Self::DrawingViewAxisNotTransferred,
-        Self::ViewGeometryNotStored,
-        Self::ViewGeometryNotTransferred,
-        Self::DimensionAnchorsNotTransferred,
-        Self::DrawingStyleNotTransferred,
-        Self::CaptionNotTransferred,
-        Self::DrawingSheetNotTransferred,
-        Self::DrawingTitleBlockNotTransferred,
-        Self::DrawingCosmeticEdgeNotTransferred,
-        Self::DrawingCosmeticVertexNotTransferred,
-        Self::DrawingCenterLineNotTransferred,
-        Self::DrawingGeometryFormatNotTransferred,
-        Self::DrawingDimensionKindNotTransferred,
-        Self::DrawingDimensionGeometryNotTransferred,
-        Self::DrawingDimensionToleranceNotTransferred,
-        Self::MeshPlacementNotTransferred,
-        Self::MeshPlacementBounded,
-        Self::PersistencePayloadUnresolved,
-        Self::PersistenceSideEntryUnresolved,
-        Self::PersistenceCountNoncanonical,
-        Self::PersistencePropertyRepeated,
-        Self::FeatureCyclicHistory,
-        Self::FeatureNativeKindRetained,
-        Self::FeatureRevolutionNotTransferred,
-        Self::FeatureRemovalWithoutBase,
-        Self::FeaturePrimitivePlacementUnresolved,
-        Self::FeatureLinkPlacementUnresolved,
-        Self::FeatureJointUnresolved,
-        Self::FeatureJointDistanceUnresolved,
-        Self::FeatureJointDistanceUnsatisfiable,
-        Self::FeatureJointValueUnbound,
-        Self::FeatureJointFlagUnread,
-        Self::AssemblyPlacementAliasNoncanonical,
-        Self::ParameterExpressionEmpty,
-        Self::ParameterQuantityAssumed,
-        Self::ParameterIntegerAssumed,
-        Self::ParameterValueNonFinite,
-        Self::ParameterDependencyDropped,
-        Self::SketchNativeGeometry,
-        Self::SketchNurbsNative,
-        Self::SketchNativeConstraint,
-        Self::SketchConstraintNameAmbiguous,
-        Self::SketchConstraintBindingConflict,
-        Self::SketchExternalReferenceUnresolved,
-        Self::SketchExternalCacheUnresolved,
-        Self::SketchProfileMatchingBounded,
-        Self::AppearanceTopologyColorCountMismatch,
-        Self::AppearancePrimitiveSizeNotTransferred,
-        Self::AppearanceStateNotTransferred,
-        Self::SourceDialectUnverified,
-        Self::SourceGuiSchemaUnverified,
-        Self::SourceGuiPropertyKeyBlank,
-        Self::SourceGuiMetadataUnresolved,
-        Self::ElementMapMetadataUnresolved,
-        Self::ElementMapStringReferenceDangling,
-        Self::PcurveNotTransferred,
-        Self::PcurveLocationAmbiguous,
-        Self::TopologyLocationIdentityBounded,
-        Self::TopologyNonBoundaryIncidenceRetained,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::TopologyRecordRepeated,
-        Self::ProgramVersionNoncanonical,
-        Self::FileVersionNoncanonical,
-        Self::FileVersionUnverified,
-        Self::ElementMapVersionUnresolved,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
@@ -521,7 +452,7 @@ mod tests {
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
-        let codes: Vec<&str> = FreecadLossCode::ALL.iter().map(|c| c.code()).collect();
+        let codes: BTreeSet<&str> = FreecadLossCode::ALL.iter().map(|c| c.code()).collect();
         assert_eq!(
             codes,
             [
@@ -592,6 +523,8 @@ mod tests {
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",
             ]
+            .into_iter()
+            .collect::<BTreeSet<_>>()
         );
     }
 
