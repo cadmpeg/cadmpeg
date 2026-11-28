@@ -14,7 +14,7 @@ Code:
 - A comment states only intent that the code cannot show. Do not use comments to hedge, justify, narrate history, or record invariants; enforce an invariant with code or a test.
 - When you move code, update callers to import from the owning module. Do not keep old paths through re-exports.
 - `python3 scripts/check-codec-facade.py` checks codec facades; read-only codecs have no encoder.
-- Use `View` for reads, validate counts before `alloc_filled`, and construct losses with `code.note`; see `scripts/check-source-policy.py`.
+- Use `View` for reads and `View::counted` or `bounded_len` before `alloc_filled`; construct losses with `code.note` (see `scripts/check-source-policy.py`).
 - Keep a `View` where its `SpaceId` must survive; propagate `req_*` errors through a codec-local `From<ParseError>`.
 - Add each new drop path to the codec’s `*LossCode` enum; its `family.detail` strings are the contract.
 - Rust types and `python3 scripts/name-validation-rules.py --check` enforce validation rule names; admission routes select rules in `validate/admit.rs`.
