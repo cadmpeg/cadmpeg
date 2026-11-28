@@ -305,19 +305,33 @@ enum SphereTip {
     Changed,
     Deleted,
     Alternate,
+    AlternateSplit,
+    AlternateWithoutFeatureLane,
     LocalBody,
 }
 
 /// The partition before the last feature contains a loopless sphere. The
 /// current partition either changes its radius or removes its nodes.
 fn part_with_earlier_sphere(tip_kind: SphereTip) -> cadmpeg_ir::codec::DecodeResult {
+    SldprtCodec
+        .decode(
+            &mut Cursor::new(earlier_sphere_fixture(tip_kind)),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+}
+
+fn earlier_sphere_fixture(tip_kind: SphereTip) -> Vec<u8> {
     use cadmpeg_parasolid::test_support::replay::{DeltasStream, Mark};
 
     use crate::test_support::carchive::config_object_stream_declaring;
     use crate::test_support::container::outer_header;
     use crate::test_support::parasolid::sequence::{loopless_nodes, sequence_of, status_node, F};
 
-    let alternate = matches!(tip_kind, SphereTip::Alternate);
+    let alternate = matches!(
+        tip_kind,
+        SphereTip::Alternate | SphereTip::AlternateSplit | SphereTip::AlternateWithoutFeatureLane
+    );
     let delete_body = matches!(tip_kind, SphereTip::Deleted | SphereTip::LocalBody);
     let tip = Mark {
         xmt: 100,
@@ -401,6 +415,14 @@ fn part_with_earlier_sphere(tip_kind: SphereTip) -> cadmpeg_ir::codec::DecodeRes
         &format!("{configuration}-Partition"),
         &partition,
     ));
+    if matches!(tip_kind, SphereTip::AlternateSplit) {
+        let (other, _) = sequence_of(&loopless_nodes(53));
+        source.extend(make_block(
+            0x20,
+            &format!("{configuration}-Partition"),
+            &other,
+        ));
+    }
     let rows = if alternate {
         r#"<Configuration Name="Default" SourceIndex="0"/><Configuration Name="Alternate" SourceIndex="1"/>"#
     } else {
@@ -422,17 +444,14 @@ fn part_with_earlier_sphere(tip_kind: SphereTip) -> cadmpeg_ir::codec::DecodeRes
         &configuration,
         &config_object_stream_declaring("moPMarkRecord_c"),
     ));
-    source.extend(make_block(
-        0x21,
-        &format!("{configuration}-ResolvedFeatures"),
-        &resolved,
-    ));
-    SldprtCodec
-        .decode(
-            &mut Cursor::new(native_envelope_fixture(&source)),
-            &DecodeOptions::default(),
-        )
-        .unwrap()
+    if !matches!(tip_kind, SphereTip::AlternateWithoutFeatureLane) {
+        source.extend(make_block(
+            0x21,
+            &format!("{configuration}-ResolvedFeatures"),
+            &resolved,
+        ));
+    }
+    native_envelope_fixture(&source)
 }
 
 #[test]
@@ -513,6 +532,113 @@ fn a_nonactive_configuration_tip_keeps_its_mark_and_bases_its_earlier_state() {
     let content = earlier.content.as_ref().unwrap();
     assert_eq!(content.base, StateBase::Evaluation(tip.id.clone()));
     assert_eq!(content.delta.records.surfaces.len(), 1);
+}
+
+#[test]
+fn the_state_chain_ceiling_refuses_the_decode_session() {
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::DecodeFailure;
+
+    for (tip, depth) in [(SphereTip::Changed, 1), (SphereTip::Alternate, 2)] {
+        let bytes = earlier_sphere_fixture(tip);
+        let decode =
+            |options: &DecodeOptions| SldprtCodec.decode(&mut Cursor::new(&bytes), options);
+        let result = decode(&DecodeOptions::default()).unwrap();
+        assert_eq!(result.ir().design.evaluations.len(), depth);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code != SldprtLossCode::HistoryStatesUnread.kind()
+                && loss.code != SldprtLossCode::ConfigStateUnstated.kind()
+        }));
+
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_state_chain_depth = u64::try_from(depth).unwrap();
+        assert_eq!(decode(&options).unwrap(), result);
+        for limit in 0..options.policy.limits.max_state_chain_depth {
+            options.policy.limits.max_state_chain_depth = limit;
+            let Err(failure) = decode(&options) else {
+                panic!("the decode returned a document at state chain limit {limit}");
+            };
+            assert!(
+                matches!(
+                    failure,
+                    DecodeFailure::Codec(CodecError::ResourceLimit(ResourceLimit {
+                        scope: LimitScope::Session,
+                        dimension: ResourceDimension::RecursionDepth,
+                        reason: ResourceFailure::BudgetExceeded,
+                        limit: maximum,
+                        used,
+                        additional: 1,
+                        ..
+                    })) if maximum == limit && used == limit
+                ),
+                "{failure:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn geometry_depth_leaves_saved_states_outside_the_decode_budget() {
+    use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
+
+    let bytes = earlier_sphere_fixture(SphereTip::Alternate);
+    let decode = |options: &DecodeOptions| SldprtCodec.decode(&mut Cursor::new(&bytes), options);
+    let full = decode(&DecodeOptions::default()).unwrap();
+    let mut options = DecodeOptions {
+        depth: DecodeDepth::Geometry,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_state_chain_depth = 0;
+    let geometry = decode(&options).unwrap();
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().geometry, full.ir().geometry);
+    assert_eq!(
+        geometry.ir().model.product_definitions,
+        full.ir().model.product_definitions,
+    );
+    assert!(geometry.ir().scope_violations().is_empty());
+    assert!(geometry
+        .source_fidelity()
+        .unrepresented()
+        .contains(&ArenaClass::Design));
+    assert!(geometry
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.to_string() != "decode/depth.not-delivered"));
+}
+
+fn assert_alternate_states_unread(tip: SphereTip, reason: &str) {
+    let result = part_with_earlier_sphere(tip);
+    let [evaluation] = result.ir().design.evaluations.as_slice() else {
+        panic!("expected the alternate configuration tip");
+    };
+    assert!(evaluation.content.is_some());
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::HistoryStatesUnread.kind())
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!(
+            "expected a history.states-unread loss: {:#?}",
+            result.report().losses
+        );
+    };
+    assert!(loss.message.contains("Alternate"), "{loss:?}");
+    assert!(loss.message.contains(reason), "{loss:?}");
+}
+
+#[test]
+fn an_alternate_configuration_without_a_unique_partition_site_is_reported() {
+    assert_alternate_states_unread(SphereTip::AlternateSplit, "partition site");
+}
+
+#[test]
+fn an_alternate_configuration_without_a_feature_lane_is_reported() {
+    assert_alternate_states_unread(SphereTip::AlternateWithoutFeatureLane, "feature records");
 }
 
 #[test]

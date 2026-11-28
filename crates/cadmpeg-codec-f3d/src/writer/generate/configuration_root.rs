@@ -106,7 +106,7 @@ pub(super) fn plan(
     target: &CadIr,
     source: &[DesignConfiguration],
     projected: Option<(usize, usize)>,
-    written: &Written<'_>,
+    written: &Written<'_, '_>,
     configurations: &[Configuration],
 ) -> Plan {
     let documents = written.documents.as_ref();
@@ -420,6 +420,17 @@ impl Plan {
     pub(super) fn active_ids(&self) -> Option<(&str, &str)> {
         let root = self.root.as_ref()?;
         Some((&root.table_id, &root.row_id))
+    }
+
+    pub(super) fn placed_row<'a>(&'a self, document: usize, table: usize, row: &'a str) -> &'a str {
+        self.root
+            .as_ref()
+            .and_then(|root| {
+                let rename = root.renamed.as_ref()?;
+                (rename.document == document && rename.table == table && rename.row_id == row)
+                    .then_some(root.row_id.as_str())
+            })
+            .unwrap_or(row)
     }
 
     /// The payload of `configuration`, the written document at `index`, with

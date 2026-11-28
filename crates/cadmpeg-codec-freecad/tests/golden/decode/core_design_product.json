@@ -231,6 +231,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Box"
           },
+          "position": 8,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -267,6 +268,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Cylinder"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -303,6 +305,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Cylinder"
           },
+          "position": 14,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -339,6 +342,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DesignedFeature"
           },
+          "position": 4,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -504,6 +508,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Profile"
           },
+          "position": 2,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -540,6 +545,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Profile"
           },
+          "position": 3,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {

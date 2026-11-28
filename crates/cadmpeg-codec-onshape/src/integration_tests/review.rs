@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Regression cases for source admission and history fidelity.
 use crate::test_support::review::{decode, edit, members, parameter, validate, variable, wire};
-use crate::test_support::{codec, fixture};
+use crate::test_support::{codec, fixture, Charge};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::io::Cursor;
 
-fn loss(result: &cadmpeg_ir::codec::DecodeResult, code: &str) -> bool {
-    result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == code)
+fn loss(result: &cadmpeg_ir::codec::DecodeResult, code: &str, charge: Charge) -> bool {
+    result.report().losses.iter().any(|loss| {
+        crate::test_support::states(code, charge, &loss.code.to_string(), &loss.message)
+    })
 }
 fn kind(wire: &Value, ordinal: usize) -> &Value {
     &wire["model"]["features"][ordinal]["definition"]["value"]["kind"]
@@ -56,10 +55,18 @@ fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
                 .body
                 .losses
                 .iter()
-                .filter(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note))
+                .filter(|note| {
+                    crate::test_support::states(
+                        "onshape/member.unreadable",
+                        Charge::GivenUp(Cause::Undecoded),
+                        &note.code.to_string(),
+                        &note.message,
+                    )
+                })
                 .collect();
-            assert_eq!(notes.len(), 1);
-            assert!(decoded
+            assert_eq!(notes.len(), 1, "{resource}");
+            // The give-up of the member is the one entry for the lost history.
+            assert!(!decoded
                 .body
                 .losses
                 .iter()
@@ -188,7 +195,7 @@ fn latest_refused_variable_binding_blocks_later_consumers() {
             .losses
             .iter()
             .any(|l| l.message.contains("unresolved latest binding")));
-        assert!(loss(&result, "onshape/history.not-supported"));
+        assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         validate(result);
     }
 }
@@ -240,7 +247,7 @@ fn boolean_operands_refuse_invalid_and_repeated_values_and_keep_valid_controls()
                 );
             }
             if !valid || gated {
-                assert!(loss(&result, "onshape/history.not-supported"));
+                assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
             }
             validate(result);
         }
@@ -256,7 +263,7 @@ fn boolean_operands_refuse_invalid_and_repeated_values_and_keep_valid_controls()
             let wire = wire(&result);
             assert_eq!(kind(&wire, 1), "native");
             assert!(wire["model"]["features"][1].get("suppressed").is_none());
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
     }
 }
@@ -297,7 +304,7 @@ fn quantities_require_dimensioned_expressions_or_explicit_units() {
             );
         } else {
             assert_eq!(kind(&wire, 1), "native");
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
         validate(result);
     }
@@ -328,7 +335,7 @@ fn quantities_require_dimensioned_expressions_or_explicit_units() {
             assert!((angle - expected).abs() <= f64::EPSILON);
         } else {
             assert_eq!(kind(&wire, 1), "native");
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
         validate(result);
     }
@@ -367,7 +374,11 @@ fn thin_open_curves_refuse_unresolved_sides_for_both_directions_and_flips() {
                 crate::test_support::review::design_operation(result.ir(), "Plate"),
                 crate::test_support::review::unresolved("extrude")
             );
-            assert!(loss(&result, "onshape/extrude.thin-not-supported"));
+            assert!(loss(
+                &result,
+                "onshape/extrude.thin-not-supported",
+                Charge::Note
+            ));
             validate(result);
         }
     }
@@ -448,7 +459,7 @@ fn blind_holes_require_drill_point_and_depth_reference_and_read_thread_facts() {
             }
         } else {
             assert_eq!(kind(&wire, 5), "native", "{case}");
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
         validate(result);
     }
@@ -584,11 +595,14 @@ fn stale_unused_and_optional_responses_are_omitted_at_geometry_and_design_depth(
                     },
                 )
                 .unwrap();
-            assert!(result
-                .report()
-                .losses
-                .iter()
-                .any(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note)));
+            assert!(result.report().losses.iter().any(|note| {
+                crate::test_support::states(
+                    "onshape/member.unreadable",
+                    Charge::GivenUp(Cause::Unreadable),
+                    &note.code.to_string(),
+                    &note.message,
+                )
+            }));
             assert!(result
                 .ir()
                 .model
@@ -639,7 +653,11 @@ fn multi_body_decode_names_an_unmatched_creator_and_unsupported_thin_bound() {
     });
     let result = decode(&bytes);
     assert_eq!(result.ir().geometry.bodies.len(), 2);
-    assert!(loss(&result, "onshape/history.part-not-matched"));
+    assert!(loss(
+        &result,
+        "onshape/history.part-not-matched",
+        Charge::Note
+    ));
     validate(result);
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if !path.ends_with("features.json") {
@@ -651,7 +669,11 @@ fn multi_body_decode_names_an_unmatched_creator_and_unsupported_thin_bound() {
     });
     let result = decode(&bytes);
     assert_eq!(kind(&wire(&result), 1), "native");
-    assert!(loss(&result, "onshape/extrude.thin-not-supported"));
+    assert!(loss(
+        &result,
+        "onshape/extrude.thin-not-supported",
+        Charge::Note
+    ));
     validate(result);
 }
 
@@ -681,7 +703,11 @@ fn native_sketch_entities_keep_supported_lines_and_gate_whole_sketch_consumers()
             .count(),
         4
     );
-    assert!(loss(&result, "onshape/sketch.geometry-not-supported"));
+    assert!(loss(
+        &result,
+        "onshape/sketch.geometry-not-supported",
+        Charge::Note
+    ));
     validate(result);
 }
 
@@ -810,7 +836,11 @@ fn opaque_additional_json_members_remain_bytes_and_empty_members_keep_their_loss
     });
     let result = decode(&bytes);
     assert_eq!(kind(&wire(&result), 1), "extrude");
-    assert!(loss(&result, "onshape/container.empty-member"));
+    assert!(loss(
+        &result,
+        "onshape/container.empty-member",
+        Charge::Note
+    ));
     let asset = result
         .ir()
         .model

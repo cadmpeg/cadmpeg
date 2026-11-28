@@ -77,7 +77,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     }
     let (container, current) = timeline(&features, bodies)?;
     let (arrangements, active_arrangements) = arrangements(ir, &definition)?;
-    parameters::project(ir, &definition);
+    parameters::project(ir, &definition)?;
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition,

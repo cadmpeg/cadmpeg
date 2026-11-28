@@ -23,6 +23,7 @@ use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::assembly;
@@ -367,10 +368,13 @@ pub(crate) struct ModelName {
     pub(crate) offset: usize,
 }
 
-/// A failed expansion with its admitted source-section identity and diagnosis.
+/// A failed expansion with its admitted source-section identity, diagnosis,
+/// and give-up cause: a ceiling or allowance leaves the section undecoded,
+/// and LZW framing that does not expand leaves it unreadable.
 pub(crate) struct SectionExpansionLoss {
     pub(crate) section_offset: usize,
     pub(crate) message: String,
+    pub(crate) cause: Cause,
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
@@ -1079,23 +1083,32 @@ fn expanded_sections(
         let over_allowance =
             cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance;
         let expansion = if over_ceiling {
-            Err("declared expansion exceeds the 256 MiB section ceiling".into())
+            Err((
+                Cause::Undecoded,
+                "declared expansion exceeds the 256 MiB section ceiling".into(),
+            ))
         } else if over_allowance {
-            Err(format!(
-                "declared expansion of {expected_length} bytes exceeds the \
-                 {per_expand_allowance}-byte per-expansion allowance"
+            Err((
+                Cause::Undecoded,
+                format!(
+                    "declared expansion of {expected_length} bytes exceeds the \
+                     {per_expand_allowance}-byte per-expansion allowance"
+                ),
             ))
         } else {
             match crate::compress::decode(ctx, payload, expected_length) {
                 Ok(Some(expanded)) => Ok(expanded),
-                Ok(None) => Err("invalid or incomplete LZW framing".into()),
-                Err(CodecError::Malformed(reason)) => Err(reason),
+                Ok(None) => Err((
+                    Cause::Unreadable,
+                    "invalid or incomplete LZW framing".into(),
+                )),
+                Err(CodecError::Malformed(reason)) => Err((Cause::Unreadable, reason)),
                 Err(error) => return Err(error),
             }
         };
         let expanded = match expansion {
             Ok(expanded) => expanded,
-            Err(reason) => {
+            Err((cause, reason)) => {
                 let message = format!(
                     "section `{}` at offset {source_offset}, {} stored bytes: {reason}; \
                  expansion omitted; source bytes retained",
@@ -1105,6 +1118,7 @@ fn expanded_sections(
                 losses.push(SectionExpansionLoss {
                     section_offset: section.section.offset(),
                     message,
+                    cause,
                 });
                 continue;
             }

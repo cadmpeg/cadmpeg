@@ -27,7 +27,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{
+    DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::DesignConfiguration;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -40,6 +42,7 @@ use cadmpeg_ir::design::ops::body::PatternInstances;
 use cadmpeg_ir::design::ops::surface::MeshKind;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::features::parameters::DesignConfiguration as ModelConfiguration;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -48,7 +51,9 @@ use cadmpeg_ir::schema::{EntityKind, EntitySchema};
 use super::names::Names;
 
 pub(super) mod between;
+use crate::history::project::neutral_configuration_id;
 use crate::loss::SldprtLossCode;
+use crate::records::FeatureHistory;
 
 /// The scope whose configurations' states are stated.
 pub(super) struct Scope<'a> {
@@ -100,24 +105,16 @@ pub(super) fn configuration_states(
         if Some(&configuration.id) == scope.active {
             continue;
         }
-        let native = ir.model.configurations.iter().find(|native| {
-            native.native_ref.is_some() && native.native_ref == configuration.native_ref
-        });
+        let native = configuration
+            .native_ref
+            .as_deref()
+            .and_then(|id| model_configuration(ir, id));
         let stale = native
             .is_some_and(|native| crate::decode::configuration_source_needs_update(ir, native));
         let bodies = native.and_then(|native| native.bodies.as_deref());
         let content = match bodies {
-            Some(_) if ctx.policy().limits.max_state_chain_depth == 0 => {
-                losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
-                    "configuration {}: the part's evaluation-chain depth limit is reached.",
-                    configuration.id,
-                )));
-                if !stale {
-                    continue;
-                }
-                None
-            }
             Some(bodies) if bodies.iter().all(|body| !current.contains(body)) => {
+                admit_state(ctx, 0)?;
                 if index.is_none() {
                     index = Some(Reach::new(ctx, &ir.geometry)?);
                 }
@@ -185,22 +182,85 @@ pub(super) fn configuration_states(
             native_ref: None,
         });
     }
-    let retired = match &index {
-        Some(reach) if !held.is_empty() => {
-            let mut kept = BTreeSet::new();
-            topology_ids(&reach.state(ctx, scope.current)?, |id| {
-                kept.insert(id.as_str().to_owned());
-            });
-            held.retain(|id, _| !kept.contains(id));
-            held
-        }
-        _ => BTreeMap::new(),
-    };
+    if let Some(reach) = index.filter(|_| !held.is_empty()) {
+        let current = reach.state_ids(ctx, scope.current)?;
+        held.retain(|id, _| !current.contains(id.as_str()));
+    }
     Ok(States {
         evaluations,
         records,
-        retired,
+        retired: held,
     })
+}
+
+fn model_configuration<'a>(ir: &'a CadIr, id: &str) -> Option<&'a ModelConfiguration> {
+    ir.model
+        .configurations
+        .iter()
+        .find(|native| native.native_ref.as_deref() == Some(id))
+}
+
+/// The geometry of inactive configurations that no current body reaches.
+pub(super) fn retired_records(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    histories: &[FeatureHistory],
+    current: &[BodyId],
+) -> Result<BTreeMap<String, ConfigurationId>, CodecError> {
+    let Some((configurations, active)) =
+        super::configurations::native_with_active(histories, ir.source.as_ref())
+    else {
+        return Ok(BTreeMap::new());
+    };
+    let mut index = None;
+    let mut retired = BTreeMap::new();
+    let active = &configurations[active].id;
+    for configuration in &configurations {
+        if &configuration.id == active {
+            continue;
+        }
+        let Some(bodies) = model_configuration(ir, &configuration.id)
+            .and_then(|native| native.bodies.as_deref())
+            .filter(|bodies| {
+                !bodies.is_empty() && bodies.iter().all(|body| !current.contains(body))
+            })
+        else {
+            continue;
+        };
+        if index.is_none() {
+            index = Some(Reach::new(ctx, &ir.geometry)?);
+        }
+        if let Some(reach) = &index {
+            let owner = neutral_configuration_id(&configuration.id)?;
+            for id in reach.state_ids(ctx, bodies)? {
+                retired
+                    .entry(id.to_owned())
+                    .or_insert_with(|| owner.clone());
+            }
+        }
+    }
+    if let Some(reach) = index {
+        let current = reach.state_ids(ctx, current)?;
+        retired.retain(|id, _| !current.contains(id.as_str()));
+    }
+    Ok(retired)
+}
+
+fn admit_state(ctx: &DecodeContext<'_>, base_depth: u64) -> Result<(), CodecError> {
+    let limit = ctx.policy().limits.max_state_chain_depth;
+    if base_depth < limit {
+        return Ok(());
+    }
+    Err(ResourceLimit {
+        scope: LimitScope::Session,
+        dimension: ResourceDimension::RecursionDepth,
+        reason: ResourceFailure::BudgetExceeded,
+        limit,
+        used: base_depth,
+        additional: 1,
+        operation: "SolidWorks evaluation-chain depth",
+    }
+    .into())
 }
 
 /// The loss of a configuration that is not active and whose partition the
@@ -354,10 +414,9 @@ macro_rules! topology_arenas {
                 Ok(())
             }
 
-            /// The records that belong to the state of `bodies`, each arena
-            /// sorted by id: the records whose parent pointers lead to one of
-            /// them, and every record those reference.
-            fn state(&self, ctx: &DecodeContext<'_>, bodies: &[BodyId]) -> Result<Topology, CodecError> {
+            /// The records whose parent pointers lead to a body in `bodies`,
+            /// and every record those reference.
+            fn state_ids(&self, ctx: &DecodeContext<'_>, bodies: &[BodyId]) -> Result<HashSet<&'g str>, CodecError> {
                 let mut owned = HashSet::<&str>::new();
                 let mut pending = bodies
                     .iter()
@@ -375,6 +434,13 @@ macro_rules! topology_arenas {
                         self.references(ctx, id, &mut pending)?;
                     }
                 }
+                Ok(held)
+            }
+
+            /// The records that belong to the state of `bodies`, each arena
+            /// sorted by id.
+            fn state(&self, ctx: &DecodeContext<'_>, bodies: &[BodyId]) -> Result<Topology, CodecError> {
+                let held = self.state_ids(ctx, bodies)?;
                 let mut out = Topology::default();
                 $(
                     out.$field = self

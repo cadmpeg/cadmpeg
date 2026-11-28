@@ -38,7 +38,7 @@ use cadmpeg_ir::report::{
     Severity,
 };
 use cadmpeg_ir::units::{Tolerances, UnitVector3};
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
@@ -2172,23 +2172,13 @@ fn push_loss_vec(
 /// Part kind of a Design parameter frame that matches no parameter grammar.
 const PARAMETER_FRAME_PART: &str = "parameter-frame";
 
-fn report_unparsed_parameter_records(
+fn give_up_unparsed_parameter_records(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    report: &mut DecodeBody,
     given_up: &mut Vec<GivenUpPart>,
     unparsed: &[crate::design::decode::parameters::UnparsedParameterRecords],
 ) -> Result<(), CodecError> {
     for records in unparsed {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::ParameterRecordUnparsed,
-            format_args!(
-                "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
-                records.frames.len(),
-                records.stream
-            ),
-        );
         let bytes = scan.entry_bytes(&records.stream)?;
         let stream = cadmpeg_ir::StreamName::try_from(records.stream.clone())
             .map_err(CodecError::malformed)?;
@@ -2206,7 +2196,11 @@ fn report_unparsed_parameter_records(
             .in_stream(stream.clone());
             given_up.push(ctx.give_up_part(
                 part,
-                CodecError::malformed("F3D parameter frame matches no parameter grammar"),
+                Cause::Undecoded,
+                crate::design::decode::record::give_up_error(
+                    Cause::Undecoded,
+                    "F3D parameter frame matches no parameter grammar",
+                ),
             )?);
         }
     }
@@ -3616,10 +3610,9 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(prereqs.design_record_losses.iter().cloned());
-        report_unparsed_parameter_records(
+        give_up_unparsed_parameter_records(
             self.ctx,
             self.scan,
-            &mut self.report,
             &mut self.given_up,
             &prereqs.design_parameter_unparsed,
         )?;
@@ -3685,7 +3678,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.transfer.geometry_transferred(),
             );
         }
-        let failure = match &prereqs.design_feature_timelines {
+        let charged = |error: &CodecError| (Cause::Unreadable.of(error), error.to_string());
+        let (failure_cause, failure) = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
                     return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
@@ -3696,19 +3690,21 @@ impl<'a> F3dDecodeSession<'a> {
                 {
                     return Err(error);
                 }
-                Err(error) => error.to_string(),
+                Err(error) => charged(&error),
             },
             Err(error) => match self.ctx.resource_refusal() {
                 Some(limit) => return Err(CodecError::ResourceLimit(limit)),
-                None => error.to_string(),
+                None => charged(error),
             },
         };
-        self.report
-            .losses
-            .push(F3dLossCode::DesignIntentUndecoded.note(format!(
-                "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
-            )));
-        self.give_up_design_sources(&failure)?;
+        let code = match failure_cause {
+            Cause::Unreadable => F3dLossCode::DesignIntentUnreadable,
+            Cause::Undecoded => F3dLossCode::DesignIntentUndecoded,
+        };
+        self.report.losses.push(code.note(format!(
+            "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
+        )));
+        self.give_up_design_sources(failure_cause, &failure)?;
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -3719,13 +3715,18 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(DesignState::Absent)
     }
 
-    /// Gives up the sources phase 2 reads after it failed with `failure`:
-    /// each Design stream and Design configuration entry as an archive
-    /// entry, and the history partition of each history BREP that stores
-    /// one, from where the history decode starts, each holding Design
+    /// Gives up for `cause` the sources phase 2 reads after it failed with
+    /// `failure`: each Design stream and Design configuration entry as an
+    /// archive entry, and the history partition of each history BREP that
+    /// stores one, from where the history decode starts, each holding Design
     /// content.
-    fn give_up_design_sources(&mut self, failure: &str) -> Result<(), CodecError> {
-        let error = || CodecError::malformed(format!("design intent was not decoded: {failure}"));
+    fn give_up_design_sources(&mut self, cause: Cause, failure: &str) -> Result<(), CodecError> {
+        let error = || {
+            crate::design::decode::record::give_up_error(
+                cause,
+                format_args!("design intent was not decoded: {failure}"),
+            )
+        };
         let scan = self.scan;
         for entry in &scan.entries {
             if scan.is_design_stream(entry, ContainerRole::Bulkstream)
@@ -3735,6 +3736,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ctx,
                     &entry.name,
                     &[ArenaClass::Design],
+                    cause,
                     error(),
                 )?);
             }
@@ -3755,7 +3757,7 @@ impl<'a> F3dDecodeSession<'a> {
                 design_intent::HISTORY_PART,
                 start..bytes.len(),
                 [ArenaClass::Design],
-                error(),
+                (cause, error()),
             )?);
         }
         Ok(())
@@ -3973,13 +3975,7 @@ impl<'a> F3dDecodeSession<'a> {
                         report_xref_placement_overrides(&mut self.report, table);
                     }
                     Ok(None) => {}
-                    Err(error) => report_xref_parse_loss(
-                        self.ctx,
-                        self.scan,
-                        &mut self.report,
-                        &mut self.given_up,
-                        error,
-                    )?,
+                    Err(failure) => self.given_up.extend(failure.give_up(self.ctx, self.scan)?),
                 }
                 FinalizePath::Geometry(index)
             }
@@ -4295,13 +4291,7 @@ impl<'a> F3dDecodeSession<'a> {
                         self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
-                    Err(error) => report_xref_parse_loss(
-                        self.ctx,
-                        self.scan,
-                        &mut self.report,
-                        &mut self.given_up,
-                        &error,
-                    )?,
+                    Err(failure) => self.given_up.extend(failure.give_up(self.ctx, self.scan)?),
                 }
                 self.note_uninterpreted_design();
                 self.native.store(
@@ -4419,11 +4409,18 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 /// Decode an F3D or F3Z reader.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = crate::f3z::observer::scan(ctx, root)?;
+    decode_scanned(ctx, &scan)
+}
+
+pub(crate) fn decode_scanned(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Decoded, CodecError> {
     match &scan.kind {
-        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
+        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, scan),
         container::F3dContainerKind::Document { .. } => {
             let mut decoded =
-                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+                decode_scanned_document(ctx, scan, crate::report::ReportScope::Standalone)?;
             crate::f3z::merge::bind_standalone_joints(
                 ctx,
                 &mut decoded.ir,
@@ -4432,7 +4429,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
-                &scan,
+                scan,
                 &decoded.ir,
                 &mut decoded.body.losses,
             )?;
@@ -4444,9 +4441,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.body.losses,
             )?;
             let has_scene =
-                crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
+                crate::scene::collect(ctx, scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
-                let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
+                let sources = crate::scene::sources(ctx, scan, &decoded.ir)?;
                 crate::scene::bind(
                     ctx,
                     &mut decoded.ir,
@@ -4539,9 +4536,7 @@ fn decode_scanned_document<'a>(
             }) => {
                 return Err(error);
             }
-            Err(failure) => {
-                report_xref_parse_loss(ctx, scan, &mut report, &mut given_up, &failure)?;
-            }
+            Err(failure) => given_up.extend(failure.give_up(ctx, scan)?),
         }
         for failure in &unread {
             given_up.extend(failure.give_up(ctx, scan)?);
@@ -4608,21 +4603,29 @@ fn decode_scanned_document<'a>(
             // A stream that fails to frame is reported even when another
             // selected stream decoded with no geometry.
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
-                let reason = match candidate.kernel {
-                    Some(crate::container::KernelFraming::Asm { .. }) => {
-                        "F3D BREP entry: its ASM record stream does not frame"
-                    }
-                    Some(crate::container::KernelFraming::Acis(_)) => {
-                        "F3D BREP entry: the decoder reads no ACIS binary record stream"
-                    }
-                    Some(crate::container::KernelFraming::Text { .. }) | None => {
-                        "F3D BREP entry: the decoder reads no kernel framing in it"
-                    }
+                let (cause, reason) = match candidate.kernel {
+                    Some(crate::container::KernelFraming::Asm { .. }) => (
+                        Cause::Unreadable,
+                        "F3D BREP entry: its ASM record stream does not frame",
+                    ),
+                    Some(crate::container::KernelFraming::Acis(_)) => (
+                        Cause::Undecoded,
+                        "F3D BREP entry: the decoder reads no ACIS binary record stream",
+                    ),
+                    Some(crate::container::KernelFraming::Text { .. }) => (
+                        Cause::Undecoded,
+                        "F3D BREP entry: the decoder reads no text kernel stream",
+                    ),
+                    None => (
+                        Cause::Unreadable,
+                        "F3D BREP entry: it stores no kernel stream header",
+                    ),
                 };
                 brep_given_up.extend(scan.give_up_entry(
                     ctx,
                     &candidate.name,
-                    CodecError::malformed(reason),
+                    cause,
+                    crate::design::decode::record::give_up_error(cause, reason),
                 )?);
                 brep_outcome = ModelBrepOutcome::Failed {
                     stream: candidate.name.clone(),
@@ -4841,11 +4844,6 @@ fn collect_mesh_outcome(
             ..
         } => return Err(error),
         MeshContainerOutcome::Failed { entry_name, error } => {
-            push_loss_vec(
-                &mut report.losses,
-                F3dLossCode::MeshContainerUndecoded,
-                format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),
-            );
             failed.push((entry_name, error));
         }
         MeshContainerOutcome::Unplaced {
@@ -4857,12 +4855,16 @@ fn collect_mesh_outcome(
             body_id,
             error,
         } => {
-            report.losses.extend(record_given_up(
-                cadmpeg_ir::ids::Identity::new(&body_id)?,
-                F3dLossCode::MeshContainerUndecoded.note(format!(
-                    "mesh body {body_id} from container `{entry_name}` was not placed: {error}"
-                )),
-            ));
+            report.losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(&body_id)?,
+                    Cause::Unreadable.of(&error),
+                    format_args!(
+                        "mesh body {body_id} from container `{entry_name}` was not placed: {error}"
+                    ),
+                )
+                .loss(),
+            );
         }
         MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
             &mut report.losses,
@@ -4975,17 +4977,25 @@ fn project_mesh_bodies(
         Ok(decoded) => decoded,
         Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
         Err(e) => {
-            push_loss_vec(
-                &mut report.losses,
-                F3dLossCode::MeshContainerUndecoded,
-                format_args!("mesh bodies could not be decoded: {e}"),
-            );
+            let before = given_up.len();
+            let cause = Cause::Undecoded.of(&e);
             for entry in crate::container::paramesh_entries(scan) {
                 given_up.extend(scan.give_up_entry(
                     ctx,
                     &entry.name,
-                    CodecError::malformed(format_args!("F3D mesh bodies: {e}")),
+                    cause,
+                    crate::design::decode::record::give_up_error(
+                        cause,
+                        format_args!("F3D mesh bodies could not be decoded: {e}"),
+                    ),
                 )?);
+            }
+            if given_up.len() == before {
+                push_loss_vec(
+                    &mut report.losses,
+                    F3dLossCode::MeshContainerUndecoded,
+                    format_args!("mesh bodies could not be decoded: {e}"),
+                );
             }
             return Ok(MeshProjection {
                 count: 0,
@@ -5098,7 +5108,8 @@ fn project_mesh_bodies(
         collect_mesh_outcome(&mut bodies, report, &mut failed, outcome)?;
     }
     for (entry_name, error) in failed {
-        given_up.extend(scan.give_up_entry(ctx, &entry_name, error)?);
+        let cause = Cause::Unreadable.of(&error);
+        given_up.extend(scan.give_up_entry(ctx, &entry_name, cause, error)?);
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
@@ -5382,26 +5393,6 @@ fn annotate_docstruct(
     if let Some(subtype) = docstruct.subtype {
         attributes.insert("docstruct_subtype".into(), subtype);
     }
-    Ok(())
-}
-
-/// Reports the external-reference table the decoder dropped and gives up
-/// the stored bytes whose decoding failed: the archive entry, or the
-/// reference extension of `Manifest.dat`.
-fn report_xref_parse_loss(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-    report: &mut DecodeBody,
-    given_up: &mut Vec<GivenUpPart>,
-    failure: &crate::xref::XrefFailure,
-) -> Result<(), CodecError> {
-    report
-        .losses
-        .push(F3dLossCode::XrefTableUndecoded.note(format!(
-            "external-reference table was not decoded: {}",
-            failure.error
-        )));
-    given_up.extend(failure.give_up(ctx, scan)?);
     Ok(())
 }
 
@@ -5897,19 +5888,20 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 
 /// The machine-local digest by which the F3D patch path compares two documents
 /// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
+    ctx.with_arena(&arena, |ctx| {
+        cadmpeg_ir::hash::document_local_sha256(
+            ctx,
+            ir,
+            ir.source.as_ref(),
+            "f3d",
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+        )
+    })
 }
 
 fn annotation_stream(entry_name: &str) -> Result<StreamHandle, CodecError> {

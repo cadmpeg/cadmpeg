@@ -43,7 +43,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     outside: &HashSet<SketchEntityId>,
 ) -> (Extrude, super::super::typed::Typed) {
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -68,6 +68,7 @@ pub(super) fn project(
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )
@@ -98,6 +99,7 @@ pub(super) fn project(
     );
     ir.design.features = timeline.features;
     ir.design.parameters = parameters;
+    typed.sketches.restate_coincidences(&mut ir.model);
     ir.design.sketches = std::mem::take(&mut typed.sketches.records);
     ir.design.sketch_entities = std::mem::take(&mut typed.sketches.entities);
     ir.design.sketch_constraints = std::mem::take(&mut typed.sketches.constraints);
@@ -381,4 +383,19 @@ fn an_extrude_whose_sketch_holds_no_profile_curve_is_reported_empty() {
         "{:?}",
         typed.profile_unchecked
     );
+}
+
+pub(crate) fn project_profile(ir: &mut CadIr, outside: &HashSet<SketchEntityId>) -> Extrude {
+    let (extrude, typed) = project(ir, outside);
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
+    assert!(
+        typed.profile_unchecked.is_none(),
+        "{:?}",
+        typed.profile_unchecked
+    );
+    extrude
 }

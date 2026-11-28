@@ -164,23 +164,16 @@ fn scale_point(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<FiniteVector<3>, GeometryError> {
+    let invalid = || GeometryError::malformed(offset, "scaled morph-control coordinate is invalid");
     let [x, y, z] = value
         .0
         .get()
-        .map(|coordinate| scaled_real(coordinate, scale));
-    let (Some(x), Some(y), Some(z)) = (x, y, z) else {
-        return Err(GeometryError::malformed(
-            offset,
-            "scaled morph-control coordinate is invalid",
-        ));
-    };
-    Ok(FiniteVector::from([x, y, z]))
-}
-
-/// Multiply an admitted archive coordinate by the unit scale and admit the
-/// product, as `scaled_coordinate` does.
-fn scaled_real(coordinate: f64, scale: MillimeterScale) -> Option<FiniteReal> {
-    FiniteReal::new(coordinate * scale.value())
+        .map(|coordinate| scaled_coordinate(coordinate, scale));
+    Ok(FiniteVector::from([
+        x.map_err(|unscaled| unscaled.charge(invalid()))?,
+        y.map_err(|unscaled| unscaled.charge(invalid()))?,
+        z.map_err(|unscaled| unscaled.charge(invalid()))?,
+    ]))
 }
 
 fn scale_interval(
@@ -188,10 +181,17 @@ fn scale_interval(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<FiniteVector<2>, GeometryError> {
-    let start = scaled_real(value[0], scale)
-        .ok_or_else(|| GeometryError::malformed(offset, "scaled localizer interval is invalid"))?;
-    let end = scaled_real(value[1], scale).ok_or_else(|| {
-        GeometryError::malformed(offset + 8, "scaled localizer interval is invalid")
+    let start = scaled_coordinate(value[0], scale).map_err(|unscaled| {
+        unscaled.charge(GeometryError::malformed(
+            offset,
+            "scaled localizer interval is invalid",
+        ))
+    })?;
+    let end = scaled_coordinate(value[1], scale).map_err(|unscaled| {
+        unscaled.charge(GeometryError::malformed(
+            offset + 8,
+            "scaled localizer interval is invalid",
+        ))
     })?;
     Ok(FiniteVector::from([start, end]))
 }
@@ -287,8 +287,11 @@ fn scaled_transform(
 ) -> Result<FiniteVector<16>, GeometryError> {
     let mut transform = xform(reader)?.0;
     for index in [3, 7, 11] {
-        let scaled = scaled_coordinate(transform[index], scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
+        let scaled = scaled_coordinate(transform[index], scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 128,
+                "scaled cage transform is invalid",
+            ))
         })?;
         transform = transform.with_component(index, scaled).ok_or_else(|| {
             GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
@@ -383,11 +386,12 @@ pub(crate) fn decode(
 
     let localizers = localizers(data, &mut outer, scale, archive)?;
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
-        let tolerance = scaled_coordinate(outer.f64()?, scale)
-            .and_then(NonNegativeReal::from_finite)
-            .ok_or_else(|| {
-                GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
-            })?;
+        let raw_tolerance = outer.f64()?;
+        let offset = outer.position() - 8;
+        let invalid = || GeometryError::malformed(offset, "invalid morph tolerance");
+        let tolerance = scaled_coordinate(raw_tolerance, scale)
+            .map_err(|unscaled| unscaled.charge(invalid()))
+            .and_then(|value| NonNegativeReal::from_finite(value).ok_or_else(invalid))?;
         (tolerance, outer.bool()?, outer.bool()?)
     } else {
         (NonNegativeReal::ZERO, false, false)

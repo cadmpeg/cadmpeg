@@ -470,7 +470,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006"
         },
@@ -488,7 +496,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212"
         },
@@ -506,7 +522,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418"
         },
@@ -524,7 +548,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624"
         },
@@ -542,7 +574,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070"
         },
@@ -560,7 +600,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3394"
         },
@@ -578,7 +626,15 @@
             }
           },
           "roles": [],
-          "native_options": {},
+          "native_options": {
+            "f3d:point_flags": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "0000000000000000"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3600"
         }

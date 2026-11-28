@@ -2,7 +2,7 @@
 //! Tests of the planar and spatial sketches of a Fusion design.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::InputReference;
@@ -320,6 +320,7 @@ fn a_sketch_states_its_entities_and_binds_its_dimensions_to_parameters_of_its_sc
     let mut losses = Vec::new();
     let parameters = super::super::parameters::project(
         &model.parameters,
+        &HashMap::new(),
         &definitions,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -464,6 +465,7 @@ fn in_scope(model: &Model, keys: &[&str]) -> Vec<cadmpeg_ir::design::parameter::
     let definitions = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
     super::super::parameters::project(
         &model.parameters,
+        &HashMap::new(),
         &definitions,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -999,6 +1001,18 @@ fn the_stored_sketch_origin_is_the_frame_origin_and_no_entity() {
         native_operand("point", "member", Some(3), Some(format!("{STREAM}:sketch-point#3"))),
         native_operand("point", "member", Some(2), Some(format!("{STREAM}:sketch-point#2"))),
     ]}}));
+    list.push(cadmpeg_core::json!({
+        "id": constraint("horizontal_pair"), "sketch": SKETCH,
+        "definition": {"kind": "same_coordinate", "relation": {
+            "axis": "v",
+            "first": {"kind": "entity", "value": entity("stray")},
+            "second": {"kind": "entity", "value": entity("p1")}}}}));
+    list.push(cadmpeg_core::json!({
+        "id": constraint("vertical_pair"), "sketch": SKETCH,
+        "definition": {"kind": "same_coordinate", "relation": {
+            "axis": "u",
+            "first": {"kind": "entity", "value": entity("p0")},
+            "second": {"kind": "entity", "value": entity("stray")}}}}));
     let mut model = model;
     model.sketch_constraints = json::from_value(constraints).unwrap();
     let curves = [10, 11].map(|index| (format!("{STREAM}:sketch-curve#{index}"), index));
@@ -1043,6 +1057,15 @@ fn the_stored_sketch_origin_is_the_frame_origin_and_no_entity() {
         "{:#?}",
         relation("from_origin")
     );
+    assert!(matches!(
+        relation("horizontal_pair"),
+        SketchRelation::Horizontal { a, b: Some(b) } if *a == origin && *b == p1
+    ));
+    assert!(matches!(
+        relation("vertical_pair"),
+        SketchRelation::Vertical { a: Operand::Entity(a), b: Some(b) }
+            if a.as_str() == entity("p0") && *b == origin
+    ));
     assert!(
         matches!(relation("native"), SketchRelation::Native { operands, .. } if *operands == [origin, p1]),
         "{:#?}",
@@ -1161,4 +1184,70 @@ fn a_document_with_no_timeline_item_and_no_sketch_holds_its_construction_feature
     let listing = BTreeSet::from([String::new()]);
     let listed = super::outside(&model, &BTreeSet::new(), &listing, &mut Vec::new()).unwrap();
     assert!(listed.is_empty(), "{listed:#?}");
+}
+
+#[test]
+fn a_curvature_relation_names_both_curves() {
+    let (mut model, incidence) = stored_points_model([&[], &[]]);
+    model.sketch_constraints = json::from_value(cadmpeg_core::json!([{
+        "id": constraint("curvature"), "sketch": SKETCH,
+        "definition": {"kind": "curvature", "first": entity("arc"), "second": entity("circle")}
+    }]))
+    .unwrap();
+    let (out, _) = restated(&model, &incidence);
+    let [relation] = out.constraints.as_slice() else {
+        panic!("expected one curvature relation");
+    };
+    assert!(matches!(
+        &relation.relation,
+        SketchRelation::Curvature { a: Operand::Entity(a), b: Operand::Entity(b), contact: None }
+            if a.as_str() == entity("arc") && b.as_str() == entity("circle")
+    ));
+}
+
+#[test]
+fn the_design_point_keeps_the_stored_flag_lanes() {
+    use crate::records::sketch_geometry::SketchPoint;
+
+    let (model, _) = stored_points_model([&[], &[]]);
+    let point: SketchPoint = json::from_value(cadmpeg_core::json!({
+        "id": format!("{STREAM}:sketch-point#2"), "record_index": 2,
+        "owner_reference": 20, "class_tag": "000",
+        "byte_offset": 0, "coordinate_offset": 1,
+        "record_form": {"kind": "version11", "padded_paired_reference": false},
+        "flags": "0100000100000000",
+        "persistent_id": 4, "paired_reference": 4,
+        "coordinates": {"u": 30.0, "v": 0.0}, "depth": 0.0,
+        "closure": {"selector": 0, "state": 0}, "companion": {"incident_curves": []}
+    }))
+    .unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model = model;
+    crate::test_support::with_decode_context(|ctx| {
+        ir.native
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+            .set_arena(ctx, "sketch_points", &[point])
+            .unwrap();
+        super::super::project(
+            ctx,
+            &mut ir,
+            cadmpeg_core::decode::DecodeDepth::Design,
+            &mut Vec::new(),
+        )
+        .unwrap();
+    });
+    let point = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|point| point.id.as_str() == entity("p1"))
+        .unwrap();
+    assert_eq!(
+        point
+            .native_options
+            .get(&cadmpeg_ir::codec_name!("f3d:point_flags")),
+        Some(&cadmpeg_ir::design::options::NativeOption::Text(
+            Dimension::Literal(cadmpeg_core::nonblank_literal!("0100000100000000"))
+        ))
+    );
 }

@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native field distinguishes a FIN forward link that names no reciprocal same-loop backward link from a valid ring closure?
 
-**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN forward link names no reciprocal same-loop backward link; the ring stays unwalked (#517).
+**Known.** `brep/graph.rs` withholds a ring when a FIN forward link names no reciprocal same-loop backward link: the loop is given up as `record.undecoded` and the ring stays unwalked (#517).
 
 **Need.** We must know the link grammar that walks such a ring.
 
@@ -132,7 +132,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Can a cone store a negative `sin` or `cos` half-angle field, and what surface does it then describe?
 
-**Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder reports `carrier.cone-half-angle-sign-unresolved`.
+**Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder gives up the carrier as `record.undecoded`.
 
 **Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
 

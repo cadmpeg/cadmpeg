@@ -33,7 +33,7 @@ use cadmpeg_ir::design::ops::sketch::{
     EntityDefinition, EntityForm, Operand, Planar, Sketch, SketchConstraint, SketchEntity,
     SketchPlane, SketchRelation, SketchSolve, Spatial, SpatialSketch,
 };
-use cadmpeg_ir::design::options::NativeOptions;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::projection::sketch::{
     self as relation, native_entity_kind, native_relation, planar_curve, stored_frame,
@@ -316,6 +316,7 @@ pub(super) struct Scope<'a> {
 pub(super) struct Incidence {
     curves: HashMap<String, Vec<String>>,
     origins: HashSet<String>,
+    flags: HashMap<String, NonBlankString>,
 }
 
 impl Incidence {
@@ -348,6 +349,45 @@ impl Incidence {
             }
         }
         out
+    }
+
+    pub(super) fn from_records(
+        curves: &[crate::records::sketch_geometry::SketchCurveIdentity],
+        points: &[crate::records::sketch_geometry::SketchPoint],
+    ) -> Self {
+        let mut incidence = Self::new(
+            curves
+                .iter()
+                .map(|curve| (curve.id.as_str(), curve.record_index)),
+            points.iter().map(|point| {
+                (
+                    point.id.as_str(),
+                    point.companion().incident_curves,
+                    point.flags()[5] != 0,
+                )
+            }),
+        );
+        incidence.flags = points
+            .iter()
+            .filter_map(|point| {
+                let flags = point.flags();
+                let stored = &flags[..point.stored_flags().len()];
+                let flags = cadmpeg_ir::native::bytes::NativeBytes::from(stored).to_string();
+                Some((point.id.clone(), NonBlankString::new(flags)?))
+            })
+            .collect();
+        incidence
+    }
+
+    fn point_options(&self, native_ref: Option<&str>) -> NativeOptions {
+        let mut options = NativeOptions::new();
+        if let Some(flags) = native_ref.and_then(|id| self.flags.get(id)) {
+            options.insert(
+                cadmpeg_ir::codec_name!("f3d:point_flags"),
+                NativeOption::Text(Dimension::Literal(flags.clone())),
+            );
+        }
+        options
     }
 
     /// The standing of `point` as a point of `curve`: first where the
@@ -487,7 +527,13 @@ fn restate_spatial(
         )));
     }
     out.spatial.push(restated.sketch);
-    out.spatial_entities.extend(restated.entities);
+    out.spatial_entities
+        .extend(restated.entities.into_iter().map(|mut entity| {
+            entity
+                .native_options
+                .extend(scope.incidence.point_options(entity.native_ref.as_deref()));
+            entity
+        }));
     out.spatial_constraints.extend(restated.constraints);
 }
 
@@ -558,7 +604,7 @@ fn restate(
             construction: entity.construction.then_some(true),
             centerline: None,
             native: None,
-            native_options: NativeOptions::new(),
+            native_options: scope.incidence.point_options(entity.native_ref.as_deref()),
             source_settings: NativeOptions::new(),
             native_ref: entity.native_ref.clone(),
         });

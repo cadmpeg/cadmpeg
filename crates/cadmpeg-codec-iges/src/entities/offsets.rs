@@ -21,6 +21,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -302,6 +303,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -313,6 +315,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset source pointer is invalid"),
             );
             continue;
@@ -321,6 +324,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset distance flag is not 1, 2, or 3"),
             );
             continue;
@@ -330,6 +334,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset plane normal is not numeric"),
             );
             continue;
@@ -342,6 +347,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset plane normal is zero or non-finite"),
             );
             continue;
@@ -357,6 +363,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("offset plane normal is not a unit vector"),
             );
             continue;
@@ -366,6 +373,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset parameter interval is not numeric"),
             );
             continue;
@@ -375,6 +383,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset parameter interval is not increasing"),
             );
             continue;
@@ -391,6 +400,7 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 Some(source_sequence),
+                Cause::Undecoded,
                 format_args!("offset source curve is missing"),
             );
             continue;
@@ -406,6 +416,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("offset source has no bounded neutral parameter domain"),
             );
             continue;
@@ -414,6 +425,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset source Directory Entry is missing"),
             );
             continue;
@@ -422,6 +434,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("offset source Parameter Data record is missing"),
             );
             continue;
@@ -431,6 +444,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("offset source has no supported native-to-neutral parameter mapping"),
             );
             continue;
@@ -441,6 +455,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("offset parameter interval lies outside the source curve domain"),
             );
             continue;
@@ -464,6 +479,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         message.needs(),
+                        message.cause(),
                         format_args!("{message}"),
                     );
                     continue;
@@ -474,6 +490,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("placed offset source has no exact line or circle carrier"),
                 );
                 continue;
@@ -482,6 +499,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("placed offset normal cannot be represented"),
                 );
                 continue;
@@ -503,6 +521,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("uniform offset DE2 is not explicit integer zero"),
                     );
                     continue;
@@ -511,13 +530,14 @@ pub(super) fn project(
                     || !omitted_or_integer_zero(record, 5)
                     || !(7..=9).all(|index| omitted_or_numeric_zero(record, index))
                 {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("uniform offset has an unused scalar field that is neither zero nor omitted"));
+                    super::push_geometry_loss(&mut losses, entry, Cause::Unreadable, format_args!("uniform offset has an unused scalar field that is neither zero nor omitted"));
                     continue;
                 }
                 let Some(distance) = record.number(6).and_then(FiniteReal::new) else {
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("uniform offset distance is not finite"),
                     );
                     continue;
@@ -564,6 +584,7 @@ pub(super) fn project(
                             super::push_geometry_loss(
                                 &mut losses,
                                 entry,
+                                Cause::Undecoded,
                                 format_args!("offset collapses or reverses the circle"),
                             );
                             continue;
@@ -589,6 +610,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("source curve has no exact uniform offset carrier"),
                         );
                         continue;
@@ -601,6 +623,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("linear offset DE2 is not explicit integer zero"),
                     );
                     continue;
@@ -609,6 +632,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("linear offset NDIM is neither zero nor omitted"),
                     );
                     continue;
@@ -620,6 +644,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Unreadable,
                             format_args!("linear offset basis is not 1 or 2"),
                         );
                         continue;
@@ -635,6 +660,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("linear offset controls are not numeric"),
                     );
                     continue;
@@ -645,6 +671,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("linear offset control range is not increasing and finite"),
                     );
                     continue;
@@ -654,6 +681,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("linear offset control range is not increasing and finite"),
                     );
                     continue;
@@ -675,6 +703,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("linear offset source has no exact neutral carrier"),
                     );
                     continue;
@@ -684,6 +713,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset normal is not perpendicular to the line"),
                     );
                     continue;
@@ -729,6 +759,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("linear offset source start cannot be evaluated"),
                     );
                     continue;
@@ -740,6 +771,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("linear offset source end cannot be evaluated"),
                     );
                     continue;
@@ -755,6 +787,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!(
                             "linear offset carrier is inconsistent: control_points contains a non-finite point"
                         ),
@@ -772,6 +805,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("linear offset carrier is inconsistent: {error}"),
                         );
                         continue;
@@ -791,6 +825,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("offset function pointer is invalid"),
                     );
                     continue;
@@ -806,6 +841,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("offset function coordinate is not 1, 2, or 3"),
                     );
                     continue;
@@ -817,6 +853,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Unreadable,
                             format_args!("function offset basis is not 1 or 2"),
                         );
                         continue;
@@ -826,6 +863,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!(
                             "function offset has an unused distance field that is neither \
                              zero nor omitted"
@@ -845,6 +883,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         Some(function_sequence),
+                        Cause::Undecoded,
                         format_args!("offset function curve is missing"),
                     );
                     continue;
@@ -854,6 +893,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function has no polynomial NURBS carrier"),
                     );
                     continue;
@@ -866,6 +906,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function is rational or degree zero"),
                     );
                     continue;
@@ -874,6 +915,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("function offset source has no exact neutral carrier"),
                     );
                     continue;
@@ -883,6 +925,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset normal is not perpendicular to the line"),
                     );
                     continue;
@@ -904,6 +947,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function knot domain is missing"),
                     );
                     continue;
@@ -917,6 +961,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function knot domain is missing"),
                     );
                     continue;
@@ -925,6 +970,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function domain does not cover the source interval"),
                     );
                     continue;
@@ -947,6 +993,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("offset function Greville parameter is missing"),
                         );
                         controls.clear();
@@ -975,6 +1022,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function controls cannot be composed"),
                     );
                     continue;
@@ -998,6 +1046,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("offset function start cannot be evaluated"),
                     );
                     continue;
@@ -1007,6 +1056,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("offset function coordinate is invalid"),
                     );
                     continue;
@@ -1022,6 +1072,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!(
                             "offset-function carrier is inconsistent: control_points contains a non-finite point"
                         ),
@@ -1039,6 +1090,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("offset-function carrier is inconsistent: {error}"),
                         );
                         continue;
@@ -1054,6 +1106,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("offset curve form is unsupported"),
                 );
                 continue;
@@ -1066,6 +1119,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("offset start parameter cannot be evaluated"),
             );
             continue;
@@ -1077,6 +1131,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("offset end parameter cannot be evaluated"),
             );
             continue;
@@ -1122,7 +1177,12 @@ pub(super) fn project(
         let admitted_payload = match payload {
             Ok(admitted_payload) => admitted_payload,
             Err(error) => {
-                super::push_geometry_loss(&mut losses, entry, format_args!("{error}"));
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    Cause::Undecoded,
+                    format_args!("{error}"),
+                );
                 continue;
             }
         };
@@ -1152,6 +1212,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("{}", super::non_resource_error(error)?),
                         );
                         continue;
@@ -1195,6 +1256,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("{}", super::non_resource_error(error)?),
                     );
                     continue;
@@ -1208,7 +1270,12 @@ pub(super) fn project(
         ) {
             Ok(carrier) => carrier,
             Err(error) => {
-                super::push_geometry_loss(&mut losses, entry, format_args!("{error}"));
+                super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    Cause::Undecoded,
+                    format_args!("{error}"),
+                );
                 continue;
             }
         };

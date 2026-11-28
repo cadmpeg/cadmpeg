@@ -12,8 +12,9 @@
 //! tree is one reference or the document's values confirm it. Any other
 //! text is a `Source` expression in the `SolidWorks` dialect, its references
 //! to parameters as reference tokens. A value is the cache the file stores:
-//! the literal, the dimension's stored `Value`, or the value the decoder
-//! read from a record that stores it in a stated unit.
+//! the value of the scalar record the dimension is bound to where it is the
+//! literal's number, else the literal, the dimension's stored `Value`, or the
+//! value the decoder read from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -82,8 +83,8 @@ use crate::history::project::{
 };
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{
-    ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
-    HistoryFeatures,
+    ArchiveParameterClass, Feature, FeatureContent, FeatureHistory, FeatureInputLane,
+    FeatureInputScalarRole, HistoryFeatures,
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
@@ -352,6 +353,31 @@ impl<'a> Decoded<'a> {
     fn pmi_bound(&self, id: &ParameterId, name: &str) -> bool {
         self.parameter(id, name)
             .is_some_and(|parameter| parameter.pmi.is_some())
+    }
+
+    /// The cache the scalar record bound to the decoder's parameter of id
+    /// `id` named `name` stores for a parameter of `kind`, where it is the
+    /// number `literal` of the dimension's literal text: the stored value
+    /// (§5.12).
+    fn bound_cache(
+        &self,
+        id: &ParameterId,
+        name: &str,
+        kind: &ValueKind,
+        literal: &ParameterValue,
+    ) -> Option<ParameterValue> {
+        let parameter = self
+            .parameter(id, name)
+            .filter(|parameter| parameter.native_ref.is_some())?;
+        let cache = typed_cache(kind, parameter.value.clone()?)?;
+        match (&cache, literal) {
+            (ParameterValue::Number(stored), ParameterValue::Number(read))
+                if same_stored(stored.get(), read.get()) =>
+            {
+                Some(cache)
+            }
+            _ => None,
+        }
     }
 
     /// The decoder's parameter of id `id` named `name`.
@@ -662,6 +688,8 @@ struct Entry<'a> {
     owner: Option<FeatureId>,
     name: NonBlankString,
     id: ParameterId,
+    /// The parameter's place in its feature's dimension list.
+    position: Option<u32>,
     text: &'a str,
     /// The history names no such dimension: the decoder's own readings of
     /// the feature's records hold it, and `text` is the decoder's rendering.
@@ -938,6 +966,19 @@ fn entries<'a>(
                 }
             },
         };
+        let listed_feature = feature.unwrap_or(enriched);
+        let listed = listed_feature
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                FeatureContent::Dimension(name) => listed_feature
+                    .parameters
+                    .contains_key(name.as_str())
+                    .then_some(name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>()
+            .len();
         for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
             let (text, added) =
                 match feature.and_then(|feature| feature.parameters.get(name.as_str())) {
@@ -958,9 +999,29 @@ fn entries<'a>(
                 owner: owner.clone(),
                 name: key,
                 id: neutral_parameter_id(enriched, ordinal)?,
+                position: (ordinal < listed)
+                    .then(|| u32::try_from(ordinal).ok())
+                    .flatten(),
                 text,
                 added,
             });
+        }
+    }
+    let mut lists = HashMap::<Option<&FeatureId>, HashSet<&str>>::new();
+    for entry in &entries {
+        lists
+            .entry(entry.owner.as_ref())
+            .or_default()
+            .insert(entry.feature.id.as_str());
+    }
+    let merged = lists
+        .into_iter()
+        .filter(|(_, features)| features.len() > 1)
+        .map(|(owner, _)| owner.cloned())
+        .collect::<HashSet<_>>();
+    for entry in &mut entries {
+        if merged.contains(&entry.owner) {
+            entry.position = None;
         }
     }
     Ok((entries, outside))
@@ -976,6 +1037,7 @@ fn parameter(
         id: entry.id.clone(),
         scope: scope.clone(),
         owner: entry.owner.clone().map(ParameterOwner::Feature),
+        position: entry.position,
         name: Some(entry.name.clone()),
         kind: reading.kind,
         unit: None,
@@ -991,11 +1053,10 @@ fn parameter(
         comment: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-        native_ref: entry
-            .added
-            .then(|| readings.decoded.parameters.get(entry.id.as_str()))
-            .flatten()
-            .and_then(|decoded| decoded.native_ref.clone()),
+        native_ref: readings
+            .decoded
+            .parameter(&entry.id, entry.name.as_str())
+            .and_then(|parameter| parameter.native_ref.clone()),
     }
 }
 
@@ -1095,6 +1156,9 @@ fn read(
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
     if let Some((node, kind, value)) = literal(text, user) {
+        let value = decoded
+            .bound_cache(&entry.id, name, &kind, &value)
+            .unwrap_or(value);
         return Reading {
             kind,
             expression: Expression::Neutral(Neutral(node)),
@@ -1154,7 +1218,12 @@ fn read(
     let mut assumed = false;
     let mut decided = false;
     let (kind, value) = match parsed.and_then(cache) {
-        Some((kind, value)) => (kind, Some(value)),
+        Some((kind, value)) => {
+            let value = decoded
+                .bound_cache(&entry.id, name, &kind, &value)
+                .unwrap_or(value);
+            (kind, Some(value))
+        }
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
         None => match decoded
             .dimension(

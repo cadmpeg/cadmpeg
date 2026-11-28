@@ -18,36 +18,39 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::capacity::TextCapa
 #[cfg(test)]
 mod tests;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext};
-use cadmpeg_ir::codec::{CodecBackend, DecodeFailure, DecodeOptions, DecodeResult};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{CodecBackend, DecodeFailure, DecodeResult};
+use cadmpeg_ir::report::strictness::Strictness;
 
-/// Decode a retained source archive for a writer that reads only its IR and
-/// losses, so the decode records no content digests.
-pub(crate) fn decode_retained_source(
-    image: &[u8],
-    policy: cadmpeg_core::decode::DecodePolicy,
-) -> Result<DecodeResult, DecodeFailure> {
-    let options = DecodeOptions {
-        policy,
-        ..DecodeOptions::default()
-    };
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::read_root(
-        &mut std::io::Cursor::new(image),
-        &arena,
-        &options.policy,
-        options.depth,
-    )?;
-    let result = crate::decode::decode(&ctx, root)
-        .map_err(DecodeFailure::from)
-        .and_then(|decoded| {
-            DecodeResult::from_decoded_without_digests(
-                &ctx,
-                decoded,
-                <crate::F3dCodec as CodecBackend>::FORMAT,
-                &options.strictness,
-            )
-        });
-    ctx.finish_session()?;
-    result
+pub(crate) struct RetainedArchive<'a> {
+    pub(crate) scan: crate::container::ContainerScan<'a>,
+    pub(crate) decoded: DecodeResult,
+}
+
+impl<'a> RetainedArchive<'a> {
+    pub(crate) fn read(ctx: &DecodeContext<'a>, bytes: &'a [u8]) -> Result<Self, CodecError> {
+        let root = ctx.open_input(bytes, "F3D retained source archive")?;
+        let scan = crate::container::scan_for_write(ctx, root)?;
+        let decoded = match ctx.run_part(|| crate::decode::decode_scanned(ctx, &scan))? {
+            Ok(decoded) => decoded,
+            Err(error @ CodecError::ResourceLimit(_)) => {
+                return Err(CodecError::NotImplemented(format!(
+                    "retained F3D member: {error}"
+                )));
+            }
+            Err(error) => return Err(error),
+        };
+        let decoded = DecodeResult::from_decoded_without_digests(
+            ctx,
+            decoded,
+            <crate::F3dCodec as CodecBackend>::FORMAT,
+            &Strictness::default(),
+        )
+        .map_err(|failure| match failure {
+            DecodeFailure::Codec(error) => error,
+            other => CodecError::malformed(format!("the retained archive decode refused: {other}")),
+        })?;
+        Ok(Self { scan, decoded })
+    }
 }

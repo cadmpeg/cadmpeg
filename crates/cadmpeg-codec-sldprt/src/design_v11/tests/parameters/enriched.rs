@@ -141,7 +141,7 @@ fn a_feature_only_the_reading_holds_leaves_each_parameter_its_own_record_text() 
         </Keywords>"#,
         &[],
     ));
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,

@@ -70,7 +70,7 @@ fn feature_named<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::design::featu
         .unwrap()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
+pub(crate) fn assert_no_design_findings(ir: &CadIr) {
     let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     let design = report
         .findings
@@ -293,139 +293,26 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
-/// A configuration is restated without its custom properties, and one other
-/// than the active one without the feature suppressions that differ from the
-/// active one's and that its overrides do not state.
+/// A configuration takes its place in the history's configuration list.
 #[test]
-fn a_configuration_is_restated_without_what_its_record_does_not_state() {
-    use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
-    use cadmpeg_ir::design::projection::restated::Restater;
-    use cadmpeg_ir::features::parameters::{
-        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Model,
-    };
-    use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
-    use std::collections::{BTreeMap, BTreeSet};
-
-    let id =
-        |key: &str| ConfigurationId::mint(format!("sldprt:model:configuration#{key}")).unwrap();
-    let boss = FeatureId::mint("sldprt:model:feature#boss").unwrap();
-    let state = |evaluation| ConfigurationFeatureState {
-        evaluation,
-        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
-        definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-    };
-    let model = |key: &str, ordinal, evaluation, properties: &[(&str, &str)]| Model {
-        id: id(key),
-        ordinal,
-        active: ordinal == 0,
-        source_index: Some(ordinal),
-        name: Some(key.to_owned()),
-        material: None,
-        properties: properties
-            .iter()
-            .map(|(name, value)| {
-                (
-                    cadmpeg_core::text::NonBlankString::new(*name).unwrap(),
-                    (*value).to_owned(),
-                )
-            })
-            .collect(),
-        parameter_overrides: BTreeMap::new(),
-        bodies: None,
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::from([(boss.clone(), state(evaluation))]),
-        native_ref: None,
-    };
-    let design = |key: &str| DesignConfiguration {
-        id: id(key),
-        scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
-        name: key.to_owned(),
-        parent: None,
-        comment: None,
-        overrides: Overrides::default(),
-        active_arrangements: BTreeSet::new(),
-        materials: Vec::new(),
-        native_ref: Some(key.to_owned()),
-    };
-    let mut ir = CadIr::empty();
-    ir.model.configurations = vec![
-        model(
-            "default",
-            0,
-            ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
-            },
-            &[],
-        ),
-        model(
-            "short",
-            1,
-            ConfigurationEvaluation::Suppressed {},
-            &[("PartNo", "2")],
-        ),
-    ];
-    let configurations = super::configurations::Configurations {
-        records: vec![design("default"), design("short")],
-        active: Some(id("default")),
-    };
-    super::configurations::restate(
-        &mut ir,
-        &configurations,
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
         &[],
-        &[],
-        &std::collections::HashSet::new(),
     );
-    let default = ir.model.restated().get(id("default").as_str()).unwrap();
-    let active = Restater::Record(id("default").as_str().to_owned());
-    assert_eq!(
-        default.cut_by(|restater| restater == &active),
-        Some(BTreeSet::from(["ordinal"]))
-    );
-    let short = ir.model.restated().get(id("short").as_str()).unwrap();
-    let by = Restater::Record(id("short").as_str().to_owned());
-    assert_eq!(
-        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
-        Some(vec!["feature_states", "ordinal", "properties"])
-    );
-
-    let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
-    ir.model.configurations[1].properties.clear();
-    ir.model.configurations[1].feature_states = BTreeMap::from([(
-        boss.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
-            },
-            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other])
-                .unwrap(),
-            definition: FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane,
-            }),
-        },
-    )]);
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        boss.clone(),
-        state(ConfigurationEvaluation::Active {
-            outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
-        }),
-    )]);
-    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
-    super::configurations::restate(
-        &mut ir,
-        &configurations,
-        &[],
-        &[],
-        &std::collections::HashSet::new(),
-    );
-    let short = ir.model.restated().get(id("short").as_str()).unwrap();
-    assert_eq!(
-        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
-        Some(vec![
-            "feature_states.definition",
-            "feature_states.dependencies",
-            "ordinal"
-        ])
-    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
 }
 
 #[test]
@@ -766,7 +653,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-pub(super) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -808,7 +695,7 @@ fn sketch_and_extrude_with(
     ];
     classes.extend_from_slice(nodes);
     let mut ir = part_with_history(keywords, &classes);
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -1017,6 +904,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )
@@ -1186,6 +1074,7 @@ fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )
@@ -1234,6 +1123,7 @@ fn typed_timeline<'a>(
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )
@@ -1724,6 +1614,7 @@ fn members_follow_the_features_they_depend_on() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )
@@ -1740,12 +1631,7 @@ fn members_follow_the_features_they_depend_on() {
 #[test]
 fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load_under(
-        ir.native.namespace("sldprt").unwrap(),
-        cadmpeg_core::decode::ResourceLimits::default(),
-        ir.tolerances.linear,
-    )
-    .unwrap();
+    let native = crate::test_support::native::sldprt_native(&ir);
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
     let id = |name| {
@@ -1768,7 +1654,7 @@ fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
 #[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -1963,7 +1849,8 @@ mod dimension_curves;
 pub(super) mod outside_history;
 mod parameters;
 mod pattern;
+pub(crate) mod restated;
 mod revolve;
 mod rollback;
 mod sketch_kinds;
-mod state_zero;
+pub(crate) mod state_zero;

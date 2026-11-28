@@ -243,6 +243,7 @@ fn replayed(
                 annotations: Annotations::default(),
                 losses: vec![cadmpeg_ir::unknown::part::GivenUpRecord::new(
                     Identity::new("sldprt:brep:edge#4").unwrap(),
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
                     "unread edge use",
                 )
                 .loss()],
@@ -505,7 +506,7 @@ fn a_valid_head_at_the_same_mark_satisfies_the_state_established_by_a_malformed_
 }
 
 #[test]
-fn the_chain_cap_counts_admitted_states_and_preserves_the_nearer_state() {
+fn a_replay_failure_at_the_limit_keeps_the_admitted_state() {
     let features = timeline_features();
     let bytes = DeltasStream::new(C)
         .delta(&[], &[(11, POINT)], &[])
@@ -520,7 +521,7 @@ fn the_chain_cap_counts_admitted_states_and_preserves_the_nearer_state() {
     assert_eq!(between.evaluations.len(), 1);
     let message = result.unread.note(None).unwrap().message;
     assert!(message.contains(features[0].id.as_str()), "{message}");
-    assert!(message.contains("depth limit"), "{message}");
+    assert!(message.contains("the replay refuses"), "{message}");
 }
 
 #[test]

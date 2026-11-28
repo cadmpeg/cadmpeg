@@ -87,6 +87,7 @@ pub(super) struct Scope<'a> {
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
     /// The surfaces of the current geometry.
     pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    pub(super) linear: f64,
     /// The document's angular tolerance.
     pub(super) angular: f64,
 }
@@ -111,6 +112,7 @@ pub(super) fn project(
             supports: &supports,
             outside_profile: scope.outside_profile,
             surfaces: scope.surfaces,
+            linear: scope.linear,
         },
     )?;
     let stated = sketches
@@ -124,6 +126,7 @@ pub(super) fn project(
         entries,
         sketches: &stated,
         entities: &sketches.entities,
+        outside_profile: scope.outside_profile,
     };
     let datums = datum::project(&mut timeline.features, &context, lanes, scope.angular);
     let extrudes = extrude::project(&mut timeline.features, &context);

@@ -14,6 +14,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::part::dropped_with;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -47,7 +48,7 @@ pub(super) fn project(
             structure.report.give_up_as(
                 &format!("{source}/features"),
                 &key(path),
-                OnshapeLossCode::MateUnsupported,
+                (Cause::Unreadable, OnshapeLossCode::MateUnsupported),
                 reason,
             );
             return Ok(());
@@ -96,7 +97,7 @@ pub(super) fn project(
                         structure.report.give_up_as(
                             &format!("{source}/features/{position}"),
                             native,
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             "mate identity repeats with different content; retained the first joint",
                         );
                     }

@@ -27,6 +27,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1802,6 +1803,7 @@ fn project_degraded_composite(
             losses,
             carrier.entry,
             carrier.missing_child,
+            Cause::Undecoded,
             format_args!("{reason}, and no ordered native composite carrier can be constructed"),
         );
     }
@@ -1904,6 +1906,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Type 102 Entity Use Flag must be 00 in IGES 4.0"),
             );
             continue;
@@ -1920,12 +1923,18 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            super::push_geometry_loss(&mut losses, entry, format_args!("child count is invalid"));
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("child count is invalid"),
+            );
             continue;
         };
         let minimum_child_count = composite_minimum_child_count(global.global_table());
@@ -1936,6 +1945,13 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                if usize::try_from(raw_child_count)
+                    .is_ok_and(|count| count > MAX_COMPOSITE_CHILDREN)
+                {
+                    Cause::Undecoded
+                } else {
+                    Cause::Unreadable
+                },
                 format_args!(
                     "child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"
                 ),
@@ -1958,6 +1974,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("child pointer list is invalid"),
             );
             continue;
@@ -1976,6 +1993,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!(
                     "Type 102 logical connectors made of exactly two Type 132 Connect Points \
                      require Entity Use Flag 04 in IGES 5.0 and later"
@@ -1987,6 +2005,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "placed composite curves require transformed child-carrier projection"
                 ),
@@ -2003,6 +2022,7 @@ fn project_with_type_130_policy(
                 &mut losses,
                 entry,
                 (!entries.contains_key(child)).then_some(*child),
+                Cause::Unreadable,
                 format_args!(
                     "composite child is missing, outside the effective specification family, \
                      or is not physically dependent"
@@ -2039,6 +2059,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("point or connect-point adjacency is invalid"),
             );
             continue;
@@ -2052,6 +2073,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("composite has no parameterized curve constituent"),
             );
             continue;
@@ -2069,6 +2091,7 @@ fn project_with_type_130_policy(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("a Type 142 constituent has no valid model-space curve pointer"),
             );
             continue;

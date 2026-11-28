@@ -969,6 +969,7 @@ impl CodecBackend for FcstdCodec {
                 ctx,
                 &mut graph.properties,
                 &scan.data,
+                &scan.unreadable_names,
                 &mut scan.losses,
             )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
@@ -1150,6 +1151,7 @@ impl CodecBackend for FcstdCodec {
                         cadmpeg_ir::unknown::part::GivenUpRecord::new(
                             cadmpeg_ir::ids::Identity::try_from(root.as_str())
                                 .map_err(CodecError::malformed)?,
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
                             format_args!("the product structure does not project: {error}"),
                         )
                         .loss(),

@@ -546,8 +546,8 @@ pub(super) struct ListedEntity {
     /// The stream offset of the point record at the center of an arc or a
     /// circle.
     pub(super) center: Option<usize>,
-    /// The record is a curve record whose selector has bit 3 set.
-    pub(super) construction: bool,
+    /// Bit 3 of the curve selector, when the record is a curve.
+    pub(super) construction: Option<bool>,
     /// The record is a curve record of state `0`: a curve outside the
     /// sketch's profile.
     pub(super) outside_profile: bool,
@@ -681,12 +681,13 @@ fn read_listed_entity(
                 .ok()?,
             endpoints: None,
             center: None,
-            construction: false,
+            construction: None,
             outside_profile: false,
             index_basis_loss: None,
         }));
     };
-    let construction = construction_record(payload, offset);
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    let construction = Some(selector & SELECTOR_CONSTRUCTION_BIT != 0);
     let outside_profile =
         View::u16_le_at(payload, offset.checked_add(STATE)?)? == STATE_OUTSIDE_PROFILE;
     let entity = |geometry, endpoints, center| {

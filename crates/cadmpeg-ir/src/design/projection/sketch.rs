@@ -19,10 +19,11 @@ use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selec
 use crate::design::units::Quantity;
 use crate::features::parameters::ParameterValue as StoredValue;
 use crate::features::ParameterId;
+use crate::geometry::pcurve::PcurveNurbsPoles;
 use crate::math::portable::Portable;
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{
-    SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput as Kind, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
@@ -310,6 +311,7 @@ pub fn driven_parameter(
         id: parameter.clone(),
         scope: scope.clone(),
         owner: Some(ParameterOwner::Feature(owner.clone())),
+        position: None,
         name,
         kind: crate::design::units::ValueKind::Quantity(quantity),
         unit: None,
@@ -373,6 +375,19 @@ pub fn geometric(kind: &Kind, loci: &impl Loci) -> Option<SketchRelation<Planar>
             b: entity(second),
             contact: None,
         },
+        Kind::Curvature { first, second } => SketchRelation::Curvature {
+            a: entity(first),
+            b: entity(second),
+            contact: None,
+        },
+        Kind::SameCoordinate { relation } => {
+            let a = loci.operand(relation.first())?;
+            let b = Some(loci.operand(relation.second())?);
+            match relation.axis() {
+                SketchCoordinateAxis::U => SketchRelation::Vertical { a, b },
+                SketchCoordinateAxis::V => SketchRelation::Horizontal { a, b },
+            }
+        }
         Kind::Horizontal { entity: id } => SketchRelation::Horizontal {
             a: entity(id),
             b: None,
@@ -712,7 +727,10 @@ fn relation_name(kind: &Kind) -> &'static str {
         Kind::TextFrame { .. } => "text_frame",
         Kind::TextPath { .. } => "text_path",
         Kind::CoincidentLoci { .. } => "coincident_loci",
-        Kind::SameCoordinate { .. } => "same_coordinate",
+        Kind::SameCoordinate { relation } => match relation.axis() {
+            SketchCoordinateAxis::U => "vertical",
+            SketchCoordinateAxis::V => "horizontal",
+        },
         Kind::PointOnObject { .. } => "point_on_object",
         Kind::Midpoint { .. } => "midpoint",
         Kind::PointCoordinateValues { .. } => "point_coordinate_values",
@@ -777,6 +795,12 @@ fn named(kind: &Kind) -> Vec<Named<'_>> {
         | Kind::Coincident { entities }
         | Kind::Distance { entities, .. } => entities.iter().map(Named::Entity).collect(),
         Kind::CoincidentLoci { loci } => loci.iter().map(Named::Locus).collect(),
+        Kind::SameCoordinate { relation } => {
+            vec![
+                Named::Locus(relation.first()),
+                Named::Locus(relation.second()),
+            ]
+        }
         Kind::PointOnObject { point, entity } | Kind::Midpoint { point, entity } => {
             vec![Named::Locus(point), Named::Entity(entity)]
         }
@@ -1268,6 +1292,61 @@ fn closed_form_position(geometry: &SketchGeometry, locus: &SketchLocus) -> Optio
                 vertex,
                 rotated(axis_angle.get(), [y * y / (4.0 * focal_length.get()), y]),
             )
+        }
+        _ => None,
+    }
+}
+
+/// The start and end of a line, circular arc, elliptical arc, or clamped
+/// open spline in sketch coordinates.
+#[must_use]
+pub fn curve_ends(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
+        SketchGeometryDefinition::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let at = |angle: f64| {
+                let (sin, cos) = angle.portable_sin_cos();
+                [center.u + radius.get() * cos, center.v + radius.get() * sin]
+            };
+            Some([at(start_angle.get()), at(end_angle.get())])
+        }
+        SketchGeometryDefinition::Ellipse {
+            center,
+            major_angle,
+            radii,
+            bounds: Some(bounds),
+        } => {
+            let (major_sin, major_cos) = major_angle.get().portable_sin_cos();
+            Some(bounds.map(|angle| {
+                let (sin, cos) = angle.get().portable_sin_cos();
+                let along = radii.major().get() * cos;
+                let across = radii.minor().get() * sin;
+                [
+                    center.u + along * major_cos - across * major_sin,
+                    center.v + along * major_sin + across * major_cos,
+                ]
+            }))
+        }
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            let knots = curve.knots().as_slice();
+            let degree = usize::try_from(curve.degree()).ok()?;
+            if knots.first() != knots.get(degree)
+                || knots.last() != knots.get(knots.len().checked_sub(degree.checked_add(1)?)?)
+            {
+                return None;
+            }
+            let [start, end] = match curve.pole_rows() {
+                PcurveNurbsPoles::Polynomial { points } => [points.first()?, points.last()?],
+                PcurveNurbsPoles::Rational { points } => {
+                    [&points.first()?.point, &points.last()?.point]
+                }
+            };
+            Some([[start.u, start.v], [end.u, end.v]])
         }
         _ => None,
     }

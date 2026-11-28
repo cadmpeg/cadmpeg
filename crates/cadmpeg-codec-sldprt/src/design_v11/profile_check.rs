@@ -23,6 +23,7 @@ use std::f64::consts::{PI, TAU};
 
 use cadmpeg_core::convert::truncate_f64_to_i64;
 use cadmpeg_ir::design::ops::sketch::{EntityDefinition, Planar, PlanarCurve, SketchEntity};
+use cadmpeg_ir::design::selection::{BoundaryUse, SketchRegion};
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchId};
 
@@ -194,6 +195,110 @@ pub(super) fn check(
     found.sort();
     found.dedup();
     Ok(found)
+}
+
+pub(super) fn stored_regions(
+    loops: &[Vec<SketchEntityUse>],
+    curves: &HashMap<&SketchEntityId, &PlanarCurve>,
+) -> Option<Vec<SketchRegion>> {
+    let boundary = loops
+        .iter()
+        .flatten()
+        .map(|usage| {
+            let id = &usage.entity;
+            Some((id, *curves.get(id)?))
+        })
+        .collect::<Option<HashMap<_, _>>>()?;
+    if boundary.len() != loops.iter().map(Vec::len).sum::<usize>() {
+        return None;
+    }
+    let arrangement = Arrangement::new(&boundary, |_| false).ok()?;
+    if arrangement.pieces.len() != boundary.len()
+        || arrangement
+            .pieces
+            .iter()
+            .any(|piece| piece.repeats.is_some())
+    {
+        return None;
+    }
+    let mut degree = vec![0_u32; arrangement.joints.len()];
+    for joint in arrangement
+        .pieces
+        .iter()
+        .filter_map(|piece| piece.joints)
+        .flatten()
+    {
+        degree[joint] += 1;
+    }
+    if degree.iter().any(|&degree| degree != 2) {
+        return None;
+    }
+    let rings = loops
+        .iter()
+        .map(|uses| ring(uses, &arrangement))
+        .collect::<Option<Vec<_>>>()?;
+    if rings
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        .checked_mul(rings.len())?
+        > CLASSIFY_BUDGET
+    {
+        return None;
+    }
+    let mut parents = vec![Vec::new(); rings.len()];
+    for (index, ring) in rings.iter().enumerate() {
+        let point = *ring.first()?;
+        let area = edges(ring)
+            .map(|(a, b)| {
+                (a[0] - point[0]) * (b[1] - point[1]) - (a[1] - point[1]) * (b[0] - point[0])
+            })
+            .sum::<f64>();
+        if !area.is_finite() || area == 0.0 {
+            return None;
+        }
+        for (other, boundary) in rings.iter().enumerate() {
+            if index == other {
+                continue;
+            }
+            if on_boundary(boundary, point) {
+                return None;
+            }
+            if contains(boundary, point) {
+                parents[index].push(other);
+            }
+        }
+    }
+    let uses = |index: usize| {
+        loops[index]
+            .iter()
+            .map(|usage| BoundaryUse {
+                entity: usage.entity.clone(),
+                fragment: None,
+            })
+            .collect()
+    };
+    let mut regions = Vec::new();
+    let mut outer = HashMap::new();
+    for (index, containers) in parents.iter().enumerate() {
+        if containers.len() % 2 == 0 {
+            outer.insert(index, regions.len());
+            regions.push(SketchRegion {
+                outer: uses(index),
+                holes: Vec::new(),
+            });
+        }
+    }
+    for (index, containers) in parents.iter().enumerate() {
+        if containers.len() % 2 != 0 {
+            let parent = containers
+                .iter()
+                .copied()
+                .find(|&candidate| parents[candidate].len() + 1 == containers.len())?;
+            regions[*outer.get(&parent)?].holes.push(uses(index));
+        }
+    }
+    (!regions.is_empty()).then_some(regions)
 }
 
 /// The curves of `state_zero`, where a curve of `live` closes in the whole

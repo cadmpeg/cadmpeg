@@ -31,7 +31,7 @@ mod sketch;
 pub(crate) mod states;
 mod swept;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod tree;
 mod typed;
 mod units;
@@ -218,6 +218,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )?;
@@ -308,13 +309,7 @@ pub(crate) fn project(
         &ir.model.configurations,
         &timeline.features,
     ));
-    let mut containers = Vec::new();
-    let mut current = Vec::new();
-    let mut unproduced = BTreeSet::new();
-    let mut table = BTreeMap::new();
-    let mut states = states::States::default();
-    let mut between = states::between::Between::default();
-    if listed {
+    let (mut containers, current, unproduced, table, states, between) = if listed {
         let id = container_id(cadmpeg_ir::identity_key!("timeline"));
         let members = timeline.members();
         let (mut rollback, mut at) = match stated(&timeline.features, rollback) {
@@ -337,9 +332,10 @@ pub(crate) fn project(
             }
         }
         let tip = joins.as_ref().and_then(states::between::Joins::native_ref);
-        if !bodies.is_empty() {
-            current.push(current_state(at.clone(), bodies.clone(), tip));
-        }
+        let current = (!bodies.is_empty())
+            .then(|| current_state(at.clone(), bodies.clone(), tip))
+            .into_iter()
+            .collect();
         let designed = sketches
             .entities
             .iter()
@@ -351,7 +347,7 @@ pub(crate) fn project(
         .into_stated(|id| designed.contains(id));
         let names = names::Names::new(persistent, histories, &timeline.features_by_record)
             .with_generators(generators);
-        table = names.entries(&ir.geometry, &bodies, |_| true);
+        let table = names.entries(&ir.geometry, &bodies, |_| true);
         let scope = states::Scope {
             definition: &definition,
             timeline: &id,
@@ -361,9 +357,9 @@ pub(crate) fn project(
             current: &bodies,
             given_up: given_up_configurations,
         };
-        states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
-        if let (Some(sources), Some(joins)) = (&sources, joins) {
-            between = states::between::states(
+        let mut states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
+        let between = match (&sources, joins) {
+            (Some(sources), Some(joins)) => states::between::states(
                 ctx,
                 ir,
                 &scope,
@@ -376,19 +372,28 @@ pub(crate) fn project(
                 &names,
                 sources,
                 losses,
-            )?;
-        }
+            )?,
+            _ => states::between::Between::default(),
+        };
         // The timeline restates each folder node as a `Folder` (§5.2).
         let folders = timeline.folder_nodes(&Restater::Record(id.as_str().to_owned()));
-        containers.push(Container::Ordered {
+        let container = Container::Ordered {
             id,
             kind: OrderedKind::Timeline,
             members,
             folders: timeline.folders,
             rollback,
             placement: None,
-        });
+        };
         restate_tree_nodes(ir, folders);
+        (
+            vec![container],
+            current,
+            BTreeSet::new(),
+            table,
+            states,
+            between,
+        )
     } else {
         if let Some(note) = configurations::unplaced(&ir.geometry.bodies, &bodies) {
             losses.push(note);
@@ -399,7 +404,6 @@ pub(crate) fn project(
                 .map(|body| body.id.clone())
                 .collect();
         }
-        unproduced = bodies.iter().cloned().collect();
         for configuration in &configurations.records {
             if Some(&configuration.id) != configurations.active.as_ref() {
                 losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
@@ -408,7 +412,15 @@ pub(crate) fn project(
                 )));
             }
         }
-    }
+        (
+            Vec::new(),
+            Vec::new(),
+            bodies.iter().cloned().collect(),
+            BTreeMap::new(),
+            states::States::default(),
+            states::between::Between::default(),
+        )
+    };
     configurations::restate(
         ir,
         &configurations,
@@ -458,6 +470,7 @@ pub(crate) fn project(
     });
     ir.design.containers.extend(containers);
     ir.design.features.extend(features);
+    sketches.restate_coincidences(&mut ir.model);
     ir.design.sketches.extend(sketches.records);
     ir.design.sketch_entities.extend(sketches.entities);
     ir.design.sketch_constraints.extend(sketches.constraints);
@@ -496,6 +509,37 @@ fn group(features: Vec<Feature>) -> Option<(Container, Vec<Feature>)> {
             .collect(),
     };
     Some((container, features))
+}
+
+/// States the part root and identifies its inactive geometry without replay.
+/// A part states its root where its history holds a feature or it holds a
+/// sketch, as [`project`] does.
+pub(crate) fn state_current_model(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    histories: &[FeatureHistory],
+    length: Option<UnitSymbol>,
+    bodies: Vec<BodyId>,
+) -> Result<BTreeMap<String, ConfigurationId>, CodecError> {
+    let retired = if tree::has_members(histories) {
+        let Ok(retired) = ctx.run_part(|| states::retired_records(ctx, ir, histories, &bodies))?
+        else {
+            return Ok(BTreeMap::new());
+        };
+        retired
+    } else if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && configurations::native_with_active(histories, ir.source.as_ref()).is_none()
+    {
+        return Ok(BTreeMap::new());
+    } else {
+        BTreeMap::new()
+    };
+    ctx.charge_entities(1, "root product definition")?;
+    ir.model
+        .product_definitions
+        .push(root(root_definition(), length, bodies));
+    Ok(retired)
 }
 
 /// The root definition `definition`: a part in `length` units that holds

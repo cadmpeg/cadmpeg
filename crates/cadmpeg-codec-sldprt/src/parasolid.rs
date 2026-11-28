@@ -31,6 +31,7 @@ const MAX_WRAPPED_FRAME_UNCOMPRESSED: usize = 512 * 1024 * 1024;
 /// One extracted stream with the location and header proven during extraction.
 #[derive(Debug, Clone)]
 pub(crate) struct ExtractedStream {
+    pub(crate) carrier: StreamCarrier,
     /// Direct-stream or wrapper offset in the outer payload.
     pub(crate) offset: usize,
     /// Extracted Parasolid stream bytes. A chained section cut at a frame
@@ -38,6 +39,17 @@ pub(crate) struct ExtractedStream {
     pub(crate) payload: Vec<u8>,
     /// Header parsed from `payload` at extraction time.
     pub(crate) header: StreamHeader,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum StreamCarrier {
+    Direct,
+    Zlib(Range<usize>),
+    Wrapped {
+        frame: Range<usize>,
+        chain_len_at: Option<usize>,
+    },
+    Unwritable,
 }
 
 /// Work allowed to the legacy zlib probe per byte of the outer payload. Each
@@ -107,6 +119,7 @@ pub(crate) fn extract_streams_with_offsets(
         let payload = retained_copy(ctx, &payload[start..end], "retain direct Parasolid stream")?;
         out.push(ExtractedStream {
             offset: start,
+            carrier: StreamCarrier::Direct,
             payload,
             header,
         });
@@ -191,10 +204,11 @@ pub(crate) fn extract_streams_with_offsets(
                 View::over_retained(&payload[i..]),
                 ExpandSpec::Unknown,
             ) {
-                Ok((view, _)) if view.window().starts_with(b"PS\0\0") => {
+                Ok((view, consumed)) if view.window().starts_with(b"PS\0\0") => {
                     if let Some(header) = stream_header(view.window())? {
                         Some(ExtractedStream {
                             offset: i,
+                            carrier: StreamCarrier::Zlib(i..i + consumed),
                             payload: retained_copy(
                                 ctx,
                                 view.window(),
@@ -309,7 +323,15 @@ fn single_wrapped_stream(
         return Ok(Wrapped::None);
     }
     match inflate_zlib_frame(ctx, member, uncompressed_size)? {
-        Some(bytes) => extracted_stream(magic_at, bytes).map(Wrapped::stream),
+        Some(bytes) => extracted_stream(
+            magic_at,
+            bytes,
+            StreamCarrier::Wrapped {
+                frame: magic_at + WRAPPED_MAGIC_PREFIX.len()..member_end,
+                chain_len_at: None,
+            },
+        )
+        .map(Wrapped::stream),
         None => Ok(Wrapped::Unread(magic_at..member_end)),
     }
 }
@@ -342,6 +364,7 @@ fn chained_wrapped_stream(
     // bytes after the frames that are neither a frame nor zero padding cut
     // the section at that frame: the frames before it read, the rest does not.
     let mut frame_outputs = Vec::new();
+    let mut first_frame = None;
     let cut = loop {
         if frame_at >= section_end {
             break None;
@@ -388,6 +411,7 @@ fn chained_wrapped_stream(
         let Some(frame) = inflate_zlib_frame(ctx, member, uncompressed_size)? else {
             break Some(start);
         };
+        first_frame.get_or_insert(start..member_end);
         frame_outputs.push(frame);
     };
     let whole = |cut: Option<usize>| match cut {
@@ -397,24 +421,34 @@ fn chained_wrapped_stream(
     if frame_outputs.is_empty() {
         return Ok(whole(cut));
     }
+    let carrier = match first_frame {
+        Some(frame) if cut.is_none() && frame_outputs.len() == 1 => StreamCarrier::Wrapped {
+            frame,
+            chain_len_at: Some(chain_len_at),
+        },
+        _ => StreamCarrier::Unwritable,
+    };
     let stream = if frame_outputs.len() == 1 {
         frame_outputs.remove(0)
     } else {
         ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
     };
-    Ok(match (extracted_stream(chain_len_at, stream)?, cut) {
-        (None, cut) => whole(cut),
-        (Some(stream), None) => Wrapped::Stream(stream),
-        (Some(stream), Some(start)) => Wrapped::Cut {
-            stream,
-            unread: start..section_end,
+    Ok(
+        match (extracted_stream(chain_len_at, stream, carrier)?, cut) {
+            (None, cut) => whole(cut),
+            (Some(stream), None) => Wrapped::Stream(stream),
+            (Some(stream), Some(start)) => Wrapped::Cut {
+                stream,
+                unread: start..section_end,
+            },
         },
-    })
+    )
 }
 
 fn extracted_stream(
     offset: usize,
     payload: Vec<u8>,
+    carrier: StreamCarrier,
 ) -> Result<Option<ExtractedStream>, CodecError> {
     if !payload.starts_with(b"PS\0\0") {
         return Ok(None);
@@ -423,6 +457,7 @@ fn extracted_stream(
         return Ok(None);
     };
     Ok(Some(ExtractedStream {
+        carrier,
         offset,
         payload,
         header,

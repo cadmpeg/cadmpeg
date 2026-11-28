@@ -536,3 +536,158 @@ fn configurations_that_are_not_active_name_their_unread_suppression_and_definiti
         "{definition}"
     );
 }
+
+/// A configuration is restated without its custom properties, and one other
+/// than the active one without the feature suppressions that differ from the
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
+#[test]
+fn a_configuration_is_restated_without_what_its_record_does_not_state() {
+    use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Model,
+    };
+    use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let id =
+        |key: &str| ConfigurationId::mint(format!("sldprt:model:configuration#{key}")).unwrap();
+    let boss = FeatureId::mint("sldprt:model:feature#boss").unwrap();
+    let state = |evaluation| ConfigurationFeatureState {
+        evaluation,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    };
+    let model = |key: &str, ordinal, evaluation, properties: &[(&str, &str)]| Model {
+        id: id(key),
+        ordinal,
+        active: ordinal == 0,
+        source_index: Some(ordinal),
+        name: Some(key.to_owned()),
+        material: None,
+        properties: properties
+            .iter()
+            .map(|(name, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new(*name).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(boss.clone(), state(evaluation))]),
+        native_ref: None,
+    };
+    let design = |key: &str| DesignConfiguration {
+        id: id(key),
+        scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
+        name: key.to_owned(),
+        position: None,
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: Some(key.to_owned()),
+    };
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        model(
+            "default",
+            0,
+            ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            &[],
+        ),
+        model(
+            "short",
+            1,
+            ConfigurationEvaluation::Suppressed {},
+            &[("PartNo", "2")],
+        ),
+    ];
+    let configurations = super::super::configurations::Configurations {
+        records: vec![design("default"), design("short")],
+        active: Some(id("default")),
+    };
+    super::super::configurations::restate(
+        &mut ir,
+        &configurations,
+        &[],
+        &[],
+        &std::collections::HashSet::new(),
+    );
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    let active = Restater::Record(id("default").as_str().to_owned());
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::from(["ordinal"]))
+    );
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    let by = Restater::Record(id("short").as_str().to_owned());
+    assert_eq!(
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec!["feature_states", "ordinal", "properties"])
+    );
+
+    let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
+    ir.model.configurations[1].properties.clear();
+    ir.model.configurations[1].feature_states = BTreeMap::from([(
+        boss.clone(),
+        ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other])
+                .unwrap(),
+            definition: FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane,
+            }),
+        },
+    )]);
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        boss.clone(),
+        state(ConfigurationEvaluation::Active {
+            outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        }),
+    )]);
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::super::configurations::restate(
+        &mut ir,
+        &configurations,
+        &[],
+        &[],
+        &std::collections::HashSet::new(),
+    );
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    assert_eq!(
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec![
+            "feature_states.definition",
+            "feature_states.dependencies",
+            "ordinal"
+        ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::super::configurations::restate(
+        &mut ir,
+        &configurations,
+        &[],
+        &[],
+        &std::collections::HashSet::new(),
+    );
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
+    );
+}
