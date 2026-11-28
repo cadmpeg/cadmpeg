@@ -5780,6 +5780,7 @@ impl SketchRelationClass {
 
 /// Largest plausible counted run inside a sketch relation; a larger count is a
 /// misparse rather than a record that owns that many members.
+// resource-cap: MAX_RELATION_RUN = 1
 const MAX_RELATION_RUN: usize = 4096;
 
 /// Serialized width selected by a sketch relation's leading-block member.

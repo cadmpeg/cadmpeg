@@ -26,7 +26,13 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar, LayerIn
 
 use crate::kernel_header::{BinaryHeader, KernelHeader};
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+/// Registry-owned kernel dialect identities.
+pub mod registry_ids;
+use self::registry_ids::{
+    ACIS_ASM_BINARYFILE_4, ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218,
+    ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN, FORMAT,
+};
 
 /// Key of the kernel save-format major component in
 /// [`DialectMatch::declared`].
@@ -236,11 +242,13 @@ pub fn asm_binary_row(width: RefWidth) -> DialectId {
 
 #[cfg(test)]
 mod tests {
+    use super::registry_ids::{
+        ACIS_ASM_BINARYFILE_8, ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218,
+        ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS, ACIS_TEXT_ASM, ACIS_UNKNOWN, FORMAT,
+    };
     use super::{
         acis_band_verified, acis_binary_row, acis_match, classify, classify_layer,
-        nearest_verified_acis, unverified_message, KernelHeaderRef, ACIS_ASM_BINARYFILE_8,
-        ACIS_SAVE_FORMAT_217, ACIS_SAVE_FORMAT_218, ACIS_SAVE_FORMAT_BINARY_OTHER, ACIS_TEXT_ACIS,
-        ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
+        nearest_verified_acis, unverified_message, KernelHeaderRef, DECLARED_CARRIER,
     };
     use crate::kernel_header::RefWidth;
     use crate::kernel_header::{BinaryHeader, KernelHeader};

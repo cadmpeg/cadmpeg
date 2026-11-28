@@ -384,6 +384,65 @@ pub(super) fn compose(
 }
 
 impl CadIr {
+    /// The ids that the records of `state` reference and that keep `state`
+    /// from closing as the state of an evaluation of this document (§5.4):
+    /// each id that `state` does not hold and that is a `Topology` record of
+    /// the document, no record of it, or one of `own`, the records the state
+    /// holds outside its topology, which the caller compares with the
+    /// document's records of those ids.
+    ///
+    /// # Errors
+    ///
+    /// Returns a codec error where `ctx` refuses the work.
+    pub fn open_references(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        state: &Topology,
+        own: &BTreeSet<&str>,
+    ) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
+        use crate::schema::rewrite::typed::RewriteIdentities;
+
+        let mut held = BTreeSet::new();
+        let mut topology = BTreeSet::new();
+        let deltas = self
+            .design
+            .evaluations
+            .iter()
+            .filter_map(|evaluation| evaluation.content.as_ref())
+            .map(|content| &content.delta.records);
+        macro_rules! ids {
+            ($($field:ident $arm:ident),*) => {$(
+                held.extend(state.$field.iter().map(ArenaRecord::record_identity));
+                topology.extend(self.geometry.$field.iter().map(ArenaRecord::record_identity));
+                for records in deltas.clone() {
+                    topology.extend(records.$field.iter().map(ArenaRecord::record_identity));
+                }
+            )*};
+        }
+        topology_arenas!(ids);
+        let index = crate::index::ModelIndex::build(self);
+        let mut open = BTreeSet::new();
+        macro_rules! scan {
+            ($($field:ident $arm:ident),*) => {$(
+                for record in &state.$field {
+                    record.visit_identity_references(ctx, &mut |target| {
+                        let inside = held.contains(target);
+                        if (!inside && own.contains(target))
+                            || crate::validate::design::resolved::leaves_state(
+                                inside, target, &topology, &index,
+                            )
+                        {
+                            open.insert(target.to_owned());
+                        }
+                        Ok(())
+                    })?;
+                }
+            )*};
+        }
+        topology_arenas!(scan);
+        Ok(open)
+    }
+
     /// The definition that lists a body among its bodies.
     pub(super) fn body_owner(&self, body: &BodyId) -> Option<&ProductDefinitionId> {
         self.model

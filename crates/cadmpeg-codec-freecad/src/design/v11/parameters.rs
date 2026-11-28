@@ -38,6 +38,10 @@ use crate::native::{ObjectRecord, PropertyRecord};
 /// in millimetres and radians.
 const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
 
+/// The property type of a placement, whose base components the decoder
+/// generates as parameters.
+const PLACEMENT: &str = "App::PropertyPlacement";
+
 /// The property type of a spreadsheet's cells, one parameter each (§5.12).
 const SHEET: &str = "Spreadsheet::PropertySheet";
 
@@ -47,6 +51,15 @@ const CELL_DISPLAY: [&str; 4] = ["alignment", "style", "foregroundColor", "backg
 /// A cell's display unit, kept as `fcstd:displayUnit` where it is no `unit`
 /// of the cell's parameter.
 const DISPLAY_UNIT: &str = "displayUnit";
+
+/// The list a `FreeCAD` object lists a parameter in.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum List {
+    /// The object's property list.
+    Properties,
+    /// A sketch's constraint list.
+    Constraints,
+}
 
 /// Each parameter of `parameters` that one of `features` or a Body owns, in
 /// the scope of `definition`. `parameters` holds the model's parameters and
@@ -101,6 +114,18 @@ pub(super) fn project(
         .iter()
         .map(|parameter| &parameter.id)
         .collect::<BTreeSet<_>>();
+    let mut lists = BTreeMap::<&FeatureId, BTreeSet<List>>::new();
+    let listed = by_id
+        .values()
+        .filter_map(|parameter| {
+            let list = list(parameter, &carriers)?;
+            lists
+                .entry(parameter.owner.as_ref()?)
+                .or_default()
+                .insert(list);
+            Some(&parameter.id)
+        })
+        .collect::<BTreeSet<_>>();
     let formulas = by_id
         .values()
         .filter(|parameter| is_cell(parameter))
@@ -124,6 +149,12 @@ pub(super) fn project(
             .native_ref
             .as_deref()
             .and_then(|property| carriers.get(property).copied());
+        let one_list = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| lists.get(owner))
+            .is_some_and(|kinds| kinds.len() == 1);
+        let position = (one_list && listed.contains(&parameter.id)).then_some(parameter.ordinal);
         let sheet = carrier == Some(SHEET);
         let context = Context {
             catalog: &catalog,
@@ -158,9 +189,9 @@ pub(super) fn project(
             )
         } else {
             (
-                name(parameter),
+                name(parameter, carrier == Some(CONSTRAINT_LIST)),
                 None,
-                BTreeMap::default(),
+                shadowed_name(parameter),
                 BTreeMap::default(),
             )
         };
@@ -168,6 +199,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: Some(owner.clone()),
+            position,
             name,
             kind,
             unit,
@@ -734,6 +766,18 @@ struct Context<'c, 'a> {
     minted: &'c BTreeSet<&'a ParameterId>,
 }
 
+/// The list `parameter`'s ordinal places it in: a sketch's constraint list,
+/// or its object's property list for a property the source stores. A
+/// placement's base component is generated, and a spreadsheet cell is placed
+/// by its sheet, so neither has one.
+fn list(parameter: &LegacyParameter, carriers: &HashMap<&str, &str>) -> Option<List> {
+    match carriers.get(parameter.native_ref.as_deref()?).copied()? {
+        CONSTRAINT_LIST => Some(List::Constraints),
+        PLACEMENT | SHEET => None,
+        _ => Some(List::Properties),
+    }
+}
+
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
     parameter
         .properties
@@ -742,11 +786,33 @@ fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// The source's name of the parameter: a named constraint's name, or the
-/// property's name.
-fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
-    let name = property(parameter, "source_name").unwrap_or(&parameter.name);
+/// The source's name of the parameter: the name of a sketch constraint
+/// (`constraint`) that `FreeCAD` resolves it by, or the property's name
+/// (§5.12).
+fn name(parameter: &LegacyParameter, constraint: bool) -> Option<NonBlankString> {
+    let name = property(parameter, "source_name");
+    let name = if constraint {
+        name?
+    } else {
+        name.unwrap_or(&parameter.name)
+    };
     NonBlankString::new(name.to_owned())
+}
+
+/// The `Name` of a sketch constraint that an earlier constraint of its
+/// sketch also stores, as the native option `fcstd:constraint_name`
+/// (§5.12).
+fn shadowed_name(parameter: &LegacyParameter) -> BTreeMap<CodecName, NativeOption> {
+    property(parameter, "shadowed_name")
+        .and_then(|name| NonBlankString::new(name.to_owned()))
+        .map(|name| {
+            (
+                cadmpeg_ir::codec_name!("fcstd:constraint_name"),
+                NativeOption::Text(Dimension::Literal(name)),
+            )
+        })
+        .into_iter()
+        .collect()
 }
 
 /// A cell's kind, value, and expression (§5.12), read as `FreeCAD` reads

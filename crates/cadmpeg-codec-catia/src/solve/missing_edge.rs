@@ -729,9 +729,11 @@ pub(crate) fn resolve_standard_edge_faces(
 /// Least number of face visits the repeated-edge trim-handle overlap may take
 /// over one file; each step visits one face that lists one handle of a
 /// repeated edge row.
+// resource-cap: MAX_REPEATED_EDGE_HANDLE_STEPS = 4
 pub(crate) const MAX_REPEATED_EDGE_HANDLE_STEPS: usize = 1 << 20;
 /// Face visits allowed per edge-row or face handle entry once that exceeds
 /// [`MAX_REPEATED_EDGE_HANDLE_STEPS`].
+// resource-cap: MAX_REPEATED_EDGE_HANDLE_STEPS_PER_HANDLE = 4
 pub(crate) const MAX_REPEATED_EDGE_HANDLE_STEPS_PER_HANDLE: usize = 64;
 
 fn repeated_edge_face_handle_candidates_from_sets(
@@ -953,7 +955,9 @@ pub(crate) fn repeated_face_endpoint_closures(
     endpoint_pairs: &[[usize; 2]],
     face_count: usize,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    // resource-cap: MAX_STATES = 4
     const MAX_STATES: usize = 65_536;
+    // resource-cap: MAX_SOLUTIONS = 4
     const MAX_SOLUTIONS: usize = 4_096;
 
     struct PairDegreeUndo {
@@ -1261,6 +1265,7 @@ pub(super) fn unique_duplicate_face_assignment<F>(
 where
     F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
 {
+    // resource-cap: MAX_STATES = 4
     const MAX_STATES: usize = 4_096;
 
     fn search<F>(
@@ -2020,14 +2025,17 @@ fn standard_mesh_missing_edge_assignment_domains(
     canonicalize_spans: bool,
     defer_validation: bool,
 ) -> MissingEdgeDomainsOutput {
+    // resource-cap: MAX_ASSIGNMENTS_PER_FACE = 4
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
     // A contradictory face can visit factorially many partial orders without
     // producing one complete assignment, so the assignment cap alone is not a
     // work bound.
+    // resource-cap: MAX_SEARCH_STATES_PER_FACE = 4
     const MAX_SEARCH_STATES_PER_FACE: usize = 4_096;
     // The same face search may be retried with progressively weaker endpoint
     // constraints. Charge every retry and every candidate trim width to one
     // decode-local budget.
+    // resource-cap: MAX_SEARCH_STATES = 4
     const MAX_SEARCH_STATES: usize = 65_536;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
@@ -4262,6 +4270,7 @@ impl PortCandidateSearch<'_> {
         // Native-port binding precedes geometric incidence fallback but can
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
+        // resource-cap: MAX_STATES = 4
         const MAX_STATES: usize = 1_024;
         if self.outcome.is_closed()
             || (!self.mode.requires_unique() && matches!(self.outcome, SearchOutcome::Solved(_)))

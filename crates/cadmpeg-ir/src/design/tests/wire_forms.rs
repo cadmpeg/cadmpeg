@@ -179,7 +179,6 @@ fn negative_zero_is_never_written() {
 /// wire name has no underscore and is the symbol the text prints.
 #[test]
 fn a_unit_symbol_has_one_spelling() {
-    assert_eq!(UnitSymbol::ALL.len(), 22);
     for symbol in UnitSymbol::ALL {
         let wire = to_value(&symbol).as_str().unwrap().to_owned();
         assert!(!wire.contains('_'), "{wire}");

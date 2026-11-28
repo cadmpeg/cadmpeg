@@ -25,7 +25,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_SPLINE_DEGENERATE: f64 = 1.0e-10;
 
+// resource-cap: MAX_SPLINE_SEGMENTS = 2
 const MAX_SPLINE_SEGMENTS: usize = 100_000;
+// resource-cap: MAX_SPLINE_SURFACE_POLES = 2
 const MAX_SPLINE_SURFACE_POLES: usize = 1_000_000;
 
 fn declared_interval(

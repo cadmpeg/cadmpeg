@@ -31,7 +31,7 @@ fn mesh_record_identity_native_retained_limit_refuses_before_record_clone() {
         id: "f3d:native:mesh-record#0",
         identity: &identity,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_mesh_features",
         || super::MESH_RECORD_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
@@ -256,7 +256,7 @@ fn mesh_feature_borrowed_wire_matches_owned_wire_bytes() {
 fn mesh_feature_native_retained_limit_refuses_before_clone() {
     let feature: super::DesignMeshFeature =
         json::from_value(mesh_feature_wire_for_borrowed(2, true)).unwrap();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &feature,
         "design_mesh_features",
         || super::MESH_FEATURE_CLONE_COUNT.with(|count| count.set(0)),

@@ -34,7 +34,7 @@ fn body_recipe_operand_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:body-recipe#0",
         value: &value,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::BODY_RECIPE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),

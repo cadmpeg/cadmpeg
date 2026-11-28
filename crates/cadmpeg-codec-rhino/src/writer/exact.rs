@@ -26,6 +26,7 @@ const REBUILT_PCURVE_TOLERANCE: f64 = 1e-9;
 /// Relative distance within which two curve pieces meet end to end.
 pub(super) const JOIN_GAP: f64 = 1e-9;
 /// Most arcs one parameter range is split into.
+// resource-cap: MAX_ARCS = N
 const MAX_ARCS: usize = 4096;
 
 fn usize_degree(degree: u32) -> Result<usize, String> {

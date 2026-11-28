@@ -19,6 +19,7 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometryDefinition};
 use std::collections::{HashMap, HashSet};
 
 const STRAIGHT_EDGE: f64 = 1.0e-9;
+// resource-cap: MAX_JOIN_ENVELOPE_COMPARISONS = 4
 const MAX_JOIN_ENVELOPE_COMPARISONS: usize = 50_000_000;
 
 type LoopReadings = Vec<Vec<(i64, Point3, Point3)>>;

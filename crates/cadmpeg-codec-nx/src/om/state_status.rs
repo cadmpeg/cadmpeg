@@ -100,6 +100,7 @@ pub(super) fn operation_state_opaque_lane_end_at(
 }
 
 fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    // resource-cap: MAX_OPAQUE_STATUS_BYTES = 1
     const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
     let first = *bytes.get(at)?;
     if !matches!(first, 0x02 | 0x1e | 0xff) {

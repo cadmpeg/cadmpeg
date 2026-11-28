@@ -26,7 +26,7 @@ fn persistent_design_link_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn persistent_design_link_native_retained_limit_refuses_before_record_clone() {
     let record = link();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "persistent_design_links",
         || PERSISTENT_DESIGN_LINK_CLONE_COUNT.with(|count| count.set(0)),
