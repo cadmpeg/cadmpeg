@@ -323,16 +323,7 @@ pub(crate) fn project(
         + states.records
         + between.evaluations.len()
         + between.records;
-    let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
-    root.kind = Some(ProductDefinitionKind::Part);
-    root.units = length.map(|length| UnitSystem {
-        length,
-        angle: UnitSymbol::Deg,
-        mass: None,
-        time: None,
-    });
-    root.bodies = bodies;
-    ir.model.product_definitions.push(root);
+    ir.model.product_definitions.push(part_root(length, bodies));
     ir.design.scopes.push(DesignScope {
         definition,
         roots: vec![container.id().clone()],
@@ -358,6 +349,38 @@ pub(crate) fn project(
         retired: states.retired,
         annotations: between.annotations,
     })
+}
+
+/// States the part root and identifies its inactive geometry without replay.
+pub(crate) fn state_current_model(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    histories: &[FeatureHistory],
+    length: Option<UnitSymbol>,
+    bodies: Vec<BodyId>,
+) -> Result<BTreeMap<String, ConfigurationId>, CodecError> {
+    if !tree::has_members(histories) {
+        return Ok(BTreeMap::new());
+    }
+    let Ok(retired) = ctx.run_part(|| states::retired_records(ctx, ir, histories, &bodies))? else {
+        return Ok(BTreeMap::new());
+    };
+    ctx.charge_entities(1, "root product definition")?;
+    ir.model.product_definitions.push(part_root(length, bodies));
+    Ok(retired)
+}
+
+fn part_root(length: Option<UnitSymbol>, bodies: Vec<BodyId>) -> ProductDefinition {
+    let mut root = ProductDefinition::root(root_definition(), ExternalDocument::default());
+    root.kind = Some(ProductDefinitionKind::Part);
+    root.units = length.map(|length| UnitSystem {
+        length,
+        angle: UnitSymbol::Deg,
+        mass: None,
+        time: None,
+    });
+    root.bodies = bodies;
+    root
 }
 
 /// The number of leading timeline features the stored marks state built:
