@@ -60,7 +60,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
     let Some((before, _)) = unique_state(resolution.histories, state_ids.1) else {
         return Ok(false);
     };
-    let Some(far) = signed_length(&sweep) else {
+    let Some((near, far)) = signed_interval(&sweep) else {
         return Ok(false);
     };
     let Some(frame) = PlaneFrame::of_sketch(sketch) else {
@@ -199,7 +199,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
         &deleted,
         &frame,
         &outline,
-        (far.min(0.0), far.max(0.0)),
+        (near.min(far), near.max(far)),
         tolerance,
     ))
 }
@@ -614,7 +614,12 @@ pub(in crate::design::profile_select) fn removed_candidate(
         .map(|(index, _)| index)
         .collect();
     let selected = if selected.is_empty() {
-        floor_regions(&sampled, &planes, signed_length(&sweep), tolerance)
+        floor_regions(
+            &sampled,
+            &planes,
+            signed_interval(&sweep).map(|(_, far)| far),
+            tolerance,
+        )
     } else {
         selected
     };
@@ -681,7 +686,7 @@ pub(in crate::design::profile_select) fn added_candidate(
     if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody) {
         return Ok(None);
     }
-    let Some(far) = blind_length(&sweep) else {
+    let Some((near, far)) = blind_interval(&sweep) else {
         return Ok(None);
     };
     let Some((after, state)) = unique_state(resolution.histories, state_ids.0) else {
@@ -701,6 +706,7 @@ pub(in crate::design::profile_select) fn added_candidate(
         &frame,
         after,
         &transition.topology.faces.inserted,
+        Some(far),
         resolution.linear_tolerance,
     ) else {
         return Ok(None);
@@ -714,7 +720,7 @@ pub(in crate::design::profile_select) fn added_candidate(
         ..resolution
     };
     let Some(ResolvedProfileSelection::Regions(regions)) =
-        super::cap_profile_selection(sketch, scoped, state_ids.0, state_ids.1, None)?
+        super::cap_profile_selection(sketch, scoped, state_ids.0, state_ids.1, None, Some(far))?
     else {
         return Ok(None);
     };
@@ -735,7 +741,7 @@ pub(in crate::design::profile_select) fn added_candidate(
         &deleted,
         &frame,
         &outline,
-        (far.min(0.0), far.max(0.0)),
+        (near.min(far), near.max(far)),
         resolution.linear_tolerance,
     ) {
         return Ok(None);
@@ -743,17 +749,22 @@ pub(in crate::design::profile_select) fn added_candidate(
     Ok(PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok())
 }
 
-fn signed_length(sweep: &Sweep<'_>) -> Option<f64> {
+fn signed_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
     if !matches!(sweep.operation, BooleanOp::Cut) {
         return None;
     }
-    blind_length(sweep)
+    blind_interval(sweep)
 }
 
-pub(super) fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
-    if !matches!(sweep.start, ExtrudeStart::ProfilePlane {}) {
-        return None;
-    }
+/// The signed heights along the profile normal where a blind one-sided sweep
+/// starts and ends: `(0, signed length)` from the profile plane, and
+/// `(offset, offset + signed length)` from an offset plane.
+pub(super) fn blind_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
+    let near = match sweep.start {
+        ExtrudeStart::ProfilePlane {} => 0.0,
+        ExtrudeStart::OffsetProfilePlane { offset } => offset.get(),
+        _ => return None,
+    };
     let ExtrudeExtent::OneSided { side } = sweep.extent else {
         return None;
     };
@@ -764,8 +775,8 @@ pub(super) fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
         return None;
     };
     match sweep.direction {
-        ExtrudeDirection::ProfileNormal {} => Some(length.get()),
-        ExtrudeDirection::ReversedProfileNormal {} => Some(-length.get()),
+        ExtrudeDirection::ProfileNormal {} => Some((near, near + length.get())),
+        ExtrudeDirection::ReversedProfileNormal {} => Some((near, near - length.get())),
         _ => None,
     }
 }

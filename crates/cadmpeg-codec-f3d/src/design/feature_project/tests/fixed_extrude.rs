@@ -590,12 +590,10 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
 mod through_all;
 
 #[test]
-fn signed_distance_lanes_project_positive_travel_on_each_side() {
+fn signed_distance_lanes_on_opposite_sides_project_two_sides() {
     use cadmpeg_ir::features::extents::ExtrudeDirection;
     for (along, against, first_length, second_length, reversed) in [
         (4.4, 3.7, 44.0, 37.0, false),
-        // Distances of opposite sign are one-sided
-        // (two_sided_distances_of_opposite_sign_extrude_between_their_ends).
         (-4.4, -3.7, 44.0, 37.0, true),
     ] {
         let scope = fixed_extrude(
@@ -628,7 +626,7 @@ fn signed_distance_lanes_project_positive_travel_on_each_side() {
 }
 
 #[test]
-fn zero_first_side_uses_the_reversed_second_side_magnitude() {
+fn zero_first_side_takes_its_direction_from_the_second_side_sign() {
     use cadmpeg_ir::features::extents::ExtrudeDirection;
     let scope = fixed_extrude(
         DesignExtrudeExtent::TwoSidedDistance,
@@ -649,7 +647,10 @@ fn zero_first_side_uses_the_reversed_second_side_magnitude() {
     };
     let along = parameter("AlongDistance", 0.0);
     let placement = placement();
-    for against in [-3.7, 3.7] {
+    for (against, direction) in [
+        (-3.7, ExtrudeDirection::ProfileNormal {}),
+        (3.7, ExtrudeDirection::ReversedProfileNormal {}),
+    ] {
         let against = parameter("AgainstDistance", against);
         let definition = crate::test_support::with_decode_context(|ctx| {
             project_extrude(
@@ -666,13 +667,13 @@ fn zero_first_side_uses_the_reversed_second_side_magnitude() {
         assert!(matches!(
             definition,
             Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
-                direction: ExtrudeDirection::ReversedProfileNormal {},
+                direction: actual,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind { length }, ..
                     }
                 }, ..
-            })) if length.get() == 37.0
+            })) if length.get() == 37.0 && actual == direction
         ));
     }
 }
@@ -754,4 +755,9 @@ fn two_sided_distances_of_opposite_sign_extrude_between_their_ends() {
 #[test]
 fn two_sided_distances_of_opposite_sign_with_a_draft_stay_native() {
     assert!(two_sided_with_sides(-1.0, 0.4, 0.1).is_none());
+}
+
+#[test]
+fn coincident_two_sided_ends_stay_native() {
+    assert!(two_sided_with_sides(4.4, -4.4, 0.0).is_none());
 }

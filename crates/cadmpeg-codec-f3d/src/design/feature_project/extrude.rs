@@ -640,7 +640,9 @@ pub(super) fn project_extrude(
                     along.get() < 0.0,
                 ),
                 (Some(along), None) => (ExtentShape::OneSided(blind(along)), along.get() < 0.0),
-                (None, Some(against)) => (ExtentShape::OneSided(blind(against)), true),
+                (None, Some(against)) => {
+                    (ExtentShape::OneSided(blind(against)), against.get() > 0.0)
+                }
                 (None, None) => return Ok(None),
             }
         }

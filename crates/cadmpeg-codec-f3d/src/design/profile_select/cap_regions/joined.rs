@@ -76,18 +76,18 @@ fn unique<'a, T: 'a>(mut rows: impl Iterator<Item = &'a T>) -> Option<&'a T> {
     rows.next().is_none().then_some(row)
 }
 
-fn rectangle(cap: &Cap, far: f64, tolerance: f64) -> Option<(Box3, Vec<Piece>)> {
+fn rectangle(cap: &Cap, span: (f64, f64), tolerance: f64) -> Option<(Box3, Vec<Piece>)> {
     let u = cap.corners.iter().map(|p| p.u);
     let v = cap.corners.iter().map(|p| p.v);
     let low = [
         u.clone().fold(f64::INFINITY, f64::min),
         v.clone().fold(f64::INFINITY, f64::min),
-        far.min(0.0),
+        span.0.min(span.1),
     ];
     let high = [
         u.fold(f64::NEG_INFINITY, f64::max),
         v.fold(f64::NEG_INFINITY, f64::max),
-        far.max(0.0),
+        span.0.max(span.1),
     ];
     if low.iter().chain(&high).any(|value| !value.is_finite())
         || !((high[0] - low[0]).is_finite() && (high[1] - low[1]).is_finite())
@@ -841,7 +841,7 @@ pub(in crate::design::profile_select) fn candidate(
     if !matches!(sweep.operation, BooleanOp::Join) {
         return Ok(None);
     }
-    let Some(far) = super::compact::blind_length(&sweep) else {
+    let Some(span) = super::compact::blind_interval(&sweep) else {
         return Ok(None);
     };
     let Some((after, state)) = unique_state(resolution.histories, states.0) else {
@@ -949,14 +949,14 @@ pub(in crate::design::profile_select) fn candidate(
     let mut found = None;
     let mut attempted = false;
     for face in &after_changed {
-        if !matches!(parallel_plane(after, *face, frame.normal), ParallelPlane::At(point) if frame.height(point).abs() <= tolerance)
+        if !matches!(parallel_plane(after, *face, frame.normal), ParallelPlane::At(point) if (frame.height(point) - span.0).abs() <= tolerance)
         {
             continue;
         }
         let Some(cap) = face_cap(&frame, after, *face, tolerance) else {
             continue;
         };
-        let Some((prism, outline)) = rectangle(&cap, far, tolerance) else {
+        let Some((prism, outline)) = rectangle(&cap, span, tolerance) else {
             continue;
         };
         if !matches!(

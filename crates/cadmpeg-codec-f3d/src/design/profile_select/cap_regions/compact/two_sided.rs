@@ -19,11 +19,14 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::Sketch;
 
 fn travel(sweep: Sweep<'_>, planes: &[PlaneSides], tolerance: f64) -> Option<(f64, f64)> {
-    if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody)
-        || !matches!(sweep.start, ExtrudeStart::ProfilePlane {})
-    {
+    if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody) {
         return None;
     }
+    let base = match sweep.start {
+        ExtrudeStart::ProfilePlane {} => 0.0,
+        ExtrudeStart::OffsetProfilePlane { offset } => offset.get(),
+        _ => return None,
+    };
     let ExtrudeExtent::TwoSided { first, second } = sweep.extent else {
         return None;
     };
@@ -40,10 +43,10 @@ fn travel(sweep: Sweep<'_>, planes: &[PlaneSides], tolerance: f64) -> Option<(f6
         ExtrudeDirection::ReversedProfileNormal {} => -1.0,
         _ => return None,
     };
-    let first = sign * first;
+    let first = base + sign * first;
     let mut matching = [-sign * second, sign * second]
         .into_iter()
-        .map(|second| (first.min(second), first.max(second)))
+        .map(|second| (first.min(base + second), first.max(base + second)))
         .filter(|(low, high)| {
             high - low > tolerance
                 && [low, high].into_iter().all(|height| {

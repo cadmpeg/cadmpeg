@@ -75,6 +75,7 @@ pub(in crate::design::profile_select) fn profiles_agree(
         &frame,
         after,
         &transition.topology.faces.inserted,
+        None,
         tolerance,
     ) else {
         return false;

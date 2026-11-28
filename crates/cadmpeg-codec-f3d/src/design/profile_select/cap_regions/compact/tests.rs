@@ -189,15 +189,19 @@ pub(in crate::design::profile_select) fn prism_over(width: f64) -> AsmHistorical
     topology
 }
 
-#[test]
-fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carriers() {
+/// `added_candidate` over the unit square sketch on z = 0 against `topology`
+/// as the state after a transition from an empty state.
+fn added_run(
+    topology: AsmHistoricalTopology,
+    start: &cadmpeg_ir::features::extents::ExtrudeStart,
+    direction: &cadmpeg_ir::features::extents::ExtrudeDirection,
+    length: f64,
+    operation: cadmpeg_ir::features::operation_settings::BooleanOp,
+) -> Option<cadmpeg_ir::features::profiles::PlanarProfileRef> {
     use crate::design::geometry::ProfileGeometryWork;
     use crate::design::profile_select::ScopedExtrudeProfileResolution;
     use crate::history_records::AsmDeltaState;
-    use cadmpeg_ir::features::extents::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-    };
-    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::scalar::NonZeroLength;
     use cadmpeg_ir::sketches::{
@@ -238,70 +242,83 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
             )
         })
         .collect::<Vec<_>>();
-    let run = |topology, length, operation: BooleanOp| {
-        let states = [(2, topology), (1, AsmHistoricalTopology::default())]
-            .into_iter()
-            .map(|(state_id, topology)| {
-                (
-                    AsmDeltaState {
-                        id: format!("synthetic:test:state#{state_id}"),
-                        parent: "synthetic:test:history#prism".into(),
-                        byte_offset: 0,
-                        state_id,
-                        version_flag: 1,
-                        state_flag: 0,
-                        previous_ref: None,
-                        next_ref: None,
-                        node_index: state_id,
-                        partner_ref: None,
-                        owner_ref: 0,
-                        bulletin_boards: Vec::new(),
-                        records: Vec::new(),
-                        transition: None,
-                    },
-                    Some(topology),
-                    Vec::new(),
-                )
-            })
-            .collect();
-        let history = crate::test_support::history::history(
-            "synthetic:test:history#prism".into(),
-            0,
-            None,
-            false,
-            states,
-        );
-        crate::test_support::with_decode_context(|ctx| {
-            let work = ProfileGeometryWork::new();
-            let resolution = ScopedExtrudeProfileResolution {
-                entities: &entities,
-                spatial_entities: &[],
-                histories: std::slice::from_ref(&history),
-                linear_tolerance: TOLERANCE,
-                angular_tolerance: TOLERANCE,
-                profile_work: &work,
-                ctx,
-            };
-            super::added_candidate(
-                &sketch,
-                resolution,
-                (2, 1),
-                super::Sweep {
-                    operation: &operation,
-                    start: &ExtrudeStart::ProfilePlane {},
-                    direction: &ExtrudeDirection::ProfileNormal {},
-                    extent: &ExtrudeExtent::OneSided {
-                        side: ExtrudeSide {
-                            termination: LinearTermination::Blind {
-                                length: NonZeroLength::new(length).unwrap(),
-                            },
-                            draft: None,
-                        },
-                    },
+    let states = [(2, topology), (1, AsmHistoricalTopology::default())]
+        .into_iter()
+        .map(|(state_id, topology)| {
+            (
+                AsmDeltaState {
+                    id: format!("synthetic:test:state#{state_id}"),
+                    parent: "synthetic:test:history#prism".into(),
+                    byte_offset: 0,
+                    state_id,
+                    version_flag: 1,
+                    state_flag: 0,
+                    previous_ref: None,
+                    next_ref: None,
+                    node_index: state_id,
+                    partner_ref: None,
+                    owner_ref: 0,
+                    bulletin_boards: Vec::new(),
+                    records: Vec::new(),
+                    transition: None,
                 },
+                Some(topology),
+                Vec::new(),
             )
         })
-        .unwrap()
+        .collect();
+    let history = crate::test_support::history::history(
+        "synthetic:test:history#prism".into(),
+        0,
+        None,
+        false,
+        states,
+    );
+    crate::test_support::with_decode_context(|ctx| {
+        let work = ProfileGeometryWork::new();
+        let resolution = ScopedExtrudeProfileResolution {
+            entities: &entities,
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: TOLERANCE,
+            profile_work: &work,
+            ctx,
+        };
+        super::added_candidate(
+            &sketch,
+            resolution,
+            (2, 1),
+            super::Sweep {
+                operation: &operation,
+                start,
+                direction,
+                extent: &ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: NonZeroLength::new(length).unwrap(),
+                        },
+                        draft: None,
+                    },
+                },
+            },
+        )
+    })
+    .unwrap()
+}
+
+#[test]
+fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carriers() {
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeStart};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    let run = |topology, length, operation: BooleanOp| {
+        added_run(
+            topology,
+            &ExtrudeStart::ProfilePlane {},
+            &ExtrudeDirection::ProfileNormal {},
+            length,
+            operation,
+        )
     };
     assert!(run(prism_topology(), 2.0, BooleanOp::Join).is_some());
     assert!(run(prism_topology(), 2.0, BooleanOp::NewBody).is_some());
@@ -312,6 +329,76 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
     let mut unsupported = prism_topology();
     unsupported.surface_planes[2].origin = Point3::new(0.0, 0.5, 0.0);
     assert!(run(unsupported, 2.0, BooleanOp::Join).is_none());
+}
+
+#[test]
+fn an_offset_slab_proves_the_regions_of_the_profile_plane_extrude_moved_to_its_interval() {
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeStart};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::scalar::Length;
+    let offset = |value| ExtrudeStart::OffsetProfilePlane {
+        offset: Length::new(value).unwrap(),
+    };
+    // A slab of thickness 2 from z = -4 to z = -2, swept from the offset
+    // plane z = -2 against the profile normal.
+    let slab = || prism_moved(Vector3::new(0.0, 0.0, -4.0));
+    let reversed = added_run(
+        slab(),
+        &offset(-2.0),
+        &ExtrudeDirection::ReversedProfileNormal {},
+        2.0,
+        BooleanOp::Join,
+    );
+    assert!(reversed.is_some());
+    // The same slab from the offset plane z = -4 along the profile normal.
+    let forward = added_run(
+        slab(),
+        &offset(-4.0),
+        &ExtrudeDirection::ProfileNormal {},
+        2.0,
+        BooleanOp::Join,
+    );
+    assert_eq!(forward, reversed);
+    // The profile-plane extrude of the same prism sitting on z = 0.
+    let on_plane = added_run(
+        prism_topology(),
+        &ExtrudeStart::ProfilePlane {},
+        &ExtrudeDirection::ProfileNormal {},
+        2.0,
+        BooleanOp::Join,
+    );
+    assert_eq!(on_plane, reversed);
+}
+
+#[test]
+fn an_offset_slab_whose_caps_do_not_match_is_not_proven() {
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeStart};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::scalar::Length;
+    let offset = |value| ExtrudeStart::OffsetProfilePlane {
+        offset: Length::new(value).unwrap(),
+    };
+    let slab = || prism_moved(Vector3::new(0.0, 0.0, -4.0));
+    let run = |start: &ExtrudeStart, direction: &ExtrudeDirection, length: f64| {
+        added_run(slab(), start, direction, length, BooleanOp::Join)
+    };
+    let along = &ExtrudeDirection::ProfileNormal {};
+    let against = &ExtrudeDirection::ReversedProfileNormal {};
+    // The far cap is not at the end of the interval.
+    assert!(run(&offset(-2.0), against, 1.0).is_none());
+    assert!(run(&offset(-2.0), along, 2.0).is_none());
+    assert!(run(&offset(-3.0), against, 2.0).is_none());
+    // An offset start that is not the slab, read as the profile plane.
+    assert!(run(&ExtrudeStart::ProfilePlane {}, against, 2.0).is_none());
+    // A Cut leaves no far cap over empty material.
+    assert!(added_run(
+        slab(),
+        &offset(-2.0),
+        &ExtrudeDirection::ReversedProfileNormal {},
+        2.0,
+        BooleanOp::Cut
+    )
+    .is_none());
 }
 
 /// `prism_over(1.0)` moved by `offset`.
