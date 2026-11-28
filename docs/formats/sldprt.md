@@ -2556,6 +2556,8 @@ The records follow the order of their features. The persistent PMARK identifiers
 - The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
 - Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
 
+Compatible main lines from other configurations supplement the active main line when they order features that it does not. A configuration whose order conflicts with the shared CADIR timeline still supplies its own states in its stored mark order. Where the shared position cannot express the dependency of a structured name, the evaluation keeps the native name attached to its entity.
+
 A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
 
 The deltas transmit also stores the states before the current mark. The deltas of the main line, applied from the current mark back, give the node set of the state at each earlier mark of the main line (`parasolid.md`). The state at the mark of a record is the state after one feature of the record:

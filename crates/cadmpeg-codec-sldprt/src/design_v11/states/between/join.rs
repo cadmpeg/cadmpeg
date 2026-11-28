@@ -9,6 +9,7 @@ use super::{stateless, Unread};
 use crate::records::{FeatureHistory, FeatureInputLane, ObjectId};
 use crate::rollback::{MarkChain, MarkRecord};
 
+#[derive(Clone)]
 pub(super) struct Joined {
     pub(super) states: BTreeMap<u32, FeatureId>,
     pub(super) unread: Unread,
@@ -17,7 +18,7 @@ pub(super) struct Joined {
     pub(super) order: Vec<FeatureId>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Prefix {
     ranks: HashMap<FeatureId, usize>,
     marks: HashMap<u32, usize>,

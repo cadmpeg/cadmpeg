@@ -154,13 +154,11 @@ pub(crate) fn project(
         lanes,
         marks,
     });
-    let active_states = sources
+    let joins = sources
         .as_ref()
-        .and_then(|sources| states::between::active(sources, &timeline.features));
-    let marked = active_states
-        .as_ref()
-        .map_or(&[][..], states::between::Active::order);
-    losses.extend(order::regeneration_order(&mut timeline, &ir.model, marked));
+        .map(|sources| states::between::joins(sources, &timeline.features));
+    let orders = joins.iter().flat_map(states::between::Joins::orders);
+    losses.extend(order::regeneration_order(&mut timeline, &ir.model, orders));
     let definition = root_definition();
     let entries = parameters::Entries::new(histories, &timeline)?;
     let typed = typed::project(
@@ -250,17 +248,12 @@ pub(crate) fn project(
         }
     };
     if let Position::After(Member::Feature(feature)) = &at {
-        if active_states
-            .as_ref()
-            .is_some_and(|active| active.earlier(feature))
-        {
+        if joins.as_ref().is_some_and(|joined| joined.earlier(feature)) {
             rollback = None;
             at = Position::After(Member::Container(id.clone()));
         }
     }
-    let tip = active_states
-        .as_ref()
-        .and_then(states::between::Active::native_ref);
+    let tip = joins.as_ref().and_then(states::between::Joins::native_ref);
     let current = (!bodies.is_empty())
         .then(|| current_state(at.clone(), bodies.clone(), tip))
         .into_iter()
@@ -287,13 +280,13 @@ pub(crate) fn project(
         given_up: given_up_configurations,
     };
     let mut states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
-    let between = match &sources {
-        Some(sources) => states::between::states(
+    let between = match (&sources, joins) {
+        (Some(sources), Some(joins)) => states::between::states(
             ctx,
             ir,
             &scope,
             states::between::Latest {
-                active: active_states,
+                joins,
                 at: &at,
                 names: &table,
                 evaluations: &mut states.evaluations,
@@ -302,7 +295,7 @@ pub(crate) fn project(
             sources,
             losses,
         )?,
-        None => states::between::Between::default(),
+        _ => states::between::Between::default(),
     };
     // The timeline restates each folder node as a `Folder` (§5.2).
     let folders = timeline.folder_nodes(&Restater::Record(id.as_str().to_owned()));

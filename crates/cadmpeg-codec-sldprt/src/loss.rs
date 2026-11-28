@@ -581,6 +581,8 @@ pub(crate) enum SldprtLossCode {
     /// A feature folder whose members regeneration order does not keep in
     /// one run is not stated.
     DesignFolderDropped,
+    /// A stored producer falls outside the shared CADIR timeline position.
+    DesignStateNameNative,
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
@@ -879,6 +881,7 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignDatumUnresolved,
         Self::DesignFolderDropped,
+        Self::DesignStateNameNative,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignParameterReferenceAsText,
@@ -1152,6 +1155,7 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignDatumUnresolved => "design.datum-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignStateNameNative => "design.state-name-native",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
@@ -1382,6 +1386,7 @@ impl SldprtLossCode {
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
+            | Self::DesignStateNameNative
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignParameterReferenceAsText
@@ -1509,6 +1514,7 @@ impl SldprtLossCode {
             | Self::DesignDatumUnresolved
             | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignStateNameNative => LossTaxonomy::AttributesNotTransferred,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread

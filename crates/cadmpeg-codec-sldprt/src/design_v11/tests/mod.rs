@@ -1529,7 +1529,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model, &[]);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1561,6 +1561,34 @@ fn members_follow_the_features_they_depend_on() {
 }
 
 #[test]
+fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::native::SldprtNative::load_under(
+        ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
+    let id = |name| {
+        timeline.features[member_position(&timeline, name)]
+            .id
+            .clone()
+    };
+    let active = [id("Boss"), id("Fillet1")];
+    let alternate = [id("Boss"), id("Odd"), id("Fillet1")];
+    let reversed = [id("Fillet1"), id("Odd")];
+    super::order::regeneration_order(
+        &mut timeline,
+        &ir.model,
+        [&active[..], &alternate[..], &reversed[..]],
+    );
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Odd"));
+    assert!(member_position(&timeline, "Odd") < member_position(&timeline, "Fillet1"));
+}
+
+#[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
     let native = crate::native::SldprtNative::load_under(
@@ -1580,7 +1608,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model, &[]);
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1605,7 +1633,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model, &[]).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty()).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()

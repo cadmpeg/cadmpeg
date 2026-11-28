@@ -5,6 +5,7 @@
 //! their regeneration order and the deltas to replay from the partition.
 
 mod join;
+mod name_order;
 #[cfg(test)]
 mod tests;
 
@@ -44,7 +45,7 @@ pub(in crate::design_v11) struct Sources<'a> {
 }
 
 pub(in crate::design_v11) struct Latest<'a> {
-    pub(in crate::design_v11) active: Option<Active<'a>>,
+    pub(in crate::design_v11) joins: Joins<'a>,
     pub(in crate::design_v11) at: &'a Position,
     pub(in crate::design_v11) names: &'a BTreeMap<EntityRef, NameEntry>,
     pub(in crate::design_v11) evaluations: &'a mut [Evaluation],
@@ -57,44 +58,60 @@ pub(in crate::design_v11) struct Between {
     pub(in crate::design_v11) annotations: Annotations,
 }
 
-pub(in crate::design_v11) struct Active<'a> {
+struct Active<'a> {
     section: Section<'a>,
     stored: &'a StoredSite<'a>,
-    joined: Option<Joined>,
 }
 
-impl Active<'_> {
-    pub(in crate::design_v11) fn order(&self) -> &[FeatureId] {
-        self.joined.as_ref().map_or(&[], |joined| &joined.order)
-    }
+pub(in crate::design_v11) struct Joins<'a> {
+    active: Option<Active<'a>>,
+    sites: BTreeMap<String, Joined>,
+}
 
+impl Joins<'_> {
     pub(in crate::design_v11) fn native_ref(&self) -> Option<String> {
-        native_ref(self.stored)
+        native_ref(self.active.as_ref()?.stored)
     }
 
     pub(in crate::design_v11) fn earlier(&self, feature: &FeatureId) -> bool {
-        self.joined
+        self.active
             .as_ref()
+            .and_then(|active| self.sites.get(&active.section.site_key()))
             .is_some_and(|joined| joined.states.values().any(|id| id == feature))
+    }
+
+    pub(in crate::design_v11) fn orders(&self) -> impl Iterator<Item = &[FeatureId]> {
+        let active = self.active.as_ref().map(|site| site.section.site_key());
+        let first = active.as_ref().and_then(|key| self.sites.get(key));
+        first
+            .into_iter()
+            .chain(
+                self.sites
+                    .iter()
+                    .filter(move |(key, _)| Some(*key) != active.as_ref())
+                    .map(|(_, join)| join),
+            )
+            .map(|join| join.order.as_slice())
     }
 }
 
-pub(in crate::design_v11) fn active<'a>(
+pub(in crate::design_v11) fn joins<'a>(
     sources: &Sources<'a>,
     features: &[cadmpeg_ir::design::feature::Feature],
-) -> Option<Active<'a>> {
-    let section = crate::container::select_active_parasolid_site(sources.scan)?.section;
-    let stored = sources.marks.get(&section.site_key())?;
-    let joined = joined(
-        &FeatureIndex::new(features, sources.histories),
-        stored,
-        sources.lanes,
-    );
-    Some(Active {
-        section,
-        stored,
-        joined,
-    })
+) -> Joins<'a> {
+    let features = FeatureIndex::new(features, sources.histories);
+    let section =
+        crate::container::select_active_parasolid_site(sources.scan).map(|site| site.section);
+    let active = section.and_then(|section| {
+        let stored = sources.marks.get(&section.site_key())?;
+        Some(Active { section, stored })
+    });
+    let sites = sources
+        .marks
+        .iter()
+        .filter_map(|(key, stored)| Some((key.clone(), joined(&features, stored, sources.lanes)?)))
+        .collect();
+    Joins { active, sites }
 }
 
 fn joined(
@@ -129,12 +146,11 @@ pub(in crate::design_v11) fn states(
         between: &mut between,
         losses,
     };
-    if let Some(Active {
-        section,
-        stored,
-        joined: Some(joined),
-    }) = latest.active
-    {
+    let active = latest.joins.active.and_then(|active| {
+        let joined = latest.joins.sites.get(&active.section.site_key())?.clone();
+        Some((active, joined))
+    });
+    if let Some((Active { section, stored }, joined)) = active {
         let has_current = !scope.current.is_empty();
         let end = End {
             configuration: scope.active,
@@ -162,7 +178,7 @@ pub(in crate::design_v11) fn states(
         output.losses.extend(unread.note(end.configuration));
     }
 
-    let features = FeatureIndex::new(scope.features, sources.histories);
+    let timeline = name_order::Timeline::new(scope.features);
     for evaluation in latest.evaluations {
         let (Some(configuration), Some(content)) = (&evaluation.configuration, &evaluation.content)
         else {
@@ -173,11 +189,12 @@ pub(in crate::design_v11) fn states(
         else {
             continue;
         };
-        let Some(stored) = sources.marks.get(&section.site_key()) else {
+        let key = section.site_key();
+        let Some(stored) = sources.marks.get(&key) else {
             continue;
         };
         evaluation.native_ref = native_ref(stored);
-        let Some(mut joined) = joined(&features, stored, sources.lanes) else {
+        let Some(mut joined) = latest.joins.sites.get(&key).cloned() else {
             continue;
         };
         if let Ok(marks) = &stored.marks {
@@ -217,9 +234,19 @@ pub(in crate::design_v11) fn states(
             section,
             qualifier: Some(section.site_key()),
         };
+        let start = output.between.evaluations.len();
         let unread = reader.site(&site, stored, &end, joined, &mut output)?;
         output.losses.extend(unread.note(end.configuration));
+        output
+            .losses
+            .extend(timeline.project(evaluation, &mut output.between.evaluations[start..]));
     }
+    between.records += between
+        .evaluations
+        .iter()
+        .filter_map(|evaluation| evaluation.content.as_ref())
+        .map(|content| content.delta.names.len())
+        .sum::<usize>();
     Ok(between)
 }
 
@@ -533,9 +560,8 @@ impl Reader<'_, '_> {
                 .annotations
                 .append(annotations.in_delta(&id, |record| held.contains(record)))
                 .map_err(CodecError::from)?;
-            output.between.records += topology_len(&content.delta.records)
-                + content.delta.removed.len()
-                + content.delta.names.len();
+            output.between.records +=
+                topology_len(&content.delta.records) + content.delta.removed.len();
             output.between.evaluations.push(Evaluation {
                 id,
                 scope: self.definition.clone(),
@@ -604,7 +630,7 @@ struct Read {
     losses: Vec<LossNote>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Unread(BTreeMap<String, Vec<FeatureId>>);
 
 impl Joined {

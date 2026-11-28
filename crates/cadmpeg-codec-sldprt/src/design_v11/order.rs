@@ -3,7 +3,8 @@
 //!
 //! The tree walk lists members in Keywords serialization order, with nested
 //! nodes before their parent. The active partition's persistent marks order
-//! its recorded features. Dependency references order the other members,
+//! its recorded features, and compatible alternate orders supplement them.
+//! Dependency references order the other members,
 //! with serialization order breaking ties. A folder stays over the run its
 //! members form in that order; a folder whose members no longer form one run
 //! is dropped.
@@ -20,12 +21,12 @@ use crate::loss::SldprtLossCode;
 
 /// Apply the active partition's regeneration order and the dependency
 /// references. Returns the note of the folders that no longer form a run.
-pub(super) fn regeneration_order(
+pub(super) fn regeneration_order<'a>(
     timeline: &mut Timeline,
     model: &Model,
-    marked: &[FeatureId],
+    orders: impl IntoIterator<Item = &'a [FeatureId]>,
 ) -> Option<LossNote> {
-    let order = order(timeline, model, marked)?;
+    let order = order(timeline, model, orders)?;
     let mut position = vec![0; order.len()];
     for (at, &index) in order.iter().enumerate() {
         position[index] = at;
@@ -68,21 +69,36 @@ pub(super) fn regeneration_order(
 
 /// The member indices in regeneration order, or `None` where that is the
 /// present order or the dependencies form a cycle.
-fn order(timeline: &Timeline, model: &Model, marked: &[FeatureId]) -> Option<Vec<usize>> {
+fn order<'a>(
+    timeline: &Timeline,
+    model: &Model,
+    orders: impl IntoIterator<Item = &'a [FeatureId]>,
+) -> Option<Vec<usize>> {
     let index = timeline
         .features
         .iter()
         .enumerate()
         .map(|(at, feature)| (&feature.id, at))
         .collect::<HashMap<_, _>>();
-    let marks = marked
-        .iter()
-        .filter_map(|id| index.get(id).copied())
-        .collect::<Vec<_>>();
-    let marked_edges = marks
-        .windows(2)
-        .map(|pair| (pair[0], pair[1]))
-        .collect::<HashSet<_>>();
+    let serialized = (0..timeline.features.len()).collect::<Vec<_>>();
+    let mut marked_edges = HashSet::new();
+    for marked in orders {
+        let marks = marked
+            .iter()
+            .filter_map(|id| index.get(id).copied())
+            .collect::<Vec<_>>();
+        let first = marked_edges.is_empty();
+        let added = marks
+            .windows(2)
+            .map(|pair| (pair[0], pair[1]))
+            .filter(|&edge| marked_edges.insert(edge))
+            .collect::<Vec<_>>();
+        if !first && !added.is_empty() && sorted(&marked_edges, &serialized).is_none() {
+            for edge in added {
+                marked_edges.remove(&edge);
+            }
+        }
+    }
     let mut edges = marked_edges.clone();
     for feature in &model.features {
         let Some(&consumer) = index.get(&feature.id) else {
@@ -104,7 +120,6 @@ fn order(timeline: &Timeline, model: &Model, marked: &[FeatureId]) -> Option<Vec
             }
         }
     }
-    let serialized = (0..timeline.features.len()).collect::<Vec<_>>();
     let order = sorted(&edges, &serialized).or_else(|| {
         if marked_edges.is_empty() {
             return None;
