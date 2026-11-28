@@ -19,10 +19,9 @@ mod counted_owner;
 mod edge_geometry;
 mod surface_membership;
 use edge_geometry::{
-    attach_standard_circles, attach_standard_lines, build_standard_edge_curve,
-    canonical_unoriented_axis, circle_endpoint_range_choices,
-    circular_range_choices_have_simple_selection, point_on_surface, point_on_surface_if_supported,
-    standard_circle_axis_from_carrier, standard_pcurve_geometry,
+    attach_standard_circles, attach_standard_lines, canonical_unoriented_axis,
+    circle_endpoint_range_choices, circular_range_choices_have_simple_selection, point_on_surface,
+    point_on_surface_if_supported, standard_circle_axis_from_carrier, standard_pcurve_geometry,
 };
 
 use crate::families::standard::fbb::EdgeTableForm;
@@ -2210,7 +2209,15 @@ fn try_decode_standard_population(
         curved_surfaces.push(surface);
     }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let mut plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    crate::families::freeform::standard_carriers::recover_missing_plane_normals(
+        &scan.data,
+        &sources,
+        &consolidated_records,
+        brep,
+        &records,
+        &mut plane_normals,
+    );
     let plane_rows = crate::families::standard::records::plane_params(brep, &records, &plane_normals);
     let mut planes = HashMap::new();
     for plane in plane_rows {
@@ -2828,6 +2835,20 @@ fn try_decode_standard_population(
         Err(_) => return None,
     };
     consolidated_curve_bindings.standard_face_surfaces +=
+        match crate::families::freeform::standard_carriers::bind_journal_standard_surfaces(
+            &mut ir,
+            &mut annotations,
+            &scan.data,
+            &sources,
+            &consolidated_records,
+            &a5_carriers,
+            refusal,
+        ) {
+            Ok(bound) => bound,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        };
+    consolidated_curve_bindings.standard_face_surfaces +=
         match counted_owner::bind_counted_owner_surfaces(
             ctx,
             &mut ir,
@@ -2847,8 +2868,11 @@ fn try_decode_standard_population(
     let weighted = match crate::families::freeform::weighted_edges::attach(
         &mut ir,
         &mut annotations,
-        &scan.data,
-        &consolidated_records,
+        crate::families::freeform::weighted_edges::ConsolidatedSource {
+            data: &scan.data,
+            sources: &sources,
+            records: &consolidated_records,
+        },
         &a5_carriers,
         refusal,
         &mut admission,
@@ -6321,6 +6345,119 @@ fn standard_face_loops(
     crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows, refusal)
 }
 
+/// Align an axis-free standard sphere's arbitrary polar frame to its boundary
+/// small-circle axis when all incident circular edges become latitudes or
+/// meridians in that chart.
+///
+/// Rotating a sphere's right-handed orthonormal frame preserves both its 3D
+/// locus and its outward radial normal while turning off-Z spherical-cap rims
+/// into exact isoparametric pcurves.
+fn align_standard_sphere_polar_axes(
+    ir: &mut CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    curve_indices: &HashMap<CurveId, usize>,
+    topology: &crate::families::standard::topology::admitted::StandardTopology,
+) {
+    let mut sphere_faces: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (face_index, (surface_id, _, _)) in bindings.iter().enumerate() {
+        let Some(&surface_index) = surface_indices.get(surface_id) else {
+            continue;
+        };
+        if matches!(
+            ir.geometry.surfaces.get(surface_index).map(|s| &s.geometry),
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)))
+        ) {
+            sphere_faces
+                .entry(surface_index)
+                .or_default()
+                .push(face_index);
+        }
+    }
+    for (surface_index, faces) in sphere_faces {
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+            &ir.geometry.surfaces[surface_index].geometry
+        else {
+            continue;
+        };
+        let sphere_center = sphere.center().get();
+        let current_axis = *sphere.frame().axis().as_raw();
+        let mut circles = Vec::new();
+        let mut has_procedural = false;
+        for &face_index in &faces {
+            let Some(face_topology) = topology.faces().get(face_index) else {
+                continue;
+            };
+            for boundary in face_topology.boundaries() {
+                for edge_use in boundary.coedges() {
+                    let Some(curve_id) = ir
+                        .geometry
+                        .edges
+                        .get(edge_use.edge_row)
+                        .and_then(|edge| edge.curve())
+                    else {
+                        continue;
+                    };
+                    let Some(curve) = curve_indices
+                        .get(curve_id)
+                        .and_then(|&index| ir.geometry.curves.get(index))
+                    else {
+                        continue;
+                    };
+                    match &curve.geometry {
+                        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+                            circles.push(*circle);
+                        }
+                        CurveGeometry::Procedural { .. } => {
+                            has_procedural = true;
+                        }
+                        CurveGeometry::Solved(_) => {}
+                    }
+                }
+            }
+        }
+        if has_procedural || circles.is_empty() {
+            continue;
+        }
+        let Some(candidate_axis) = circles.iter().find_map(|circle| {
+            (circle.center().get().distance(sphere_center) > SPHERE_CENTER_COINCIDENCE_TOLERANCE)
+                .then_some(*circle.frame().axis())
+        }) else {
+            continue;
+        };
+        let target = *candidate_axis.as_raw();
+        if current_axis.dot(target).abs() >= 1.0 - 1.0e-4 {
+            continue;
+        }
+        let all_isoparametric = circles.iter().all(|circle| {
+            let dot = circle.frame().axis().as_raw().dot(target).abs();
+            if circle.center().get().distance(sphere_center) > SPHERE_CENTER_COINCIDENCE_TOLERANCE {
+                dot >= 1.0 - 1.0e-4
+            } else {
+                dot >= 1.0 - 1.0e-4 || dot <= 1.0e-4
+            }
+        });
+        if !all_isoparametric {
+            continue;
+        }
+        let Some(ref_dir) =
+            UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(target))
+        else {
+            continue;
+        };
+        let Some(frame) = OrthonormalFrame3::from_units(candidate_axis, ref_dir) else {
+            continue;
+        };
+        ir.geometry.surfaces[surface_index].geometry = SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Sphere(cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                sphere.center(),
+                frame,
+                sphere.radius(),
+            )),
+        );
+    }
+}
+
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
 struct EmitStandardTopologyInputs<
     'input0,
@@ -6409,6 +6546,7 @@ fn emit_standard_topology(
     }
 
     let mut edge_reversed = Vec::new();
+    let mut deferred_conics = Vec::<(usize, edge_geometry::DeferredConicFallback)>::new();
 
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -6432,7 +6570,8 @@ fn emit_standard_topology(
             }
             _ => None,
         };
-        let (curve, param_range) = build_standard_edge_curve(
+        let mut deferred_slot = None;
+        let (curve, param_range) = edge_geometry::build_standard_edge_curve_with_deferred(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
                 ir,
@@ -6449,7 +6588,11 @@ fn emit_standard_topology(
                 refusal,
                 admission,
             },
+            Some(&mut deferred_slot),
         )?;
+        if let Some(fallback) = deferred_slot {
+            deferred_conics.push((edge_index, fallback));
+        }
         let reversed = param_range.is_some_and(|range| range[0] > range[1]);
         edge_reversed.push(reversed);
         let param_range = param_range.map(ordered_range);
@@ -6502,14 +6645,18 @@ fn emit_standard_topology(
         })
     };
     let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
-        ir,
-        bindings,
-        surface_indices,
-        &curve_indices,
-        supports,
-        topology,
+        ctx,
+        &edge_geometry::cylindrical_arcs::CylindricalArcInputs {
+            ir,
+            bindings,
+            surface_indices,
+            curve_indices: &curve_indices,
+            supports,
+            face_bounds,
+            topology,
+        },
         edge_endpoints,
-    );
+    )?;
     for (&row, &range) in &cylindrical_arc_ranges {
         let Some([start, end]) = range else {
             continue;
@@ -6528,6 +6675,31 @@ fn emit_standard_topology(
             edge_reversed[row] = true;
         }
     }
+    for (row, fallback) in deferred_conics {
+        if ir.geometry.edges[row].param_range().is_some() {
+            continue;
+        }
+        refusal.push_conic_branch_bounds_inferred(fallback.source_pos, fallback.gap);
+        if let Some(&curve_idx) = curve_indices.get(&fallback.curve_id) {
+            ir.geometry.curves[curve_idx].geometry =
+                CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(fallback.ellipse));
+        }
+        let edge = &mut ir.geometry.edges[row];
+        let [start, end] = fallback.range;
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            edge.curve().cloned(),
+            Some(ordered_range([start, end])),
+        )
+        .map_err(CodecError::malformed)?;
+        annotations.derived(&edge.id, "carrier.param_range")?;
+        if start > end {
+            if let Some(ends) = &mut edge.ends {
+                std::mem::swap(&mut ends.start, &mut ends.end);
+            }
+            edge_reversed[row] = true;
+        }
+    }
+    align_standard_sphere_polar_axes(ir, bindings, surface_indices, &curve_indices, topology);
     let mut edge_coedges = ctx.alloc_filled(
         ir.geometry.edges.len(),
         Vec::new(),
@@ -6602,16 +6774,19 @@ fn emit_standard_topology(
                     ) && (matches!(
                         ir.geometry.surfaces[surface_indices[&bindings[face_index].0]].geometry,
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-                    ) || edge_geometry::arc_bounds::bounded_circle_branch(
-                        circle.center().get(),
-                        circle.radius().get(),
-                        *circle.frame().axis(),
-                        [start, end],
-                        &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
-                    )
-                    .is_some_and(|(axis, _, bounded_range)| {
-                        axis == *circle.frame().axis() && bounded_range == range.get()
-                    })) =>
+                    ) || cylindrical_arc_ranges
+                        .get(&edge_use.edge_row)
+                        .is_some_and(Option::is_some)
+                        || edge_geometry::arc_bounds::bounded_circle_branch(
+                            circle.center().get(),
+                            circle.radius().get(),
+                            *circle.frame().axis(),
+                            [start, end],
+                            &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
+                        )
+                        .is_some_and(|(axis, _, bounded_range)| {
+                            axis == *circle.frame().axis() && bounded_range == range.get()
+                        })) =>
                     {
                         let [lower, upper] = range.get();
                         cadmpeg_ir::eval::finite_or_refusal(
