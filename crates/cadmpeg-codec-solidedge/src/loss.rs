@@ -10,13 +10,23 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("solidedge
 pub(crate) enum SolidEdgeLossCode {
     ContainerNoncanonical,
     BodiesPending,
+    UnitsUnread,
+    UnitCodeUnknown,
+    UnitNotNeutral,
+    FeatureStorageUnread,
+    FeatureNavigatorAbsent,
+    FeatureOperandsPending,
+    FeatureKindUnknown,
+    FeatureRollbackUnread,
+    FeatureFolderUnread,
+    SketchUnread,
+    SketchRelationsUnread,
     PartitionIncomplete,
     PrimaryStateAssumed,
     SurfaceUnsupported,
     CurveUnsupported,
     EdgeTrimUnresolved,
     KernelUnverified,
-    FeaturesPending,
     AttributesPending,
     WireTopologyUnsupported,
     BodyKindAssumed,
@@ -38,6 +48,7 @@ pub(crate) enum SolidEdgeLossCode {
     CurveConstructionDropped,
     RegionFacesUntransferred,
     BodyPlacementUnread,
+    BodyConstruction,
 }
 
 impl SolidEdgeLossCode {
@@ -46,6 +57,31 @@ impl SolidEdgeLossCode {
             Self::ContainerNoncanonical => (
                 "container.noncanonical",
                 LossTaxonomy::NoncanonicalSourceSyntax,
+            ),
+            Self::UnitsUnread => ("units.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitCodeUnknown => ("units.code-unknown", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitNotNeutral => ("units.not-neutral", LossTaxonomy::MetadataNotTransferred),
+            Self::FeatureStorageUnread => {
+                ("feature.storage-unread", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::FeatureNavigatorAbsent => {
+                ("feature.navigator-absent", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::FeatureOperandsPending => {
+                ("feature.operands-pending", LossTaxonomy::RecordNotTyped)
+            }
+            Self::FeatureKindUnknown => ("feature.kind-unknown", LossTaxonomy::RecordNotTyped),
+            Self::FeatureFolderUnread => (
+                "feature.folder-unread",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
+            Self::SketchUnread => ("sketch.unread", LossTaxonomy::FeatureHistoryRetained),
+            Self::SketchRelationsUnread => {
+                ("sketch.relations-unread", LossTaxonomy::RecordNotTyped)
+            }
+            Self::FeatureRollbackUnread => (
+                "feature.rollback-unread",
+                LossTaxonomy::FeatureHistoryRetained,
             ),
             Self::PrimaryStateAssumed => (
                 "partition.primary-state-assumed",
@@ -110,10 +146,6 @@ impl SolidEdgeLossCode {
                 "topology.wire-unsupported",
                 LossTaxonomy::TopologyNotTransferred,
             ),
-            Self::FeaturesPending => (
-                "feature.decode-pending",
-                LossTaxonomy::MetadataNotTransferred,
-            ),
             Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::TopologyFaceBoundaryUnstated => (
@@ -137,6 +169,7 @@ impl SolidEdgeLossCode {
                 "body.placement-unread",
                 LossTaxonomy::AssemblyPlacementsNotTransferred,
             ),
+            Self::BodyConstruction => ("body.construction", LossTaxonomy::MetadataNotTransferred),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::MissingGeometryStream),
         };
         LossNote::new(
