@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-tree typing, class-token, and name-binding decode tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;

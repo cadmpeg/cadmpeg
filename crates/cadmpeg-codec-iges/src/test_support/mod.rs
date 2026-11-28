@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared synthetic IGES byte-fixture builders for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 

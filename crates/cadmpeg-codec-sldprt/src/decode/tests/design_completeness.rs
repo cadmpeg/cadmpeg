@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed-feature design-completeness audits.
-#![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
 use cadmpeg_core::serde_erase::json;

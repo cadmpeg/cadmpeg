@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document parameter name collision guards.
-#![allow(clippy::unwrap_used)]
 use super::normalize;
 use cadmpeg_ir::{document::CadIr, features::ParameterId};
 use std::collections::BTreeMap;

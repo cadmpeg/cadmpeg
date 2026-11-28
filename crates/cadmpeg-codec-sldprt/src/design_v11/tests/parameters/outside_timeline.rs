@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Dimensions of a feature-tree node that is no timeline member.
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 

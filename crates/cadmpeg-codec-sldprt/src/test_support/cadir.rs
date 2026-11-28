@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A CADIR write and read of a decoded document, for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;

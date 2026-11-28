@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed BODY/SHELL/REGION/FACE ownership and face-use decode tests.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;

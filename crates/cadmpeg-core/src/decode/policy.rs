@@ -163,7 +163,6 @@ const fn default_max_state_chain_depth() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::{DecodePolicy, ResourceLimits, GIB, MIB};
 

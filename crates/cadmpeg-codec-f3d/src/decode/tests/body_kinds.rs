@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 //! Closed bodies that use an edge four times or a collapsed edge once.
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};

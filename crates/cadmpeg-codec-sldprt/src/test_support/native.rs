@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native-namespace load and store helpers for crate tests.
-#![allow(clippy::unwrap_used)]
 
 /// Loads `namespace` in a session of its own under `limits`.
 pub(crate) fn load_under(

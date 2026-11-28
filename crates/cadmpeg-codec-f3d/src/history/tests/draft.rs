@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::history::face_resolution::resolve_draft_face_by_surface_transition;
 use crate::history_records::AsmHistoricalTopology;

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Helix curve and surface carriers at STEP export.
-#![allow(clippy::unwrap_used)]
 
 use super::reports::edgeless_doc;
 use crate::{export::write_step, loss::StepLossCode, StepSchema, StepWriteOptions};

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic display-list tessellation payloads for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use super::container::make_block;
 use super::container::sldprt_with_body;

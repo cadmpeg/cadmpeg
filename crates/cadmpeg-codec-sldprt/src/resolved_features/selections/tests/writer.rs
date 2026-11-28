@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact edge and surface selection write-back rejection tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

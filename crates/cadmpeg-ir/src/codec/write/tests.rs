@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 mod encode_sets;
 
@@ -186,7 +185,7 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
         attribute(ON_DOCUMENT, AttributeTarget::Document, Vec::new()),
     ]);
     let mut value = json::to_value(&ir).unwrap();
-    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false});
     let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 //! Part 10, Products (§8.1): each rule broken once by an invented document,
 //! and the document that obeys it.
 

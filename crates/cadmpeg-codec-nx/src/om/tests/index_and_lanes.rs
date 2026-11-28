@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unit and fixture tests for OM wire parsers owned by `om`.
 
-#![allow(clippy::unwrap_used)]
-
 use crate::om::construction_payload_scalar_fields;
 fn data_block_object_frames(bytes: &[u8]) -> Vec<crate::om::compact::LocatedCompactIndex> {
     crate::om::data_block_object_frames(bytes)

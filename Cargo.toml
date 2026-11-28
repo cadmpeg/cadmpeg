@@ -271,9 +271,10 @@ module_name_repetitions = "allow"
 # re-enable the lint with `#![deny(clippy::disallowed_methods)]`.
 disallowed_methods = "allow"
 
-# Restriction picks catch panic calls and debug scaffolding. Production panic
-# calls are also checked by scripts/census-panic-calls.py.
+# Restriction picks: fail loudly instead of silently panicking or shipping
+# debug scaffolding.
 unwrap_used = "warn"
+expect_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"

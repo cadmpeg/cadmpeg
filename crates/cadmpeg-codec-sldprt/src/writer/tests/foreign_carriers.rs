@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carriers, topology and history of another format that the semantic writer
 //! writes exactly, or leaves out with the body that holds them.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::features::geometry::FinitePoint3;

@@ -14,11 +14,7 @@ use crate::test_support::builders::{measure, plate_with_hole, service_context};
 
 fn scope_without_model() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_scope(ContentScope {
-        model: false,
-        design: false,
-        process: false,
-    });
+    ir.set_scope(ContentScope::container());
     ir
 }
 

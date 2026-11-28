@@ -6,6 +6,7 @@ use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("solidedge");
 
+cadmpeg_ir::loss_codes! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SolidEdgeLossCode {
     ContainerNoncanonical,
@@ -38,6 +39,7 @@ pub(crate) enum SolidEdgeLossCode {
     CurveConstructionDropped,
     RegionFacesUntransferred,
     BodyPlacementUnread,
+}
 }
 
 impl SolidEdgeLossCode {

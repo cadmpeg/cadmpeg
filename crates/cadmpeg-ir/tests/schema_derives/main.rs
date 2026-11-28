@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
+#![cfg(test)]
+
 //! JSON Schema derive and committed-shape checks for `cadmpeg-ir`.
 
 use schemars::{JsonSchema, SchemaGenerator};

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `UP_TO_NEXT` extent proof over the covering face.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 
 use super::bundle::{changed, kinds, read, timeline};
 use crate::test_support::*;

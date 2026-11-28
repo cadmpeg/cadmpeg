@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Endian and compact-integer encodings used by synthetic CATPart fixtures.
 
-#![allow(clippy::unwrap_used)]
-
 pub(crate) fn be32(v: u32) -> [u8; 4] {
     v.to_be_bytes()
 }

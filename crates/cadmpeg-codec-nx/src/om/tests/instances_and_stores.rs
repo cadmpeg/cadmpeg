@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unit and fixture tests for OM wire parsers owned by `om`.
 
-#![allow(clippy::unwrap_used)]
-
 use crate::om::extrude_payload_header;
 use crate::om::identical_instance_output_payload_lane;
 use crate::om::indexed_sections;

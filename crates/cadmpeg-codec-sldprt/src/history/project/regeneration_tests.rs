@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Regeneration binding and feature projection tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::bind::bind_definition_sketch;
 use crate::history::project::neutral_feature_id;

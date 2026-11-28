@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part 21 complex-instance partial-order tests.
 
-#![allow(clippy::unwrap_used)]
-
 #[test]
 fn parser_gives_up_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";

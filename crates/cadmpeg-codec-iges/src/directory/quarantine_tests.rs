@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Directory Entry quarantine: the two-list parse, its part, and its ledger.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::wire;
 

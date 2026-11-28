@@ -4,8 +4,6 @@
 //! Helpers hand-build `.prt` byte images and embedded-stream payloads.
 //! Native projection fixtures use checked source tokens.
 
-#![allow(clippy::unwrap_used)]
-
 pub(crate) mod deltas_stream;
 pub(crate) mod final_member_registry;
 pub(crate) mod move_face;

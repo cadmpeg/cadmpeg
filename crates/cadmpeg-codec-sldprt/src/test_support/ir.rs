@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-less IR builders and encode/decode helpers for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;

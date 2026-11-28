@@ -6,6 +6,7 @@ use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("ironcad");
 
+cadmpeg_ir::loss_codes! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IronCadLossCode {
     ContainerNoncanonical,
@@ -30,6 +31,7 @@ pub(crate) enum IronCadLossCode {
     UnitsUnrecognized,
     UnitsScaleConflict,
     SceneStreamsPending,
+}
 }
 
 impl IronCadLossCode {

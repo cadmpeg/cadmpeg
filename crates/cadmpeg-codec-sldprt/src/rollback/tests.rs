@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic tests of the current mark, the mark records and their join.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
 

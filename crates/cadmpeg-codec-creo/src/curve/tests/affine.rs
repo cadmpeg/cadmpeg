@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 const EPS_NONLINEAR_VALUE: f64 = 1.0e-9;
 
 use crate::curve::curve_expression_solve_program;

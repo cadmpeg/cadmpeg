@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solid, B-rep, and structure byte fixtures for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::test_cards::{
     card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,

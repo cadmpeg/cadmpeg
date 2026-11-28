@@ -454,7 +454,6 @@ mod sketch_profiles {
 /// Cross-codec product-structure regression tests.
 #[cfg(all(feature = "fcstd", feature = "step"))]
 mod product_roundtrip {
-    #![allow(clippy::unwrap_used)]
 
     use std::collections::{BTreeMap, HashMap, HashSet};
     use std::io::Cursor;
@@ -751,7 +750,6 @@ mod product_roundtrip {
 /// vertices, in either sense.
 #[cfg(all(feature = "step", feature = "iges", feature = "f3d"))]
 mod subset_carriers {
-    #![allow(clippy::unwrap_used)]
 
     use std::io::Cursor;
 

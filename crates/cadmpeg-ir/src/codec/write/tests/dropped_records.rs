@@ -546,7 +546,7 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     state_document_fields(&mut ir);
     ir.design.parameters.push(negated_parameter("kept", 1));
     let mut value = json::to_value(&ir).unwrap();
-    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false});
     let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
@@ -618,7 +618,7 @@ fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
         )
         .unwrap();
     let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
-    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false});
     let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),

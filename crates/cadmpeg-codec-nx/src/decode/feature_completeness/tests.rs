@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-completeness predicates owned by `decode`.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use crate::decode::feature_completeness::operands::{

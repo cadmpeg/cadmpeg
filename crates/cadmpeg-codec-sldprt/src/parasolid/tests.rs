@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parasolid stream split, header, and mesh-polyline tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Write as _;
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 use crate::geometry::blends::VertexBlendTwists;
 use crate::math::Point3;
 use cadmpeg_core::serde_erase::json;

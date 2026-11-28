@@ -1522,7 +1522,6 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
 
 #[test]
 // These checked constructors must accept the explicit test fixtures.
-#[allow(clippy::unwrap_used)]
 fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense() {
     let transform = crate::placement::FeatureSectionTransform::new(
         1,

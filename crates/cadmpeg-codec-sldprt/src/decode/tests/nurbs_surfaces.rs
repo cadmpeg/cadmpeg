@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS, offset, blend, and compact-carrier surface decode tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

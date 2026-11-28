@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Value-block parser tests over synthetic CATPart streams.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use super::{tokenize, InlineBytes, InlineBytesWire, ValueBlock, ValueField};
 use cadmpeg_core::serde_erase::json;

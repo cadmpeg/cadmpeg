@@ -21,6 +21,7 @@ use crate::brep::resolve::ENDPOINT_TOLERANCE;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("pvz");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.pvz` transfer loss.
 ///
 /// The string form (via [`PvzLossCode::code`]) is the stable contract.
@@ -116,51 +117,9 @@ pub(crate) enum PvzLossCode {
     /// left out of its loop.
     ExactCoedgeDegenerateOmitted,
 }
+}
 
 impl PvzLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [PvzLossCode] = &[
-        Self::SourceDialectUnverified,
-        Self::ContainerDirectoryRecovered,
-        Self::StructureStreamUndecoded,
-        Self::StructureElementUndecoded,
-        Self::StructureDefinitionAttributes,
-        Self::StructureOccurrenceAttributes,
-        Self::StructureOccurrenceUndecoded,
-        Self::StructureBoundsNotTransferred,
-        Self::StructurePropertyAttributes,
-        Self::StructurePropertyKeyDropped,
-        Self::StructureRootAmbiguous,
-        Self::StructurePlacementNotSimilarity,
-        Self::StructurePlacementInvalid,
-        Self::GeometryMemberMissing,
-        Self::GeometryMemberUnreferenced,
-        Self::GeometryStreamUndecoded,
-        Self::GeometryPreambleUndecoded,
-        Self::AttributeRecordsUndecoded,
-        Self::AttributeAppearanceUnresolved,
-        Self::AttributeAppearanceTail,
-        Self::AttributeAppearanceColorRejected,
-        Self::TessellationPatchFields,
-        Self::TessellationRecordsUndecoded,
-        Self::TessellationTextureCoordinates,
-        Self::TessellationEdgesNotTransferred,
-        Self::ExactRecordUninterpreted,
-        Self::ExactSurfaceUntyped,
-        Self::ExactSurfaceAsBspline,
-        Self::ExactCurveUntyped,
-        Self::ExactPcurveUntransferred,
-        Self::ExactSecondaryPcurveOmitted,
-        Self::ExactEndpointMismatch,
-        Self::ExactLoopOpen,
-        Self::ExactFaceSideGauge,
-        Self::ExactTopologyWorkExhausted,
-        Self::ExactEdgeUsesMerged,
-        Self::ExactFaceUnboundedOmitted,
-        Self::ExactCoedgeDegenerateOmitted,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {

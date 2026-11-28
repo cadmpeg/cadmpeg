@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Formula and relation-program CATPart builders.
 
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_bytes::be32;
 use crate::test_support::test_container::standard_catpart;
 use crate::test_support::test_object_graph::{

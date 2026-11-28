@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Required geometry fields, optional claims and source point dependency.
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_curves_and_surfaces::polynomial_nurbs_curve_file;
 use crate::test_support::test_owned::{owned_test_file_with_global, OwnedTestEntity};
 use crate::{loss::IgesLossCode, IgesCodec};

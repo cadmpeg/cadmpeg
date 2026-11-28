@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The semantic writer declares a native record Regenerated exactly when its
 //! output states the record again (§3.4, Rule W3).
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

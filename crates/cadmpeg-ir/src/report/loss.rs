@@ -11,6 +11,66 @@ use serde::{Deserialize, Serialize};
 
 use crate::report::Severity;
 
+/// Define a codec loss enum and its complete test inventory.
+#[macro_export]
+macro_rules! loss_codes {
+    ($(#[$enum_meta:meta])* $vis:vis enum $name:ident {
+        $($(#[$variant_meta:meta])* $variant:ident),* $(,)?
+    }) => {
+        $(#[$enum_meta])*
+        $vis enum $name {
+            $($(#[$variant_meta])* $variant),*
+        }
+
+        impl $name {
+            #[cfg(test)]
+            pub(crate) const ALL: &'static [Self] = &[$(Self::$variant),*];
+        }
+
+        #[cfg(test)]
+        const _: &[$name] = $name::ALL;
+    };
+    ($(#[$enum_meta:meta])* $vis:vis enum $name:ident {
+        $($(#[$variant_meta:meta])* $variant:ident => $code:literal),* $(,)?
+    }) => {
+        $crate::loss_codes! {
+            $(#[$enum_meta])*
+            $vis enum $name { $($(#[$variant_meta])* $variant),* }
+        }
+
+        impl $name {
+            #[must_use]
+            pub(crate) const fn code(self) -> &'static str {
+                match self { $(Self::$variant => $code),* }
+            }
+        }
+    };
+    ($(#[$enum_meta:meta])* $vis:vis enum $name:ident {
+        $($(#[$variant_meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident)),* $(,)?
+    }) => {
+        $crate::loss_codes! {
+            $(#[$enum_meta])*
+            $vis enum $name { $($(#[$variant_meta])* $variant),* }
+        }
+
+        impl $name {
+            #[must_use]
+            pub(crate) const fn code(self) -> &'static str {
+                match self { $(Self::$variant => $code),* }
+            }
+
+            #[must_use]
+            const fn severity(self) -> $crate::report::Severity {
+                match self { $(Self::$variant => $crate::report::Severity::$severity),* }
+            }
+
+            const fn shared_taxonomy(self) -> $crate::report::loss::LossTaxonomy {
+                match self { $(Self::$variant => $crate::report::loss::LossTaxonomy::$taxonomy),* }
+            }
+        }
+    };
+}
+
 /// What subsystem a loss pertains to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::history::body_selections::{
     bind_direct_body_recipe_body_selection, FeatureBodySelectionInputs,

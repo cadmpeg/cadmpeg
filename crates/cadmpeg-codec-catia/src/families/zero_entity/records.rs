@@ -2498,7 +2498,6 @@ mod tests {
     };
 
     // These checked constructors must accept the explicit test fixtures.
-    #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false)

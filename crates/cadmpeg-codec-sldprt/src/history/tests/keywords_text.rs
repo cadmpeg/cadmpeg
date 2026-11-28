@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Keywords member text: what is read, and what is named when it is not.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::MAX_APPLICATION_LEVELS;
 use crate::loss::SldprtLossCode;

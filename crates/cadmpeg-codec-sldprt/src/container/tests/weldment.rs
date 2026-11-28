@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct auxiliary stream bounds in a compound member.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

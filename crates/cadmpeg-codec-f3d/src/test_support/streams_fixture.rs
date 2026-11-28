@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic Design and ACT MetaStream/BulkStream payloads.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::u64_from_index;
 

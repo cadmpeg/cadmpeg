@@ -83,7 +83,6 @@ impl TryFrom<ObjectFrameWire> for DataBlockObjectFrame {
 #[cfg(test)]
 mod tests {
     // Wire fixtures exercise both legal compact encodings and malformed input.
-    #![allow(clippy::unwrap_used)]
     use super::DataBlockObjectFrame;
     use cadmpeg_core::serde_erase::json;
 
