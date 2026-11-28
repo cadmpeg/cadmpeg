@@ -220,6 +220,7 @@ mod tests {
             lead: 2,
             body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),
+            compact_class: None,
             entity_id: 1,
             value_schema_selections: Vec::new(),
             range_interval: Some(CatiaRangeInterval {

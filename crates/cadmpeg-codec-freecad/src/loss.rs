@@ -67,6 +67,9 @@ pub(crate) enum FreecadLossCode {
     PersistenceSideEntryUnresolved,
     /// Redundant persistence counts disagree with framed XML populations.
     PersistenceCountNoncanonical,
+    /// One owner stores two property elements of one name; the one `FreeCAD`
+    /// restores last is kept.
+    PersistencePropertyRepeated,
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
@@ -80,6 +83,9 @@ pub(crate) enum FreecadLossCode {
     /// A link that follows its linked object's own placement places an
     /// object the scope holds no own occurrence of.
     FeatureLinkPlacementUnresolved,
+    /// An object stores `Placement` with a value other than its
+    /// `LinkPlacement`; the decoder applies `LinkPlacement`.
+    AssemblyPlacementAliasNoncanonical,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
@@ -163,12 +169,14 @@ impl FreecadLossCode {
         Self::PersistencePayloadUnresolved,
         Self::PersistenceSideEntryUnresolved,
         Self::PersistenceCountNoncanonical,
+        Self::PersistencePropertyRepeated,
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::FeatureRevolutionNotTransferred,
         Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
         Self::FeatureLinkPlacementUnresolved,
+        Self::AssemblyPlacementAliasNoncanonical,
         Self::ParameterExpressionEmpty,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
@@ -227,9 +235,11 @@ impl FreecadLossCode {
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
+            Self::PersistencePropertyRepeated => "metadata.persistence-property-repeated",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureLinkPlacementUnresolved => "feature.link-placement-unresolved",
+            Self::AssemblyPlacementAliasNoncanonical => "assembly.placement-alias-noncanonical",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
@@ -308,9 +318,11 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::FeatureLinkPlacementUnresolved
+            | Self::AssemblyPlacementAliasNoncanonical
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
+            | Self::PersistencePropertyRepeated
             | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::AppearanceStateNotTransferred
@@ -381,10 +393,12 @@ impl FreecadLossCode {
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::AppearanceStateNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
+            | Self::PersistencePropertyRepeated
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::AssemblyPlacementAliasNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -440,12 +454,14 @@ mod tests {
                 "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",
+                "metadata.persistence-property-repeated",
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
                 "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
                 "feature.link-placement-unresolved",
+                "assembly.placement-alias-noncanonical",
                 "parameter.expression-empty",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
