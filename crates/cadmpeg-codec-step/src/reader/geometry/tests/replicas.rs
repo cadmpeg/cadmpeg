@@ -5,6 +5,7 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::ids::kind;
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -19,7 +20,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::gives_up;
 use cadmpeg_ir::CadIr;
 
 use crate::export::write_step;
@@ -978,7 +979,7 @@ const DEEPEST_DOCUMENT_REPLICA_CHAIN: usize = MAX_DOCUMENT_DEPTH - 7;
 /// The JSON depth of `ir` (§2.5): a scalar is no level, and an array or
 /// object is one more than its deepest member.
 fn document_depth(ir: &CadIr) -> usize {
-    let value = cadmpeg_core::serde_erase::json::to_value(ir).expect("document to JSON");
+    let value = json::to_value(ir).expect("document to JSON");
     let mut deepest = 0;
     let mut work = vec![(&value, 0)];
     while let Some((value, above)) = work.pop() {
@@ -1019,7 +1020,7 @@ fn a_curve_replica_chain_past_the_document_depth_is_given_up_at_decode() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| gives_up(&loss.code))
         .collect();
     assert_eq!(unreadable.len(), 1);
     assert!(unreadable[0].message.contains("step:data:curve#9"));
@@ -1074,7 +1075,7 @@ fn a_surface_replica_chain_past_the_document_depth_is_given_up_at_decode() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| gives_up(&loss.code))
         .collect();
     assert_eq!(unreadable.len(), 1);
     assert!(unreadable[0].message.contains("step:data:surface#8"));
@@ -1145,7 +1146,7 @@ fn a_curve_replica_past_the_geometry_nesting_keeps_its_record_as_unknown() {
         .filter(|loss| names_record(&loss.message, 9))
         .collect();
     assert_eq!(naming.len(), 1, "{naming:?}");
-    assert_ne!(naming[0].code, record_unreadable_kind());
+    assert!(!gives_up(&naming[0].code));
 }
 
 /// A surface replica one placement past [`MAX_GEOMETRY_NESTING`] keeps its
@@ -1190,7 +1191,7 @@ fn a_surface_replica_past_the_geometry_nesting_keeps_its_record_as_unknown() {
         .filter(|loss| names_record(&loss.message, 8))
         .collect();
     assert_eq!(naming.len(), 1, "{naming:?}");
-    assert_ne!(naming[0].code, record_unreadable_kind());
+    assert!(!gives_up(&naming[0].code));
 }
 
 #[test]

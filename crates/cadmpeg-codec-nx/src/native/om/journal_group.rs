@@ -106,6 +106,7 @@ impl TryFrom<Wire> for OmOperationStateJournalGroup {
 #[cfg(test)]
 mod tests {
     use super::OmOperationStateJournalGroup;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn journal_group_wire_preserves_both_header_widths() {
@@ -115,40 +116,31 @@ mod tests {
                 r#"{{"id":"group","section_link":"section","ordinal":0,"selector":"0102","rows":[{{"timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","schema_id":0,"raw_schema_id":"00","state_ordinal":0,"raw_state_ordinal":"00","source_offset":{start},"end_offset":{end}}}],"source_entry":"om","source_offset":0,"end_offset":{end}}}"#
             );
             let group: OmOperationStateJournalGroup = serde_json::from_str(&json).unwrap();
+            assert_eq!(json::to_string(&group).unwrap(), json);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
-                json
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&super::Wire::from(group.clone())).unwrap()
+                json::to_vec(&group).unwrap(),
+                json::to_vec(&super::Wire::from(group.clone())).unwrap()
             );
             let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             let mut empty = wire.clone();
-            empty["rows"] = serde_json::json!([]);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<OmOperationStateJournalGroup>(empty)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("rows")
-            );
+            empty["rows"] = cadmpeg_core::json!([]);
+            assert!(json::from_value::<OmOperationStateJournalGroup>(empty)
+                .unwrap_err()
+                .to_string()
+                .contains("rows"));
             let mut header = wire.clone();
             header["source_offset"] = start.into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<OmOperationStateJournalGroup>(header)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("source_offset")
-            );
+            assert!(json::from_value::<OmOperationStateJournalGroup>(header)
+                .unwrap_err()
+                .to_string()
+                .contains("source_offset"));
             let mut end_mismatch = wire.clone();
             end_mismatch["end_offset"] = (end + 1).into();
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<OmOperationStateJournalGroup>(
-                    end_mismatch
-                )
-                .unwrap_err()
-                .to_string()
-                .contains("end_offset")
+                json::from_value::<OmOperationStateJournalGroup>(end_mismatch)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("end_offset")
             );
             let mut gap = wire;
             let mut second = gap["rows"][0].clone();
@@ -156,12 +148,10 @@ mod tests {
             second["end_offset"] = (end + 12).into();
             gap["rows"].as_array_mut().unwrap().push(second);
             gap["end_offset"] = (end + 12).into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<OmOperationStateJournalGroup>(gap)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("rows.source_offset")
-            );
+            assert!(json::from_value::<OmOperationStateJournalGroup>(gap)
+                .unwrap_err()
+                .to_string()
+                .contains("rows.source_offset"));
         }
     }
 

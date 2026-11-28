@@ -3,15 +3,14 @@
 //! written, read back strictly, and written again; the stated wire forms; and
 //! the schema of each type.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
-#[cfg(feature = "schema")]
-use schemars::{JsonSchema, SchemaGenerator};
+use cadmpeg_core::json;
 use serde::de::DeserializeOwned;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
@@ -206,12 +205,10 @@ fn settings() -> NativeOptions {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first =
-        cadmpeg_core::serde_erase::json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second =
-        cadmpeg_core::serde_erase::json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -222,7 +219,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    cadmpeg_core::serde_erase::json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 fn reads<T: DeserializeOwned + Debug>(text: &str) -> T {
@@ -958,7 +955,7 @@ fn places() -> Vec<Place> {
 fn a_place_states_the_scale_composed_with_its_placement() {
     let place = places().remove(2);
     let value = to_value(&place);
-    let text = cadmpeg_core::serde_erase::json::to_string(&place).unwrap();
+    let text = json::to_string(&place).unwrap();
     let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
     assert!(at("placement") < at("scale") && at("scale") < at("base"));
     assert_eq!(
@@ -1423,71 +1420,9 @@ fn rigid_group_members_are_a_sorted_set_that_refuses_repeats() {
 
 #[test]
 fn a_native_option_key_stated_twice_is_refused() {
-    let wire = cadmpeg_core::serde_erase::json::to_string(&places().remove(0)).unwrap();
+    let wire = json::to_string(&places().remove(0)).unwrap();
     let entry = "\"f3d:item_kind\":{\"kind\":\"text\",\"value\":{\"kind\":\"literal\",\"value\":\"insert\"}}";
     let twice = wire.replacen(entry, &format!("{entry},{entry}"), 1);
     assert_ne!(twice, wire);
     refuses::<Place>(&twice);
-}
-
-#[cfg(feature = "schema")]
-fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-    let schema = T::json_schema(generator);
-    assert!(schema.as_object().is_some(), "{}", T::schema_name());
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn every_assembly_and_shared_layout_type_has_a_schema() {
-    let mut generator = SchemaGenerator::default();
-    generates::<Place>(&mut generator);
-    generates::<PlacementBase>(&mut generator);
-    generates::<PlaceSet>(&mut generator);
-    generates::<Joint>(&mut generator);
-    generates::<JointConnector>(&mut generator);
-    generates::<Alignment>(&mut generator);
-    generates::<JointKind>(&mut generator);
-    generates::<JointMotion>(&mut generator);
-    generates::<JointOffset>(&mut generator);
-    generates::<AxisLimits>(&mut generator);
-    generates::<Bounds<Length>>(&mut generator);
-    generates::<Bounds<Angle>>(&mut generator);
-    generates::<Coupling>(&mut generator);
-    generates::<JointDrive>(&mut generator);
-    generates::<DriveAxis>(&mut generator);
-    generates::<DriveMode>(&mut generator);
-    generates::<TangentContact>(&mut generator);
-    generates::<WidthMode>(&mut generator);
-    generates::<SlotPosition>(&mut generator);
-    generates::<PathPosition>(&mut generator);
-    generates::<PathAxisControl>(&mut generator);
-    generates::<PathRollControl>(&mut generator);
-    generates::<RigidGroup>(&mut generator);
-    generates::<ComponentPattern>(&mut generator);
-    generates::<ComponentInstance>(&mut generator);
-    generates::<MirrorComponents>(&mut generator);
-    generates::<MirrorResult>(&mut generator);
-    generates::<MirrorOrientation>(&mut generator);
-    generates::<MirrorReversal>(&mut generator);
-    generates::<MirrorPivot>(&mut generator);
-    generates::<AssemblyContext>(&mut generator);
-    generates::<ContextEffect>(&mut generator);
-    generates::<PairElement>(&mut generator);
-    generates::<PatternLayout>(&mut generator);
-    generates::<ChainLayout>(&mut generator);
-    generates::<ChainLinks>(&mut generator);
-    generates::<ChainLink>(&mut generator);
-    generates::<LinearRun>(&mut generator);
-    generates::<PatternRun<Length>>(&mut generator);
-    generates::<PatternRun<Angle>>(&mut generator);
-    generates::<RunSides<Length>>(&mut generator);
-    generates::<Spacing<Angle>>(&mut generator);
-    generates::<UpToFill<Length>>(&mut generator);
-    generates::<Locus>(&mut generator);
-    generates::<InstanceOrientation>(&mut generator);
-    generates::<PathReference>(&mut generator);
-    generates::<Increment>(&mut generator);
-    generates::<DimensionRun>(&mut generator);
-    generates::<DimensionTable>(&mut generator);
-    generates::<TableRow>(&mut generator);
 }

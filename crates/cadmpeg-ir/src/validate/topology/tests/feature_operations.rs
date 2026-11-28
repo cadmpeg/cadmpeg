@@ -12,6 +12,7 @@ use crate::features::sheet_metal_forms::SheetMetalThicknessSide;
 use crate::features::sheet_metal_forms::SheetMetalTransition;
 use crate::features::sheet_metal_forms::SheetMetalTransitionForm;
 use crate::validate::validate_neutral;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors() {
@@ -22,15 +23,15 @@ fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors()
     };
     let mut ir = crate::CadIr::empty();
     for (ordinal, source) in [
-        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#0"}}),
-        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#0"}}),
-        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}),
-        serde_json::json!({"kind":"tessellations","value":["test:mesh:tessellation#missing"]}),
+        cadmpeg_core::json!({"kind":"unresolved","value":{"feature":"test:model:feature#0"}}),
+        cadmpeg_core::json!({"kind":"unresolved","value":{"feature":"test:model:feature#0"}}),
+        cadmpeg_core::json!({"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}),
+        cadmpeg_core::json!({"kind":"tessellations","value":["test:mesh:tessellation#missing"]}),
     ]
     .into_iter()
     .enumerate()
     {
-        let operation: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "mesh_modify", "value": {"source":source, "modification":{"kind":"separate", "separation":{}}}})).unwrap();
+        let operation: FeatureOperation = json::from_value(cadmpeg_core::json!({"kind": "mesh_modify", "value": {"source":source, "modification":{"kind":"separate", "separation":{}}}})).unwrap();
         ir.model.features.push(Feature {
             product_definition: None,
             id: FeatureId::mint(format!("test:model:feature#{ordinal}")).unwrap(),
@@ -56,7 +57,7 @@ fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors()
             ordinal >= 2
         );
     }
-    ir.model.features[2].evaluation.set_definition(FeatureDefinition::Operation(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}, "modification":{"kind":"smooth"}}})).unwrap()));
+    ir.model.features[2].evaluation.set_definition(FeatureDefinition::Operation(json::from_value(cadmpeg_core::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}, "modification":{"kind":"smooth"}}})).unwrap()));
     assert!(!feature_reference_findings(&ir)
         .iter()
         .any(|finding| finding.entity.as_deref() == Some("test:model:feature#2")));
@@ -68,19 +69,19 @@ fn mesh_face_group_and_conversion_sources_validate_meshes_and_originating_featur
     for kind in ["mesh_combine_face_groups", "mesh_convert"] {
         let mut ir = crate::CadIr::empty();
         for (ordinal, source) in [
-            serde_json::json!({"kind":"tessellations","value":["test:mesh:tessellation#missing"]}),
-            serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#1"}}),
-            serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}),
+            cadmpeg_core::json!({"kind":"tessellations","value":["test:mesh:tessellation#missing"]}),
+            cadmpeg_core::json!({"kind":"unresolved","value":{"feature":"test:model:feature#1"}}),
+            cadmpeg_core::json!({"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}),
         ]
         .into_iter()
         .enumerate()
         {
             let wire = if kind == "mesh_convert" {
-                serde_json::json!({"kind":kind, "value":{"sources":[source]}})
+                cadmpeg_core::json!({"kind":kind, "value":{"sources":[source]}})
             } else {
-                serde_json::json!({"kind":kind, "value":{"source":source}})
+                cadmpeg_core::json!({"kind":kind, "value":{"source":source}})
             };
-            let operation: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            let operation: FeatureOperation = json::from_value(wire).unwrap();
             ir.model.features.push(Feature {
                 product_definition: None,
                 id: crate::features::FeatureId::mint(format!("test:model:feature#{ordinal}"))
@@ -602,16 +603,15 @@ fn corner_requires_a_preceding_bend_dependency() {
     assert!(feature_reference_findings(&ir)
         .iter()
         .any(|finding| finding.message.contains("corner bend")));
-    let bend: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(
-        serde_json::json!({"kind": "sheet_metal_bend", "value": {
+    let bend: FeatureOperation =
+        json::from_value(cadmpeg_core::json!({"kind": "sheet_metal_bend", "value": {
             "plate": "test:model:feature#plate",
             "attachment": {"kind": "all"}, "inside_radius": 1.0,
             "relief": {"form": "style_default", "width": 1.0, "depth": 1.0,
                 "minimum_remnant": 0.0, "seam_gap": 0.0},
             "transition": {"form": "style_default", "radius": 0.0}
-        }}),
-    )
-    .unwrap();
+        }}))
+        .unwrap();
     ir.model.features[1].evaluation.edit(|definition, _| {
         *definition = FeatureDefinition::Operation(bend);
     });
@@ -650,13 +650,12 @@ fn captured_component_positions_validate_resolved_occurrences() {
             },
         )
     };
-    let mut feature: crate::features::Feature =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": "synthetic:test:feature#positions", "ordinal": 0, "suppressed": false,
-            "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
-            "definition": definition(None)
-        }))
-        .unwrap();
+    let mut feature: crate::features::Feature = json::from_value(cadmpeg_core::json!({
+        "id": "synthetic:test:feature#positions", "ordinal": 0, "suppressed": false,
+        "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
+        "definition": definition(None)
+    }))
+    .unwrap();
     let feature_index = ir.model.features.len();
     ir.model.features.push(feature.clone());
     let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
@@ -675,7 +674,7 @@ fn captured_component_positions_validate_resolved_occurrences() {
 #[test]
 fn form_candidate_cages_participate_in_referential_validation() {
     let mut ir = unit_cube().unwrap();
-    ir.model.features.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    ir.model.features.push(json::from_value(cadmpeg_core::json!({
         "id":"test:model:feature#form-candidate", "ordinal":0,
         "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
         "definition":{"kind":"operation","value":{"kind":"form","value":{
@@ -697,7 +696,7 @@ fn plane_cut_unresolved_sources_validate_actual_anchors_including_self() {
     use crate::features::{FeatureDefinition, FeatureOperation};
     for source in ["test:model:feature#cut", "test:model:feature#missing"] {
         let mut ir = crate::CadIr::empty();
-        let operation: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":source}},"modification":{"kind":"plane_cut","cut":{}}}})).unwrap();
+        let operation: FeatureOperation = json::from_value(cadmpeg_core::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":source}},"modification":{"kind":"plane_cut","cut":{}}}})).unwrap();
         ir.model.features.push(crate::features::Feature {
             product_definition: None,
             id: crate::features::FeatureId::mint("test:model:feature#cut").unwrap(),

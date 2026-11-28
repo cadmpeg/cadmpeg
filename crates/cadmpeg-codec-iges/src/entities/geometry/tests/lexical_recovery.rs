@@ -34,9 +34,10 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
     );
 }
 
-/// `iges.md` states strict floor Warning for `iges/parameter.literal-unusable`.
+/// A curve whose required pole does not read is given up, so a pinned decode
+/// refuses on the curve's `record.unreadable` whatever the literal.
 #[test]
-fn a_pinned_decode_refuses_an_unreadable_nurbs_pole_only_for_an_unusable_literal() {
+fn a_pinned_decode_refuses_an_unreadable_nurbs_pole() {
     for (literal, unusable) in [
         ("3Hbad", false),
         ("", false),
@@ -53,19 +54,24 @@ fn a_pinned_decode_refuses_an_unreadable_nurbs_pole_only_for_an_unusable_literal
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+            .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
+        crate::test_support::assert_gives_up(recovered.report(), &[("entity", 1)]);
         let mut pinned = DecodeOptions::default();
         pinned.strictness.pinned = true;
         match IgesCodec.decode(&mut Cursor::new(bytes), &pinned) {
-            Ok(_) => assert!(!unusable, "{literal}"),
             Err(DecodeFailure::StrictRejected { rejection }) => {
-                assert!(unusable, "{literal}");
+                crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
                 assert_eq!(
-                    rejection.loss().code,
-                    IgesLossCode::ParameterLiteralUnusable.kind(),
+                    rejection
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|loss| loss.code == IgesLossCode::ParameterLiteralUnusable.kind()),
+                    unusable,
                     "{literal}"
                 );
             }
+            Ok(_) => panic!("{literal}: expected a strict refusal"),
             Err(other) => panic!("{literal}: {other:?}"),
         }
     }
@@ -82,9 +88,14 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
             )
             .unwrap();
         assert_eq!(result.ir().geometry.curves.len(), 1, "{claim}, {normal}");
-        assert!(result.ir().native.namespace("iges").unwrap().arenas()
-            ["quarantined_parameter_records"]
-            .is_empty());
+        assert_eq!(
+            crate::test_support::code_count(
+                result.report(),
+                IgesLossCode::ParameterDataQuarantined
+            ),
+            0,
+            "{claim}, {normal}"
+        );
     }
 }
 
@@ -138,11 +149,13 @@ fn unusable_metadata_use_flag_does_not_report_a_geometry_drop() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+        .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
     assert!(result
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()
-            && loss.message.contains("Entity Use Flag 06 is outside")));
+        .any(
+            |loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
+                && loss.message.contains("Entity Use Flag 06 is outside")
+        ));
 }

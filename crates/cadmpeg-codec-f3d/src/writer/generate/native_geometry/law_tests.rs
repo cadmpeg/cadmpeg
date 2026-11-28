@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Law-slot grammar at the source-less writer boundary.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
 use cadmpeg_ir::geometry::lofts::LoftPathCurve;
@@ -71,9 +72,8 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     procedural.edit_definition(|definition| {
         *definition = ProceduralSurfaceDefinition::Sweep(replacement);
     });
-    let json = cadmpeg_core::serde_erase::json::to_value(&*ir).unwrap();
-    let decoded: CadIr =
-        cadmpeg_core::serde_erase::json::from_value(json).expect("document serde admission");
+    let json = json::to_value(&*ir).unwrap();
+    let decoded: CadIr = json::from_value(json).expect("document serde admission");
     assert_eq!(layout(&decoded), layout(ir));
 }
 
@@ -86,7 +86,7 @@ fn text(value: &str) -> LawExpression {
 fn assert_round_trip(ir: &CadIr) {
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("representable law construction writes");
     let decoded = F3dCodec

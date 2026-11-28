@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::chunks::ArchiveVersion;
@@ -140,35 +141,39 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                             )
                             .unwrap(),
                     );
+                    let failure = |loss: &&cadmpeg_ir::report::loss::LossNote| {
+                        if container_only {
+                            loss.code == RhinoLossCode::ContainerInstanceDefinitionDegraded.kind()
+                        } else {
+                            cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                        }
+                    };
                     for (code, count) in [
-                        (RhinoLossCode::IntegrityFailure, 0),
+                        (Some(RhinoLossCode::IntegrityFailure), 0),
+                        (None, usize::from(!admitted)),
                         (
-                            RhinoLossCode::ContainerInstanceDefinitionDegraded,
-                            usize::from(!admitted),
+                            Some(RhinoLossCode::RedundantFieldRepaired),
+                            usize::from(repaired),
                         ),
-                        (RhinoLossCode::RedundantFieldRepaired, usize::from(repaired)),
                     ] {
                         let losses: Vec<_> = result
                             .report()
                             .losses
                             .iter()
-                            .filter(|loss| loss.code == code.kind())
+                            .filter(|loss| {
+                                code.map_or_else(|| failure(loss), |code| loss.code == code.kind())
+                            })
                             .collect();
                         assert_eq!(losses.len(), count, "{archive:?} unit={unit} scale={scale} container_only={container_only}: {losses:?}");
                         for loss in losses {
                             assert_eq!(loss.provenance.as_ref().unwrap().offset, source_offset);
                         }
                     }
-                    let reread = CadIr::from_json(
-                        &cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap(),
-                    )
-                    .unwrap();
+                    let reread = CadIr::from_json(&json::to_string(result.ir()).unwrap()).unwrap();
                     if !container_only {
                         for ir in [result.ir(), &reread] {
-                            let native = cadmpeg_core::serde_erase::json::to_value(
-                                ir.native.namespace("rhino").unwrap(),
-                            )
-                            .unwrap();
+                            let native =
+                                json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
                             let definitions = native["product_definitions"].as_array().unwrap();
                             assert_eq!(definitions.len(), 1 + usize::from(admitted));
                             if admitted {
@@ -240,15 +245,9 @@ fn legacy_units_are_replaced_by_the_complete_unit_detail() {
                     "{:?}",
                     result.report().losses
                 );
-                let reread = CadIr::from_json(
-                    &cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap(),
-                )
-                .unwrap();
+                let reread = CadIr::from_json(&json::to_string(result.ir()).unwrap()).unwrap();
                 if !container_only {
-                    let native = cadmpeg_core::serde_erase::json::to_value(
-                        reread.native.namespace("rhino").unwrap(),
-                    )
-                    .unwrap();
+                    let native = json::to_value(reread.native.namespace("rhino").unwrap()).unwrap();
                     assert_eq!(native["product_definitions"].as_array().unwrap().len(), 1);
                     assert_eq!(native["product_definitions"][0]["unit_system"], 2);
                     assert_eq!(native["product_definitions"][0]["meters_per_unit"], 0.001);

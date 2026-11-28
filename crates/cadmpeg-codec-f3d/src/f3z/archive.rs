@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeCheckpoint, Decode
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use serde::Deserialize;
 
 use crate::container::ContainerScan;
@@ -141,6 +142,9 @@ pub(super) struct ArchiveSession {
     pub(super) members: BTreeMap<String, ClassifiedMember>,
     pub(super) layers: DialectLayers,
     pub(super) losses: Vec<LossNote>,
+    /// Members that opened and then failed to scan, given up as archive
+    /// entries. `losses` already holds each part's loss.
+    pub(super) given_up: Vec<GivenUpPart>,
 }
 
 /// Facts read from a member's container scan during classification.
@@ -220,7 +224,9 @@ fn member_metadata(
     metadata_ctx.take_trace();
     let mut metadata = MemberMetadata::default();
     let result = (|| {
-        let Some(table) = crate::xref::decode(&metadata_ctx, member_scan)? else {
+        let Some(table) = crate::xref::decode(&metadata_ctx, member_scan, &mut Vec::new())
+            .map_err(|failure| failure.error)?
+        else {
             return Ok(false);
         };
         metadata.references.extend(
@@ -258,6 +264,7 @@ pub(super) fn classify_members<'a>(
     let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     for member_path in scan
         .entries
         .iter()
@@ -267,6 +274,7 @@ pub(super) fn classify_members<'a>(
         super::observer::classifying(member_path, |timing| {
             let checkpoint = ctx.checkpoint();
             let arena = DecodeArena::new();
+            let mut opened = false;
             let classified = {
                 let root = super::observer::timed(&mut timing.nested_scan, || {
                     if scan.has_entry(member_path) {
@@ -278,6 +286,7 @@ pub(super) fn classify_members<'a>(
                     }
                 });
                 root.and_then(|view| {
+                    opened = true;
                     ctx.with_arena(&arena, |local| {
                         let member_scan = super::observer::timed(&mut timing.nested_scan, || {
                             crate::container::scan_member(local, view, member_path)
@@ -306,9 +315,38 @@ pub(super) fn classify_members<'a>(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let message = format!("{error}");
-                    super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
-                        "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
-                    ));
+                    let why = format!(
+                        "xref {member_path}: member could not be scanned as an F3D document ({message})"
+                    );
+                    // The scan gave up an entry that it did not open.
+                    let mut given = !scan.has_entry(member_path);
+                    if opened {
+                        let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                        if let Some(part) = scan.give_up_entry(
+                            ctx,
+                            member_path,
+                            cause,
+                            if crate::design::decode::record::is_fatal(&error) {
+                                error
+                            } else {
+                                crate::design::decode::record::give_up_error(cause, &why)
+                            },
+                        )? {
+                            given = true;
+                            let held = |kept: &GivenUpPart| kept.id() == part.id();
+                            // Two directory entries can name one stored span.
+                            if !given_up.iter().any(held) && !scan.given_up.iter().any(held) {
+                                losses.push(part.loss());
+                                given_up.push(part);
+                            }
+                        }
+                    }
+                    if !given {
+                        losses.push(
+                            F3dLossCode::XrefMemberUndecoded
+                                .note(format!("{why}; its source bytes remain retained")),
+                        );
+                    }
                     members.insert(
                         member_path.to_owned(),
                         ClassifiedMember::Unreadable(message),
@@ -350,6 +388,7 @@ pub(super) fn classify_members<'a>(
         members,
         layers,
         losses,
+        given_up,
     })
 }
 

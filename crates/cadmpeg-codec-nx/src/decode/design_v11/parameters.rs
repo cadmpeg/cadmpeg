@@ -19,15 +19,26 @@ use cadmpeg_ir::design::expr::{
     UnaryOp,
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use cadmpeg_ir::design::projection::fields::{ModelParameterField, ParameterField};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::native::NativeConvertError;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
-/// The parameters of the scope of `definition`, one per decoded expression.
-pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
+/// The parameters of the scope of `definition`, one per decoded expression,
+/// each placed by the record order of the one expression table that holds
+/// them.
+pub(super) fn project(
+    ir: &mut CadIr,
+    definition: &ProductDefinitionId,
+) -> Result<(), NativeConvertError> {
+    let places = match ir.native.namespace("nx") {
+        Some(namespace) => crate::native::om::expression_places(namespace)?,
+        None => BTreeMap::new(),
+    };
     let mut tables = BTreeMap::<Option<&FeatureId>, BTreeMap<&str, Vec<&LegacyParameter>>>::new();
     for parameter in &ir.model.parameters {
         tables
@@ -50,6 +61,11 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: None,
+            position: parameter
+                .native_ref
+                .as_ref()
+                .and_then(|expression| places.get(expression))
+                .copied(),
             name: Some(name),
             kind: declared.kind,
             unit: declared.unit,
@@ -66,6 +82,36 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
     }
     ir.design.parameters.extend(parameters);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(())
+}
+
+/// The model parameter fields [`project`] reads to build `field`. The
+/// declared unit is in `properties`; the names a formula resolves are those
+/// of the parameters with its owner.
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
+        ParameterField::Definition => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Properties,
+            ModelParameterField::Owner,
+        ],
+        ParameterField::Value => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::NativeRef | ParameterField::Position => &[ModelParameterField::NativeRef],
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings => &[],
+    }
 }
 
 /// A parameter's declared quantity and unit, from its expression header.

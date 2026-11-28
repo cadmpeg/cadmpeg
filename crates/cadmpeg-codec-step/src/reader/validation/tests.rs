@@ -10,9 +10,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::declared_measures::{
     DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
+use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind};
 use cadmpeg_ir::CadIr;
 
-use crate::test_support::exchange::decode_inline;
+use crate::test_support::exchange::{decode_inline, decode_inline_with_options};
 use crate::test_support::validated_part::{part, validation_property, Item, PartBody};
 use crate::StepCodec;
 
@@ -58,14 +59,41 @@ fn point(x: f64, y: f64, z: f64) -> cadmpeg_ir::features::geometry::FinitePoint3
         .unwrap()
 }
 
-fn unsupported_items(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
-    result
+/// The error text of each `record.undecoded` loss, sorted.
+fn given_up_errors(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
+    let mut errors = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "validation.item-unsupported")
-        .map(|loss| loss.message.clone())
-        .collect()
+        .filter(|loss| loss.code == record_undecoded_kind())
+        .filter_map(|loss| loss.message.split_once(": "))
+        .filter_map(|(_, error)| error.split("; dropped=").next())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    errors.sort();
+    errors
+}
+
+/// The sorted statements of the unsupported validation items: the message of
+/// each `validation.item-unsupported` loss for an item that stays, and the
+/// stated reason of each give-up for an item that is removed.
+fn unsupported_items(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
+    const REASON: &str = "step/validation.item-unsupported: ";
+    let mut items = result
+        .report()
+        .losses
+        .iter()
+        .filter_map(|loss| {
+            if loss.code.local_code() == "validation.item-unsupported" {
+                return Some(loss.message.as_str());
+            }
+            let (_, reason) = loss.message.split_once(REASON)?;
+            gives_up(&loss.code).then(|| reason.split("; dropped=").next())?
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    items.sort();
+    items
 }
 
 #[test]
@@ -388,6 +416,17 @@ fn item_names_select_the_class_of_each_quantity() {
             .map(|item| format!("geometric validation property #1000 has unsupported item #{item}"))
             .collect::<Vec<_>>()
     );
+    // Each unsupported item is dropped: the measures are not stated and the
+    // points are not model points.
+    assert_eq!(
+        given_up_errors(&result),
+        (first + 3..first + 7)
+            .map(|item| format!(
+                "malformed container: step/validation.item-unsupported: \
+                 geometric validation property #1000 has unsupported item #{item}"
+            ))
+            .collect::<Vec<_>>()
+    );
     for id in first..first + 7 {
         assert!(
             !result
@@ -399,6 +438,53 @@ fn item_names_select_the_class_of_each_quantity() {
             "validation point #{id} is a model point"
         );
     }
+}
+
+/// An unsupported validation item is a valid record the reader has no
+/// reading for: one `record.undecoded` give-up states it, and a pinned
+/// decode admits the document.
+#[test]
+fn a_pinned_decode_admits_an_unsupported_validation_item() {
+    let part = part(&[CUBE]);
+    let validation = validation_property(
+        &part,
+        1000,
+        part.shape,
+        &[Item::Length("curve length measure", 0.0)],
+    );
+    let records = format!("{}{validation}", part.records);
+    let item = records
+        .find("#1007=")
+        .map(|start| &records[start..])
+        .and_then(|rest| rest.find(';').map(|end| &rest[..=end]))
+        .expect("the item statement");
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = decode_inline_with_options(&records, &options)
+        .expect("a pinned decode admits an undecoded item");
+    let naming = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("unsupported item #1007"))
+        .collect::<Vec<_>>();
+    let [loss] = naming.as_slice() else {
+        panic!("one entry states the item: {naming:#?}");
+    };
+    assert_eq!(loss.code, record_undecoded_kind());
+    assert!(
+        loss.message
+            .starts_with("part data_record stream=\"\" offset=")
+            && loss
+                .message
+                .contains(&format!(" length={} record=", item.len()))
+            && loss
+                .message
+                .contains(": step/validation.item-unsupported: ")
+            && loss.message.ends_with("; dropped=[]"),
+        "{}",
+        loss.message
+    );
 }
 
 #[test]

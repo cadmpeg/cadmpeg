@@ -13,12 +13,10 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
+use crate::native::F3dNative;
 use crate::records::entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
-use super::{
-    attributes::{source_less_body_key, AttributeIndex},
-    preconditions::DesignBindingsValidated,
-};
+use super::attributes::{source_less_body_key, AttributeIndex};
 
 /// A type GUID as a type-table row stores it: hexadecimal digits and
 /// hyphens, 36 to 38 characters (f3d.md §3.1 type tables store the base GUID
@@ -152,11 +150,10 @@ pub(super) struct GeneratedDesignRegistry {
 impl GeneratedDesignRegistry {
     pub(super) fn new(
         target: &CadIr,
-        bindings: DesignBindingsValidated<'_>,
+        native: &F3dNative,
         attributes: &AttributeIndex<'_>,
         selection: BodySelection,
     ) -> Result<Self, CodecError> {
-        let native = bindings.native();
         let visibility_by_body = native
             .body_visibilities
             .iter()
@@ -167,8 +164,20 @@ impl GeneratedDesignRegistry {
         let mut pending = Vec::new();
         let mut guessed_visible = Vec::new();
 
+        let mut keys = Vec::with_capacity(target.geometry.bodies.len());
         for body in &target.geometry.bodies {
-            let visible = match (body.visible, selection) {
+            keys.push(source_less_body_key(attributes, body)?);
+        }
+        let stored_keys = keys
+            .iter()
+            .filter_map(|key| u64::try_from(*key).ok())
+            .collect::<BTreeSet<_>>();
+        for ((ordinal, body), key) in (0_u64..).zip(&target.geometry.bodies).zip(keys) {
+            let metadata = visibility_by_body.get(body.id.as_str()).copied();
+            let stated = body
+                .visible
+                .or_else(|| metadata.map(|metadata| metadata.visible));
+            let visible = match (stated, selection) {
                 (Some(visible), _) => visible,
                 (None, BodySelection::Every) => {
                     guessed_visible.push(body.id.to_string());
@@ -176,12 +185,17 @@ impl GeneratedDesignRegistry {
                 }
                 (None, BodySelection::Stated) => continue,
             };
-            let metadata = visibility_by_body.get(body.id.as_str()).copied();
-            let asm_body_key = match metadata {
-                Some(metadata) => metadata.asm_body_key(),
-                None => u64::try_from(source_less_body_key(attributes, body)?).map_err(|_| {
-                    CodecError::NotImplemented("source-less ASM body key is negative".into())
-                })?,
+            // A body that stores no ASM body key is selected by its ordinal
+            // among the written bodies (f3d.md §3.1).
+            let asm_body_key = match u64::try_from(key) {
+                Ok(key) => key,
+                Err(_) if !stored_keys.contains(&ordinal) => ordinal,
+                Err(_) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D body {} stores no ASM body key, and another body stores its ordinal {ordinal} as its key",
+                        body.id
+                    )))
+                }
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
             if body_map.insert(asm_body_key, entity_suffix).is_some() {
@@ -360,6 +374,30 @@ impl GeneratedDesignRegistry {
             entity_ids.iter().copied().map(u64::from).collect(),
         )?;
         dynamic_class_tag(ordinal)
+    }
+
+    /// Register `entity_id` in place of `source` under the registered type
+    /// that lists `source`, and return the type's class tag; `None` when no
+    /// type lists it or that type's GUID is `unless`.
+    pub(super) fn register_in_place_of(
+        &mut self,
+        source: u32,
+        entity_id: u32,
+        unless: &str,
+    ) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
+        let source = u64::from(source);
+        let Some(ordinal) = self.types.iter().position(|design_type| {
+            design_type.entity_ids.contains(&source)
+                && !design_type.type_guid.as_str().eq_ignore_ascii_case(unless)
+        }) else {
+            return Ok(None);
+        };
+        let entity_ids = &mut self.types[ordinal].entity_ids;
+        entity_ids.retain(|entity| *entity != source);
+        entity_ids.push(u64::from(entity_id));
+        entity_ids.sort_unstable();
+        entity_ids.dedup();
+        dynamic_class_tag(ordinal).map(Some)
     }
 }
 
@@ -629,6 +667,7 @@ mod tests {
                         asm_body_key_offset: 0,
                         asm_body_key: 11,
                         entity_suffix: 101,
+                        browser_node_entity: 102,
                         visible: false,
                     },
                 )
@@ -642,6 +681,7 @@ mod tests {
                         asm_body_key_offset: 0,
                         asm_body_key: 22,
                         entity_suffix: 202,
+                        browser_node_entity: 203,
                         visible: true,
                     },
                 )
@@ -650,9 +690,7 @@ mod tests {
             ..Default::default()
         };
         let attributes = super::AttributeIndex::new(&target, &native);
-        let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
-            .expect("synthetic body bindings");
-        GeneratedDesignRegistry::new(&target, bindings, &attributes, super::BodySelection::Stated)
+        GeneratedDesignRegistry::new(&target, &native, &attributes, super::BodySelection::Stated)
             .expect("generated Design registry")
             .browser_nodes
             .into_iter()
@@ -686,11 +724,9 @@ mod tests {
         target.geometry.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative::default();
         let attributes = super::AttributeIndex::new(&target, &native);
-        let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
-            .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(
             &target,
-            bindings,
+            &native,
             &attributes,
             super::BodySelection::Stated,
         )
@@ -719,11 +755,9 @@ mod tests {
             ..Default::default()
         };
         let attributes = super::AttributeIndex::new(&target, &native);
-        let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
-            .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(
             &target,
-            bindings,
+            &native,
             &attributes,
             super::BodySelection::Stated,
         )
@@ -755,11 +789,9 @@ mod tests {
             ..Default::default()
         };
         let attributes = super::AttributeIndex::new(&target, &native);
-        let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
-            .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(
             &target,
-            bindings,
+            &native,
             &attributes,
             super::BodySelection::Stated,
         )
@@ -792,11 +824,9 @@ mod tests {
             ..Default::default()
         };
         let attributes = super::AttributeIndex::new(&target, &native);
-        let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
-            .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(
             &target,
-            bindings,
+            &native,
             &attributes,
             super::BodySelection::Stated,
         )

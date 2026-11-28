@@ -3,16 +3,17 @@
 //! the two texts are equal. The stated wire forms of these types, and their
 //! schemas.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
@@ -188,12 +189,10 @@ fn unstated_output() -> SolidOutput {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first =
-        cadmpeg_core::serde_erase::json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second =
-        cadmpeg_core::serde_erase::json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -204,7 +203,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    cadmpeg_core::serde_erase::json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 /// Reads `text`, requires a refusal, and returns its message.
@@ -1281,10 +1280,7 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
         mode: None,
         connectors: Vec::new(),
     };
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&empty).unwrap(),
-        r#"{"connectors":[]}"#
-    );
+    assert_eq!(json::to_string(&empty).unwrap(), r#"{"connectors":[]}"#);
     refuses::<Correspondence>("{}");
     refuses::<Correspondence>(r#"{"connectors": [], "mode": null}"#);
     refuses::<Correspondence>(r#"{"connectors": [], "colour": 1}"#);
@@ -1390,80 +1386,4 @@ fn primitive_sizes_are_fixed_arrays() {
         .unwrap()
         .push(json!({"kind": "literal", "value": 3.0}));
     refuses::<PrimitiveShape>(&long.to_string());
-}
-
-#[cfg(feature = "schema")]
-mod schema {
-    use schemars::{JsonSchema, SchemaGenerator};
-
-    use super::super::*;
-
-    fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-        let schema = T::json_schema(generator);
-        assert!(schema.as_object().is_some(), "{}", T::schema_name());
-    }
-
-    #[test]
-    fn every_swept_type_has_a_schema() {
-        let mut generator = SchemaGenerator::default();
-        generates::<Extrude>(&mut generator);
-        generates::<ExtrudeDirection>(&mut generator);
-        generates::<ExtrudeOrigin>(&mut generator);
-        generates::<ExtrudeDraft>(&mut generator);
-        generates::<DraftNeutral>(&mut generator);
-        generates::<HoleDraft>(&mut generator);
-        generates::<ProfileFit>(&mut generator);
-        generates::<Revolve>(&mut generator);
-        generates::<Sweep>(&mut generator);
-        generates::<CornerTransition>(&mut generator);
-        generates::<SweepSection>(&mut generator);
-        generates::<SectionTurn>(&mut generator);
-        generates::<SectionShape>(&mut generator);
-        generates::<Apex>(&mut generator);
-        generates::<SweepControls>(&mut generator);
-        generates::<SweepOrientation>(&mut generator);
-        generates::<GuideFrame>(&mut generator);
-        generates::<Twist>(&mut generator);
-        generates::<ScalingLaw>(&mut generator);
-        generates::<SweepGuide>(&mut generator);
-        generates::<PathExtent>(&mut generator);
-        generates::<ProfilePlacement>(&mut generator);
-        generates::<ProfilePosition>(&mut generator);
-        generates::<SpineLimits>(&mut generator);
-        generates::<HelicalSweep>(&mut generator);
-        generates::<HelicalSection>(&mut generator);
-        generates::<SectionPlacement>(&mut generator);
-        generates::<Helix>(&mut generator);
-        generates::<HelixStart>(&mut generator);
-        generates::<HelixShape>(&mut generator);
-        generates::<HelixLaw>(&mut generator);
-        generates::<HelixTaper>(&mut generator);
-        generates::<SpiralLaw>(&mut generator);
-        generates::<Rib>(&mut generator);
-        generates::<RibGrowth>(&mut generator);
-        generates::<RibEnd>(&mut generator);
-        generates::<Primitive>(&mut generator);
-        generates::<PrimitiveShape>(&mut generator);
-        generates::<Loft>(&mut generator);
-        generates::<Section>(&mut generator);
-        generates::<SectionForm>(&mut generator);
-        generates::<Seam>(&mut generator);
-        generates::<PointSection>(&mut generator);
-        generates::<PointCondition>(&mut generator);
-        generates::<Guide>(&mut generator);
-        generates::<GuideInfluence>(&mut generator);
-        generates::<Spine>(&mut generator);
-        generates::<AreaStation>(&mut generator);
-        generates::<CenterlineAt>(&mut generator);
-        generates::<Correspondence>(&mut generator);
-        generates::<CouplingMode>(&mut generator);
-        generates::<Connector>(&mut generator);
-        generates::<LoftShape>(&mut generator);
-        generates::<LoftSmoothing>(&mut generator);
-        generates::<LoftStyle>(&mut generator);
-        generates::<Rebuild>(&mut generator);
-        generates::<Interpolation>(&mut generator);
-        generates::<OffsetJoin>(&mut generator);
-        generates::<SheetCutNormal>(&mut generator);
-    }
 }

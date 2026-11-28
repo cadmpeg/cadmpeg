@@ -186,10 +186,10 @@ impl CodecBackend for IgesCodec {
             representation::Representation::CompressedAscii => {
                 let (normalized, repeated) = compressed::expand(root.window())?;
                 let mut decoded = reader::decode(&normalized, root.window(), representation, ctx)?;
-                decoded
-                    .body
-                    .losses
-                    .extend(repeated.iter().map(compressed::RepeatedDataRecord::loss));
+                for record in &repeated {
+                    let loss = record.give_up(ctx, root, &mut decoded)?;
+                    decoded.body.losses.push(loss);
+                }
                 Ok(decoded)
             }
             representation::Representation::Binary => {
@@ -202,18 +202,21 @@ impl CodecBackend for IgesCodec {
 
 impl EncoderBackend for IgesCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "IGES";
     /// Writes B-rep and product data only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

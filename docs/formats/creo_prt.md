@@ -100,9 +100,9 @@ Type 0 stores object nodes. `->` and an empty payload are distinct non-null
 object forms, and `NULL` is the null form. A positive dimension header stores an
 object array. Its direct elements are the following rows at depth one greater
 with the same attribute identifier; element subtrees can contain rows at still
-greater depths. The direct-element count must equal the product of the extents
-for a complete array. A header without direct element rows stores no default
-objects.
+greater depths. An array with direct element rows is complete when their count
+equals the product of the extents. An array header without element rows stores
+no elements for every array type. The extents alone supply no default values.
 
 Within one attribute scope, a row at depth `d > 0` is owned by the most recent
 preceding type-0 row at depth `d - 1`. A row at depth zero has no parent. A new
@@ -115,10 +115,8 @@ the positive decimal extent header, continuation rows, comma separators,
 terminal-comma rule, and `n*value` run-length form defined below for type 2,
 with signed decimal integers in place of compact reals. A one-element `[1]`
 array can instead store its integer in the immediately following value row at
-depth one greater and with the same attribute identifier. The sum of run counts
-must equal the product of the extents. A type-1 array header without element
-rows stores no integer elements; its declared extents do not supply default
-values.
+depth one greater and with the same attribute identifier. When it stores
+element rows, the sum of run counts must equal the product of the extents.
 
 A type-2 scalar payload is one through sixteen uppercase hexadecimal digits.
 The digits are the most-significant nibbles of an IEEE-754 binary64 bit word.
@@ -132,16 +130,15 @@ as comma-separated compact-real tokens. A token `n*H` repeats compact real `H`
 `n` times. A terminal comma before the line break adds no element. The sum of
 run counts must equal the product of the extents. A one-element `[1]` array can
 instead store its compact-real token in the immediately following value row at
-depth one greater and with the same attribute identifier. An incomplete array
-does not produce a typed value.
+depth one greater and with the same attribute identifier. A sequence of
+element rows with a run count different from the extent product is incomplete.
 
 Type 3 stores a nullable byte-string scalar. The exact token `NULL` is null;
 all other payloads, including an empty payload, are stored byte strings. Type 4
 stores its complete scalar payload as a byte string; `NULL` has no special
 meaning for type 4. Neither type uses continuation rows.
 
-Type 6 uses the type-2 compact-real scalar and array grammar. Its array run
-count must equal the product of the declared extents.
+Type 6 uses the type-2 compact-real scalar and array grammar.
 
 Types 5, 7, 9, and 11 store unsigned decimal 32-bit scalars. Their arrays use
 the positive decimal extent headers, `$` continuation rows, comma separators,
@@ -273,6 +270,11 @@ For model-data sections, the expanded payload begins
 directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary exception:
 its expanded payload contains the JPEG payload and is identified by the
 `FF D8 FF` marker.
+
+The reader gives up a section whose expansion is not valid, or whose declared
+expanded length is over a decode bound, as a `compressed-section` part over the
+stored section (§10). The section record retains the bytes, so the part keeps
+only their length and digest.
 
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
@@ -3374,6 +3376,12 @@ auxiliary field. In the uncounted form, the first `f6` terminates the argument
 body and is the auxiliary field. The equation table ends before the following
 `scale`, `scales`, or `guesses` named record. The declared count and decoded row
 count are independent native values.
+
+When a feature table declares more rows than the reader decodes, the reader
+gives up the rows from the first row it does not decode as a
+`feature-table-rows` part. The part runs to the next table label or decoded
+row of the feature definition, or to the end of the definition, and retains
+its bytes.
 
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The unresolved forms `00 <tail2>` and `34 <tail2>` occupy three bytes;
@@ -6533,10 +6541,12 @@ type-1 signed-integer `attributes` scalar, one arrow `drv_tbl_ptr` model target,
 and one complete one-dimensional `values` object array. Instance names are
 unique. The values array has exactly the item-array length, and its inline
 elements join the item columns by ordinal. Each value element has one type-1
-signed-integer `type` scalar and exactly one typed scalar: type `50` selects
-type-2 `value(d_val)`, type `51` selects type-10 `value(s_val)`, and type `52`
-selects type-1 `value(i_val)`. A missing, duplicate, mismatched, or incomplete
-field withholds the table join and retains the source object graph.
+signed-integer `type` scalar. Type `50` selects type-2 `value(d_val)`, type
+`51` selects type-10 `value(s_val)`, and type `52` selects type-1
+`value(i_val)`. An empty numeric array supplies no scalar. An empty array for
+the selected numeric field leaves its cell empty when there is no scalar.
+A missing, conflicting, mismatched, or incomplete selected field withholds
+the table join and retains the source object graph.
 
 Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits.
 Code 256 is the first dynamic dictionary slot rather than a clear code.
@@ -6784,6 +6794,12 @@ integer, and `35` is a logical value. A named value prototype can introduce a
 value class that later rows reference with `f7`. `ref_id` and `ref_type`
 identify the attribute owner.
 
+When the `attributes` field does not read, the reader gives up the
+`NeuPrtSld` section as a `neutral-section` part (§10). A geometric-tolerance type
+row or a dimensional row with a null `ref_id` or `ref_type` is a
+`pmi-attribute-row` part. The section record retains the bytes of both parts,
+so each part keeps only their length and digest.
+
 In the attribute real lane, the single-byte tokens `09`, `0a`, `0b`, `0c`,
 `0d`, `0e`, and `0f` encode 0.005, 0.01, 0.06, 0.1, 0.25, 0.5, and 1.0.
 Tokens `00`, `01`, and `02` select a constant and replace its low one, two,
@@ -6940,6 +6956,8 @@ The first row stores its fields as named records in this order:
 | `e3`          | `e0 02 e3\0`          | `f8 03`, then three frame slots.              |
 | `origin`      | `e0 02 origin\0`      | `f8 03`, then three frame slots.              |
 
+The decoder reads only the null `tha_ref` value.
+
 Each following row stores the same values in the same order without the
 named-record headers and without the `f8 03` array openers:
 
@@ -6956,6 +6974,15 @@ assembly coordinates and uses the assembly length unit. The placement maps a
 child point `p` to `origin + p.x * e1 + p.y * e2 + p.z * e3`. This is the
 solved placement of the component; the table does not store the placement
 constraints.
+
+A row whose frame is not a proper rigid placement is given up by the id of
+the occurrence that it places. When a row does not match the row grammar, the
+reader gives up the bytes from that row to the end of the section as a
+`component-rows` part (§10). When a `NeuAsmSld` section holds a `members`
+field whose table the reader does not transfer, the reader gives up the bytes
+from that field to the end of the section as a `component-table` part (§10).
+This covers a field that opens no table array, a section with more than one
+`members` field, and a table in each of two or more `NeuAsmSld` sections.
 
 ### 9.1 Frame slots
 
@@ -7012,3 +7039,41 @@ tail bytes follow the prefix.
 | `de..df` | `bf32 + p`  |
 
 Every frame slot is finite.
+
+## 10. Given-up records and strict floors
+
+The decoder gives up a part or a record (CADIR §3.3) in these cases. Each
+give-up is one entry.
+
+| Part or record | Case | Cause |
+|---|---|---|
+| `compressed-section` part | The LZW code stream is not valid, or the output length differs from the TOC expanded-length field. | `record.unreadable` |
+| `compressed-section` part | The declared expanded length is over 256 MiB or over the per-expansion allowance of the decode. | `record.undecoded` |
+| `neutral-section` part | The `attributes` array of `NeuPrtSld` declares more rows than its section holds bytes (§8.9). | `record.unreadable` |
+| `neutral-section` part | The `NeuPrtSld` section holds no `attributes` field or holds more than one, the field holds a value form other than the object array, or a row holds a value type or class that the decoder does not read (§8.9). | `record.undecoded` |
+| `pmi-attribute-row` part | A geometric-tolerance type row or a dimensional row has a null `ref_id` or `ref_type` (§8.9). | `record.undecoded` |
+| `component-rows` part | A row breaks the row grammar: a fixed token or field header differs, a field runs past the section, a name is not UTF-8, a repeat token starts a run or runs past its end, or a frame slot is not finite (§9). | `record.unreadable` |
+| `component-rows` part | A row holds a value form that the decoder does not read: a frame-slot token that §9.1 does not list, a `tha_ref` value other than `e1`, or an empty name or a name with a control character (§9). | `record.undecoded` |
+| `component-table` part | A `members` field opens no table array that the reader reads, its section holds more than one `members` field, or another `NeuAsmSld` section also holds a component table (§9). | `record.undecoded` |
+| `feature-table-rows` part | A feature table declares more rows than the reader decodes. | `record.undecoded` |
+| Placed occurrence | The row frame is not a proper rigid placement (§9). | `record.unreadable` |
+| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row without continuation rows holds text that breaks the scalar grammar of its type, or an array whose element runs all read has run counts that do not sum to the product of its extents (§1). | `record.unreadable` |
+| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row has continuation rows, a type-2 or type-6 array header has no element rows, an element row holds text that the decoder does not read, a run-count product is larger than the decoder index width, or a real word decodes to a non-finite value (§1). A `[1]` array and its direct element rows give one entry. | `record.undecoded` |
+| Legacy type-3, type-4, or type-10 scalar value row | The row uses an undefined continuation form. | `record.undecoded` |
+| PMI record of geometric-tolerance or dimensional attributes | The attributes form no PMI record. | `record.undecoded` |
+| Face | Face admission rejects the face, or the component admission gate withholds it. | `record.undecoded` |
+
+Three codes carry the strict floor `warning` (CADIR §3.2). Each reports a
+stated count that the input breaks and that the decoder reads past:
+
+- `legacy.object-array-incomplete`: a type-0 array has direct element rows, and
+  their count is not the product of its extents (§1).
+- `legacy.string-array-incomplete`: a type-10 array without continuation rows
+  has direct string rows that all read, and their count is not its first
+  extent (§1).
+- `assembly.member-table-incomplete`: the component table closes with a row
+  count other than `count`, or the section ends inside a row that a row
+  terminator announces (§9).
+
+`assembly.member-table-unread` reports an `ASSEMBLY` header with no `members`
+field in a `NeuAsmSld` section. It carries no strict floor.

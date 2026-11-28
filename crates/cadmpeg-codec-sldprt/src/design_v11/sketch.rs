@@ -48,6 +48,7 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
+use cadmpeg_ir::design::projection::sketch::planar_curve;
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity, Selection,
 };
@@ -59,7 +60,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometryDefinition as Geometry,
     SketchLocus,
 };
-use cadmpeg_ir::units::{UnitVector2, UnitVector3};
+use cadmpeg_ir::units::UnitVector3;
 
 use super::parameters::Entries;
 use super::profile_check;
@@ -291,7 +292,7 @@ fn sketch(
     let mut outside_profile = Vec::new();
     let forms = entities
         .iter()
-        .map(|entity| curve(&entity.geometry))
+        .map(|entity| planar_curve(&entity.geometry))
         .collect::<Vec<_>>();
     let mut readings = Vec::with_capacity(entities.len());
     for index in 0..entities.len() {
@@ -968,58 +969,6 @@ fn needed_state_zero<'a>(
     profile_check::needed(&live, &state_zero)
 }
 
-/// The v11 curve of a decoded sketch entity, or `None` for a geometry the
-/// planar curve vocabulary does not hold as decoded.
-fn curve(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<PlanarCurve> {
-    use cadmpeg_ir::math::portable::Portable;
-    Some(match geometry.definition() {
-        Geometry::Point { position } => PlanarCurve::Point(*position),
-        Geometry::Line { start, end } => PlanarCurve::Line {
-            start: *start,
-            end: *end,
-        },
-        Geometry::ReferenceLine { origin, direction } => {
-            let [u, v] = [direction.get().u, direction.get().v];
-            let length = u.portable_hypot(v);
-            PlanarCurve::InfiniteLine {
-                through: *origin,
-                direction: UnitVector2::new([u / length, v / length])?,
-            }
-        }
-        Geometry::Circle { center, radius } => PlanarCurve::Circle {
-            center: *center,
-            radius: *radius,
-        },
-        Geometry::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => PlanarCurve::Arc {
-            center: *center,
-            radius: *radius,
-            start: *start_angle,
-            end: *end_angle,
-        },
-        Geometry::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds,
-        } => {
-            let (sin, cos) = major_angle.get().portable_sin_cos();
-            PlanarCurve::Ellipse {
-                center: *center,
-                major: UnitVector2::new([cos, sin])?,
-                radii: [radii.major(), radii.minor()],
-                range: *bounds,
-            }
-        }
-        Geometry::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        _ => return None,
-    })
-}
-
 /// A parameter a dimension binds, its quantity, and the parameter minted
 /// for it where no tree node lists it.
 type Binding = (ParameterId, Quantity, Option<DesignParameter>);
@@ -1111,6 +1060,7 @@ impl Relations<'_> {
                 id: parameter.clone(),
                 scope: self.context.scope.clone(),
                 owner: Some(ParameterOwner::Feature(self.owner.clone())),
+                position: None,
                 name: NonBlankString::new(source.name.clone()),
                 kind: ValueKind::Quantity(quantity),
                 unit: None,

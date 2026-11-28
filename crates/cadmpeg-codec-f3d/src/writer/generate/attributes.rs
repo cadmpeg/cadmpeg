@@ -14,7 +14,7 @@ use crate::records::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face};
+use cadmpeg_ir::topology::{Body, Color, Edge, Face};
 
 use super::native_bytes::{
     native_f64, native_i64, native_ident, native_record_index, native_ref, native_string,
@@ -26,12 +26,34 @@ struct IndexedTimestamp<'a> {
     ordinal: Option<usize>,
 }
 
+/// The entities whose attribute chains hold sketch-curve links (asm.md,
+/// `sketch_attrib_def`), in the order of the written link records.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(super) enum LinkOwner {
+    Edge,
+    Coedge,
+    Vertex,
+}
+
+impl LinkOwner {
+    /// The owner kind and entity id of `target`, where it can own a link.
+    pub(super) fn of(target: &AttributeTarget) -> Option<(Self, &str)> {
+        match target {
+            AttributeTarget::Edge(id) => Some((Self::Edge, id.as_str())),
+            AttributeTarget::Coedge(id) => Some((Self::Coedge, id.as_str())),
+            AttributeTarget::Vertex(id) => Some((Self::Vertex, id.as_str())),
+            _ => None,
+        }
+    }
+}
+
 pub(super) struct AttributeIndex<'a> {
     creation_timestamps: &'a [CreationTimestamp],
     body_group_ordinals: HashMap<String, usize>,
     face_group_ordinals: HashMap<String, usize>,
     edge_group_ordinals: HashMap<String, usize>,
-    sketch_ordinals: HashMap<String, usize>,
+    /// The ordinal among the link records of the first link of each owner.
+    sketch_ordinals: HashMap<(LinkOwner, &'a str), usize>,
     body_links: HashMap<&'a str, Vec<&'a PersistentDesignLink>>,
     face_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
     edge_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
@@ -40,7 +62,7 @@ pub(super) struct AttributeIndex<'a> {
     edge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     coedge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
-    coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
+    sketch_links: HashMap<LinkOwner, HashMap<&'a str, Vec<&'a SketchCurveLink>>>,
     body_keys: HashMap<&'a str, i64>,
 }
 
@@ -152,10 +174,15 @@ impl<'a> AttributeIndex<'a> {
                 _ => {}
             }
         }
-        let mut coedge_sketch_links = HashMap::new();
+        let mut sketch_links: HashMap<_, HashMap<_, Vec<_>>> = HashMap::new();
         for link in &native.sketch_curve_links {
-            if let cadmpeg_ir::attributes::AttributeTarget::Coedge(id) = &link.target {
-                coedge_sketch_links.entry(id.as_str()).or_insert(link);
+            if let Some((owner, id)) = LinkOwner::of(&link.target) {
+                sketch_links
+                    .entry(owner)
+                    .or_default()
+                    .entry(id)
+                    .or_default()
+                    .push(link);
             }
         }
         let mut split_ordinal = 0;
@@ -198,14 +225,33 @@ impl<'a> AttributeIndex<'a> {
             .enumerate()
             .map(|(ordinal, edge)| (edge.id.as_str().to_owned(), ordinal))
             .collect();
-        let sketch_ordinals = target
+        let mut sketch_ordinals = HashMap::new();
+        let mut preceding = 0;
+        let owners = target
             .geometry
-            .coedges
+            .edges
             .iter()
-            .filter(|coedge| coedge_sketch_links.contains_key(coedge.id.as_str()))
-            .enumerate()
-            .map(|(ordinal, coedge)| (coedge.id.as_str().to_owned(), ordinal))
-            .collect();
+            .map(|edge| (LinkOwner::Edge, edge.id.as_str()))
+            .chain(
+                target
+                    .geometry
+                    .coedges
+                    .iter()
+                    .map(|coedge| (LinkOwner::Coedge, coedge.id.as_str())),
+            )
+            .chain(
+                target
+                    .geometry
+                    .vertices
+                    .iter()
+                    .map(|vertex| (LinkOwner::Vertex, vertex.id.as_str())),
+            );
+        for (owner, id) in owners {
+            if let Some(links) = sketch_links.get(&owner).and_then(|links| links.get(id)) {
+                sketch_ordinals.insert((owner, id), preceding);
+                preceding += links.len();
+            }
+        }
         Self {
             creation_timestamps: &native.creation_timestamps,
             body_group_ordinals,
@@ -220,7 +266,7 @@ impl<'a> AttributeIndex<'a> {
             edge_timestamps,
             coedge_timestamps,
             vertex_timestamps,
-            coedge_sketch_links,
+            sketch_links,
             body_keys,
         }
     }
@@ -411,7 +457,12 @@ fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'
         + index.body_group_count()
         + index.face_group_count()
         + index.edge_group_count()
-        + index.coedge_sketch_links.len()
+        + index
+            .sketch_links
+            .values()
+            .flat_map(HashMap::values)
+            .map(Vec::len)
+            .sum::<usize>()
 }
 
 pub(super) fn timestamp_attribute_ref(
@@ -642,20 +693,30 @@ fn source_less_name_count(target: &CadIr) -> usize {
             .count()
 }
 
-fn sketch_link<'a>(index: &'a AttributeIndex<'_>, coedge: &Coedge) -> Option<&'a SketchCurveLink> {
-    index.coedge_sketch_links.get(coedge.id.as_str()).copied()
+/// The sketch-curve links of the entity `id` of kind `owner`, in the order of
+/// its attribute chain.
+fn sketch_links<'i, 'n>(
+    index: &'i AttributeIndex<'n>,
+    owner: LinkOwner,
+    id: &str,
+) -> &'i [&'n SketchCurveLink] {
+    index
+        .sketch_links
+        .get(&owner)
+        .and_then(|links| links.get(id))
+        .map_or(&[], Vec::as_slice)
 }
 
-fn coedge_sketch_attribute_ref(
+/// The record of the `link`th sketch-curve link of the entity `id` of kind
+/// `owner`.
+fn sketch_link_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
-    coedge: &Coedge,
+    owner: LinkOwner,
+    id: &str,
+    link: usize,
     attribute_start: i64,
-) -> Result<Option<i64>, CodecError> {
-    if sketch_link(index, coedge).is_none() {
-        return Ok(None);
-    }
-    let preceding = index.sketch_ordinals[coedge.id.as_str()];
+) -> Result<i64, CodecError> {
     native_record_index(
         attribute_start,
         source_less_color_count(target)
@@ -663,28 +724,40 @@ fn coedge_sketch_attribute_ref(
             + index.body_group_count()
             + index.face_group_count()
             + index.edge_group_count()
-            + preceding,
+            + index.sketch_ordinals[&(owner, id)]
+            + link,
     )
-    .map(Some)
 }
 
-pub(super) fn sketch_link_attribute_ref(
+/// The record of the last sketch-curve link of the entity `id` of kind
+/// `owner`, which the timestamp follows.
+fn last_sketch_link_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
-    coedge: &Coedge,
-    _coedge_ordinal: usize,
+    owner: LinkOwner,
+    id: &str,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    match sketch_links(index, owner, id).len() {
+        0 => Ok(None),
+        links => sketch_link_ref(target, index, owner, id, links - 1, attribute_start).map(Some),
+    }
+}
+
+/// The first record of the link chain of `entity`, an edge, coedge or
+/// vertex: its first sketch-curve link, else its timestamp, else `-1`.
+pub(super) fn link_chain_attribute_ref(
+    target: &CadIr,
+    index: &AttributeIndex<'_>,
+    entity: &AttributeTarget,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
-    if let Some(reference) = coedge_sketch_attribute_ref(target, index, coedge, attribute_start)? {
-        return Ok(reference);
+    if let Some((owner, id)) = LinkOwner::of(entity) {
+        if !sketch_links(index, owner, id).is_empty() {
+            return sketch_link_ref(target, index, owner, id, 0, attribute_start);
+        }
     }
-    Ok(timestamp_attribute_ref(
-        target,
-        index,
-        &AttributeTarget::Coedge(coedge.id.clone()),
-        attribute_start,
-    )?
-    .unwrap_or(-1))
+    Ok(timestamp_attribute_ref(target, index, entity, attribute_start)?.unwrap_or(-1))
 }
 
 fn attribute_before_timestamp(
@@ -754,6 +827,11 @@ fn attribute_before_timestamp(
                 .get(owner_ordinal)
                 .filter(|edge| edge.id == *id)
                 .ok_or_else(|| CodecError::malformed(format_args!("missing F3D edge {id}")))?;
+            if let Some(reference) =
+                last_sketch_link_ref(target, index, LinkOwner::Edge, id.as_str(), attribute_start)?
+            {
+                return Ok(reference);
+            }
             Ok(
                 edge_persistent_attribute_ref(target, index, edge, owner_ordinal, attribute_start)?
                     .unwrap_or(-1),
@@ -766,7 +844,14 @@ fn attribute_before_timestamp(
                 .get(owner_ordinal)
                 .filter(|coedge| coedge.id == *id)
                 .ok_or_else(|| CodecError::malformed(format_args!("missing F3D coedge {id}")))?;
-            Ok(coedge_sketch_attribute_ref(target, index, coedge, attribute_start)?.unwrap_or(-1))
+            Ok(last_sketch_link_ref(
+                target,
+                index,
+                LinkOwner::Coedge,
+                coedge.id.as_str(),
+                attribute_start,
+            )?
+            .unwrap_or(-1))
         }
         AttributeTarget::Vertex(id) => {
             if target
@@ -775,7 +860,14 @@ fn attribute_before_timestamp(
                 .get(owner_ordinal)
                 .is_some_and(|vertex| vertex.id == *id)
             {
-                Ok(-1)
+                Ok(last_sketch_link_ref(
+                    target,
+                    index,
+                    LinkOwner::Vertex,
+                    id.as_str(),
+                    attribute_start,
+                )?
+                .unwrap_or(-1))
             } else {
                 Err(CodecError::malformed(format_args!(
                     "missing F3D vertex {id}"
@@ -869,11 +961,12 @@ fn native_sketch_link_attribute(
     records: &mut Vec<u8>,
     link: &SketchCurveLink,
     next: i64,
+    previous: i64,
     owner: i64,
 ) -> Result<(), CodecError> {
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
-    native_attribute_base(records, next, -1, owner);
+    native_attribute_base(records, next, previous, owner);
     native_string(records, "sketch_attrib_def")?;
     for value in [1, 1, 3] {
         native_i64(records, value);
@@ -922,7 +1015,7 @@ pub(super) fn encode_source_less_attributes(
                     || !face_persistent_tags(index, face).is_empty()
                     || creation_timestamp(index, &AttributeTarget::Face(face.id.clone())).is_some()
             }) || geometry.coedges.iter().any(|coedge| {
-                sketch_link(index, coedge).is_some()
+                !sketch_links(index, LinkOwner::Coedge, coedge.id.as_str()).is_empty()
                     || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
                         .is_some()
             }) {
@@ -1138,13 +1231,12 @@ pub(super) fn encode_source_less_attributes(
         if tags.is_empty() {
             continue;
         }
-        let next = timestamp_attribute_ref(
+        let next = link_chain_attribute_ref(
             target,
             index,
             &AttributeTarget::Edge(edge.id.clone()),
             attribute_start,
-        )?
-        .unwrap_or(-1);
+        )?;
         native_persistent_subentity_attribute(
             records,
             tags,
@@ -1154,24 +1246,63 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (coedge_ordinal, coedge, coedge_start) in coedges.iter().copied() {
-        let Some(link) = sketch_link(index, coedge) else {
+    // The link records of the edges, then the coedges, then the vertices,
+    // as `AttributeIndex::sketch_ordinals` counts them. An edge's links
+    // follow its persistent group.
+    let link_owners = geometry
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(ordinal, edge)| -> Result<_, CodecError> {
+            Ok((
+                AttributeTarget::Edge(edge.id.clone()),
+                native_record_index(owners.edge, ordinal)?,
+                edge_persistent_attribute_ref(target, index, edge, ordinal, attribute_start)?
+                    .unwrap_or(-1),
+            ))
+        })
+        .chain(coedges.iter().map(
+            |&(ordinal, coedge, coedge_start)| -> Result<_, CodecError> {
+                Ok((
+                    AttributeTarget::Coedge(coedge.id.clone()),
+                    native_record_index(coedge_start, ordinal)?,
+                    -1,
+                ))
+            },
+        ))
+        .chain(geometry.vertices.iter().enumerate().map(
+            |(ordinal, vertex)| -> Result<_, CodecError> {
+                Ok((
+                    AttributeTarget::Vertex(vertex.id.clone()),
+                    native_record_index(owners.vertex, ordinal)?,
+                    -1,
+                ))
+            },
+        ));
+    for owner in link_owners {
+        let (entity, owner_record, before) = owner?;
+        let Some((kind, id)) = LinkOwner::of(&entity) else {
             continue;
         };
-        let next = timestamp_attribute_ref(
-            target,
-            index,
-            &AttributeTarget::Coedge(coedge.id.clone()),
-            attribute_start,
-        )?
-        .unwrap_or(-1);
-        native_sketch_link_attribute(
-            records,
-            link,
-            next,
-            native_record_index(coedge_start, coedge_ordinal)?,
-        )?;
-        records.push(0x11);
+        let links = sketch_links(index, kind, id);
+        if links.is_empty() {
+            continue;
+        }
+        let timestamp =
+            timestamp_attribute_ref(target, index, &entity, attribute_start)?.unwrap_or(-1);
+        for (ordinal, link) in links.iter().enumerate() {
+            let next = if ordinal + 1 < links.len() {
+                sketch_link_ref(target, index, kind, id, ordinal + 1, attribute_start)?
+            } else {
+                timestamp
+            };
+            let previous = match ordinal {
+                0 => before,
+                _ => sketch_link_ref(target, index, kind, id, ordinal - 1, attribute_start)?,
+            };
+            native_sketch_link_attribute(records, link, next, previous, owner_record)?;
+            records.push(0x11);
+        }
     }
     for (entity, owner_start, owner_ordinal) in
         geometry

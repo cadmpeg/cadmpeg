@@ -6,9 +6,11 @@ use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
+use crate::design::decode::record::{GivenUpFrame, RecordFrame};
 use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::records::feature::assembly_features::{
@@ -47,6 +49,9 @@ pub(crate) struct DecodedComponentOccurrences {
     pub(crate) occurrences: Vec<DesignComponentOccurrence>,
     pub(crate) superseded: usize,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Occurrence frames the decode leaves out, for the caller to give up
+    /// as parts.
+    pub(crate) given_up: Vec<GivenUpFrame>,
     /// Occurrences that two or more component-path carriers name.
     pub(crate) ambiguous_current_poses: usize,
     /// Component-path carriers whose elements are all local records.
@@ -61,6 +66,7 @@ pub(crate) fn decode_component_occurrences(
     let mut occurrences = Vec::new();
     let mut superseded = 0;
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     let mut ambiguous_current_poses = 0;
     let mut paths = Vec::new();
     for entry in scan
@@ -72,13 +78,7 @@ pub(crate) fn decode_component_occurrences(
         let scope = crate::ids::native_scope(&entry.name);
         let (frames, typed_frames, poses, path_carriers, source_entities, unadmitted_paths) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
-                let meta_name = format!(
-                    "{}MetaStream.dat",
-                    entry
-                        .name
-                        .strip_suffix("BulkStream.dat")
-                        .unwrap_or_default()
-                );
+                let meta_name = meta_stream_name(&entry.name);
                 let magic =
                     crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
                 (
@@ -124,12 +124,12 @@ pub(crate) fn decode_component_occurrences(
         let admitted = admitted_stream_occurrences(
             ctx,
             bytes,
-            &scope,
+            &entry.name,
             &frame_ends,
             &source_entities,
             &primary,
             &typed_primary,
-        );
+        )?;
         let mut stream_occurrences = admitted.occurrences;
         let unread = typed_frames
             .iter()
@@ -159,6 +159,7 @@ pub(crate) fn decode_component_occurrences(
             )));
         }
         losses.extend(admitted.losses);
+        given_up.extend(admitted.given_up);
         superseded += admitted.superseded;
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
         paths.extend(component_paths(&scope, &stream_occurrences, path_carriers));
@@ -170,9 +171,20 @@ pub(crate) fn decode_component_occurrences(
         occurrences,
         superseded,
         losses,
+        given_up,
         ambiguous_current_poses,
         paths,
     })
+}
+
+/// The `MetaStream.dat` entry paired with a Design `BulkStream.dat` entry.
+fn meta_stream_name(bulk_stream: &str) -> String {
+    format!(
+        "{}MetaStream.dat",
+        bulk_stream
+            .strip_suffix("BulkStream.dat")
+            .unwrap_or_default()
+    )
 }
 
 /// The admitted occurrences of one Design stream with their losses.
@@ -180,6 +192,8 @@ struct AdmittedOccurrences {
     occurrences: Vec<DesignComponentOccurrence>,
     recognized: std::collections::BTreeSet<(u64, u64)>,
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Occurrence frames left out of the document.
+    given_up: Vec<GivenUpFrame>,
     /// Frames that the primary index or the type row does not select.
     superseded: usize,
 }
@@ -188,29 +202,44 @@ struct AdmittedOccurrences {
 fn admitted_stream_occurrences(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    scope: &str,
+    stream: &str,
     frame_ends: &std::collections::BTreeMap<usize, usize>,
     source_entities: &std::collections::BTreeSet<u64>,
     primary: &std::collections::BTreeSet<(u64, u64)>,
     typed_primary: &std::collections::BTreeSet<(u64, u64)>,
-) -> AdmittedOccurrences {
+) -> Result<AdmittedOccurrences, CodecError> {
     let DiscoveredOccurrences {
         mut occurrences,
         unproven,
-    } = discover_occurrences(ctx, bytes, scope, frame_ends);
+        ends,
+    } = discover_occurrences(ctx, bytes, &crate::ids::native_scope(stream), frame_ends);
+    let frame = |occurrence: &DesignComponentOccurrence| {
+        let start = usize::try_from(occurrence.byte_offset()).ok()?;
+        Some(RecordFrame::new(stream, start, *ends.get(&start)?))
+    };
     let recognized = occurrences
         .iter()
         .chain(&unproven)
         .map(occurrence_key)
         .collect();
-    let mut losses = unproven
-        .iter()
-        .filter_map(unproven_identity_loss)
-        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
+    let mut given_up = Vec::new();
+    let mut dropped = DroppedFrames {
+        frame: &frame,
+        stream,
+        losses: &mut losses,
+        given_up: &mut given_up,
+    };
+    for occurrence in &unproven {
+        let Some(why) = unproven_identity(occurrence) else {
+            continue;
+        };
+        dropped.give_up(std::slice::from_ref(occurrence), Cause::Undecoded, |_| why)?;
+    }
     let superseded = admit_occurrence_envelopes(&mut occurrences, primary, typed_primary);
-    losses.extend(drop_class_256_first_matrices(&mut occurrences));
-    losses.extend(yield_to_registered(&mut occurrences, typed_primary));
-    losses.extend(drop_repeated_occurrence_keys(&mut occurrences));
+    drop_class_256_first_matrices(&mut occurrences, &mut dropped)?;
+    yield_to_registered(&mut occurrences, typed_primary, &mut dropped)?;
+    drop_repeated_occurrence_keys(&mut occurrences, &mut dropped)?;
     // A readable frame projects even when its source registration
     // disagrees; the loss names that assumption.
     losses.extend(
@@ -219,12 +248,13 @@ fn admitted_stream_occurrences(
             .filter_map(|occurrence| unregistered_source_loss(occurrence, source_entities)),
     );
     losses.extend(unregistered_leading_flag_loss(&occurrences, typed_primary));
-    AdmittedOccurrences {
+    Ok(AdmittedOccurrences {
         occurrences,
         recognized,
         losses,
+        given_up,
         superseded,
-    }
+    })
 }
 
 /// The occurrence frames of one Design stream.
@@ -233,6 +263,8 @@ struct DiscoveredOccurrences {
     occurrences: Vec<DesignComponentOccurrence>,
     /// Identity frames whose later ordinal no matrix states.
     unproven: Vec<DesignComponentOccurrence>,
+    /// The end of each frame of `occurrences` and `unproven`, by its start.
+    ends: std::collections::BTreeMap<usize, usize>,
 }
 
 /// The occurrence frames of one Design stream. A leading-flag frame is read
@@ -245,25 +277,27 @@ fn discover_occurrences(
 ) -> DiscoveredOccurrences {
     let mut occurrences = Vec::new();
     let mut unproven = Vec::new();
+    let mut ends = std::collections::BTreeMap::new();
     let mut at = 0;
     while let Some(start) = next_indexed_record_offset(bytes, at) {
         let end = frame_ends
             .get(&start)
             .copied()
             .or_else(|| next_indexed_record_offset(bytes, start.checked_add(1)?));
-        if let Some(occurrence) = end
-            .and_then(|end| exact_component_occurrence_frame(bytes, start, end, scope))
-            .or_else(|| {
-                end.and_then(|end| {
-                    attributed_component_occurrence_frame(ctx, bytes, start, end, scope)
+        // A leading-flag frame is read only where the primary index states
+        // its end, which is then `end`.
+        if let Some((occurrence, end)) = end.and_then(|end| {
+            exact_component_occurrence_frame(bytes, start, end, scope)
+                .or_else(|| attributed_component_occurrence_frame(ctx, bytes, start, end, scope))
+                .or_else(|| {
+                    frame_ends
+                        .contains_key(&start)
+                        .then(|| leading_flag_component_occurrence(bytes, start, end, scope))
+                        .flatten()
                 })
-            })
-            .or_else(|| {
-                frame_ends
-                    .get(&start)
-                    .and_then(|&end| leading_flag_component_occurrence(bytes, start, end, scope))
-            })
-        {
+                .map(|occurrence| (occurrence, end))
+        }) {
+            ends.insert(start, end);
             if occurrence.has_unresolved_identity_ordinal() {
                 unproven.push(occurrence);
             } else {
@@ -278,6 +312,7 @@ fn discover_occurrences(
     DiscoveredOccurrences {
         occurrences,
         unproven,
+        ends,
     }
 }
 
@@ -337,13 +372,14 @@ fn component_paths(
         .collect()
 }
 
-fn unproven_identity_loss(
-    occurrence: &DesignComponentOccurrence,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    occurrence.has_unresolved_identity_ordinal()
-        .then(|| crate::loss::F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.note(format!(
-            "local component occurrence {} has identity flag 1 and ordinal {}; its placement remains unresolved (DR-146)", occurrence.id, occurrence.occurrence_ordinal()
-        )))
+fn unproven_identity(occurrence: &DesignComponentOccurrence) -> Option<String> {
+    occurrence.has_unresolved_identity_ordinal().then(|| {
+        format!(
+            "local component occurrence {} has identity flag 1 and ordinal {}; its placement remains unresolved (DR-146)",
+            occurrence.id,
+            occurrence.occurrence_ordinal()
+        )
+    })
 }
 
 /// The records that the Design segment's type table registers to the
@@ -447,17 +483,11 @@ fn occurrence_frames(
         let Some(&ordinal) = placement_entities.get(&frame.entity_id) else {
             continue;
         };
-        let header = &bytes[frame.start..frame.member_end];
-        let parsed_header = lp_ascii_filtered_view(header, 0, 3..=3, u8::is_ascii_digit);
-        let class_matches = parsed_header
-            .and_then(|(tag, _)| tag.parse::<usize>().ok())
-            .and_then(|tag| tag.checked_sub(256))
-            == Some(ordinal);
-        let entity_matches = parsed_header
-            .and_then(|(_, after_tag)| View::u32_le_at(header, after_tag))
-            .map(u64::from)
-            == Some(frame.entity_id);
-        if !class_matches || !entity_matches {
+        if !crate::metastream::indexed_header_selects(
+            &bytes[frame.start..frame.member_end],
+            ordinal,
+            frame.entity_id,
+        ) {
             return Err(CodecError::malformed(
                 "F3D local occurrence header disagrees with its registered primary index",
             ));
@@ -489,35 +519,110 @@ fn admit_occurrence_envelopes(
     before - occurrences.len()
 }
 
+/// The occurrence frames one admission pass leaves out, and where it
+/// reports them.
+struct DroppedFrames<'a, F> {
+    /// The frame of an occurrence, where its end is known.
+    frame: &'a F,
+    stream: &'a str,
+    losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &'a mut Vec<GivenUpFrame>,
+}
+
+impl<'s, F> DroppedFrames<'_, F>
+where
+    F: Fn(&DesignComponentOccurrence) -> Option<RecordFrame<'s>>,
+{
+    /// Gives up each occurrence in `dropped` for `cause` with the text
+    /// `why` makes from their joined ids: the frame where its end is known,
+    /// and otherwise the record at its offset.
+    fn give_up(
+        &mut self,
+        dropped: &[DesignComponentOccurrence],
+        cause: Cause,
+        why: impl FnOnce(&str) -> String,
+    ) -> Result<(), CodecError> {
+        if dropped.is_empty() {
+            return Ok(());
+        }
+        let ids = dropped
+            .iter()
+            .map(|occurrence| occurrence.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let why = why(&ids);
+        for occurrence in dropped {
+            match (self.frame)(occurrence) {
+                Some(frame) => frame.give_up(cause, &why, self.given_up),
+                None => self.losses.push(
+                    GivenUpRecord::new(
+                        cadmpeg_ir::ids::Identity::new(&occurrence.id)?,
+                        cause,
+                        &why,
+                    )
+                    .at(frame_at(self.stream, occurrence.byte_offset()))
+                    .loss(),
+                ),
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The position of the occurrence frame at byte `offset` of the Design
+/// stream `stream`.
+fn frame_at(stream: &str, offset: u64) -> Option<cadmpeg_ir::SourceProvenance> {
+    let stream = cadmpeg_ir::StreamName::try_from(stream.to_owned()).ok()?;
+    Some(cadmpeg_ir::SourceProvenance::in_stream(
+        "f3d", stream, offset,
+    ))
+}
+
+/// Moves the occurrences that `drop` selects out of `occurrences`, in
+/// order.
+fn take_where(
+    occurrences: &mut Vec<DesignComponentOccurrence>,
+    mut drop: impl FnMut(&DesignComponentOccurrence) -> bool,
+) -> Vec<DesignComponentOccurrence> {
+    let (dropped, kept) = std::mem::take(occurrences)
+        .into_iter()
+        .partition(|occurrence| drop(occurrence));
+    *occurrences = kept;
+    dropped
+}
+
 /// Drop every frame that a class-256 carrier stores with a matrix at ordinal
 /// one.
-fn drop_class_256_first_matrices(
+fn drop_class_256_first_matrices<'s, F>(
     occurrences: &mut Vec<DesignComponentOccurrence>,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    let mut dropped = Vec::new();
-    occurrences.retain(|occurrence| {
-        let refused = occurrence.is_class_256_first_matrix();
-        if refused {
-            dropped.push(occurrence.id.clone());
-        }
-        !refused
-    });
-    (!dropped.is_empty()).then(|| {
-        crate::loss::F3dLossCode::LocalOccurrenceFirstMatrixRefused.note(format!(
-            "{} class-256 local component-occurrence frame(s) store a matrix at ordinal one, and a class-256 carrier places a matrix only after its first occurrence, so none of them is an occurrence: {}.",
+    out: &mut DroppedFrames<'_, F>,
+) -> Result<(), CodecError>
+where
+    F: Fn(&DesignComponentOccurrence) -> Option<RecordFrame<'s>>,
+{
+    let dropped = take_where(
+        occurrences,
+        DesignComponentOccurrence::is_class_256_first_matrix,
+    );
+    out.give_up(&dropped, Cause::Unreadable, |ids| {
+        format!(
+            "{} class-256 local component-occurrence frame(s) store a matrix at ordinal one, and a class-256 carrier places a matrix only after its first occurrence, so none of them is an occurrence: {ids}.",
             dropped.len(),
-            dropped.join(", ")
-        ))
+        )
     })
 }
 
 /// Drop the admitted frames that the occurrence-placement type row does not
 /// register when a registered admitted frame states the same occurrence.
 /// Occurrence GUIDs compare without case.
-fn yield_to_registered(
+fn yield_to_registered<'s, F>(
     occurrences: &mut Vec<DesignComponentOccurrence>,
     typed_primary: &std::collections::BTreeSet<(u64, u64)>,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    out: &mut DroppedFrames<'_, F>,
+) -> Result<(), CodecError>
+where
+    F: Fn(&DesignComponentOccurrence) -> Option<RecordFrame<'s>>,
+{
     let guid = |occurrence: &DesignComponentOccurrence| {
         occurrence.occurrence_guid.as_str().to_ascii_lowercase()
     };
@@ -526,29 +631,27 @@ fn yield_to_registered(
         .filter(|occurrence| typed_primary.contains(&occurrence_key(occurrence)))
         .map(guid)
         .collect::<std::collections::BTreeSet<_>>();
-    let mut yielded = Vec::new();
-    occurrences.retain(|occurrence| {
-        let yields = !typed_primary.contains(&occurrence_key(occurrence))
-            && registered.contains(&guid(occurrence));
-        if yields {
-            yielded.push(occurrence.id.clone());
-        }
-        !yields
+    let yielded = take_where(occurrences, |occurrence| {
+        !typed_primary.contains(&occurrence_key(occurrence))
+            && registered.contains(&guid(occurrence))
     });
-    (!yielded.is_empty()).then(|| {
-        crate::loss::F3dLossCode::LocalOccurrenceYieldedToRegistered.note(format!(
-            "{} local component-occurrence frame(s) that the occurrence-placement type row does not register yield to a registered frame of the same occurrence: {}.",
+    out.give_up(&yielded, Cause::Undecoded, |ids| {
+        format!(
+            "{} local component-occurrence frame(s) that the occurrence-placement type row does not register yield to a registered frame of the same occurrence: {ids}.",
             yielded.len(),
-            yielded.join(", ")
-        ))
+        )
     })
 }
 
 /// Drop every occurrence whose occurrence key another admitted frame of the
 /// stream also states. Keys compare without case.
-fn drop_repeated_occurrence_keys(
+fn drop_repeated_occurrence_keys<'s, F>(
     occurrences: &mut Vec<DesignComponentOccurrence>,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    out: &mut DroppedFrames<'_, F>,
+) -> Result<(), CodecError>
+where
+    F: Fn(&DesignComponentOccurrence) -> Option<RecordFrame<'s>>,
+{
     let key = |occurrence: &DesignComponentOccurrence| {
         occurrence.occurrence_guid.as_str().to_ascii_lowercase()
     };
@@ -556,20 +659,14 @@ fn drop_repeated_occurrence_keys(
     for occurrence in occurrences.iter() {
         *counts.entry(key(occurrence)).or_default() += 1;
     }
-    let mut dropped = Vec::new();
-    occurrences.retain(|occurrence| {
-        let repeated = counts.get(&key(occurrence)).is_some_and(|&count| count > 1);
-        if repeated {
-            dropped.push(occurrence.id.clone());
-        }
-        !repeated
+    let dropped = take_where(occurrences, |occurrence| {
+        counts.get(&key(occurrence)).is_some_and(|&count| count > 1)
     });
-    (!dropped.is_empty()).then(|| {
-        crate::loss::F3dLossCode::LocalOccurrenceKeyRepeated.note(format!(
-            "{} local component-occurrence frame(s) state an occurrence key that another frame of their Design stream also states, so none of them is an occurrence: {}.",
+    out.give_up(&dropped, Cause::Undecoded, |ids| {
+        format!(
+            "{} local component-occurrence frame(s) state an occurrence key that another frame of their Design stream also states, so none of them is an occurrence: {ids}.",
             dropped.len(),
-            dropped.join(", ")
-        ))
+        )
     })
 }
 
@@ -1364,6 +1461,9 @@ pub(crate) struct StreamComponents {
     pub(crate) revised_definitions: usize,
     /// Named empty-path root records without a decoded definition reference.
     pub(crate) unbound_root_instances: usize,
+    /// Component-path records of the stream that no local path form reads,
+    /// whatever their path elements are.
+    pub(crate) unadmitted_paths: usize,
 }
 
 impl StreamComponents {
@@ -1506,7 +1606,7 @@ pub(crate) fn decode_local_components(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = super::meta::design_primary_frames(bytes, &meta) else {
+        let Ok(frames) = super::meta::scan_design_primary_frames(scan, &entry.name, &meta) else {
             continue;
         };
         let mut components = StreamComponents::default();
@@ -1536,6 +1636,10 @@ pub(crate) fn decode_local_components(
                     .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
         });
         components.bind_roots(bytes, root_frames.map(|frame| (frame.start, frame.end)));
+        let meta_name = meta_stream_name(&entry.name);
+        let magic = crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
+        components.unadmitted_paths =
+            crate::xref::unread_component_paths(bytes, &meta, Some(magic))?;
         out.insert(scope, components);
     }
     Ok(out)
@@ -1627,6 +1731,7 @@ mod tests {
 
     use super::{attributed_component_occurrence, root_instance_component};
     use crate::test_support::indexed_header;
+    use cadmpeg_core::serde_erase::json;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
@@ -1706,12 +1811,11 @@ mod tests {
                 .unwrap();
                 assert_eq!(transform.value, expected);
             }
-            let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
+            let wire = json::to_value(&record).unwrap();
             assert_eq!(wire["component_guid_offset"], 52);
             assert_eq!(wire["occurrence_guid_offset"], 128);
             assert_eq!(wire["owner_entity_offset"], if matrix { 351 } else { 223 });
-            let decoded: super::DesignComponentOccurrence =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            let decoded: super::DesignComponentOccurrence = json::from_value(wire.clone()).unwrap();
             assert_eq!(decoded, record);
             for field in [
                 "component_guid_offset",
@@ -1719,19 +1823,13 @@ mod tests {
                 "owner_entity_offset",
             ] {
                 let mut changed = wire.clone();
-                changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
-                assert!(cadmpeg_core::serde_erase::json::from_value::<
-                    super::DesignComponentOccurrence,
-                >(changed)
-                .is_err());
+                changed[field] = cadmpeg_core::json!(wire[field].as_u64().unwrap() + 1);
+                assert!(json::from_value::<super::DesignComponentOccurrence>(changed).is_err());
             }
             if matrix {
                 let mut changed = wire.clone();
-                changed["transform_offset"] = serde_json::json!(214);
-                assert!(cadmpeg_core::serde_erase::json::from_value::<
-                    super::DesignComponentOccurrence,
-                >(changed)
-                .is_err());
+                changed["transform_offset"] = cadmpeg_core::json!(214);
+                assert!(json::from_value::<super::DesignComponentOccurrence>(changed).is_err());
             }
             let mut nonzero = frame.clone();
             nonzero[40..44].copy_from_slice(&1_u32.to_le_bytes());
@@ -1754,18 +1852,11 @@ mod tests {
         frame[218] = 1;
         indexed_header(&mut frame, *b"333", 21);
         let record = exact_component_occurrence(&frame, 0, "f3d:Design/BulkStream.dat").unwrap();
-        let loss = super::unproven_identity_loss(&record).unwrap();
-        assert_eq!(
-            loss.code,
-            crate::loss::F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.kind()
-        );
-        assert!(loss.message.contains("ordinal 2"));
-        assert!(loss.message.contains(&record.id));
-        let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignComponentOccurrence>(wire)
-                .is_err()
-        );
+        let why = super::unproven_identity(&record).unwrap();
+        assert!(why.contains("ordinal 2"));
+        assert!(why.contains(&record.id));
+        let wire = json::to_value(&record).unwrap();
+        assert!(json::from_value::<super::DesignComponentOccurrence>(wire).is_err());
     }
 
     #[test]
@@ -2016,13 +2107,13 @@ mod tests {
             occurrence.transform().expect("matrix").value.rows()[2][3],
             4.0
         );
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["source_record_index"], 90);
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
-        let plain_wire = cadmpeg_core::serde_erase::json::to_value(
+        let plain_wire = json::to_value(
             attributed_component_occurrence(&plain, 0, "f3d:Design/BulkStream.dat")
                 .expect("occurrence without a source reference"),
         )
@@ -2032,9 +2123,9 @@ mod tests {
             .is_none());
 
         // A serialized zero source target is not a reference.
-        let mut zero = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
-        zero["attributed"]["source_record_index"] = serde_json::json!(0);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<
+        let mut zero = json::to_value(&occurrence).unwrap();
+        zero["attributed"]["source_record_index"] = cadmpeg_core::json!(0);
+        assert!(json::from_value::<
             crate::records::feature::assembly_features::DesignComponentOccurrence,
         >(zero)
         .is_err());
@@ -2096,12 +2187,13 @@ mod tests {
                 super::admitted_stream_occurrences(
                     ctx,
                     &bytes,
-                    "f3d:Design/BulkStream.dat",
+                    "Design/BulkStream.dat",
                     &std::collections::BTreeMap::new(),
                     &super::occurrence_source_entities(meta),
                     &std::collections::BTreeSet::from([(20, 0)]),
                     &std::collections::BTreeSet::new(),
                 )
+                .unwrap()
             });
             (admitted.occurrences, admitted.losses)
         };
@@ -2141,19 +2233,30 @@ mod tests {
             super::admitted_stream_occurrences(
                 ctx,
                 &bytes,
-                "f3d:Design/BulkStream.dat",
+                "Design/BulkStream.dat",
                 &std::collections::BTreeMap::new(),
                 &std::collections::BTreeSet::new(),
                 &std::collections::BTreeSet::from([(20, 0), (21, second)]),
                 &std::collections::BTreeSet::from([(21, second)]),
             )
+            .unwrap()
         });
         assert_eq!(admitted.occurrences.len(), 1);
         assert_eq!(admitted.occurrences[0].byte_offset(), second);
-        assert_eq!(admitted.losses.len(), 1);
-        assert_eq!(
-            admitted.losses[0].code,
-            crate::loss::F3dLossCode::LocalOccurrenceYieldedToRegistered.kind()
+        // The yielded frame is given up whole, and its give-up is its one
+        // loss.
+        assert!(admitted.losses.is_empty(), "{:#?}", admitted.losses);
+        let [frame] = admitted.given_up.as_slice() else {
+            panic!("one given-up frame: {:#?}", admitted.given_up);
+        };
+        // The frame runs to the next indexed record header.
+        let end = crate::design::decode::sketch::next_indexed_record_offset(&bytes, 1).unwrap();
+        assert_eq!(frame.span(), ("Design/BulkStream.dat", 0..end));
+        let (cause, text) = frame.reason();
+        assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Undecoded);
+        assert!(
+            text.contains("yield to a registered frame of the same occurrence"),
+            "{text}"
         );
     }
 
@@ -2169,12 +2272,12 @@ mod tests {
         assert_eq!(occurrence.owner_entity, 6);
         let transform = occurrence.transform().expect("matrix");
         assert_eq!(transform.value.rows()[2][3], 4.0);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_record_index"], 139);
         assert_eq!(wire["attributed"]["key_segment_index"], 1);
         assert_eq!(wire["attributed"]["attributes"][0]["name"], "GatedByParent");
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
         // A path discriminator is independent of the occurrence ordinal.
@@ -2183,7 +2286,7 @@ mod tests {
         let bytes = attributed("34", 0, 2);
         let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("independent path discriminator");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["path_discriminator"], 0);
         assert_eq!(wire["occurrence_ordinal"], 2);
     }
@@ -2196,18 +2299,18 @@ mod tests {
         );
         let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("original attributed occurrence");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_segment_index"], 10);
         assert_eq!(
             wire["attributed"]["attributes"],
-            serde_json::json!([
+            cadmpeg_core::json!([
                 {"name":"GatedByParent","value":{"type":"bool","value":false}},
                 {"name":"ResolutionTime","value":{"type":"text","value":""}},
                 {"name":"SelfGated","value":{"type":"bool","value":false}}
             ])
         );
         let decoded: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(decoded, occurrence);
     }
 
@@ -2315,13 +2418,13 @@ mod tests {
             assert_eq!(occurrence.component_guid.as_str(), COMPONENT);
             assert_eq!(occurrence.occurrence_guid.as_str(), OCCURRENCE);
             assert_eq!(occurrence.occurrence_ordinal(), 1);
-            let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+            let wire = json::to_value(&occurrence).unwrap();
             assert_eq!(wire["component_guid_offset"], 17 + 88);
             assert_eq!(wire["occurrence_guid_offset"], 17 + 164);
             assert_eq!(wire["owner_entity_offset"], 17 + owner_offset);
             assert_eq!(wire["owner_type_guid"], super::OWNER_TYPE_GUID);
             let restored: crate::records::feature::assembly_features::DesignComponentOccurrence =
-                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+                json::from_value(wire).unwrap();
             assert_eq!(restored, occurrence);
             if matrix {
                 let transform = occurrence.transform().expect("matrix");
@@ -2435,7 +2538,7 @@ mod tests {
         assert_eq!(occurrence.component_record_index, 187);
         assert_eq!(occurrence.owner_entity, 6);
         assert_eq!(occurrence.occurrence_guid.as_str(), "34");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(
             wire["attributed"]["attributes"].as_array().unwrap().len(),
             2
@@ -2661,8 +2764,8 @@ mod tests {
                         .map_or(0, std::num::NonZeroU32::get),
                     discriminator
                 );
-                let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
-                let restored: crate::records::feature::assembly_features::DesignComponentOccurrence = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+                let wire = json::to_value(&occurrence).unwrap();
+                let restored: crate::records::feature::assembly_features::DesignComponentOccurrence = json::from_value(wire).unwrap();
                 assert_eq!(restored, occurrence);
             }
         }

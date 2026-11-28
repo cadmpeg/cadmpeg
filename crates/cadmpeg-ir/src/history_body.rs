@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::features::FeatureId;
 use crate::geometry::{pcurve::Pcurve, Curve, Surface};
-use crate::ids::HistoryBodyId;
+use crate::ids::{BodyId, HistoryBodyId};
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 
 /// A state of a source history chain, by position and source identifier.
@@ -93,6 +93,17 @@ impl BodyTopology {
             + self.points.len()
     }
 
+    /// Bytes of the names of the body and its faces.
+    #[must_use]
+    pub fn name_bytes(&self) -> usize {
+        self.faces
+            .iter()
+            .filter_map(|face| face.name.as_deref())
+            .chain(self.body.name.as_deref())
+            .map(str::len)
+            .sum()
+    }
+
     /// The nest as a topology that holds only its records, for the topology checks.
     #[must_use]
     pub fn to_topology(&self) -> crate::document::Topology {
@@ -134,6 +145,13 @@ pub struct HistoryBody {
         deserialize_with = "deserialize_consumed_by"
     )]
     pub consumed_by: Option<FeatureId>,
+    /// Model body whose earlier state this body is.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_state_of"
+    )]
+    pub state_of: Option<BodyId>,
     /// History state that holds the body.
     pub state: HistoryStateRef,
     /// Records of the body.
@@ -142,5 +160,6 @@ pub struct HistoryBody {
 
 cadmpeg_core::named_optional_field!(deserialize_produced_by, FeatureId, "produced_by");
 cadmpeg_core::named_optional_field!(deserialize_consumed_by, FeatureId, "consumed_by");
+cadmpeg_core::named_optional_field!(deserialize_state_of, BodyId, "state_of");
 
 mod identity_rewrite;

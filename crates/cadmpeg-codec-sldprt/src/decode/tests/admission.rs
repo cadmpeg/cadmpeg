@@ -394,6 +394,53 @@ fn a_pinned_decode_admits_unrepresentable_geometry_and_records_its_loss_codes() 
 }
 
 #[test]
+fn a_pinned_decode_keeps_a_partition_whose_entity_records_build_no_geometry() {
+    use crate::loss::SldprtLossCode;
+    use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind};
+
+    let mut body = crate::test_support::parasolid::entity51(1, 10, 0, &[]);
+    body.extend([0; 8]);
+    let mut fixture = outer_header();
+    fixture.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    add_solidworks_version(&mut fixture, 13100);
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("a salvage decode admits the given-up partition");
+    assert!(!salvaged.report().geometry_transferred());
+    let losses = &salvaged.report().losses;
+    // The site give-up is the one loss of the geometry.
+    assert!(!losses.iter().any(|note| [
+        SldprtLossCode::GeometryParasolidNotTransferred.kind(),
+        SldprtLossCode::TopologyGraphNotTransferred.kind()
+    ]
+    .contains(&note.code)));
+    let [site] = losses
+        .iter()
+        .filter(|note| gives_up(&note.code))
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one give-up names the partition site: {losses:#?}");
+    };
+    assert_eq!(site.code, record_undecoded_kind());
+    assert!(site.message.starts_with("part parasolid-site "));
+    assert!(!site.message.contains("sldprt:file:"));
+
+    let pinned = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("a pinned decode keeps a partition it does not build");
+    assert!(pinned
+        .report()
+        .losses
+        .iter()
+        .any(|note| note.code == record_undecoded_kind()));
+}
+
+#[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
     // The fixture declares a `swVersion` so this test keeps asserting what it
     // is about. A part that declares nothing classifies as `sldprt:unknown`

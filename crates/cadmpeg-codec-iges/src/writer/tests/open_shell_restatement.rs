@@ -3,11 +3,9 @@
 //! analytic face written outside a B-rep.
 
 use std::f64::consts::{FRAC_1_SQRT_2, TAU};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
@@ -19,28 +17,21 @@ use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 use cadmpeg_test_support::solids::{CYLINDER_HEIGHT, CYLINDER_RADIUS};
 
+use crate::test_support::decoded_with;
 use crate::test_support::test_closed_cylinder::solid_cylinder;
 use crate::{IgesCodec, IgesVersion};
 
 fn written(ir: &CadIr, version: IgesVersion) -> (Vec<LossNote>, Vec<u8>) {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("the document is written");
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
     (losses, bytes)
-}
-
-fn decoded(bytes: Vec<u8>) -> CadIr {
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone()
 }
 
 fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
@@ -141,10 +132,269 @@ fn an_open_shell_before_5_3_writes_each_face_as_its_own_trimmed_surface() {
         let unjoined = charged(&losses, "iges/writer.open-shell-unjoined");
         assert_eq!(unjoined.len(), 1, "{losses:#?}");
         assert!(unjoined[0].contains(&body), "{unjoined:?}");
-        let read = decoded(bytes);
+        let read = decoded_with(&bytes, &[]);
         assert_eq!(read.geometry.faces.len(), 2);
         assert_eq!(read.geometry.bodies.len(), 2);
     }
+}
+
+/// Before IGES 5.3 each face of an open sheet is written as a trimmed
+/// surface of its own, whose one Directory colour field states the face
+/// colour. A body colour that differs from the face colours is charged once,
+/// naming the body and its faces. Where a binding of the whole body names the
+/// body colour, the charge of that binding states the loss.
+#[test]
+fn a_body_colour_that_unjoined_faces_replace_is_charged_once() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let red = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0);
+    ir.geometry.bodies[0].color = red;
+    for face in &mut ir.geometry.faces {
+        face.color = blue;
+    }
+    let body = ir.geometry.bodies[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    let charges = charged(&losses, "iges/writer.body-color-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} "))
+            && ir
+                .geometry
+                .faces
+                .iter()
+                .all(|face| charges[0].contains(face.id.as_str())),
+        "{charges:#?}"
+    );
+    let binding = bind_the_body(&mut ir, red, None);
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    assert!(
+        charged(&losses, "iges/writer.body-color-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .any(|loss| loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
+/// A binding of the whole body to an appearance of the body colour that is
+/// charged for its visibility states no colour loss, so the body colour that
+/// the unjoined faces replace is charged.
+#[test]
+fn a_body_colour_whose_binding_is_charged_for_its_visibility_is_charged() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let red = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0);
+    ir.geometry.bodies[0].color = red;
+    for face in &mut ir.geometry.faces {
+        face.color = blue;
+    }
+    let body = ir.geometry.bodies[0].id.clone();
+    let binding = bind_the_body(&mut ir, red, Some(true));
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    let charges = charged(&losses, "iges/writer.body-color-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} ")),
+        "{charges:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .any(|loss| loss.contains("visibility") && loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
+/// Before IGES 5.3 each face of an open sheet is written as a trimmed
+/// surface of its own, and each carries the body. A body name that a Type 406
+/// Form 15 cannot state and a body opacity that a Directory colour cannot
+/// state are each one fact of the body, charged once.
+#[test]
+fn a_body_name_and_opacity_that_unjoined_faces_carry_are_charged_once() {
+    let mut ir = open_cylinder(isoparametric_side());
+    ir.geometry.bodies[0].name = Some("Caf\u{e9}".to_owned());
+    ir.geometry.bodies[0].color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    let body = ir.geometry.bodies[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    for code in [
+        "iges/writer.body-name-not-represented",
+        "iges/writer.body-opacity-not-represented",
+    ] {
+        let charges = charged(&losses, code);
+        assert_eq!(charges.len(), 1, "{code} {losses:#?}");
+        assert!(
+            charges[0].contains(&format!("body {body} ")),
+            "{charges:#?}"
+        );
+    }
+}
+
+/// A Directory colour states the red, green, and blue of a translucent body
+/// colour and no opacity. The binding of the whole body to an appearance of
+/// that colour is written, and the appearance is charged for its opacity.
+#[test]
+fn a_translucent_appearance_is_charged_for_its_opacity() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let translucent = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    ir.geometry.bodies[0].color = translucent;
+    let binding = bind_the_body(&mut ir, translucent, None);
+    let (losses, bytes) = written(&ir, IgesVersion::V5_3);
+    let charges = charged(&losses, "iges/writer.appearance-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains("opacity")
+            && charges[0].ends_with(": test:model:appearance#red")
+            && !charges[0].contains(binding.as_str()),
+        "{charges:#?}"
+    );
+    let read = decoded_with(&bytes, &[]);
+    assert_eq!(
+        read.geometry.bodies[0].color,
+        cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
+    );
+}
+
+/// Before IGES 5.3 each face of an open sheet is written as a trimmed
+/// surface whose one Directory colour field states the face colour. Where
+/// every face has the translucent colour of the body, the entities state
+/// the red, green, and blue of the body colour and no opacity, so the body
+/// opacity is charged once, by the body. Where a face has another colour,
+/// the one charge of the body colour names that face and the opacity.
+#[test]
+fn a_body_opacity_that_face_colours_restate_is_charged_once() {
+    let translucent = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    let mut ir = open_cylinder(isoparametric_side());
+    ir.geometry.bodies[0].color = translucent;
+    for face in &mut ir.geometry.faces {
+        face.color = translucent;
+    }
+    let body = ir.geometry.bodies[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    let charges = charged(&losses, "iges/writer.body-opacity-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} ")),
+        "{charges:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.body-color-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+
+    ir.geometry.faces[0].color = cadmpeg_ir::topology::Color::new(0.9, 0.1, 0.1, 1.0);
+    let face = ir.geometry.faces[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    assert!(
+        charged(&losses, "iges/writer.body-opacity-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+    let charges = charged(&losses, "iges/writer.body-color-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} "))
+            && charges[0].contains(face.as_str())
+            && charges[0].contains("opacity 0.5"),
+        "{charges:#?}"
+    );
+}
+
+/// An appearance that loses its opacity and its name is charged once with
+/// both reasons.
+#[test]
+fn a_translucent_appearance_with_a_name_is_charged_for_both() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let translucent = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    ir.geometry.bodies[0].color = translucent;
+    bind_the_body(&mut ir, translucent, None);
+    ir.model.appearances[0].name = Some("Caf\u{e9}".to_owned());
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    let charges = charged(&losses, "iges/writer.appearance-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains("whose colour states an opacity")
+            && charges[0].contains("whose name no written colour definition states")
+            && charges[0].ends_with(": test:model:appearance#red"),
+        "{charges:#?}"
+    );
+}
+
+/// A body whose id ends as the id of a piece of a split body does, and which
+/// the writer does not split, is the target of its own binding.
+#[test]
+fn a_body_named_like_a_split_piece_carries_its_own_binding() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let red = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    let source = ir.geometry.bodies[0].id.clone();
+    let body =
+        cadmpeg_ir::ids::BodyId::try_from(format!("{source}:unjoined.1")).expect("a body id");
+    for region in &mut ir.geometry.regions {
+        if region.body == source {
+            region.body = body.clone();
+        }
+    }
+    ir.geometry.bodies[0].id = body;
+    ir.geometry.bodies[0].color = red;
+    ir.finalize();
+    let binding = bind_the_body(&mut ir, red, None);
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    assert!(
+        charged(&losses, "iges/writer.appearance-not-represented")
+            .iter()
+            .all(|loss| !loss.contains(binding.as_str())),
+        "{losses:#?}"
+    );
+}
+
+/// Binds the whole of the first body of `ir` to a new appearance of `color`,
+/// with the blank status `visible`.
+fn bind_the_body(
+    ir: &mut CadIr,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+) -> cadmpeg_ir::ids::AppearanceBindingId {
+    let appearance =
+        cadmpeg_ir::ids::AppearanceId::try_from("test:model:appearance#red".to_owned())
+            .expect("an appearance id");
+    let binding = cadmpeg_ir::ids::AppearanceBindingId::try_from(
+        "test:model:appearance-binding#body".to_owned(),
+    )
+    .expect("a binding id");
+    ir.model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: appearance.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: color,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+            native_ref: None,
+        });
+    ir.model
+        .appearance_bindings
+        .push(cadmpeg_ir::appearance::AppearanceBinding {
+            id: binding.clone(),
+            target: cadmpeg_ir::appearance::AppearanceTarget::Body(
+                ir.geometry.bodies[0].id.clone(),
+            )
+            .into(),
+            appearance,
+            precedence: None,
+            source_entity_id: None,
+            object_type: None,
+            visible,
+            channels: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    binding
 }
 
 #[test]
@@ -155,7 +405,7 @@ fn an_open_shell_at_5_3_keeps_its_joined_edges() {
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 2);
     assert_eq!(read.geometry.bodies.len(), 1);
 }
@@ -254,7 +504,7 @@ fn an_analytic_face_outside_a_brep_writes_an_exact_rational_support() {
             .any(|card| card.as_bytes().get(72) == Some(&b'D') && card[..8].trim() == "128"),
         "the side support is written as a Type 128"
     );
-    assert_on_side(&curved_boundary_points(&decoded(bytes)), 1.0);
+    assert_on_side(&curved_boundary_points(&decoded_with(&bytes, &[])), 1.0);
 }
 
 #[test]
@@ -264,7 +514,7 @@ fn a_cylinder_face_without_parameter_curves_writes_computed_ones() {
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 2);
     let points = curved_boundary_points(&read);
     assert_on_side(&points, 1.0);
@@ -295,7 +545,7 @@ fn a_cylinder_under_a_non_uniform_scale_writes_an_elliptic_rational_support() {
         charged(&losses, "iges/writer.body-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert!(read
         .geometry
         .bodies
@@ -321,16 +571,8 @@ fn a_solid_cylinder_under_a_non_uniform_scale_writes_an_elliptic_rational_suppor
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let decode = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    let read = decode.ir();
-    assert_eq!(
-        read.geometry.faces.len(),
-        3,
-        "{losses:#?}\n{:#?}",
-        decode.report().losses
-    );
+    let read = &decoded_with(&bytes, &[]);
+    assert_eq!(read.geometry.faces.len(), 3, "{losses:#?}");
     assert!(read
         .geometry
         .bodies
@@ -404,7 +646,7 @@ fn a_seamless_cylinder_band_under_a_non_uniform_scale_writes_its_full_turn_face(
     ] {
         assert!(charged(&losses, code).is_empty(), "{losses:#?}");
     }
-    let read = decoded(bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 3);
     let points = curved_boundary_points(&read);
     assert_on_side(&points, 2.0);
@@ -429,7 +671,9 @@ fn a_cylinder_face_with_a_slanted_parameter_curve_keeps_its_model_space_boundary
     );
     let omitted = charged(&losses, "iges/writer.pcurve-omitted");
     assert_eq!(omitted.len(), 4, "{losses:#?}");
-    let read = decoded(bytes);
+    // A boundary with no parameter curves on a curved support keeps its
+    // written traversal on read.
+    let read = decoded_with(&bytes, &["iges/topology.boundary-winding-unresolved"]);
     assert_eq!(read.geometry.faces.len(), 2);
     let side = read
         .geometry

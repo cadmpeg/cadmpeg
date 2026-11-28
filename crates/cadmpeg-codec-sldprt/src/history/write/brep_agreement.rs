@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
@@ -75,7 +75,8 @@ pub(crate) enum Source<'a> {
 /// back other than the document states; the read-back names them, and no
 /// stale-solid loss calls them written. Without the retained source image,
 /// [`imageless_losses`] names what it can tell, and no edit is known to
-/// shape the solid. `digests` are the codec digests the decode recorded.
+/// shape the solid. `digests` are the codec digests the decode recorded; the
+/// comparison runs in the encode session `hash_ctx`.
 pub(crate) fn agreement(
     ir: &CadIr,
     digests: &CodecDigests,
@@ -83,27 +84,27 @@ pub(crate) fn agreement(
     source: Option<Source<'_>>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
+    hash_ctx: &DecodeContext<'_>,
 ) -> Result<Agreement, CodecError> {
+    let limits = hash_ctx.policy().limits;
     let kept_definitions = &unwritten.kept_definitions;
     let Some(native) = native else {
         return Ok(Agreement::default());
     };
-    let hash_arena = DecodeArena::new();
-    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy::service())?;
     let features_changed = differs(digests, "sldprt_neutral_feature_local_sha256", || {
-        feature_hash(&hash_ctx, &ir.model)
+        feature_hash(hash_ctx, &ir.model)
     })?;
     let parameters_changed = differs(digests, "sldprt_neutral_parameter_local_sha256", || {
-        parameter_hash(&hash_ctx, &ir.model.parameters)
+        parameter_hash(hash_ctx, &ir.model.parameters)
     })?;
     let native_changed = differs(digests, "sldprt_native_history_sha256", || {
-        history_hash(&hash_ctx, &native.feature_histories)
+        history_hash(hash_ctx, &native.feature_histories)
     })?;
     let Some(source) = source else {
         let losses = imageless_losses(
             ir,
             digests,
-            &hash_ctx,
+            hash_ctx,
             [
                 (features_changed, "features"),
                 (parameters_changed, "parameters"),
@@ -117,7 +118,7 @@ pub(crate) fn agreement(
     };
     let configurations_changed =
         differs(digests, "sldprt_neutral_configuration_local_sha256", || {
-            configuration_hash(&hash_ctx, &ir.model.configurations)
+            configuration_hash(hash_ctx, &ir.model.configurations)
         })?;
     if !(features_changed || parameters_changed || native_changed || configurations_changed) {
         return Ok(Agreement::default());
@@ -127,7 +128,7 @@ pub(crate) fn agreement(
         Source::Decoded(baseline) => baseline,
         Source::Image(image) => {
             decoded =
-                crate::decode::decode_for_read_back_cached(image).map_err(
+                crate::decode::decode_for_read_back(image, limits).map_err(
                     |failure| match failure {
                         cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
                         other => CodecError::malformed(format_args!(
@@ -148,7 +149,7 @@ pub(crate) fn agreement(
             ir,
             digests,
             baseline,
-            &hash_ctx,
+            hash_ctx,
             (kept_definitions, misread),
             &mut named,
             &mut out,
@@ -158,7 +159,7 @@ pub(crate) fn agreement(
         parameter_edits(ir, baseline, unwritten, &mut out);
     }
     if native_changed {
-        native_edits(ir, native, baseline, &mut out)?;
+        native_edits(ir, native, baseline, limits, &mut out)?;
     }
     if configurations_changed {
         configuration_design_edits(ir, baseline, &named, unwritten, &mut out);
@@ -473,13 +474,15 @@ fn native_edits(
     ir: &CadIr,
     native: &SldprtNative,
     source: &CadIr,
+    limits: ResourceLimits,
     out: &mut Agreement,
 ) -> Result<(), CodecError> {
     let source_native = source
         .native
         .namespace("sldprt")
         .map(|namespace| {
-            SldprtNative::load(namespace, source.tolerances.linear).map_err(CodecError::from)
+            SldprtNative::load_under(namespace, limits, source.tolerances.linear)
+                .map_err(CodecError::from)
         })
         .transpose()?;
     let baseline = source_native

@@ -5,6 +5,7 @@
 //! decode and owner tests own the assertions.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::Exactness;
 
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
@@ -379,11 +380,9 @@ pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static>
 
 /// Decodes native payload strings for exact byte assertions.
 pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
-    cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(
-        value.clone(),
-    )
-    .expect("native hexadecimal byte string")
-    .into_inner()
+    json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
+        .expect("native hexadecimal byte string")
+        .into_inner()
 }
 
 /// A component table: a sub-assembly at the identity,
@@ -425,13 +424,14 @@ pub(crate) fn build_asm() -> Vec<u8> {
 
 /// [`build_asm`] with `table` as its component table.
 pub(crate) fn build_asm_with(table: Vec<u8>) -> Vec<u8> {
-    let part = build_prt_raw(
-        "test",
-        &[
-            ("BasBasData", b"\xe0\x0amodel_name\0TOP_ASSY\0".to_vec()),
-            ("NeuAsmSld", neu_asm_payload(table)),
-        ],
-    );
+    build_asm_sections(&[("NeuAsmSld", neu_asm_payload(table))])
+}
+
+/// An `ASSEMBLY` file with model name `TOP_ASSY` and `sections` after it.
+pub(crate) fn build_asm_sections(sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut all = vec![("BasBasData", b"\xe0\x0amodel_name\0TOP_ASSY\0".to_vec())];
+    all.extend(sections.iter().cloned());
+    let part = build_prt_raw("test", &all);
     let header_end = part
         .iter()
         .position(|&byte| byte == b'\n')

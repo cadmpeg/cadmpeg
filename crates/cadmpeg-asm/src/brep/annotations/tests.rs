@@ -205,7 +205,7 @@ fn ellipse_edge_annotation_names_only_a_stored_carrier_range() {
         )
         .unwrap();
         let annotation = &out.annotation_records[0];
-        assert_eq!(annotation.id, "sat:brep:entity#1");
+        assert_eq!(annotation.id.as_str(), "sat:brep:entity#1");
         assert_eq!(
             annotation.derived_fields,
             if range.is_some() {

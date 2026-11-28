@@ -551,6 +551,8 @@ impl CatiaNative {
             ));
         }
         let external_references = expected_external_references;
+        let feature_containers: Vec<crate::native::feature_tree::CatiaFeatureContainer> =
+            namespace.arena_as("feature_containers")?;
         let mut legacy_entity_runs: Vec<CatiaLegacyEntityRun> =
             namespace.arena_as("legacy_entity_runs")?;
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
@@ -815,6 +817,7 @@ impl CatiaNative {
             e5_nurbs_limit_programs,
             entity_records,
             external_references,
+            feature_containers,
             finjpl_segments,
             legacy_entity_runs,
             object_graphs: graphs,

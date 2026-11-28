@@ -5,6 +5,8 @@
 
 use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
+use crate::layout::axis_tail_version_15000_prefix as tail_prefix;
+use crate::layout::revolution_line_reference_record_tail as record_tail;
 use crate::layout::revolution_turn_block as turn;
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
@@ -89,6 +91,9 @@ pub(crate) const PLNDATA: &[&str] = &[
 pub(crate) const M12345: [u8; 12] = [
     0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
 ];
+
+/// How far an axis tail's direction may lie from unit length.
+const EPS_AXIS_TAIL_UNIT: f64 = 1e-9;
 
 /// The shared rule state.
 #[derive(Debug, Clone)]
@@ -490,6 +495,23 @@ pub(crate) fn objat(r: &Reader<'_>, q: usize) -> bool {
 
 /// `axistail`.
 pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
+    if r.p >= tail_prefix::LEN
+        && r.pu32(r.p - tail_prefix::LEN + tail_prefix::VERSION)
+            .is_ok_and(|version| version == tail_prefix::VERSION_VALUE)
+        && r.eq(
+            r.p - tail_prefix::LEN + tail_prefix::ZEROS,
+            &tail_prefix::ZEROS_VALUE,
+        )
+        && unit_direction_at(r, r.p + record_tail::DIRECTION)
+        && r.eq(r.p + record_tail::ZERO, &record_tail::ZERO_VALUE)
+    {
+        let mut ax = Vec::new();
+        for _ in 0..7 {
+            ax.push(V::from(r.f64()?));
+        }
+        r.expect_bytes(&record_tail::ZERO_VALUE, "axis u8 0")?;
+        return Ok(V::List(ax));
+    }
     if r.p >= 8 && r.ffs(r.p - 8, 4) && r.zeros(r.p - 4, 8) && !r.zeros(r.p + 4, 8) {
         r.skip(4);
         let mut ax = Vec::new();
@@ -525,6 +547,18 @@ pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
     }
     r.expect_bytes(&[0], "axis u8 0")?;
     Ok(V::List(ax))
+}
+
+/// Whether the three f64 at `at` are a unit direction.
+fn unit_direction_at(r: &Reader<'_>, at: usize) -> bool {
+    let mut square = 0.0;
+    for index in 0..3 {
+        let Ok(value) = r.pf64(at + 8 * index) else {
+            return false;
+        };
+        square += value * value;
+    }
+    (square - 1.0).abs() <= EPS_AXIS_TAIL_UNIT
 }
 
 /// `refblock`: a reference's handle block.
@@ -1427,15 +1461,30 @@ pub(crate) fn scale(r: &mut Reader<'_>) -> Res<V> {
         k.push(V::from(r.f64()?));
     }
     r.expect_zeros(6, "scale 6 zero")?;
-    r.expect_bytes(&[1, 0], "scale u16 1")?;
-    r.ptr(None)?;
+    scaled_bodies(r)?;
+    Ok(V::map([("n", n), ("factors", V::List(k))]))
+}
+
+/// The bytes of a `moScale_c` after its six zero bytes: the scaled bodies,
+/// the identifier list and, when the stream continues, i32 `-1` and twelve
+/// zero bytes.
+fn scaled_bodies(r: &mut Reader<'_>) -> Res<()> {
+    let bodies = r.u16()?;
+    if bodies > 1 {
+        return Err(bad(format!("scale body count {bodies}")));
+    }
+    for _ in 0..bodies {
+        r.ptr(None)?;
+    }
     let count = r.u32()?;
     for _ in 0..count {
         r.u32()?;
     }
+    if r.p == r.len() {
+        return Ok(());
+    }
     r.expect_bytes(&[0xff; 4], "scale -1")?;
-    r.expect_zeros(12, "scale 12 zero")?;
-    Ok(V::map([("n", n), ("factors", V::List(k))]))
+    r.expect_zeros(12, "scale 12 zero")
 }
 
 /// A body head's `g == 1` continuation: u32 count and that many body ids,
@@ -1586,15 +1635,34 @@ fn units_after_head(r: &mut Reader<'_>, hd: &V) -> Res<()> {
     Ok(())
 }
 
-/// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`.
+/// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`, with the parameter
+/// objects the pattern holds noted with its seed list.
 pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
+    let from = reader.parameters.len();
+    let lists = reader.pattern_seeds.len();
+    let opened = reader.counter;
+    match featpattern_body(reader) {
+        Ok(value) => {
+            reader.note_pattern_parameters(from, opened);
+            Ok(value)
+        }
+        Err(stop) => {
+            reader.pattern_seeds.truncate(lists);
+            Err(stop)
+        }
+    }
+}
+
+/// The body of [`featpattern`].
+fn featpattern_body(reader: &mut Reader<'_>) -> Res<V> {
     let class = reader.last_class().ok_or(Stop::End(reader.p))?;
     let class = &*class;
     let count = feature(reader, class)?;
     let hd = bodyhead(reader, class)?;
     units_after_head(reader, &hd)?;
     reader.ptr(Some(&["moPMarkRecord_c"]))?;
-    reader.ptr(Some(&["suObList"]))?;
+    let seeds = reader.ptr(Some(&["suObList"]))?;
+    reader.note_pattern_seeds(&seeds);
     reader.ptr(Some(&["suObList"]))?;
     if !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
         && !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0])
@@ -1642,10 +1710,12 @@ pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
         reader.expect_bytes(&[0, 0], "cirpattern u16 0")?;
         let ax = reader.ptr(None)?;
         item1(reader, &ax)?;
-        axistail(reader)?;
-        if reader.u8()? > 1 {
+        let tail = axistail(reader)?;
+        let flag = reader.u8()?;
+        if flag > 1 {
             return Err(bad("cirpattern flag byte"));
         }
+        reader.note_pattern_axis(&tail, flag);
         display_objects(reader)?;
         reader.expect_bytes(
             &[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],

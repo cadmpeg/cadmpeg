@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::{document::Model, sketches::SketchGeometryDefinition};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::{definition, features, regions, rows, text, topology, Mapping};
@@ -140,7 +142,25 @@ pub(super) fn map(feature: &Value, model: &Model, inputs: &topology::Inputs<'_>)
             return Err(format!("sweep {key} is not supported yet"));
         }
     }
-    let profile = features::profile(feature, "profiles", model, inputs)?;
+    let (profile, path) = operands(feature, "profiles", model, inputs)?;
+    Ok(definition(
+        "sweep",
+        json!({
+            "shape":{"kind":"solid", "op":features::operation(feature)?,
+                "section":{"kind":"profile", "value":profile}, "sections":[]},
+            "path":path,
+            "path_tangent":false, "linearize":false
+        }),
+    ))
+}
+
+pub(super) fn operands(
+    feature: &Value,
+    profile_key: &str,
+    model: &Model,
+    inputs: &topology::Inputs<'_>,
+) -> Mapping<(Value, Value)> {
+    let profile = features::profile(feature, profile_key, model, inputs)?;
     let selected = features::sketch_entities_in_order(
         features::queries(feature, "path")?,
         model,
@@ -149,14 +169,9 @@ pub(super) fn map(feature: &Value, model: &Model, inputs: &topology::Inputs<'_>)
     )?;
     let selection = selected.get("value").ok_or("the sweep path is missing")?;
     let curves = order_path(rows(selection, "entities")?, model)?;
-    Ok(definition(
-        "sweep",
-        json!({
-            "shape":{"kind":"solid", "op":features::operation(feature)?,
-                "section":{"kind":"profile", "value":profile}, "sections":[]},
-            "path":{"kind":"sketch_curves", "value":{"sketch":selection["sketch"], "curves":curves}},
-            "path_tangent":false, "linearize":false
-        }),
+    Ok((
+        profile,
+        json!({"kind":"sketch_curves", "value":{"sketch":selection["sketch"], "curves":curves}}),
     ))
 }
 
@@ -188,8 +203,7 @@ fn endpoints(entity: &cadmpeg_ir::sketches::SketchEntity) -> Mapping<[[f64; 2]; 
         let last = points.last().ok_or("the sweep path spline has no poles")?;
         return Ok([[first.u, first.v], [last.u, last.v]]);
     }
-    let wire = cadmpeg_core::serde_erase::json::to_value(entity)
-        .map_err(|_| "the sweep path curve is unreadable")?;
+    let wire = json::to_value(entity).map_err(|_| "the sweep path curve is unreadable")?;
     regions::curve_endpoints(&wire)
 }
 

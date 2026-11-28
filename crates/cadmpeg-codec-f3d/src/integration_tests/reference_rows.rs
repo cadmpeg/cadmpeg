@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{
     f3d_with_redirections_json, f3d_with_reference_table_and_identity_xrefs,
     f3z_archive_with_design_description, redirections_json,
 };
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 #[test]
 fn derived_dependency_keeps_xref_merge_without_its_target() {
@@ -28,10 +29,10 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
             "assembly-design",
             "root.f3d",
             &placements,
-            &cadmpeg_core::serde_erase::json::to_vec(&table).unwrap(),
+            &json::to_vec(&table).unwrap(),
         );
         let child = f3d_with_smbh(&synthetic_geometry_smbh());
-        let description = cadmpeg_core::serde_erase::json::to_vec(&json!({
+        let description = json::to_vec(&json!({
             "name": "Autodesk Design Description", "version": "0.1",
             "designDescription": {"id": "0", "designGraphs": [{
                 "rootIds": [0], "designObjectRefs": [], "designObjects": [{
@@ -68,8 +69,12 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
                 .as_str()
                 .starts_with("f3d:child.f3d@"));
         }
+        assert!(!merged
+            .report()
+            .losses
+            .iter()
+            .any(crate::test_support::xref_table_given_up));
         for code in [
-            crate::loss::F3dLossCode::XrefTableUndecoded,
             crate::loss::F3dLossCode::XrefMemberUndecoded,
             crate::loss::F3dLossCode::XrefMemberMissing,
         ] {
@@ -94,7 +99,7 @@ fn row(kind: &str, target: &str) -> Value {
 }
 
 fn table(rows: &[Value]) -> Vec<u8> {
-    cadmpeg_core::serde_erase::json::to_vec(&json!({
+    json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
                      "displayName": "root", "lineageUrn": "urn:l", "versionUrn": "urn:v"}],
@@ -140,7 +145,7 @@ fn unknown_reference_type_reports_one_table_loss() {
                     .report()
                     .losses
                     .iter()
-                    .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                    .filter(|loss| crate::test_support::xref_table_given_up(loss))
                     .count(),
                 1
             );
@@ -174,7 +179,7 @@ fn derived_rows_decode_without_table_loss_and_survive_native_reload() {
                 .report()
                 .losses
                 .iter()
-                .any(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind()));
+                .any(crate::test_support::xref_table_given_up));
             if container_only {
                 assert!(decoded.ir().native.namespace("f3d").is_none());
                 continue;

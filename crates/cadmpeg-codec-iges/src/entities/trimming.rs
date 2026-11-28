@@ -37,6 +37,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
@@ -44,7 +45,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Endpoint clustering compares every endpoint pair of one boundary. A boundary
 /// with more endpoints than this is not projected and reports a geometry loss.
-const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
+pub(super) const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
 
 struct BoundarySegment {
     model_curve: u32,
@@ -1336,104 +1337,7 @@ fn linear_boundary_relationship_is_valid(
     Some(rings_are_disjoint(rings))
 }
 
-#[derive(Clone)]
-struct HomogeneousPcurveSpan {
-    domain: [f64; 2],
-    controls: Vec<[f64; 4]>,
-}
-
 type HomogeneousPcurveSplit = (Vec<[f64; 4]>, Vec<[f64; 4]>);
-
-fn homogeneous_pcurve_spans(
-    degree: usize,
-    knots: &[f64],
-    controls: &[[f64; 4]],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<HomogeneousPcurveSpan>>, CodecError> {
-    let Some(expected_knots) = controls
-        .len()
-        .checked_add(degree)
-        .and_then(|value| value.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    if degree == 0
-        || degree >= controls.len()
-        || knots.len() != expected_knots
-        || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
-    {
-        return Ok(None);
-    }
-    let Some(domain) = knots
-        .get(degree)
-        .copied()
-        .zip(knots.get(controls.len()).copied())
-    else {
-        return Ok(None);
-    };
-    let domain = [domain.0, domain.1];
-    if domain[0] >= domain[1] {
-        return Ok(None);
-    }
-    let Some(internal_slice) = knots.get(degree + 1..controls.len()) else {
-        return Ok(None);
-    };
-    let mut internal = Vec::new();
-    internal.extend(
-        internal_slice
-            .iter()
-            .copied()
-            .filter(|knot| domain[0] < *knot && *knot < domain[1]),
-    );
-    internal.sort_by(f64::total_cmp);
-    internal.dedup();
-    let multiplicity = |knot: f64| {
-        knots.partition_point(|candidate| *candidate <= knot)
-            - knots.partition_point(|candidate| *candidate < knot)
-    };
-    let mut insertions = 0_usize;
-    for knot in &internal {
-        let multiplicity = multiplicity(*knot);
-        if multiplicity < degree {
-            insertions += degree - multiplicity;
-        }
-    }
-    let mut net = RefiningNet::new(ctx, knots, controls, insertions)?;
-    for knot in internal {
-        for _ in multiplicity(knot)..degree {
-            if net.insert(knot, degree, BlendCheck::Denominator).is_none() {
-                return Ok(None);
-            }
-        }
-    }
-    let (refined_knots, refined_controls) = net.into_parts();
-    let mut spans = Vec::new();
-    for span in degree..refined_controls.len() {
-        let Some((start, end)) = refined_knots
-            .get(span)
-            .copied()
-            .zip(refined_knots.get(span + 1).copied())
-        else {
-            return Ok(None);
-        };
-        if start >= end {
-            continue;
-        }
-        let Some(span_controls) = span
-            .checked_sub(degree)
-            .and_then(|start_index| refined_controls.get(start_index..=span))
-        else {
-            return Ok(None);
-        };
-        let copied_controls = span_controls.to_vec();
-        spans.push(HomogeneousPcurveSpan {
-            domain: [start, end],
-            controls: copied_controls,
-        });
-    }
-    Ok((!spans.is_empty()).then_some(spans))
-}
 
 /// Splits a Bézier polygon at `parameter` with de Casteljau's levels, keeping
 /// only the level ends that the two halves use.
@@ -1462,39 +1366,6 @@ fn split_homogeneous_pcurve(
     }
     right.reverse();
     Some((left, right))
-}
-
-fn restrict_homogeneous_pcurve(
-    controls: &[[f64; 4]],
-    start: f64,
-    end: f64,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
-    let _nested = ctx.enter_nested("iges pcurve restricted span")?;
-    if start > end {
-        let Some(mut restricted) = restrict_homogeneous_pcurve(controls, end, start, ctx)? else {
-            return Ok(None);
-        };
-        restricted.reverse();
-        return Ok(Some(restricted));
-    }
-    if start == end {
-        let Some(point) =
-            split_homogeneous_pcurve(controls, start).and_then(|(left, _)| left.into_iter().last())
-        else {
-            return Ok(None);
-        };
-        let result = vec![point];
-        return Ok(Some(result));
-    }
-    let Some((left, _)) = split_homogeneous_pcurve(controls, end) else {
-        return Ok(None);
-    };
-    if start == 0.0 {
-        return Ok(Some(left));
-    }
-    let relative_start = start / end;
-    Ok(split_homogeneous_pcurve(&left, relative_start).map(|(_, right)| right))
 }
 
 #[cfg(test)]
@@ -1575,21 +1446,9 @@ fn pcurve_declared_interval_bounds(
     if bezier_blends(span_count, degree).is_none_or(|blends| blends > MAX_BEZIER_BLENDS) {
         return Ok(PcurveBounds::Unchecked);
     }
-    let mut controls = Vec::new();
-    for index in 0..nurbs.pole_rows().count() {
-        let Some(point) = nurbs
-            .pole_rows()
-            .point_at(index)
-            .map(cadmpeg_ir::units::FinitePoint2::get)
-        else {
-            return Ok(PcurveBounds::Outside);
-        };
-        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
-        if weight <= 0.0 {
-            return Ok(PcurveBounds::Outside);
-        }
-        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
-    }
+    let Some(controls) = homogeneous_pcurve_controls(nurbs) else {
+        return Ok(PcurveBounds::Outside);
+    };
     let within =
         pcurve_spans_within_intervals(degree, knots, &controls, range, bounds, periodic, ctx)?;
     Ok(if within {
@@ -1597,6 +1456,115 @@ fn pcurve_declared_interval_bounds(
     } else {
         PcurveBounds::Outside
     })
+}
+
+/// The homogeneous controls `[w, w·u, w·v, 0]` of `nurbs`, or `None` where
+/// a pole has no point or a weight is not positive.
+fn homogeneous_pcurve_controls(nurbs: &PcurveNurbs) -> Option<Vec<[f64; 4]>> {
+    let mut controls = Vec::new();
+    for index in 0..nurbs.pole_rows().count() {
+        let point = nurbs
+            .pole_rows()
+            .point_at(index)
+            .map(cadmpeg_ir::units::FinitePoint2::get)?;
+        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
+        if weight <= 0.0 {
+            return None;
+        }
+        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
+    }
+    Some(controls)
+}
+
+/// The Bézier net of each knot span of a homogeneous parameter curve inside
+/// `range`, in parameter order, or `None` where the curve has no valid net
+/// or an end of `range` lies outside its domain. An empty or reversed
+/// `range` holds no span and gives an empty list. Each end of `range` and
+/// each knot between them with fewer than `degree` copies is first inserted
+/// up to `degree` copies, so every span inside `range` starts and ends on at
+/// least `degree` equal knots, also where the stored knots are unclamped.
+fn restricted_pcurve_spans(
+    degree: usize,
+    knots: &[f64],
+    controls: &[[f64; 4]],
+    range: [f64; 2],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Vec<[f64; 4]>>>, CodecError> {
+    let Some(expected_knots) = controls
+        .len()
+        .checked_add(degree)
+        .and_then(|value| value.checked_add(1))
+    else {
+        return Ok(None);
+    };
+    if degree == 0
+        || degree >= controls.len()
+        || knots.len() != expected_knots
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return Ok(None);
+    }
+    let domain = [knots[degree], knots[controls.len()]];
+    if !(domain[0] < domain[1]
+        && range
+            .iter()
+            .all(|end| domain[0] <= *end && *end <= domain[1]))
+    {
+        return Ok(None);
+    }
+    if range[0] >= range[1] {
+        return Ok(Some(Vec::new()));
+    }
+    let mut breaks = vec![range[0]];
+    for &knot in knots {
+        if range[0] < knot && knot < range[1] && breaks.last() != Some(&knot) {
+            breaks.push(knot);
+        }
+    }
+    breaks.push(range[1]);
+    let multiplicity = |knot: f64| {
+        knots.partition_point(|candidate| *candidate <= knot)
+            - knots.partition_point(|candidate| *candidate < knot)
+    };
+    let mut insertions = 0_usize;
+    for &value in &breaks {
+        let Some(shortfall) = degree.checked_sub(multiplicity(value)) else {
+            continue;
+        };
+        let Some(total) = insertions.checked_add(shortfall) else {
+            return Ok(None);
+        };
+        insertions = total;
+    }
+    let mut net = RefiningNet::new(ctx, knots, controls, insertions)?;
+    for value in breaks {
+        for _ in multiplicity(value)..degree {
+            if net.insert(value, degree, BlendCheck::Denominator).is_none() {
+                return Ok(None);
+            }
+        }
+    }
+    let (refined_knots, refined_controls) = net.into_parts();
+    let mut nets = Vec::new();
+    for (span, pair) in refined_knots
+        .windows(2)
+        .enumerate()
+        .take(refined_controls.len())
+        .skip(degree)
+    {
+        if !(range[0] <= pair[0] && pair[0] < pair[1] && pair[1] <= range[1]) {
+            continue;
+        }
+        let Some(span_controls) = span
+            .checked_sub(degree)
+            .and_then(|start| refined_controls.get(start..=span))
+        else {
+            return Ok(None);
+        };
+        nets.push(span_controls.to_vec());
+    }
+    Ok(Some(nets))
 }
 
 fn pcurve_spans_within_intervals(
@@ -1608,18 +1576,6 @@ fn pcurve_spans_within_intervals(
     periodic: [bool; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls, ctx)? else {
-        return Ok(false);
-    };
-    let Some(first_span) = spans.first() else {
-        return Ok(false);
-    };
-    let Some(last_span) = spans.last() else {
-        return Ok(false);
-    };
-    if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
-        return Ok(false);
-    }
     let in_bound =
         |value: f64, lower: Option<DeclaredInterval>, upper: Option<DeclaredInterval>| {
             value.is_finite()
@@ -1645,40 +1601,17 @@ fn pcurve_spans_within_intervals(
     let Some((v_lower, v_upper)) = expand_periodic(bounds[2], bounds[3], periodic[1]) else {
         return Ok(false);
     };
-    let mut covered = false;
-    for span in spans {
-        let start = range[0].max(span.domain[0]);
-        let end = range[1].min(span.domain[1]);
-        if start >= end {
-            continue;
-        }
-        covered = true;
-        let Some(local_start) =
-            cadmpeg_ir::math::parameter_fraction(start, span.domain[0], span.domain[1])
-        else {
-            return Ok(false);
-        };
-        let Some(local_end) =
-            cadmpeg_ir::math::parameter_fraction(end, span.domain[0], span.domain[1])
-        else {
-            return Ok(false);
-        };
-        let Some(restricted) =
-            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx)?
-        else {
-            return Ok(false);
-        };
-        if restricted.iter().any(|control| {
+    let Some(nets) = restricted_pcurve_spans(degree, knots, controls, range, ctx)? else {
+        return Ok(false);
+    };
+    Ok(!nets.is_empty()
+        && nets.iter().flatten().all(|control| {
             let weight = control[0];
-            !weight.is_finite()
-                || weight <= 0.0
-                || !in_bound(control[1] / weight, u_lower, u_upper)
-                || !in_bound(control[2] / weight, v_lower, v_upper)
-        }) {
-            return Ok(false);
-        }
-    }
-    Ok(covered)
+            weight.is_finite()
+                && weight > 0.0
+                && in_bound(control[1] / weight, u_lower, u_upper)
+                && in_bound(control[2] / weight, v_lower, v_upper)
+        }))
 }
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
@@ -1999,6 +1932,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
@@ -2014,7 +1948,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
-    let planar_pairs = super::geometry::PlanarPairBudget::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new(limits);
 
     let carrier_index = ModelIndex::new_model_only(ir);
 
@@ -2035,6 +1969,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2046,6 +1981,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface creation or preference flag is invalid"),
             );
             continue;
@@ -2054,6 +1990,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface surface pointer is invalid"),
             );
             continue;
@@ -2072,6 +2009,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface parameter curve pointer is invalid"),
             );
             continue;
@@ -2080,6 +2018,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface model curve pointer is invalid"),
             );
             continue;
@@ -2089,9 +2028,11 @@ pub(super) fn project(
                 entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
             })
         }) {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                pcurve.filter(|pcurve| !entries.contains_key(pcurve)),
+                Cause::Unreadable,
                 format_args!("parameter curve does not have entity-use flag 05"),
             );
             continue;
@@ -2117,6 +2058,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2125,6 +2067,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary representation type is not 0 or 1"),
             );
             continue;
@@ -2133,6 +2076,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary preference flag is invalid"),
             );
             continue;
@@ -2141,6 +2085,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary support pointer is invalid"),
             );
             continue;
@@ -2149,6 +2094,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary segment count is not positive"),
             );
             continue;
@@ -2161,6 +2107,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("boundary model-curve pointer is invalid"),
                 );
                 valid = false;
@@ -2173,6 +2120,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("boundary segment sense is not 1 or 2"),
                     );
                     valid = false;
@@ -2183,6 +2131,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("boundary pcurve count is invalid"),
                 );
                 valid = false;
@@ -2191,11 +2140,12 @@ pub(super) fn project(
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                super::push_geometry_loss(&mut losses, entry, format_args!("boundary pcurve collection cardinality disagrees with its representation type"));
+                super::push_geometry_loss(&mut losses, entry, Cause::Unreadable, format_args!("boundary pcurve collection cardinality disagrees with its representation type"));
                 valid = false;
                 break;
             }
             let mut pcurves = Vec::new();
+            let mut given_up = false;
             for pcurve_index in 0..pcurve_count {
                 let Some(pcurve) = pointer(record, index + 3 + pcurve_index) else {
                     pcurves.clear();
@@ -2204,22 +2154,34 @@ pub(super) fn project(
                 if entries.get(&pcurve).is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
-                    super::push_geometry_loss(
+                    super::push_geometry_loss_needing(
                         &mut losses,
                         entry,
+                        (!entries.contains_key(&pcurve)).then_some(pcurve),
+                        Cause::Unreadable,
                         format_args!("boundary pcurve does not have entity-use flag 05"),
                     );
+                    given_up = true;
                     pcurves.clear();
                     break;
                 }
                 pcurves.push(pcurve);
             }
             if pcurves.len() != pcurve_count {
-                super::push_geometry_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("boundary pcurve pointer is invalid"),
-                );
+                if given_up {
+                    super::push_retained_geometry_loss(
+                        &mut losses,
+                        entry,
+                        format_args!("boundary pcurve pointer is invalid"),
+                    );
+                } else {
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Unreadable,
+                        format_args!("boundary pcurve pointer is invalid"),
+                    );
+                }
                 valid = false;
                 break;
             }
@@ -2246,6 +2208,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2266,6 +2229,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("trimmed-surface support pointer is invalid"),
                 );
                 continue;
@@ -2278,6 +2242,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("trimmed-surface outer-boundary flag is not 0 or 1"),
                 );
                 continue;
@@ -2286,6 +2251,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("trimmed-surface inner-boundary count is invalid"),
                 );
                 continue;
@@ -2299,6 +2265,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("trimmed-surface outer-boundary pointer is invalid"),
                     );
                     continue;
@@ -2307,9 +2274,11 @@ pub(super) fn project(
                     .get(&outer)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_geometry_loss(
+                    super::push_geometry_loss_needing(
                         &mut losses,
                         entry,
+                        (!entries.contains_key(&outer)).then_some(outer),
+                        Cause::Unreadable,
                         format_args!(
                             "trimmed-surface outer-boundary pointer does not target a Type 142 \
                              Form 0 entity"
@@ -2326,6 +2295,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!(
                         "trimmed-surface parameter-domain outer-boundary pointer is neither zero \
                          nor omitted"
@@ -2339,6 +2309,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("trimmed-surface inner-boundary pointer is invalid"),
                     );
                     valid = false;
@@ -2348,9 +2319,11 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    super::push_geometry_loss(
+                    super::push_geometry_loss_needing(
                         &mut losses,
                         entry,
+                        (!entries.contains_key(&sequence)).then_some(sequence),
+                        Cause::Unreadable,
                         format_args!(
                             "trimmed-surface inner-boundary pointer does not target a Type 142 \
                              Form 0 entity"
@@ -2374,6 +2347,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("bounded-surface representation type is not 0 or 1"),
                 );
                 continue;
@@ -2382,6 +2356,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("bounded-surface support pointer is invalid"),
                 );
                 continue;
@@ -2390,6 +2365,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("bounded-surface boundary count is not positive"),
                 );
                 continue;
@@ -2401,6 +2377,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("bounded-surface boundary pointer is invalid"),
                     );
                     valid = false;
@@ -2410,7 +2387,16 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("bounded-surface boundary pointer does not target a Type 141 Form 0 entity"));
+                    super::push_geometry_loss_needing(
+                        &mut losses,
+                        entry,
+                        (!entries.contains_key(&sequence)).then_some(sequence),
+                        Cause::Unreadable,
+                        format_args!(
+                            "bounded-surface boundary pointer does not target a Type 141 Form 0 \
+                             entity"
+                        ),
+                    );
                     valid = false;
                     break;
                 }
@@ -2428,9 +2414,11 @@ pub(super) fn project(
                 }) {
                     sequences.push(sequence);
                 } else {
-                    super::push_geometry_loss(
+                    super::push_geometry_loss_needing(
                         &mut losses,
                         entry,
+                        (!boundaries.contains_key(&sequence)).then_some(sequence),
+                        Cause::Unreadable,
                         format_args!("bounded-surface representation disagrees with its boundary"),
                     );
                     valid = false;
@@ -2463,9 +2451,11 @@ pub(super) fn project(
             })
             .transpose()?
         else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                Some(surface_sequence),
+                Cause::Undecoded,
                 format_args!("trimmed-surface support carrier is missing"),
             );
             continue;
@@ -2497,11 +2487,14 @@ pub(super) fn project(
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut linear_boundary_candidates = Vec::new();
         let mut face_tolerance = 0.0_f64;
+        let mut drafts = Vec::new();
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
-                super::push_geometry_loss(
+                super::push_geometry_loss_needing(
                     &mut losses,
                     entry,
+                    Some(sequence),
+                    Cause::Undecoded,
                     format_args!("trimmed-surface boundary definition is missing"),
                 );
                 valid = false;
@@ -2511,6 +2504,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("boundary definition names a different support surface"),
                 );
                 valid = false;
@@ -2521,9 +2515,11 @@ pub(super) fn project(
                 let model_curve_id =
                     crate::ids::curve(&crate::ids::Stem::directory(segment.model_curve));
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
-                    super::push_geometry_loss(
+                    super::push_geometry_loss_needing(
                         &mut losses,
                         entry,
+                        Some(segment.model_curve),
+                        Cause::Undecoded,
                         format_args!("boundary model curve has no bounded edge"),
                     );
                     valid = false;
@@ -2531,6 +2527,7 @@ pub(super) fn project(
                 };
                 let mut pcurves = Some(Vec::new());
                 let mut pcurve_refusal = None;
+                let mut missing_pcurve = None;
                 for sequence in &segment.pcurves {
                     let resolved =
                         match shared_pcurves.geometry.entry((*sequence, surface_sequence)) {
@@ -2569,6 +2566,14 @@ pub(super) fn project(
                             }
                         }
                         Ok(None) => {
+                            let curve_id =
+                                crate::ids::curve(&crate::ids::Stem::directory(*sequence));
+                            if carrier_index
+                                .curves(curve_id.as_str(), cadmpeg_ir::index::StandardIndex)
+                                .is_none()
+                            {
+                                missing_pcurve = Some(*sequence);
+                            }
                             pcurves = None;
                             break;
                         }
@@ -2583,6 +2588,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("boundary parameter curve states no NURBS carrier: {error}"),
                     );
                     valid = false;
@@ -2591,9 +2597,11 @@ pub(super) fn project(
                 let mut pcurves = match pcurves {
                     Some(pcurves) => pcurves,
                     None if segment.parameter_curves_authoritative => {
-                        super::push_geometry_loss(
+                        super::push_geometry_loss_needing(
                             &mut losses,
                             entry,
+                            missing_pcurve,
+                            Cause::Undecoded,
                             format_args!("boundary parameter curve has no NURBS carrier"),
                         );
                         valid = false;
@@ -2646,12 +2654,13 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("checking the boundary parameter curve against the support parameter bounds exceeds MAX_BEZIER_BLENDS"),
                         );
                         valid = false;
                         break;
                     }
-                    super::push_geometry_loss(
+                    super::push_retained_geometry_loss(
                         &mut losses,
                         entry,
                         format_args!(
@@ -2663,10 +2672,11 @@ pub(super) fn project(
                 }
                 if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
-                        super::push_attributed_loss(
+                        super::push_given_up_loss(
                             &mut losses,
                             entry,
                             IgesLossCode::BoundaryPcurveOutsideSupportDomain,
+                            Cause::Undecoded,
                             format_args!(
                                 "IGES entity type {} form {}: boundary parameter curve leaves the \
                                  declared support parameter bounds",
@@ -2708,6 +2718,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("boundary model-curve endpoints are missing"),
                         );
                         valid = false;
@@ -2717,6 +2728,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!(
                                 "boundary model-curve edge range does not evaluate to its vertices"
                             ),
@@ -2728,6 +2740,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!(
                                 "boundary model curve maps to multiple ambiguous edge occurrences"
                             ),
@@ -2739,6 +2752,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!(
                                 "curve-on-surface carriers disagree beyond the minimum resolution"
                             ),
@@ -2805,6 +2819,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("ordered boundary segments do not form a closed ring"),
                 );
                 valid = false;
@@ -2819,17 +2834,32 @@ pub(super) fn project(
                 surface_kind,
                 ctx,
             )?);
-            let winding = if surface_kind == BoundarySurfaceKind::Trimmed {
-                winding::trimmed_boundary_winding(
-                    &items,
-                    explicit_outer_sequence == Some(sequence),
-                    &carrier_index,
-                    &support_geometry,
-                    ctx,
-                )?
-            } else {
-                winding::BoundaryWinding::Kept
-            };
+            drafts.push((boundary_index, sequence, items, sewing_tolerance));
+        }
+        if !valid {
+            continue;
+        }
+        let windings = if surface_kind == BoundarySurfaceKind::Trimmed {
+            winding::trimmed_boundary_windings(
+                drafts.iter().map(|(_, sequence, items, _)| {
+                    (items.as_slice(), explicit_outer_sequence == Some(*sequence))
+                }),
+                &carrier_index,
+                &support_geometry,
+                support_parameter_bounds.map_or([None, None], |bounds| {
+                    [[0, 1], [2, 3]].map(|[low, high]| {
+                        bounds[low].zip(bounds[high]).map(|(low, high)| [low, high])
+                    })
+                }),
+                global.minimum_resolution_mm(),
+                ctx,
+            )?
+        } else {
+            vec![winding::BoundaryWinding::Kept; drafts.len()]
+        };
+        for ((boundary_index, sequence, items, sewing_tolerance), winding) in
+            drafts.into_iter().zip(windings)
+        {
             let reversal = match winding {
                 winding::BoundaryWinding::Kept => Ok(false),
                 winding::BoundaryWinding::Reversed => use_ranges(&items, true).map(|_| true),
@@ -2849,7 +2879,12 @@ pub(super) fn project(
             let use_ranges = match use_ranges(&items, runs_backward) {
                 Ok(use_ranges) => use_ranges,
                 Err(reason) => {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{reason}"));
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Undecoded,
+                        format_args!("{reason}"),
+                    );
                     valid = false;
                     break;
                 }
@@ -2876,18 +2911,21 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("boundary sewing tolerance is invalid"),
                 );
                 valid = false;
                 break;
             };
-            if source_endpoints.len() > MAX_BOUNDARY_CLUSTER_ENDPOINTS {
+            if source_endpoints.len() > limits.boundary_cluster_endpoints {
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!(
-                        "boundary has {} segment endpoints; endpoint clustering is limited to {MAX_BOUNDARY_CLUSTER_ENDPOINTS}",
-                        source_endpoints.len()
+                        "boundary has {} segment endpoints; endpoint clustering is limited to {}",
+                        source_endpoints.len(),
+                        limits.boundary_cluster_endpoints
                     ),
                 );
                 valid = false;
@@ -2912,6 +2950,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!(
                             "boundary endpoint tolerance neighborhoods are non-transitive"
                         ),
@@ -2936,7 +2975,12 @@ pub(super) fn project(
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {
-                        super::push_geometry_loss(&mut losses, entry, format_args!("{error}"));
+                        super::push_geometry_loss(
+                            &mut losses,
+                            entry,
+                            Cause::Undecoded,
+                            format_args!("{error}"),
+                        );
                         valid = false;
                         break;
                     }
@@ -2964,6 +3008,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("{}", PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
                     );
                     valid = false;
@@ -3029,6 +3074,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("boundary loop contains no coedges"),
                 );
                 valid = false;
@@ -3059,6 +3105,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "validating {ring_points} linear boundary points does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance"
                 ),
@@ -3085,6 +3132,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "{}",
                     if surface_kind == BoundarySurfaceKind::Trimmed {
@@ -3121,6 +3169,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("{}", super::non_resource_error(error)?),
                         );
                         continue;
@@ -3134,7 +3183,12 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{error}"));
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Undecoded,
+                        format_args!("{error}"),
+                    );
                     continue;
                 }
             };
@@ -3165,6 +3219,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("face tolerance is invalid"),
                 );
                 continue;
@@ -3241,6 +3296,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("trimmed sheet candidate failed neutral validation"),
             );
             continue;

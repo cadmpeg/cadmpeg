@@ -56,6 +56,37 @@ fn design_identities(ir: &CadIr) -> std::collections::HashSet<&str> {
     crate::document::every_arena_registry!(collect)
 }
 
+/// The positions of the referential-integrity findings of each owner, kept
+/// up to date with the findings list on each read.
+#[derive(Default)]
+struct OwnerFindings {
+    by_owner: std::collections::HashMap<String, Vec<usize>>,
+    seen: usize,
+}
+
+impl OwnerFindings {
+    /// Whether a referential-integrity finding of `owner` names `target`.
+    fn names(&mut self, findings: &[Finding], owner: &str, target: &str) -> bool {
+        for (position, finding) in findings.iter().enumerate().skip(self.seen) {
+            if finding.check != Check::ReferentialIntegrity {
+                continue;
+            }
+            if let Some(entity) = &finding.entity {
+                self.by_owner
+                    .entry(entity.clone())
+                    .or_default()
+                    .push(position);
+            }
+        }
+        self.seen = findings.len();
+        self.by_owner.get(owner).is_some_and(|positions| {
+            positions
+                .iter()
+                .any(|&position| findings[position].message.contains(target))
+        })
+    }
+}
+
 /// Checks that every typed reference of a `geometry` or `model` record
 /// resolves. On a document read from CADIR JSON, which holds no record of the
 /// arenas the wire omits, a reference of an id type of those arenas resolves
@@ -75,17 +106,14 @@ pub(super) fn check_typed_references(
             .join(", ");
         (arenas, design_identities(ir))
     });
+    let mut owned = OwnerFindings::default();
     macro_rules! check_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.$home.$field {
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
                     if index.contains(target) { return Ok(()); }
-                    for finding in findings.iter() {
-                        if finding.check != Check::ReferentialIntegrity { continue; }
-                        if finding.entity.as_deref() != Some(owner) { continue; }
-                        if finding.message.contains(target) { return Ok(()); }
-                    }
+                    if owned.names(findings, owner, target) { return Ok(()); }
                     match &not_read {
                         Some((omitted, design)) if targets_omitted_arena() => {
                             if !design.contains(target) {
@@ -117,6 +145,7 @@ mod tests {
     use crate::math::Point3;
     use crate::report::{check::Check, Severity};
     use crate::tessellation::{Tessellation, TessellationMesh, TessellationTextureAssignment};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn unresolved_asset_reference_is_reported() {
@@ -202,7 +231,7 @@ mod tests {
     fn a_reference_into_an_omitted_arena_of_a_cadir_read_document_is_a_warning() {
         let mut ir = read_from_cadir();
         let mut definition: crate::products::ProductDefinition =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": "test:model:product#owner", "bom_properties": {},
                 "storage": {"kind": "embedded"}, "bodies": [], "occurrences": [],
                 "instance_bodies": [], "representations": []

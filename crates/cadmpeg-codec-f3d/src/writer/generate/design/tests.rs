@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, MissingStateForm};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, MissingStateForm};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -37,7 +37,7 @@ use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::{add_empty_f3d_native, f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 const SKETCH: &str = "test:design:feature#sketch";
@@ -83,6 +83,7 @@ fn parameter(
         id: parameter_id(key),
         scope: root(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -206,10 +207,7 @@ fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
 fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(ir, None).with_missing_states(missing_states),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(ir, None).with_missing_states(missing_states))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec
@@ -368,6 +366,26 @@ fn an_illegal_name_is_renamed() {
     assert!(renamed
         .message
         .contains("`wall thickness` -> `wall_thickness`"));
+}
+
+/// The parameters of one owner take their names in the order of their
+/// stated positions.
+#[test]
+fn parameters_are_named_in_the_order_of_their_positions() {
+    let mut ir = scoped_cube();
+    for (key, position, millimetres) in [("a", 1, 3.0), ("b", 0, 4.0)] {
+        let mut parameter = parameter(
+            key,
+            "x y",
+            neutral(number(millimetres, Some(UnitSymbol::Mm))),
+            Some(millimetres),
+        );
+        parameter.position = Some(position);
+        ir.design.parameters.push(parameter);
+    }
+    let (_, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "x_y", "4 mm", 4.0);
+    assert_length(&decoded_ir, "x_y_2", "3 mm", 3.0);
 }
 
 #[test]
@@ -572,10 +590,13 @@ fn edited_design_parameters_replace_the_native_records() {
     });
     ir.design.parameters[0].definition = neutral(number(70.0, Some(UnitSymbol::Mm)));
     ir.design.parameters[0].value = Some(ParameterValue::Number(crate::test_support::real(70.0)));
+    let record = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0";
+    // The design parameter restates the native record.
+    ir.design.parameters[0].id = crate::ids::neutral_parameter_id_of(record, 700);
     f3d_native_mut(&mut ir).design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
-                id: "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0".into(),
+                id: record.into(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .expect("class tag"),
@@ -614,6 +635,49 @@ fn edited_design_parameters_replace_the_native_records() {
         "{:#?}",
         report.losses
     );
+}
+
+#[test]
+fn planned_parameters_with_no_native_design_record_are_written_and_listed() {
+    let mut ir = scoped_cube();
+    add_empty_f3d_native(&mut ir);
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
+            product_definition: None,
+            id: parameter_id("legacy"),
+            owner: None,
+            ordinal: 0,
+            name: "Legacy".into(),
+            expression: "1 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    let (report, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "Width", "60 mm", 60.0);
+    let native = f3d_native(&decoded_ir);
+    let listed = native
+        .design_types
+        .iter()
+        .find(|row| row.type_guid.as_str() == super::types::PARAMETER.guid)
+        .expect("parameter type row")
+        .entities
+        .values()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert!(!native.design_parameters.is_empty());
+    for parameter in &native.design_parameters {
+        assert!(
+            listed.contains(&u64::from(parameter.record_index)),
+            "{}: {:#?}",
+            parameter.name(),
+            report.losses
+        );
+    }
 }
 
 /// The Design stream of a written archive, and the frame of the one record

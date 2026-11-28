@@ -2,21 +2,25 @@
 //! Synthetic REST bundles only; fixture provenance and generator live in fixtures/.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
+use super::up_to_next::up_to_next;
 use crate::reader::Model;
 use crate::test_support::*;
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
-use serde_json::{json, Value};
+use cadmpeg_ir::unknown::part::Cause;
+use serde_json::Value;
 
-fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
+pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
     let mut report = Report::default();
     let model = read_bytes(Path::new("test.onshape-bundle"), bytes, &mut report)?;
     Ok((model, report))
 }
 
-fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
+pub(super) fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..archive.len() {
@@ -24,9 +28,9 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
         let mut data = Vec::new();
         member.read_to_end(&mut data).unwrap();
         if member.name().unwrap().ends_with(".json") {
-            let mut value = cadmpeg_core::serde_erase::json::from_slice(&data).unwrap();
+            let mut value = json::from_slice(&data).unwrap();
             edit(&member.name().unwrap(), &mut value);
-            data = cadmpeg_core::serde_erase::json::to_vec(&value).unwrap();
+            data = json::to_vec(&value).unwrap();
         }
         zip.start_file(
             member.name().unwrap().as_ref(),
@@ -38,7 +42,7 @@ fn changed(bytes: &[u8], mut edit: impl FnMut(&str, &mut Value)) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-fn timeline(model: &Model) -> Value {
+pub(super) fn timeline(model: &Model) -> Value {
     let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir);
     wire["model"]["features"]
         .as_array_mut()
@@ -47,7 +51,39 @@ fn timeline(model: &Model) -> Value {
     wire
 }
 
-fn kinds(model: &Model) -> Vec<String> {
+/// The design operation kind of each member of the timeline, in order.
+pub(super) fn design_kinds(model: &Model) -> Vec<String> {
+    let [cadmpeg_ir::design::container::Container::Ordered { members, .. }] =
+        model.ir.design.containers.as_slice()
+    else {
+        panic!("one timeline");
+    };
+    members
+        .iter()
+        .map(|member| {
+            let cadmpeg_ir::design::refs::Member::Feature(id) = member else {
+                panic!("a feature member");
+            };
+            let feature = model
+                .ir
+                .design
+                .features
+                .iter()
+                .find(|f| &f.id == id)
+                .unwrap();
+            let operation = json::to_value(&feature.definition.operation).unwrap();
+            match operation["kind"].as_str().unwrap() {
+                "unresolved" => format!(
+                    "unresolved:{}",
+                    operation["value"]["family"].as_str().unwrap()
+                ),
+                kind => kind.to_owned(),
+            }
+        })
+        .collect()
+}
+
+pub(super) fn kinds(model: &Model) -> Vec<String> {
     timeline(model)["model"]["features"]
         .as_array()
         .unwrap()
@@ -63,23 +99,41 @@ fn kinds(model: &Model) -> Vec<String> {
 
 #[test]
 fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
-    for (name, expected) in [
-        ("plate-fillet", vec!["sketch", "extrude", "fillet"]),
-        ("revolve", vec!["sketch", "revolve"]),
-        ("hole", vec!["sketch", "extrude", "sketch", "hole"]),
-        ("unsupported", vec!["sketch", "extrude", "native"]),
+    for (name, expected, designed) in [
+        (
+            "plate-fillet",
+            vec!["sketch", "extrude", "fillet"],
+            vec!["sketch", "extrude", "fillet"],
+        ),
+        (
+            "revolve",
+            vec!["sketch", "revolve"],
+            vec!["sketch", "revolve"],
+        ),
+        (
+            "hole",
+            vec!["sketch", "extrude", "sketch", "hole"],
+            vec!["sketch", "extrude", "sketch", "hole"],
+        ),
+        (
+            "unsupported",
+            vec!["sketch", "extrude", "native"],
+            vec!["sketch", "extrude", "native"],
+        ),
     ] {
         let (model, report) = read(&fixture(name)).unwrap();
         assert_eq!(kinds(&model), expected, "{name}: {:?}", report.losses());
+        assert_eq!(
+            design_kinds(&model),
+            designed,
+            "{name}: {:?}",
+            report.losses()
+        );
         assert_eq!(model.ir.geometry.bodies.len(), 1);
         let wire = timeline(&model);
-        let written = cadmpeg_core::serde_erase::json::to_value(&model.ir).unwrap();
-        let roundtrip: cadmpeg_ir::CadIr =
-            cadmpeg_core::serde_erase::json::from_value(written.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&roundtrip).unwrap(),
-            written
-        );
+        let written = json::to_value(&model.ir).unwrap();
+        let roundtrip: cadmpeg_ir::CadIr = json::from_value(written.clone()).unwrap();
+        assert_eq!(json::to_value(&roundtrip).unwrap(), written);
         assert!(wire["model"].get("bodies").is_none());
         assert!(!wire["geometry"]["edges"].as_array().unwrap().is_empty());
         for edge in wire["geometry"]["edges"].as_array().unwrap() {
@@ -101,7 +155,11 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
             .as_ref()
             .unwrap()
             .starts_with("ISO-10303-21;"));
-        let losses: Vec<_> = report
+        let unresolved = designed
+            .iter()
+            .filter(|kind| kind.starts_with("unresolved:"))
+            .count();
+        let (design, losses): (Vec<_>, Vec<_>) = report
             .losses()
             .iter()
             .filter(|loss| {
@@ -109,7 +167,10 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
                     .as_deref()
                     .is_some_and(|s| s.starts_with("onshape/"))
             })
-            .collect();
+            .partition(|loss| {
+                loss.code.as_deref() == Some("onshape/history.design-operation-unresolved")
+            });
+        assert_eq!(design.len(), unresolved, "{name}: {design:?}");
         if name == "unsupported" {
             assert_eq!(losses.len(), 1);
             assert_eq!(
@@ -216,13 +277,19 @@ fn rollback_edge_sampling_retains_ids_and_reports_each_failure() {
         assert_eq!(samples.len(), 2);
         assert_eq!(samples[0]["edge"], "circle-edge");
         assert_eq!(samples[1]["edge"], "upright");
+        assert_eq!(
+            design_kinds(&model),
+            ["sketch", "extrude", "fillet"],
+            "{failure}"
+        );
         let losses: Vec<_> = report
             .losses()
             .iter()
             .filter(|loss| {
-                loss.code
-                    .as_deref()
-                    .is_some_and(|code| code.starts_with("onshape/"))
+                loss.code.as_deref().is_some_and(|code| {
+                    code.starts_with("onshape/")
+                        && code != "onshape/history.design-operation-unresolved"
+                })
             })
             .collect();
         assert_eq!(losses.len(), 1, "{failure}: {losses:?}");
@@ -323,14 +390,14 @@ fn consistency_flag_reports_mixed_snapshots_and_preserves_legacy_v1() {
         model.ir.geometry.bodies.len(),
         original.ir.geometry.bodies.len()
     );
+    assert!(report.losses().iter().any(|loss| loss.states(
+        "onshape/history.not-supported",
+        Charge::GivenUp(Cause::Unreadable)
+    )));
     assert!(report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/history.not-supported")));
-    assert!(report
-        .losses()
-        .iter()
-        .any(|loss| loss.code.as_deref() == Some("onshape/record.malformed")));
+        .any(|loss| loss.states("onshape/record.malformed", Charge::Note)));
     for flag in [Value::Null, json!("false"), json!(0)] {
         let malformed = changed(&legacy, |path, value| {
             if path == "manifest.json" {
@@ -440,6 +507,15 @@ fn up_to_face_uses_analytic_boundaries_of_that_feature_input() {
         termination["face"]["value"]["state"],
         "onshape:model:input#toFace"
     );
+    let design = cadmpeg_core::serde_erase::json::to_value(
+        &model.ir.design.features[2].definition.operation,
+    )
+    .unwrap();
+    assert_eq!(
+        design["value"]["span"]["end"],
+        json!({"kind":"to_geometry","value":{"extend":{"kind":"literal","value":true},"target":{"at":{"kind":"input"},"picks":{"kind":"named","value":[
+            {"target":{"kind":"native","value":{}},"native":{"codec":"onshape","value":{"kind":"text","value":"top"}}}]}}}})
+    );
     assert_eq!(
         wire["model"]["feature_input_topologies"][0]["edge_geometry"][0]["faces"],
         json!(["top"])
@@ -456,147 +532,6 @@ fn up_to_face_uses_analytic_boundaries_of_that_feature_input() {
         .losses()
         .iter()
         .any(|loss| loss.detail.contains("non-planar terminating")));
-}
-
-/// A synthetic box body in metres: twelve straight edges and six planar faces whose
-/// `orientation` says whether the outward side follows the stored surface normal.
-fn box_body(low: [f64; 3], high: [f64; 3], tag: &str) -> (Vec<Value>, Vec<Value>) {
-    let corner = |i: usize| -> [f64; 3] {
-        std::array::from_fn(|axis| {
-            if i >> axis & 1 == 1 {
-                high[axis]
-            } else {
-                low[axis]
-            }
-        })
-    };
-    let point = |p: [f64; 3]| json!({"x": p[0], "y": p[1], "z": p[2]});
-    let mut edges = Vec::new();
-    let mut ends = Vec::new();
-    for a in 0..8usize {
-        for axis in 0..3 {
-            if a >> axis & 1 == 0 {
-                let b = a | 1 << axis;
-                let (p, q) = (corner(a), corner(b));
-                let mut direction = [0.0; 3];
-                direction[axis] = 1.0;
-                edges.push(json!({"id": format!("{tag}e{a}{b}"), "curve": {"type": "LINE", "origin": point(p), "direction": point(direction)},
-                    "geometry": {"startPoint": point(p), "endPoint": point(q), "midPoint": point(std::array::from_fn(|j| f64::midpoint(p[j], q[j])))}}));
-                ends.push((a, b));
-            }
-        }
-    }
-    let mut faces = Vec::new();
-    for axis in 0..3 {
-        for (side, name) in [(0, "low"), (1, "high")] {
-            let mut normal = [0.0; 3];
-            normal[axis] = 1.0;
-            let (min, max) = (
-                corner(side << axis),
-                corner(7 & !(usize::from(side == 0) << axis)),
-            );
-            let coedges: Vec<_> = ends
-                .iter()
-                .filter(|(a, b)| a >> axis & 1 == side && b >> axis & 1 == side)
-                .map(|(a, b)| json!({"edgeId": format!("{tag}e{a}{b}"), "orientation": true}))
-                .collect();
-            faces.push(
-                json!({"id": format!("{tag}{name}{axis}"), "orientation": side == 1,
-                "surface": {"type": "PLANE", "origin": point(min), "normal": point(normal)},
-                "box": {"minCorner": point(min), "maxCorner": point(max)},
-                "loops": [{"isOuter": true, "coedges": coedges}]}),
-            );
-        }
-    }
-    (edges, faces)
-}
-
-fn up_to_next(operation: &str, extra: Option<([f64; 3], [f64; 3])>) -> Vec<u8> {
-    changed(&fixture("plate-fillet"), |path, value| {
-        if path.ends_with("features.json") {
-            value["features"][2] = json!({"btType": "BTMFeature-134", "featureType": "extrude", "featureId": "toNext", "name": "To next", "parameters": [
-                {"parameterId": "bodyType", "value": "SOLID"}, {"parameterId": "operationType", "value": operation},
-                {"parameterId": "entities", "queries": [{"btType": "BTMIndividualSketchRegionQuery-140", "featureId": "Base sketch"}]},
-                {"parameterId": "endBound", "value": "UP_TO_NEXT"}
-            ]});
-        }
-        if path.ends_with("bodydetails/2.json") {
-            let (mut edges, mut faces) = box_body([0.0; 3], [0.02, 0.01, 0.002], "");
-            if let Some((low, high)) = extra {
-                let (more_edges, more_faces) = box_body(low, high, "boss");
-                edges.extend(more_edges);
-                faces.extend(more_faces);
-            }
-            value["bodies"][0]["edges"] = json!(edges);
-            value["bodies"][0]["faces"] = json!(faces);
-        }
-    })
-}
-
-#[test]
-fn up_to_next_ends_on_the_first_face_every_profile_ray_meets() {
-    for bytes in [
-        up_to_next("REMOVE", None),
-        up_to_next("NEW", None),
-        up_to_next(
-            "REMOVE",
-            Some(([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001])),
-        ),
-    ] {
-        let (model, report) = read(&bytes).unwrap();
-        assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
-        assert!(report.losses().iter().any(|loss| loss.code.as_deref()
-            == Some("onshape/history.not-supported")
-            && loss
-                .detail
-                .contains("exact coverage and first intersection")));
-    }
-}
-
-#[test]
-fn up_to_next_retains_a_slanted_planar_end_for_the_writer_to_gate() {
-    // Raise the top of a synthetic box linearly along X, leaving its bottom on XY.
-    let bytes = changed(&up_to_next("REMOVE", None), |path, value| {
-        if !path.ends_with("bodydetails/2.json") {
-            return;
-        }
-        let point = |p: &mut Value| {
-            let x = p["x"].as_f64().unwrap();
-            let z = p["z"].as_f64().unwrap();
-            p["z"] = json!(z * (1.0 + 10.0 * x));
-        };
-        for edge in value["bodies"][0]["edges"].as_array_mut().unwrap() {
-            for key in ["startPoint", "midPoint", "endPoint"] {
-                point(&mut edge["geometry"][key]);
-            }
-            point(&mut edge["curve"]["origin"]);
-            let start = &edge["geometry"]["startPoint"];
-            let end = &edge["geometry"]["endPoint"];
-            edge["curve"]["direction"] = json!({
-                "x": end["x"].as_f64().unwrap() - start["x"].as_f64().unwrap(),
-                "y": end["y"].as_f64().unwrap() - start["y"].as_f64().unwrap(),
-                "z": end["z"].as_f64().unwrap() - start["z"].as_f64().unwrap()
-            });
-        }
-        for face in value["bodies"][0]["faces"].as_array_mut().unwrap() {
-            point(&mut face["surface"]["origin"]);
-            point(&mut face["box"]["minCorner"]);
-            point(&mut face["box"]["maxCorner"]);
-            if face["id"] == "high2" {
-                face["surface"]["normal"] = json!({"x": -0.02, "y": 0.0, "z": 1.0});
-            }
-        }
-    });
-    let (model, report) = read(&bytes).unwrap();
-    assert_eq!(
-        kinds(&model),
-        ["sketch", "extrude", "native"],
-        "{:?}",
-        report.losses()
-    );
-    assert!(report.losses().iter().any(|loss| loss
-        .detail
-        .contains("exact coverage and first intersection")));
 }
 
 #[test]
@@ -1144,7 +1079,15 @@ fn thin_extrusions_refuse_unscoped_design_construction() {
                     )
                     .unwrap();
                 let (ir, report, fidelity) = result.into_parts();
-                assert!(ir.design.features.is_empty());
+                assert_eq!(
+                    crate::test_support::review::design_operation(&ir, "Plate"),
+                    crate::test_support::review::unresolved("extrude")
+                );
+                assert!(ir.design.sketches.iter().all(|sketch| ir
+                    .design
+                    .features
+                    .iter()
+                    .any(|feature| feature.id == sketch.owner)));
                 let wire = cadmpeg_test_support::wire::in_memory_json(&ir);
                 let feature = wire["model"]["features"]
                     .as_array()
@@ -1405,11 +1348,7 @@ fn repeated_exterior_consumers_exhaust_the_bundle_budget_early() {
         .unwrap()
         .iter()
         .filter_map(|f| f.pointer("/definition/value/value/profile/value/value/regions"))
-        .map(|regions| {
-            cadmpeg_core::serde_erase::json::to_vec(regions)
-                .unwrap()
-                .len()
-        })
+        .map(|regions| json::to_vec(regions).unwrap().len())
         .sum();
     eprintln!("Cumulative recovery: refused at consumer {first_loss} of 129 (128 extra holes); emitted {boundary_bytes} region JSON bytes; reader {elapsed:?}");
     assert!(
@@ -1510,60 +1449,6 @@ fn overlapping_dividers_are_not_lost_as_a_zero_area_ring() {
         .losses()
         .iter()
         .any(|l| l.detail.contains("open divider")));
-}
-
-#[test]
-fn up_to_next_refuses_a_narrow_recess_and_an_uncovered_profile_interior() {
-    for interior in [false, true] {
-        let bytes = changed(&up_to_next("REMOVE", None), |path, response| {
-            if !path.ends_with("bodydetails/2.json") {
-                return;
-            }
-            let low = if interior {
-                [0.007, 0.004, 0.002]
-            } else {
-                [0.001, 0.0, 0.002]
-            };
-            let high = if interior {
-                [0.008, 0.006, 0.004]
-            } else {
-                [0.002, 0.001, 0.004]
-            };
-            let (edges, faces) = box_body(low, high, "recess");
-            let body = &mut response["bodies"][0];
-            let boundary = faces.iter().find(|f| f["id"] == "recesslow2").unwrap()["loops"][0]
-                ["coedges"]
-                .clone();
-            let first_face = body["faces"]
-                .as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .find(|f| f["id"] == "high2")
-                .unwrap();
-            first_face["loops"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"isOuter":false,"coedges":boundary}));
-            body["edges"].as_array_mut().unwrap().extend(edges);
-            body["faces"]
-                .as_array_mut()
-                .unwrap()
-                .extend(faces.into_iter().filter(|f| f["id"] != "recesslow2"));
-        });
-        let result = crate::test_support::review::decode(&bytes);
-        let wire = crate::test_support::review::wire(&result);
-        assert_eq!(
-            wire["model"]["features"][2]["definition"]["value"]["kind"],
-            "native"
-        );
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|l| l.code.to_string() == "onshape/history.not-supported"
-                && l.message.contains("exact coverage and first intersection")));
-        crate::test_support::review::validate(result);
-    }
 }
 
 #[test]

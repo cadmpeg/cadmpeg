@@ -12,6 +12,7 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -343,10 +344,7 @@ fn fixed_distance_and_through_all_project_on_opposite_sides() {
         second.termination,
         LinearTermination::ThroughAll {}
     ));
-    let wire = cadmpeg_core::serde_erase::json::to_string(
-        &DesignExtrudeExtent::TwoSidedDistanceThroughAll,
-    )
-    .unwrap();
+    let wire = json::to_string(&DesignExtrudeExtent::TwoSidedDistanceThroughAll).unwrap();
     assert_eq!(wire, "\"two_sided_distance_through_all\"");
     assert_eq!(
         serde_json::from_str::<DesignExtrudeExtent>(&wire).unwrap(),
@@ -596,8 +594,8 @@ fn signed_distance_lanes_project_positive_travel_on_each_side() {
     use cadmpeg_ir::features::extents::ExtrudeDirection;
     for (along, against, first_length, second_length, reversed) in [
         (4.4, 3.7, 44.0, 37.0, false),
-        (-4.4, 3.7, 44.0, 37.0, true),
-        (4.4, -3.7, 44.0, 37.0, false),
+        // Distances of opposite sign are one-sided
+        // (two_sided_distances_of_opposite_sign_extrude_between_their_ends).
         (-4.4, -3.7, 44.0, 37.0, true),
     ] {
         let scope = fixed_extrude(
@@ -677,4 +675,83 @@ fn zero_first_side_uses_the_reversed_second_side_magnitude() {
             })) if length.get() == 37.0
         ));
     }
+}
+
+/// Projects a fixed two-sided distance scope with the given side distances and
+/// first-side taper (centimetres and radians, as stored).
+fn two_sided_with_sides(along: f64, against: f64, taper: f64) -> Option<FeatureDefinition> {
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters::default(),
+    );
+    let parameter = |kind: &str, unit: &str, value| {
+        crate::design::decode::parameters::parse_design_parameter_record(
+            &crate::design::test_support::parameter_record(
+                Some(44),
+                "value",
+                kind,
+                Some(unit),
+                "d1",
+                value,
+            ),
+        )
+        .unwrap()
+    };
+    let along = parameter("AlongDistance", "mm", along);
+    let against = parameter("AgainstDistance", "mm", against);
+    let taper = parameter("TaperAngle", "deg", taper);
+    let placement = placement();
+    crate::test_support::with_decode_context(|ctx| {
+        project_extrude(
+            ctx,
+            &scope,
+            &[(0, &along), (1, &against), (2, &taper)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+            &[],
+        )
+    })
+    .unwrap()
+}
+
+/// The start offset, the one side's length and whether it travels against the
+/// profile normal, of a one-sided extrude from an offset profile plane.
+fn offset_one_side(definition: Option<FeatureDefinition>) -> (f64, f64, bool) {
+    let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        direction,
+        start: cadmpeg_ir::features::extents::ExtrudeStart::OffsetProfilePlane { offset },
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    })) = definition
+    else {
+        panic!("one-sided Extrude from an offset profile plane");
+    };
+    let LinearTermination::Blind { length } = side.termination else {
+        panic!("blind side");
+    };
+    (
+        offset.get(),
+        length.get(),
+        direction == cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {},
+    )
+}
+
+#[test]
+fn two_sided_distances_of_opposite_sign_extrude_between_their_ends() {
+    // Side one ends at `along`, side two at `-against`, both on the profile
+    // normal: -10 mm and -4 mm put the solid between -10 and -4 mm.
+    let (offset, length, reversed) = offset_one_side(two_sided_with_sides(-1.0, 0.4, 0.0));
+    assert!((offset + 4.0).abs() < 1e-12 && (length - 6.0).abs() < 1e-12 && reversed);
+    // +10 mm and +4 mm: between 4 and 10 mm, along the normal.
+    let (offset, length, reversed) = offset_one_side(two_sided_with_sides(1.0, -0.4, 0.0));
+    assert!((offset - 4.0).abs() < 1e-12 && (length - 6.0).abs() < 1e-12 && !reversed);
+    // The nearer end may be either side's.
+    let (offset, length, reversed) = offset_one_side(two_sided_with_sides(-0.4, 1.0, 0.0));
+    assert!((offset + 4.0).abs() < 1e-12 && (length - 6.0).abs() < 1e-12 && reversed);
+}
+
+#[test]
+fn two_sided_distances_of_opposite_sign_with_a_draft_stay_native() {
+    assert!(two_sided_with_sides(-1.0, 0.4, 0.1).is_none());
 }

@@ -222,6 +222,7 @@ pub(crate) fn patch_payload(
     block_id: &str,
     payload: &mut [u8],
     edited: &dyn Fn(&cadmpeg_ir::features::ParameterId) -> bool,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
 
@@ -240,7 +241,7 @@ pub(crate) fn patch_payload(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);
     };
-    let native = crate::native::SldprtNative::load(namespace, ir.tolerances.linear)
+    let native = crate::native::SldprtNative::load_under(namespace, limits, ir.tolerances.linear)
         .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
@@ -314,8 +315,8 @@ pub(crate) fn patch_payload(
                 continue;
             }
         };
-        FloatPatchSlot::read(payload, record.offset)?.write(native_value);
-        IntegerPatchSlot::read(payload, record.offset, "valPrecision")?
+        FloatPatchSlot::read(payload, record.offset, limits)?.write(native_value);
+        IntegerPatchSlot::read(payload, record.offset, "valPrecision", limits)?
             .write(semantic.precision)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (field, value) in [
@@ -323,7 +324,7 @@ pub(crate) fn patch_payload(
             ("isInspection", semantic.inspection),
             ("isReferenceOnly", semantic.reference_only),
         ] {
-            BooleanPatchSlot::read(payload, record.offset, field)?.write(value);
+            BooleanPatchSlot::read(payload, record.offset, field, limits)?.write(value);
         }
         if semantic.display_text.as_deref() != record.display_text() {
             let (Some((previous, offset)), Some(text)) = (
@@ -656,9 +657,8 @@ enum ValueKind<'a> {
 
 /// Extract semantic dimensions from `PMISemanticDataDB` sections.
 ///
-/// Parse failures on GUID-prefixed `MessagePack` maps emit
-/// [`SldprtLossCode::PmiSemanticRecordMalformed`] instead of shrinking the
-/// document silently. Each section spends at most
+/// A GUID-prefixed `MessagePack` map that does not parse gives up its
+/// dimension record instead of shrinking the document silently. Each section spends at most
 /// [`PMI_PARSE_WORK_PER_PAYLOAD_BYTE`] per payload byte; candidates left when
 /// it runs out emit one [`SldprtLossCode::PmiSemanticParseCapped`].
 pub(crate) fn dimensions(
@@ -755,7 +755,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",
@@ -765,9 +765,26 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                // The scan finds a candidate map by its keys, outside a
+                // record frame, so it does not tell a defect from a form it
+                // does not read.
+                losses.push(
+                    cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                        cadmpeg_ir::ids::Identity::new(format!(
+                            "sldprt:pmi:dimension#{normalized}"
+                        ))?,
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!(
+                            "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                        ),
+                    )
+                    .at(cadmpeg_ir::SourceProvenance::in_stream(
+                        "sldprt",
+                        stream.clone(),
+                        u64_from_index(offset),
+                    ))
+                    .loss(),
+                );
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;

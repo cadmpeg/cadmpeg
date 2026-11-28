@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext};
-use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
+use cadmpeg_ir::annotations::{AnnotationBuilder, AnnotationKey, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_pcurve_uv,
     nurbs_surface_isocurve,
@@ -34,7 +34,8 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Unstated,
+    Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -56,6 +57,16 @@ use super::typed;
 use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
+
+mod grouping;
+mod prune;
+
+use grouping::{
+    body_records_of, chain_cut_note, classify_native_shells, first_lost_face, mark_derived_shells,
+    note_body_precision, region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
+    unclassified_body_kind, withheld_counts,
+};
+use prune::{prune_rejected_topology, RingLoss};
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
@@ -114,6 +125,9 @@ pub(crate) struct Brep {
     /// Per-face `DisplayLists` table keys resolved from Parasolid attributes.
     pub(crate) face_keys: Vec<(FaceId, u32)>,
     pub(crate) native_body_identities: Vec<attrib::NativeIdentity<BodyId>>,
+    /// The linear precision that the `res_linear` of each body emitted from a
+    /// BODY node states.
+    pub(crate) body_linear_precisions: Vec<cadmpeg_ir::scalar::PositiveLength>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
@@ -132,8 +146,82 @@ pub(crate) struct Brep {
     /// whose lane the reader refused. The model carries the absence of each
     /// refused carrier, so the decode continues and reports the loss.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Topology records the decode drops. They stay apart from `losses`
+    /// until [`Brep::take_losses`], because [`Brep::qualify_ids`] renames
+    /// the ids they name.
+    pub(crate) dropped: Vec<DroppedRecord>,
     /// Loss accounting for this decode.
     pub(crate) stats: Stats,
+}
+
+/// A topology record the decode drops (CADIR §3.3).
+#[derive(Debug, Clone)]
+pub(crate) enum DroppedRecord {
+    /// A record given up for its own content, and the records dropped with
+    /// it. The record frames, and the builder does not tell a defect from a
+    /// form it does not resolve, so the give-up is `record.undecoded`.
+    GivenUp {
+        record: String,
+        at: Option<cadmpeg_ir::SourceProvenance>,
+        error: String,
+        dropping: Vec<String>,
+    },
+    /// A record dropped only because it needs the record `needs`.
+    With { record: String, needs: String },
+}
+
+impl DroppedRecord {
+    fn with(record: &str, needs: &str) -> Self {
+        Self::With {
+            record: record.to_owned(),
+            needs: needs.to_owned(),
+        }
+    }
+
+    fn qualify(&mut self, site: &str) {
+        match self {
+            Self::GivenUp {
+                record, dropping, ..
+            } => {
+                *record = qualified_reference(record, site);
+                for id in dropping {
+                    *id = qualified_reference(id, site);
+                }
+            }
+            Self::With { record, needs } => {
+                *record = qualified_reference(record, site);
+                *needs = qualified_reference(needs, site);
+            }
+        }
+    }
+
+    fn loss(self) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
+        use cadmpeg_ir::ids::Identity;
+        Ok(match self {
+            Self::GivenUp {
+                record,
+                at,
+                error,
+                dropping,
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                Identity::new(record)?,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
+                error,
+            )
+            .at(at)
+            .dropping(
+                dropping
+                    .into_iter()
+                    .map(Identity::new)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+            .loss(),
+            Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
+                Identity::new(record)?,
+                Identity::new(needs)?,
+            ),
+        })
+    }
 }
 
 /// A resolved face color retains the stream that admitted its source row.
@@ -151,6 +239,17 @@ pub(crate) struct OwnedFaceColor {
 }
 
 impl Brep {
+    /// The losses of the decode: its notes, then one loss per dropped record.
+    pub(crate) fn take_losses(
+        &mut self,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let mut losses = std::mem::take(&mut self.losses);
+        for dropped in std::mem::take(&mut self.dropped) {
+            losses.push(dropped.loss()?);
+        }
+        Ok(losses)
+    }
+
     pub(crate) fn neutral_entity_count(&self) -> Result<u64, cadmpeg_core::CodecError> {
         let counts = [
             self.bodies.len(),
@@ -413,6 +512,9 @@ impl Brep {
                 *target = qualified_reference(target, site);
             }
         }
+        for record in &mut self.dropped {
+            record.qualify(site);
+        }
         self.annotations
             .map_ids(|value| Ok(qualified_reference(value, site)))?
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -420,83 +522,11 @@ impl Brep {
     }
 }
 
-fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> {
-    let mut candidates = Vec::new();
-    for face in &out.faces {
-        if face.shell.as_str() == native_shell_id {
-            candidates.push(&face.id);
-        }
-    }
-    let mut candidate_ids = HashSet::new();
-    for face in &candidates {
-        let key = face.as_str();
-        candidate_ids.insert(key);
-    }
-    let mut loop_faces = HashMap::new();
-    for loop_ in &out.loops {
-        if candidate_ids.contains(loop_.face.as_str()) {
-            let key = loop_.id.as_str();
-            loop_faces.insert(key, loop_.face.as_str());
-        }
-    }
-    let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
-    for coedge in &out.coedges {
-        if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
-            let key = coedge.edge.as_str();
-            let edge_faces = faces_by_edge.entry(key).or_default();
-            edge_faces.insert(*face);
-        }
-    }
-    let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
-    for edge_faces in faces_by_edge.values() {
-        for &face in edge_faces {
-            let adjacent = neighbors.entry(face).or_default();
-            for &other in edge_faces {
-                if other != face {
-                    adjacent.insert(other);
-                }
-            }
-        }
-    }
-
-    // The walk moves over borrowed keys, so the face each key names is looked
-    // up rather than rebuilt from its text.
-    let mut faces_by_key = HashMap::new();
-    for face in &candidates {
-        let key = face.as_str();
-        faces_by_key.insert(key, *face);
-    }
-    let mut assigned = HashSet::new();
-    let mut components = Vec::new();
-    for face in &candidates {
-        let key = face.as_str();
-        if !assigned.insert(key) {
-            continue;
-        }
-        let mut component = Vec::new();
-        let mut pending = Vec::new();
-        pending.push(key);
-        while let Some(current) = pending.pop() {
-            let Some(face) = faces_by_key.get(current) else {
-                continue;
-            };
-            component.push((*face).clone());
-            for &neighbor in neighbors.get(current).into_iter().flatten() {
-                if assigned.insert(neighbor) {
-                    pending.push(neighbor);
-                }
-            }
-        }
-        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-        components.push(component);
-    }
-    components
-}
-
 #[derive(Debug, Clone)]
 struct BodyRecord {
     attr: u32,
     kind: BodyKind,
+    linear_resolution: f64,
     refs: Vec<u32>,
     offset: usize,
     regions: Vec<RegionRecord>,
@@ -529,21 +559,10 @@ pub(crate) struct Stats {
     pub(crate) unresolved_topology_loops: usize,
     pub(crate) unresolved_topology_fins: usize,
     pub(crate) unresolved_topology_vertices: usize,
-    /// Canonical edges withheld when a partner FIN contradicts the ring order
-    /// or an unwalked boundary-dummy canonical lacks partner corroboration.
+    /// Canonical edges with no edge record, withheld when a partner FIN
+    /// contradicts the ring order or an unwalked boundary-dummy canonical
+    /// lacks partner corroboration.
     pub(crate) withheld_fin_partners: usize,
-    /// Vertexless ring edges withheld by the strict admission gate.
-    pub(crate) withheld_ring_edges: usize,
-    /// Rings withheld because a FIN forward link is not reciprocal.
-    pub(crate) withheld_fin_links: usize,
-    /// Faces withheld with their surface because no loop of the face decodes.
-    pub(crate) withheld_faces: usize,
-    /// Faces withheld with their surface because a vertex loop of the face
-    /// names no resolved vertex.
-    pub(crate) withheld_vertex_loop_faces: usize,
-    /// Faces withheld with their surface because a loop of the face holds an
-    /// ambiguous FIN.
-    pub(crate) withheld_ambiguous_fin_faces: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -564,8 +583,26 @@ pub(crate) struct Stats {
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// Coedges whose derived pcurve stopped at `SURFACE_SOLVER_LOCAL_WORK`.
     pub(crate) surface_solver_capped: crate::loss::NamedCount,
-    /// No explicit body record was available, so one body hierarchy was derived.
+    /// No body record links up with the faces, so one body hierarchy was
+    /// derived.
     pub(crate) synthetic_body_grouping: bool,
+    /// Where the derived bodies take their kind.
+    pub(crate) derived_kind: DerivedKind,
+}
+
+/// Where the bodies of the derived hierarchies take their kind, over one
+/// graph or over merged graphs.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct DerivedKind {
+    /// BODY records that do not link up with the faces agree on one kind,
+    /// which the derived body takes.
+    pub(crate) agreed: bool,
+    /// BODY records that do not link up with the faces state more than one
+    /// kind, so the derived body is classified from its faces.
+    pub(crate) disagree: bool,
+    /// No BODY record names a region, so the derived body is classified from
+    /// its faces.
+    pub(crate) absent: bool,
 }
 
 /// The `sldprt:brep` shell namespace, which three routes mint under.
@@ -588,9 +625,18 @@ fn pcurve_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
     cadmpeg_ir::identity_namespace!("sldprt", "brep", "pcurve")
 }
 
+const SHELL_COMPONENT_TAG: &str = ".component-";
+
+fn shell_source_id(shell: &ShellId) -> &str {
+    shell
+        .as_str()
+        .split_once(SHELL_COMPONENT_TAG)
+        .map_or(shell.as_str(), |(id, _)| id)
+}
+
 /// The component split of one native shell: `<shell>.component-<ordinal>`.
 fn shell_component(shell: &ShellId, component: usize) -> Result<ShellId, cadmpeg_core::CodecError> {
-    let text = format!("{shell}.component-{component}");
+    let text = format!("{shell}{SHELL_COMPONENT_TAG}{component}");
     ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -644,6 +690,48 @@ fn qualified_reference(value: &str, site: &str) -> String {
         format!("{value}@{site}")
     } else {
         value.to_owned()
+    }
+}
+
+/// The cause of the give-up of a face that names no loop.
+pub(crate) const FACE_WITHHELD: &str =
+    "the face names no loop and does not cover a whole closed surface";
+/// The cause of the give-up of a vertexless ring edge.
+pub(crate) const RING_EDGE_WITHHELD: &str =
+    "the vertexless ring edge fails reciprocal closed-carrier single-loop admission";
+/// The cause of the give-up of an edge whose FIN partners do not corroborate
+/// its ends.
+pub(crate) const FIN_PARTNERS_UNCORROBORATED: &str =
+    "the FIN partners of the edge do not corroborate its ends";
+/// The cause of the give-up of a loop with an edge whose canonical FIN the
+/// decode does not read.
+pub(crate) const LOOP_FIN_UNREAD: &str =
+    "an edge of the loop has no canonical FIN the decode reads";
+
+/// The topology record `record` that the decode gives up for `why`, at
+/// `offset` in `stream` where the record has one. `dropped` names the
+/// records the decode drops with it.
+fn topology_given_up(
+    record: impl std::fmt::Display,
+    stream: &cadmpeg_ir::StreamName,
+    offset: Option<usize>,
+    why: &str,
+    dropped: &[SurfaceId],
+) -> DroppedRecord {
+    DroppedRecord::GivenUp {
+        record: record.to_string(),
+        at: offset.map(|offset| {
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "sldprt",
+                stream.clone(),
+                u64_from_index(offset),
+            )
+        }),
+        error: why.to_owned(),
+        dropping: dropped
+            .iter()
+            .map(|surface| surface.as_str().to_owned())
+            .collect(),
     }
 }
 
@@ -720,9 +808,14 @@ struct WalkedFace {
     vertex_loops: Vec<(u32, u32)>,
     unresolved_loop: Option<u32>,
     unresolved_fins: Vec<u32>,
-    withheld_forward_links: usize,
     /// Walked loops that are not forward linked.
     unlinked_loops: HashSet<u32>,
+    /// The loop records of the face whose FIN ring does not close, by cause,
+    /// in sibling order.
+    lost_loops: Vec<(u32, RingLoss)>,
+    /// The loop the face's loop chain names and the walk does not reach: a
+    /// missing record or a loop of another face.
+    chain_cut: Option<u32>,
 }
 
 impl WalkedFace {
@@ -974,7 +1067,7 @@ fn emit_offset_surface(
     offset: &OffsetCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
     annotations.note(
-        surface.as_str(),
+        &surface,
         source_stream,
         u64_from_index(offset.offset),
         Some("00_3c"),
@@ -1057,7 +1150,7 @@ fn emit_sweep_support(
         attr,
     );
     annotations.note(
-        surface.as_str(),
+        &surface,
         source_stream,
         u64_from_index(sweep.offset),
         Some("procedural_support"),
@@ -1134,7 +1227,7 @@ fn ensure_surface_support(
             {
                 let geometry = retain_surface_geometry(sink.ctx, &carrier.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
-                    match annotate_surface_frame(annotations, id.as_str(), solved) {
+                    match annotate_surface_frame(annotations, &id, solved) {
                         Ok(()) => {}
                         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
                             return Err(error);
@@ -1143,7 +1236,7 @@ fn ensure_surface_support(
                     }
                 }
                 annotations.note(
-                    id.as_str(),
+                    &id,
                     source_stream,
                     u64_from_index(carrier.offset),
                     Some("procedural_support"),
@@ -1220,7 +1313,7 @@ fn ensure_surface_support(
                     .iter()
                     .any(|candidate| candidate.id == surface)
             {
-                annotations.exactness(surface.as_str(), Exactness::Unknown);
+                annotations.exactness(&surface, Exactness::Unknown);
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
                 sink.out.surfaces.push(Surface {
@@ -1239,38 +1332,14 @@ fn ensure_surface_support(
     result
 }
 
-/// Whether a walked face enters the model with its surface.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FaceAdmission {
-    Admitted,
-    VertexLoopUnresolved,
-    FinAmbiguous,
-    NoLoop,
-}
-
-fn face_admission(
-    face: &WalkedFace,
-    loop_set: &HashSet<u32>,
-    t: &topology::Tables,
-    carriers: &CarrierIndex,
-) -> FaceAdmission {
-    if face
-        .vertex_loops
-        .iter()
-        .any(|(loop_attr, _)| !loop_set.contains(loop_attr))
-    {
-        FaceAdmission::VertexLoopUnresolved
-    } else if !face.unresolved_fins.is_empty() {
-        FaceAdmission::FinAmbiguous
-    } else if face
-        .loop_attrs()
-        .any(|loop_attr| loop_set.contains(&loop_attr))
+/// Whether a walked face enters the model with its surface: a face whose
+/// record names a loop keeps the loops that decode, and a face that names
+/// none enters only where it covers a whole closed surface.
+fn face_admitted(face: &WalkedFace, t: &topology::Tables, carriers: &CarrierIndex) -> bool {
+    t.bridges()
+        .get(&face.bridge_attr)
+        .is_some_and(|bridge| bridge.refs[2] > 1)
         || covers_whole_closed_surface(face, t, carriers)
-    {
-        FaceAdmission::Admitted
-    } else {
-        FaceAdmission::NoLoop
-    }
 }
 
 fn face_has_exact_boundary(
@@ -1282,6 +1351,8 @@ fn face_has_exact_boundary(
         && face.vertex_loops.is_empty()
         && face.unresolved_loop.is_none()
         && face.unresolved_fins.is_empty()
+        && face.lost_loops.is_empty()
+        && face.chain_cut.is_none()
         && face.loops.iter().all(|(_, ring)| {
             !ring.is_empty()
                 && ring.iter().all(|fin| {
@@ -1387,8 +1458,9 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut loop_ref = bridge.refs[2];
     let mut unresolved_loop = None;
     let mut unresolved_fins = Vec::new();
-    let mut withheld_forward_links = 0usize;
     let mut unlinked_loops = HashSet::new();
+    let mut lost_loops = Vec::new();
+    let mut chain_cut = None;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1398,10 +1470,12 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             if t.loop_is_ambiguous(loop_ref) {
                 unresolved_loop = Some(loop_ref);
             }
+            chain_cut = (loop_ref > 1).then_some(loop_ref);
             break;
         };
         let owner_bridge = lp.refs[2];
         if owner_bridge != bridge.attr {
+            chain_cut = Some(loop_ref);
             break;
         }
         let first = lp.refs[1];
@@ -1418,6 +1492,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
         let mut ring_closed = false;
+        let mut ambiguous_fin = false;
         while ce_ref != 0 {
             if !ce_guard.insert(ce_ref) {
                 break;
@@ -1425,6 +1500,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             let Some(ce) = t.coedges().get(&ce_ref) else {
                 if t.coedge_is_ambiguous(ce_ref) {
                     unresolved_fins.push(ce_ref);
+                    ambiguous_fin = true;
                 }
                 break;
             };
@@ -1448,7 +1524,11 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             }
             loops.push((loop_ref, ring));
         } else if ring_closed {
-            withheld_forward_links += 1;
+            lost_loops.push((loop_ref, RingLoss::NonReciprocal));
+        } else if ambiguous_fin {
+            lost_loops.push((loop_ref, RingLoss::AmbiguousFin));
+        } else {
+            lost_loops.push((loop_ref, RingLoss::Open));
         }
         loop_ref = lp.refs[3];
     }
@@ -1460,8 +1540,9 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         vertex_loops,
         unresolved_loop,
         unresolved_fins,
-        withheld_forward_links,
         unlinked_loops,
+        lost_loops,
+        chain_cut,
     }
 }
 
@@ -2058,12 +2139,12 @@ fn attach_surface_curve(
             ),
         };
         annotations.note(
-            curve_id.as_str(),
+            &curve_id,
             source_stream,
             u64_from_index(carrier.offset),
             Some(note),
         );
-        annotations.exactness(curve_id.as_str(), exactness);
+        annotations.exactness(&curve_id, exactness);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -2093,12 +2174,12 @@ fn attach_surface_curve(
     });
     let Some(context) = context else {
         annotations.note(
-            curve_id.as_str(),
+            &curve_id,
             source_stream,
             u64_from_index(carrier.offset),
             Some("unknown_curve"),
         );
-        annotations.exactness(curve_id.as_str(), Exactness::Unknown);
+        annotations.exactness(&curve_id, Exactness::Unknown);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -2110,12 +2191,12 @@ fn attach_surface_curve(
         return Ok(());
     };
     annotations.note(
-        curve_id.as_str(),
+        &curve_id,
         source_stream,
         u64_from_index(carrier.offset),
         Some("sp_curve"),
     );
-    annotations.exactness(curve_id.as_str(), Exactness::Derived);
+    annotations.exactness(&curve_id, Exactness::Derived);
     let support = context.sides()[0]
         .surface
         .as_ref()
@@ -2677,6 +2758,7 @@ pub(crate) fn decode_bodies(
 }
 
 /// The merged record state of one site.
+#[derive(Default)]
 struct SiteState {
     mesh_bodies: HashSet<u32>,
     carriers: CarrierIndex,
@@ -2713,13 +2795,14 @@ fn scan_site(
     let mut entity_streams = Vec::new();
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
-        entity_streams.push((body, is_deltas_stream(header)));
+        entity_streams.push(topology::ScopedBody::new(body, is_deltas_stream(header)));
     }
     let framed: Vec<_> = ordered
         .iter()
         .zip(&entity_streams)
-        .map(|((payload, _), (_, prefixed))| {
-            prefixed
+        .map(|((payload, _), stream)| {
+            stream
+                .prefixed
                 .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
                 .flatten()
         })
@@ -2744,57 +2827,58 @@ fn scan_site(
     let mut deltas_typed = Vec::new();
     let mut deltas_blends = Vec::new();
     let mut mesh_bodies = HashSet::new();
-    for (((payload, header), (body, prefixed)), deltas) in
+    for (((payload, header), stream), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
-        let node_stream = (!prefixed)
+        let primary = (!stream.prefixed)
             .then(|| topology::nodes::sequence(payload))
-            .flatten()
-            .and_then(|records| {
-                mesh_bodies.extend(super::mesh::bodies(&records));
-                let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let mut lane_refusals = Vec::new();
-                let splines = super::spline::nodes::carriers(
-                    &records,
-                    header.body_offset,
-                    &mut lane_refusals,
-                );
-                if splines.is_none() {
-                    lane_refusals.clear();
-                }
-                let analytic = super::carrier_nodes::analytic(
-                    &records,
-                    header.body_offset,
-                    &mut lane_refusals,
-                );
-                let sp_curves = splines.as_ref().and_then(|splines| {
-                    super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
-                });
-                Some((
-                    typed::nodes::facts(&records, header.body_offset)?,
-                    (
-                        attrib::Records::from_nodes(&records),
-                        entity::NodeEntities::from_nodes(&records, header.body_offset),
-                    ),
-                    (
-                        tables,
-                        Some(NodeCarriers {
-                            analytic,
-                            splines,
-                            offsets: super::offset::from_nodes(&records, header.body_offset),
-                            blends: super::blend::from_nodes(&records, header.body_offset),
-                            sweeps: super::sweep::from_nodes(&records, header.body_offset),
-                            sp_curves,
-                            bounded: super::subset::from_nodes(&records, header.body_offset),
-                            intersections: super::intersection::from_nodes(
-                                &records,
-                                header.body_offset,
-                            ),
-                            lane_refusals,
-                        }),
-                    ),
-                ))
+            .flatten();
+        if primary
+            .as_ref()
+            .is_some_and(|records| records.is_terminated() && records.records().is_empty())
+            && empty_backward_partition(&entity_streams, &deltas_records)
+        {
+            return Ok(SiteState::default());
+        }
+        let node_stream = primary.and_then(|records| {
+            mesh_bodies.extend(super::mesh::bodies(&records));
+            let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
+            let mut lane_refusals = Vec::new();
+            let splines =
+                super::spline::nodes::carriers(&records, header.body_offset, &mut lane_refusals);
+            if splines.is_none() {
+                lane_refusals.clear();
+            }
+            let analytic =
+                super::carrier_nodes::analytic(&records, header.body_offset, &mut lane_refusals);
+            let sp_curves = splines.as_ref().and_then(|splines| {
+                super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
             });
+            Some((
+                typed::nodes::facts(&records, header.body_offset)?,
+                (
+                    attrib::Records::from_nodes(&records),
+                    entity::NodeEntities::from_nodes(&records, header.body_offset),
+                ),
+                (
+                    tables,
+                    Some(NodeCarriers {
+                        analytic,
+                        splines,
+                        offsets: super::offset::from_nodes(&records, header.body_offset),
+                        blends: super::blend::from_nodes(&records, header.body_offset),
+                        sweeps: super::sweep::from_nodes(&records, header.body_offset),
+                        sp_curves,
+                        bounded: super::subset::from_nodes(&records, header.body_offset),
+                        intersections: super::intersection::from_nodes(
+                            &records,
+                            header.body_offset,
+                        ),
+                        lane_refusals,
+                    }),
+                ),
+            ))
+        });
         let deltas_stream = deltas
             .filter(|_| node_stream.is_none())
             .and_then(|records| {
@@ -2834,12 +2918,12 @@ fn scan_site(
             deltas_blends.push(None);
         } else if let Some((facts, tables, carriers, blends)) = deltas_stream {
             deltas_blends.push(blends);
-            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            typed_streams.push(typed::scan_with_payload_exclusions(stream));
             deltas_typed.push(Some(facts));
             node_attributes.push((None, None));
             node_tables.push(Some((tables, Some(carriers))));
         } else {
-            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            typed_streams.push(typed::scan_with_payload_exclusions(stream));
             node_attributes.push((None, None));
             node_tables.push(None);
             deltas_typed.push(None);
@@ -2851,10 +2935,10 @@ fn scan_site(
     let deltas_from_nodes = entity_streams
         .iter()
         .zip(&node_tables)
-        .all(|((_, prefixed), tables)| !prefixed || tables.is_some());
+        .all(|(stream, tables)| !stream.prefixed || tables.is_some());
     if !deltas_from_nodes {
-        for ((_, prefixed), tables) in entity_streams.iter().zip(&mut node_tables) {
-            if *prefixed {
+        for (stream, tables) in entity_streams.iter().zip(&mut node_tables) {
+            if stream.prefixed {
                 *tables = None;
             }
         }
@@ -2863,8 +2947,8 @@ fn scan_site(
     // it: Deltas streams retain historical versions of the current nodes.
     if deltas_from_nodes {
         let mut partition = typed::Facts::default();
-        for (facts, (_, prefixed)) in typed_streams.iter().zip(&entity_streams) {
-            if !prefixed {
+        for (facts, stream) in typed_streams.iter().zip(&entity_streams) {
+            if !stream.prefixed {
                 partition.merge_missing(facts.clone());
             }
         }
@@ -2885,14 +2969,15 @@ fn scan_site(
         let scanned = incomplete_deltas_identities(
             ctx,
             &ordered,
+            &entity_streams,
             &deltas_records,
             &typed_streams,
             &node_tables,
             &conflicted,
         )?;
         conflicted.extend(unframed_shared(&entity_streams, &framed, scanned));
-        for (facts, (_, prefixed)) in typed_streams.iter_mut().zip(&entity_streams) {
-            if *prefixed {
+        for (facts, stream) in typed_streams.iter_mut().zip(&entity_streams) {
+            if stream.prefixed {
                 *facts = std::mem::take(facts).without(&conflicted);
             }
         }
@@ -2915,12 +3000,12 @@ fn scan_site(
     let mut deltas_edges = HashMap::<u32, Vec<u32>>::new();
     let mut deltas_bridges = Vec::new();
     let mut partition_bridges = 0;
-    for (entry, (_, prefixed)) in node_tables.iter().zip(&entity_streams) {
+    for (entry, stream) in node_tables.iter().zip(&entity_streams) {
         let Some((tables, carriers)) = entry else {
             continue;
         };
         let references = carriers.iter().flat_map(NodeCarriers::reference_edges);
-        if *prefixed {
+        if stream.prefixed {
             deltas_bridges.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
             for (from, to) in references {
                 deltas_edges.entry(from).or_default().push(to);
@@ -3021,6 +3106,27 @@ fn scan_site(
     })
 }
 
+/// A backward delta from an empty partition can only restore earlier nodes.
+fn empty_backward_partition(
+    streams: &[topology::ScopedBody<'_>],
+    deltas: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
+) -> bool {
+    let [_, deltas @ ..] = deltas else {
+        return false;
+    };
+    !deltas.is_empty()
+        && streams.iter().skip(1).all(|stream| stream.prefixed)
+        && deltas.iter().all(|frame| {
+            frame.is_some_and(|frame| {
+                cadmpeg_parasolid::deltas::replay::MainLine::read(frame).is_ok_and(|line| {
+                    line.deltas()
+                        .first()
+                        .is_none_or(|delta| delta.created().is_empty() && delta.older().is_empty())
+                })
+            })
+        })
+}
+
 /// Read the streams of one site as [`decode_bodies`] does, without building
 /// the B-rep. `observe` receives the topology tables of each stream.
 pub(super) fn observe_site(
@@ -3042,7 +3148,7 @@ struct SiteEvidence {
 
 impl SiteEvidence {
     fn of(
-        entity_streams: &[(&[u8], bool)],
+        entity_streams: &[topology::ScopedBody<'_>],
         typed_streams: &[typed::Facts],
         plain_streams: impl Iterator<Item = bool>,
     ) -> Self {
@@ -3054,15 +3160,13 @@ impl SiteEvidence {
             entity_streams
                 .iter()
                 .zip(typed_streams)
-                .map(|((body, deltas), facts)| (facts, *body, *deltas)),
+                .map(|(stream, facts)| (facts, stream)),
         );
         let bridge_attrs = typed.valid_ownership_face_attrs();
         let looped_bridge_attrs = entity_streams
             .iter()
             .zip(plain_streams)
-            .flat_map(|((body, deltas), plain)| {
-                topology::framed_looped_bridge_attrs(body, *deltas, plain)
-            })
+            .flat_map(|(stream, plain)| topology::framed_looped_bridge_attrs(stream, plain))
             .collect();
         Self {
             typed,
@@ -3156,6 +3260,7 @@ fn stream_topology(
 fn incomplete_deltas_identities(
     ctx: &DecodeContext<'_>,
     ordered: &[&(&[u8], &StreamHeader)],
+    entity_streams: &[topology::ScopedBody<'_>],
     complete: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
     typed_streams: &[typed::Facts],
     node_tables: &[Option<(topology::Tables, Option<NodeCarriers>)>],
@@ -3167,12 +3272,8 @@ fn incomplete_deltas_identities(
     let Some(last) = ordered.iter().zip(complete).rposition(incomplete) else {
         return Ok(vec![HashSet::new(); ordered.len()]);
     };
-    let mut entity_streams = Vec::new();
-    for (payload, header) in ordered {
-        entity_streams.push((header_body(payload, header)?, is_deltas_stream(header)));
-    }
     let evidence = SiteEvidence::of(
-        &entity_streams,
+        entity_streams,
         typed_streams,
         ordered.iter().map(|(_, header)| {
             !is_deltas_stream(header) && !crate::parasolid::is_body_stream(header)
@@ -3190,7 +3291,7 @@ fn incomplete_deltas_identities(
         .enumerate()
         .take(last + 1)
     {
-        let (body, is_deltas) = entity_streams[index];
+        let (body, is_deltas) = (entity_streams[index].body, entity_streams[index].prefixed);
         let (node_tables, node_carriers) = node.clone().unzip();
         let exclude = if is_deltas { exclude } else { &no_conflicts };
         let stream_carriers =
@@ -3226,14 +3327,14 @@ fn incomplete_deltas_identities(
 /// versions establishes their agreement. `scanned` holds the identities of
 /// each incomplete Deltas stream.
 fn unframed_shared(
-    entity_streams: &[(&[u8], bool)],
+    entity_streams: &[topology::ScopedBody<'_>],
     framed: &[Option<cadmpeg_parasolid::records::DeltasRecords<'_>>],
     scanned: Vec<HashSet<u32>>,
 ) -> HashSet<u32> {
     let mut streams = HashMap::<u32, usize>::new();
     let mut unframed = HashSet::new();
-    for (((_, prefixed), framed), scanned) in entity_streams.iter().zip(framed).zip(scanned) {
-        if !prefixed {
+    for ((stream, framed), scanned) in entity_streams.iter().zip(framed).zip(scanned) {
+        if !stream.prefixed {
             continue;
         }
         let mut identities: HashSet<u32> = framed
@@ -3261,8 +3362,9 @@ fn decode_body(
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut carriers = scan_carriers_for_role(ctx, body, deltas, &HashSet::new())?;
     let curve_attrs = carriers.curve_attrs();
-    let typed_facts = typed::scan(body);
-    let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
+    let scoped = topology::ScopedBody::new(body, false);
+    let typed_facts = typed::scan_with_payload_exclusions(&scoped);
+    let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, &scoped)]);
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
     let typed_face_offsets = typed_facts.selected_face_offsets(typed_face_attrs.as_ref());
     let t = topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs);
@@ -3425,77 +3527,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
     for attr in tables.bridges().keys().copied() {
         bridge_attrs.insert(attr);
     }
-    let hierarchies = facts.hierarchies(&bridge_attrs)?;
-    let mut records = Vec::new();
-    for hierarchy in hierarchies {
-        let mut body_refs = Vec::new();
-        for attr in hierarchy
-            .regions
-            .iter()
-            .map(|region| region.attr)
-            .chain(hierarchy.shells.iter().map(|shell| shell.attr))
-            .chain(hierarchy.faces.iter().map(|(face, _)| *face))
-        {
-            body_refs.push(attr);
-        }
-        body_refs.sort_unstable();
-        body_refs.dedup();
-        let mut regions = Vec::new();
-        for region in &hierarchy.regions {
-            let mut shells = Vec::new();
-            for shell in hierarchy
-                .shells
-                .iter()
-                .filter(|shell| shell.refs[6] == region.attr)
-            {
-                let mut refs = Vec::new();
-                for face_attr in hierarchy
-                    .faces
-                    .iter()
-                    .filter(|(_, shell_attr)| *shell_attr == shell.attr)
-                    .map(|(face_attr, _)| *face_attr)
-                {
-                    refs.push(face_attr);
-                }
-                refs.sort_unstable();
-                refs.dedup();
-                shells.push(ShellRecord {
-                    attr: shell.attr,
-                    offset: shell.offset,
-                    refs,
-                });
-            }
-            shells.sort_by_key(|record| record.attr);
-            regions.push((
-                region.kind,
-                RegionRecord {
-                    attr: region.attr,
-                    offset: region.offset,
-                    shells,
-                },
-            ));
-        }
-        let owns_faces =
-            |record: &RegionRecord| record.shells.iter().any(|shell| !shell.refs.is_empty());
-        let body_has_material = regions
-            .iter()
-            .any(|(kind, record)| *kind == RegionKind::Solid || owns_faces(record));
-        // The faces of the neighbouring region's shell bound a void region that
-        // owns no faces, so that region has no neutral boundary of its own.
-        regions.retain(|(kind, record)| {
-            !body_has_material || *kind == RegionKind::Solid || owns_faces(record)
-        });
-        let mut regions: Vec<_> = regions.into_iter().map(|(_, record)| record).collect();
-        regions.sort_by_key(|record| record.attr);
-        records.push(BodyRecord {
-            attr: hierarchy.body.attr,
-            kind: hierarchy.body.kind,
-            refs: body_refs,
-            offset: hierarchy.body.offset,
-            regions,
-        });
-    }
-    records.sort_by_key(|record| record.attr);
+    let records = body_records_of(&facts.hierarchies(&bridge_attrs)?);
     (!records.is_empty()).then_some(records)
 }
 
@@ -3514,44 +3546,117 @@ fn sorted_graph_attrs(attrs: impl IntoIterator<Item = u32>) -> Vec<u32> {
     sorted
 }
 
-fn report_withheld_ownership(out: &mut Brep, facts: &typed::Facts) {
-    let Some(attrs) = facts.valid_ownership_face_attrs() else {
-        return;
+/// Gives up each typed face that names no loop, states the typed shells,
+/// regions and bodies no record states in their partial form, and counts the
+/// typed nodes still withheld. Returns whether a typed face is not stated.
+fn report_withheld_ownership(
+    ctx: &DecodeContext<'_>,
+    out: &mut Brep,
+    facts: &typed::Facts,
+    stream: &cadmpeg_ir::StreamName,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(face_nodes) = facts.valid_ownership_faces() else {
+        return Ok(false);
     };
-    let face_ids: HashSet<_> = out.faces.iter().map(|face| face.id.as_str()).collect();
-    let faces = attrs
+    let attrs: HashSet<u32> = face_nodes.keys().copied().collect();
+    let stated = stated_face_ids(out);
+    let typed_face_unstated = attrs
         .iter()
-        .filter(|attr| {
-            let id = id_face(**attr);
-            !face_ids.contains(id.as_str())
-        })
-        .count();
-    let mut bodies = 0;
-    let mut shells = 0;
-    if let Some(hierarchies) = facts.hierarchies(&attrs) {
-        let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
-        let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
-        bodies = hierarchies
-            .iter()
-            .filter(|hierarchy| {
-                let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
-                !body_ids.contains(id.as_str())
-            })
-            .count();
-        shells = hierarchies
-            .iter()
-            .flat_map(|hierarchy| &hierarchy.shells)
-            .filter(|native| {
-                let id = ShellId::compose(&shell_namespace(), native.attr);
-                !shell_ids.contains(id.as_str())
-            })
-            .count();
+        .any(|attr| !stated.contains(id_face(*attr).as_str()));
+    // A face a give-up names carries its own charge. A typed face that names
+    // no loop is read and left out, so it is given up; the note counts only
+    // the face nodes that no record states.
+    let mut accounted = stated;
+    for dropped in &out.dropped {
+        match dropped {
+            DroppedRecord::GivenUp {
+                record, dropping, ..
+            } => {
+                accounted.insert(record.clone());
+                accounted.extend(dropping.iter().cloned());
+            }
+            DroppedRecord::With { record, .. } => {
+                accounted.insert(record.clone());
+            }
+        }
     }
-    let withheld = bodies + shells + faces;
+    let mut faces = 0;
+    let mut given_up = Vec::new();
+    for attr in sorted_graph_attrs(attrs.iter().copied()) {
+        let id = id_face(attr);
+        if accounted.contains(id.as_str()) {
+            continue;
+        }
+        let node = &face_nodes[&attr];
+        if node.refs[2] > 1 {
+            faces += 1;
+            continue;
+        }
+        given_up.push(topology_given_up(
+            id,
+            stream,
+            Some(node.offset),
+            FACE_WITHHELD,
+            &[id_surf(attr)],
+        ));
+    }
+    let (mut bodies, mut regions, mut shells) = (0, 0, 0);
+    if let Some(hierarchies) = facts.hierarchies(&attrs) {
+        let records = body_records_of(&hierarchies);
+        // A derived hierarchy holds the faces of every typed body, so a typed
+        // record stated beside it would state those bodies twice.
+        if !out.stats.synthetic_body_grouping {
+            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
+            state_unbuilt_records(ctx, out, &mut annotations, &records, stream)?;
+            out.annotations = annotations.build();
+        }
+        (bodies, regions, shells) = withheld_counts(out, &hierarchies, &records, &accounted);
+    }
+    out.dropped.extend(given_up);
+    let withheld = bodies + regions + shells + faces;
     if withheld > 0 {
         out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
-            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {shells} shell node(s), and {faces} face node(s)."
+            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {regions} region node(s), {shells} shell node(s), and {faces} face node(s)."
         )));
+    }
+    Ok(typed_face_unstated)
+}
+
+/// Binds the native identity values and the last modifying feature of each
+/// body `out` states, by its BODY attribute.
+fn bind_body_facts(out: &mut Brep, payloads: Vec<(u32, Vec<u32>)>) {
+    let mut body_ids_by_attr = HashMap::<u32, Option<BodyId>>::new();
+    for body in &out.bodies {
+        let Some(attr) = body
+            .id
+            .as_str()
+            .strip_prefix("sldprt:brep:body#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        match body_ids_by_attr.entry(attr) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(body.id.clone()));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+        }
+    }
+    for (owner, values) in attrib::unique_payloads(payloads) {
+        if let Some(Some(target)) = body_ids_by_attr.get(&owner) {
+            out.native_body_identities.push(attrib::NativeIdentity {
+                target: target.clone(),
+                values,
+            });
+        }
+    }
+    for modifier in &mut out.body_modifiers {
+        modifier.target = body_ids_by_attr
+            .get(&modifier.body_attr)
+            .and_then(Option::as_ref)
+            .map(|id| id.as_str().to_owned());
     }
 }
 
@@ -3559,13 +3664,18 @@ fn decode_graph(
     ctx: &DecodeContext<'_>,
     carriers: &mut CarrierIndex,
     t: &topology::Tables,
-    entity_facts: entity::Facts,
+    mut entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let body_payloads = std::mem::take(&mut entity_facts.body_payloads);
     let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
     out.losses.extend(out.approximations.take_notes());
-    report_withheld_ownership(&mut out, typed_facts);
+    let typed_face_unstated = report_withheld_ownership(ctx, &mut out, typed_facts, stream)?;
+    mark_derived_shells(&mut out, typed_face_unstated);
+    classify_native_shells(&mut out, typed_facts);
+    // The bodies `report_withheld_ownership` states keep their facts too.
+    bind_body_facts(&mut out, body_payloads);
     Ok(out)
 }
 
@@ -3655,7 +3765,6 @@ fn decode_graph_inner(
         .flat_map(|face| face.unresolved_fins.iter().copied())
         .collect::<HashSet<_>>()
         .len();
-    out.stats.withheld_fin_links = faces.iter().map(|face| face.withheld_forward_links).sum();
 
     // Edge attr -> walked FINs of the edge. The ring order supplies one end of
     // a boundary edge; a reciprocal twin corroborates it for a two-sided edge.
@@ -3718,6 +3827,21 @@ fn decode_graph_inner(
     let mut tolerant_edges: HashSet<EdgeId> = HashSet::new();
 
     let mut unresolved_points = HashSet::new();
+    let mut withheld_edges = HashSet::<u32>::new();
+    let mut withhold_partnerless_edge = |out: &mut Brep, edge_attr: u32| {
+        if let Some(record) = t.edge_uses().get(&edge_attr) {
+            withheld_edges.insert(edge_attr);
+            out.dropped.push(topology_given_up(
+                id_edge(edge_attr),
+                stream,
+                Some(record.offset),
+                FIN_PARTNERS_UNCORROBORATED,
+                &[],
+            ));
+        } else {
+            out.stats.withheld_fin_partners += 1;
+        }
+    };
     for (edge_attr, incidences) in edge_incidence {
         let canonical =
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
@@ -3772,15 +3896,13 @@ fn decode_graph_inner(
                         partner.fin,
                     );
                 }
-                DummyRecovery::Withheld => {
-                    out.stats.withheld_fin_partners += 1;
-                }
+                DummyRecovery::Withheld => withhold_partnerless_edge(&mut out, edge_attr),
                 DummyRecovery::Absent => {}
             }
             continue;
         };
         let Some(ring_vuse) = edge_ring_vuse(incidence, &incidences, t.coedges()) else {
-            out.stats.withheld_fin_partners += 1;
+            withhold_partnerless_edge(&mut out, edge_attr);
             continue;
         };
         if !incidence.forward_linked {
@@ -3824,7 +3946,7 @@ fn decode_graph_inner(
     for a in point_attrs {
         let rec = &t.points()[&a];
         annotations.note(
-            id_point(a).as_str(),
+            id_point(a),
             &source_stream,
             u64_from_index(rec.offset),
             Some("00_1d"),
@@ -3846,7 +3968,7 @@ fn decode_graph_inner(
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
         annotations.note(
-            id_vertex(a).as_str(),
+            id_vertex(a),
             &source_stream,
             u64_from_index(rec.offset),
             Some("00_12"),
@@ -3878,6 +4000,7 @@ fn decode_graph_inner(
     let mut edge_curve_spans = HashMap::<u32, (u32, Option<[f64; 2]>)>::new();
     let mut closed_edge_starts = HashMap::<u32, cadmpeg_ir::math::Point3>::new();
     let mut reversed_edge_orientation = HashSet::<u32>::new();
+    let mut unresolved_end_edges = HashSet::<u32>::new();
     let edge_attrs = sorted_graph_attrs(edge_ends.keys().copied());
     for e in edge_attrs {
         let (start_v, end_v, curve_attr, fin_attr) = edge_ends[&e];
@@ -3899,10 +4022,29 @@ fn decode_graph_inner(
                 t,
             )
         {
-            out.stats.withheld_ring_edges += 1;
+            withheld_edges.insert(e);
+            out.dropped.push(topology_given_up(
+                id_edge(e),
+                stream,
+                t.edge_uses().get(&e).map(|record| record.offset),
+                RING_EDGE_WITHHELD,
+                &[],
+            ));
             continue;
         }
         if !resolved_endpoints && closed_point.is_none() {
+            if let Some(record) = t.edge_uses().get(&e) {
+                withheld_edges.insert(e);
+                out.dropped.push(topology_given_up(
+                    id_edge(e),
+                    stream,
+                    Some(record.offset),
+                    "an end vertex of the edge does not resolve",
+                    &[],
+                ));
+            } else {
+                unresolved_end_edges.insert(e);
+            }
             continue;
         }
         let (mut start_id, mut end_id) = if let Some((position, _)) = closed_point {
@@ -3918,10 +4060,10 @@ fn decode_graph_inner(
             } else {
                 "derived_closed_curve_seam"
             };
-            annotations.note(point_id.as_str(), &source_stream, 0, Some(seam_note));
-            annotations.exactness(point_id.as_str(), Exactness::Derived);
-            annotations.note(vertex_id.as_str(), &source_stream, 0, Some(seam_note));
-            annotations.exactness(vertex_id.as_str(), Exactness::Derived);
+            annotations.note(&point_id, &source_stream, 0, Some(seam_note));
+            annotations.exactness(&point_id, Exactness::Derived);
+            annotations.note(&vertex_id, &source_stream, 0, Some(seam_note));
+            annotations.exactness(&vertex_id, Exactness::Derived);
             let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4091,13 +4233,12 @@ fn decode_graph_inner(
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
                             annotations.note(
-                                id_curve(curve_attr).as_str(),
+                                id_curve(curve_attr),
                                 &source_stream,
                                 u64_from_index(offset),
                                 Some("surface_intersection"),
                             );
-                            annotations
-                                .exactness(id_curve(curve_attr).as_str(), Exactness::Derived);
+                            annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
                     curve = Some(id_curve(curve_attr));
@@ -4113,12 +4254,12 @@ fn decode_graph_inner(
                     if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations.note(
-                            id_curve(curve_attr).as_str(),
+                            id_curve(curve_attr),
                             &source_stream,
                             u64_from_index(offset),
                             Some("unknown_curve"),
                         );
-                        annotations.exactness(id_curve(curve_attr).as_str(), Exactness::Unknown);
+                        annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         admit_brep_entity(ctx)?;
                         out.curves.push(Curve {
                             parameter_range: None,
@@ -4137,7 +4278,7 @@ fn decode_graph_inner(
         }
         let off = eu.map_or(0, |r| r.offset);
         annotations.note(
-            id_edge(e).as_str(),
+            id_edge(e),
             &source_stream,
             u64_from_index(off),
             Some("00_10"),
@@ -4149,7 +4290,7 @@ fn decode_graph_inner(
             || (closed_point.is_some() && !marker_conflict)
         {
             annotations
-                .derived(id_edge(e).as_str(), "carrier.param_range")
+                .derived(id_edge(e), "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         admit_brep_entity(ctx)?;
@@ -4196,6 +4337,43 @@ fn decode_graph_inner(
             }
         }
     }
+    // A ring that uses a withheld edge builds no loop. Its loop and coedges
+    // are dropped with that edge, and its other edges with those coedges.
+    let mut unbuilt_uses = Vec::<(EdgeId, CoedgeId)>::new();
+    for f in &faces {
+        for (loop_attr, ring) in &f.loops {
+            if kept_loops.contains(loop_attr) {
+                continue;
+            }
+            let Some(first) = ring.iter().find(|c| {
+                t.coedges()
+                    .get(c)
+                    .is_some_and(|ce| withheld_edges.contains(&ce.refs[6]))
+            }) else {
+                continue;
+            };
+            let loop_id = id_loop(*loop_attr);
+            for c in ring {
+                let Some(ce) = t.coedges().get(c) else {
+                    continue;
+                };
+                let coedge = id_coedge(*c);
+                let edge = id_edge(ce.refs[6]);
+                let needs = if withheld_edges.contains(&ce.refs[6]) {
+                    edge.as_str()
+                } else {
+                    loop_id.as_str()
+                };
+                out.dropped
+                    .push(DroppedRecord::with(coedge.as_str(), needs));
+                unbuilt_uses.push((edge, coedge));
+            }
+            out.dropped.push(DroppedRecord::with(
+                loop_id.as_str(),
+                id_coedge(*first).as_str(),
+            ));
+        }
+    }
     let mut emitted_coedges = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
@@ -4225,7 +4403,7 @@ fn decode_graph_inner(
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| id_coedge(twin));
                 annotations.note(
-                    id_coedge(ce_attr).as_str(),
+                    id_coedge(ce_attr),
                     &source_stream,
                     u64_from_index(ce.offset),
                     Some("00_11"),
@@ -4291,7 +4469,7 @@ fn decode_graph_inner(
                         );
                         let offset = curve_carrier.offset;
                         annotations.note(
-                            id.as_str(),
+                            &id,
                             &source_stream,
                             u64_from_index(offset),
                             Some(match source {
@@ -4304,7 +4482,7 @@ fn decode_graph_inner(
                                 }
                             }),
                         );
-                        annotations.exactness(id.as_str(), Exactness::Derived);
+                        annotations.exactness(&id, Exactness::Derived);
                         admit_brep_entity(ctx)?;
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
@@ -4367,6 +4545,7 @@ fn decode_graph_inner(
     }
 
     // Loops.
+    let mut broken_rings = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
             if !kept_loops.contains(loop_attr) {
@@ -4374,16 +4553,17 @@ fn decode_graph_inner(
             }
             let mut coedges = Vec::new();
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
+                broken_rings.insert(*loop_attr);
+                continue;
+            };
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
-                id_loop(*loop_attr).as_str(),
+                id_loop(*loop_attr),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
             );
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
-                continue;
-            };
             admit_brep_entity(ctx)?;
             out.loops.push(Loop {
                 id: id_loop(*loop_attr),
@@ -4398,7 +4578,7 @@ fn decode_graph_inner(
             }
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
-                id_loop(*loop_attr).as_str(),
+                id_loop(*loop_attr),
                 &source_stream,
                 u64_from_index(off),
                 Some("00_0f"),
@@ -4416,7 +4596,26 @@ fn decode_graph_inner(
             kept_loops.insert(*loop_attr);
         }
     }
+    kept_loops.retain(|loop_attr| !broken_rings.contains(loop_attr));
     let loop_set = kept_loops;
+    let kept_coedges: HashSet<u32> = faces
+        .iter()
+        .flat_map(|f| f.loops.iter())
+        .filter(|(loop_attr, _)| loop_set.contains(loop_attr))
+        .flat_map(|(_, ring)| ring.iter().copied())
+        .collect();
+    let mut coedges_by_loop = HashMap::<u32, Vec<u32>>::new();
+    for (attr, coedge) in t.coedges() {
+        if !kept_coedges.contains(attr) {
+            coedges_by_loop
+                .entry(coedge.refs[1])
+                .or_default()
+                .push(*attr);
+        }
+    }
+    for coedges in coedges_by_loop.values_mut() {
+        coedges.sort_unstable();
+    }
 
     // Surfaces + faces.
     let bind_bridges = |body_records: &[BodyRecord],
@@ -4443,10 +4642,21 @@ fn decode_graph_inner(
     };
     let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
-        out.stats.unclaimed_faces += faces
+        for face in faces
             .iter()
             .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
-            .count();
+        {
+            out.stats.unclaimed_faces += 1;
+            out.dropped.push(topology_given_up(
+                id_face(face.bridge_attr),
+                stream,
+                t.bridges()
+                    .get(&face.bridge_attr)
+                    .map(|record| record.offset),
+                "no body record claims the face",
+                &[id_surf(face.bridge_attr)],
+            ));
+        }
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
     // The tolerance each emitted edge states: a blend cache bounds the face
@@ -4495,10 +4705,7 @@ fn decode_graph_inner(
         let bounded_offset = carriers.offset(face.surface_attr).is_none()
             || offset_for_face(face, t, carriers, &exact_boundary_edges).is_some();
         let bounded_sweep = sweep_face_can_alias(ctx, face, t, carriers, &exact_boundary_edges)?;
-        if face_admission(face, &loop_set, t, carriers) == FaceAdmission::Admitted
-            && bounded_offset
-            && bounded_sweep
-        {
+        if face_admitted(face, t, carriers) && bounded_offset && bounded_sweep {
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -4506,19 +4713,65 @@ fn decode_graph_inner(
         }
     }
     for f in &faces {
-        match face_admission(f, &loop_set, t, carriers) {
-            FaceAdmission::Admitted => {}
-            FaceAdmission::VertexLoopUnresolved => {
-                out.stats.withheld_vertex_loop_faces += 1;
+        if !face_admitted(f, t, carriers) {
+            out.dropped.push(topology_given_up(
+                id_face(f.bridge_attr),
+                stream,
+                t.bridges().get(&f.bridge_attr).map(|record| record.offset),
+                FACE_WITHHELD,
+                &[id_surf(f.bridge_attr)],
+            ));
+            continue;
+        }
+        let mut lost = Vec::new();
+        for (loop_attr, loss) in &f.lost_loops {
+            lost.push((*loop_attr, loss.why()));
+        }
+        for (loop_attr, ring) in &f.loops {
+            if loop_set.contains(loop_attr) {
                 continue;
             }
-            FaceAdmission::FinAmbiguous => {
-                out.stats.withheld_ambiguous_fin_faces += 1;
-                continue;
+            let edge_of_ring = |edges: &HashSet<u32>| {
+                ring.iter().any(|c| {
+                    t.coedges()
+                        .get(c)
+                        .is_some_and(|ce| edges.contains(&ce.refs[6]))
+                })
+            };
+            if broken_rings.contains(loop_attr) {
+                lost.push((*loop_attr, "the coedges of the loop do not form a ring"));
+            } else if !edge_of_ring(&withheld_edges) {
+                lost.push((
+                    *loop_attr,
+                    if edge_of_ring(&unresolved_end_edges) {
+                        "an end vertex of an edge of the loop does not resolve"
+                    } else {
+                        LOOP_FIN_UNREAD
+                    },
+                ));
             }
-            FaceAdmission::NoLoop => {
-                out.stats.withheld_faces += 1;
-                continue;
+        }
+        for (loop_attr, _) in &f.vertex_loops {
+            if !loop_set.contains(loop_attr) {
+                lost.push((*loop_attr, "the vertex loop names no resolved vertex"));
+            }
+        }
+        for (loop_attr, why) in lost {
+            let loop_id = id_loop(loop_attr);
+            out.dropped.push(topology_given_up(
+                &loop_id,
+                stream,
+                t.loops().get(&loop_attr).map(|record| record.offset),
+                why,
+                &[],
+            ));
+            for c in coedges_by_loop.get(&loop_attr).into_iter().flatten() {
+                let coedge = id_coedge(*c);
+                out.dropped
+                    .push(DroppedRecord::with(coedge.as_str(), loop_id.as_str()));
+                if let Some(edge) = t.coedges().get(c).map(|ce| ce.refs[6]).filter(|e| *e > 1) {
+                    unbuilt_uses.push((id_edge(edge), coedge));
+                }
             }
         }
         let loops: Vec<_> = f
@@ -4526,6 +4779,10 @@ fn decode_graph_inner(
             .filter(|loop_attr| loop_set.contains(loop_attr))
             .map(id_loop)
             .collect();
+        let partial = f.chain_cut.is_some()
+            || f.unresolved_loop.is_some()
+            || !f.lost_loops.is_empty()
+            || loops.len() < f.loop_attrs().count();
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges().get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
@@ -4537,18 +4794,14 @@ fn decode_graph_inner(
                         .all(|(loop_attr, _)| !f.unlinked_loops.contains(loop_attr));
                 surface_orientation_reversed = c.orientation_reversed(forward_linked);
                 annotations.note(
-                    id_surf(f.bridge_attr).as_str(),
+                    id_surf(f.bridge_attr),
                     &source_stream,
                     u64_from_index(c.offset),
                     Some("compact_surface"),
                 );
                 let geometry = retain_surface_geometry(ctx, &c.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
-                    annotate_surface_frame(
-                        &mut annotations,
-                        id_surf(f.bridge_attr).as_str(),
-                        solved,
-                    )?;
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), solved)?;
                 }
                 admit_brep_entity(ctx)?;
                 out.surfaces.push(Surface {
@@ -4698,7 +4951,7 @@ fn decode_graph_inner(
                             emit_curve(ctx, &mut out, carrier)?;
                             out.approximations.intersection(indexed);
                             annotations.note(
-                                id_curve(blend.spine).as_str(),
+                                id_curve(blend.spine),
                                 &source_stream,
                                 u64_from_index(carrier.offset),
                                 Some("blend_spine"),
@@ -4954,14 +5207,14 @@ fn decode_graph_inner(
                         cache: cache.map(|cache| SolvedSurfaceGeometry::Nurbs(cache.surface)),
                     };
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(blend.offset),
                         Some("00_38"),
                     );
                     if derived_cache {
                         annotations.field_exactness(
-                            id_surf(f.bridge_attr).as_str(),
+                            id_surf(f.bridge_attr),
                             "geometry.value.cache",
                             Exactness::Derived,
                         )?;
@@ -4998,13 +5251,13 @@ fn decode_graph_inner(
                     resolved
                 } {
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(offset),
                         Some(tag),
                     );
                     if let Some(exactness) = exactness {
-                        annotations.exactness(id_surf(f.bridge_attr).as_str(), exactness);
+                        annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
@@ -5026,12 +5279,12 @@ fn decode_graph_inner(
                 {
                     out.stats.unknown_surface_faces += 1;
                     annotations.note(
-                        id_surf(f.bridge_attr).as_str(),
+                        id_surf(f.bridge_attr),
                         &source_stream,
                         u64_from_index(surf_off),
                         Some("unknown_surface"),
                     );
-                    annotations.exactness(id_surf(f.bridge_attr).as_str(), Exactness::Unknown);
+                    annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     admit_brep_entity(ctx)?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
@@ -5045,11 +5298,14 @@ fn decode_graph_inner(
             }
         }
         annotations.note(
-            id_face(f.bridge_attr).as_str(),
+            id_face(f.bridge_attr),
             &source_stream,
             u64_from_index(surf_off),
             Some("00_0e"),
         );
+        if let (Some(loop_attr), None) = (f.chain_cut, f.unresolved_loop) {
+            out.losses.push(chain_cut_note(f.bridge_attr, loop_attr, t));
+        }
         admit_brep_entity(ctx)?;
         let shell_attr = match bridge_shell.get(&f.bridge_attr).copied() {
             Some(shell_attr) => shell_attr,
@@ -5065,7 +5321,11 @@ fn decode_graph_inner(
             shell: ShellId::compose(&shell_namespace(), shell_attr),
             surface: id_surf(f.bridge_attr),
             sense: surface_sense(f.sense, surface_orientation_reversed),
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops: if partial {
+                cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+            } else {
+                cadmpeg_ir::topology::FaceLoops::unspecified(loops)
+            },
             name: None,
             color: t
                 .bridges()
@@ -5148,26 +5408,39 @@ fn decode_graph_inner(
     derive_revolved_circle_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_spherical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
-    prune_rejected_topology(&mut out);
+    prune_rejected_topology(&mut out, &unbuilt_uses);
     out.stats.tolerant_edges_without_curve = out
         .edges
         .iter()
         .filter(|edge| edge.curve().is_none() && tolerant_edges.contains(&edge.id))
         .count();
 
-    if out.faces.is_empty() {
-        return Ok(Brep {
-            approximations: out.approximations,
-            losses: out.losses,
-            stats: out.stats,
-            ..Brep::default()
-        });
-    }
-    let synthetic_grouping = body_records.is_empty();
+    // Where no face is stated, the body records are stated in their partial
+    // form and the graph keeps the geometry it built (§3.3).
+    let faces_stated = !out.faces.is_empty();
+    let synthetic_grouping = faces_stated && body_records.is_empty();
     out.stats.synthetic_body_grouping = synthetic_grouping;
+    // BODY records that do not link up with the faces still classify the
+    // derived body when they agree.
+    let stored = if synthetic_grouping {
+        typed_facts.stored_body_kind()
+    } else {
+        typed::StoredBodyKind::Absent
+    };
+    let stored_kind = match stored {
+        typed::StoredBodyKind::Agreed(kind) => Some(kind),
+        typed::StoredBodyKind::Absent | typed::StoredBodyKind::Disagree => None,
+    };
+    out.stats.derived_kind = DerivedKind {
+        agreed: stored_kind.is_some(),
+        disagree: stored == typed::StoredBodyKind::Disagree,
+        absent: synthetic_grouping && stored == typed::StoredBodyKind::Absent,
+    };
+    let stated_faces = stated_face_ids(&out);
 
     for (group, body_record) in body_records
         .iter()
+        .filter(|_| faces_stated)
         .map(Some)
         .chain(std::iter::once(None).take(usize::from(synthetic_grouping)))
         .enumerate()
@@ -5176,26 +5449,27 @@ fn decode_graph_inner(
             &body_namespace(),
             body_record.map_or(0_u32, |record| record.attr),
         );
-        let mut annotate_group =
-            |id: &str, source: Option<(usize, &str)>| -> Result<(), cadmpeg_core::CodecError> {
-                let (offset, tag, exactness) = source.map_or(
-                    (0, "synthetic_grouping", Exactness::Derived),
-                    |(offset, tag)| (offset, tag, Exactness::ByteExact),
-                );
-                annotations.note(id, &source_stream, u64_from_index(offset), Some(tag));
-                annotations.exactness(id, exactness);
-                Ok(())
-            };
+        let mut annotate_group = |key: AnnotationKey,
+                                  source: Option<(usize, &str)>|
+         -> Result<(), cadmpeg_core::CodecError> {
+            let (offset, tag, exactness) = source.map_or(
+                (0, "synthetic_grouping", Exactness::Derived),
+                |(offset, tag)| (offset, tag, Exactness::ByteExact),
+            );
+            annotations.note(&key, &source_stream, u64_from_index(offset), Some(tag));
+            annotations.exactness(key, exactness);
+            Ok(())
+        };
         annotate_group(
-            body_id.as_str(),
+            AnnotationKey::from(&body_id),
             body_record.map(|record| (record.offset, "00_51_body")),
         )?;
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
-        let mut body_regions = Vec::new();
+        let mut body_faces = HashSet::new();
         if native_regions.is_empty() {
             let region_id = RegionId::compose(&region_namespace(), group);
             let native_shell_id = ShellId::compose(&shell_namespace(), group);
-            annotate_group(region_id.as_str(), None)?;
+            annotate_group(AnnotationKey::from(&region_id), None)?;
             let mut region_shells = Vec::new();
             for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                 .into_iter()
@@ -5206,7 +5480,8 @@ fn decode_graph_inner(
                 } else {
                     shell_component(&native_shell_id, component)?
                 };
-                annotate_group(shell_id.as_str(), None)?;
+                annotate_group(AnnotationKey::from(&shell_id), None)?;
+                body_faces.extend(faces.iter().cloned());
                 let mut face_ids = HashSet::new();
                 face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                 for face in &mut out.faces {
@@ -5223,19 +5498,22 @@ fn decode_graph_inner(
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
-            out.regions.push(Region::new(
-                region_id.clone(),
-                body_id.clone(),
-                region_shells,
-            ));
-            body_regions.push(region_id);
+            // No record states the region or its shells, so nothing states
+            // which piece bounds the outside.
+            out.regions
+                .push(region_of(region_id.clone(), body_id.clone(), region_shells));
         } else {
             for region in native_regions {
                 let region_id = RegionId::compose(&region_namespace(), region.attr);
-                annotate_group(region_id.as_str(), Some((region.offset, "00_51_region")))?;
+                annotate_group(
+                    AnnotationKey::from(&region_id),
+                    Some((region.offset, "00_51_region")),
+                )?;
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
+                    let lost_face = first_lost_face(&shell.refs, &stated_faces);
+                    let mut pieces = 0_usize;
                     for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                         .into_iter()
                         .enumerate()
@@ -5246,7 +5524,7 @@ fn decode_graph_inner(
                             shell_component(&native_shell_id, component)?
                         };
                         annotate_group(
-                            shell_id.as_str(),
+                            AnnotationKey::from(&shell_id),
                             (component == 0).then_some((shell.offset, "00_51_shell")),
                         )?;
                         let mut face_ids = HashSet::new();
@@ -5260,24 +5538,46 @@ fn decode_graph_inner(
                         if faces.is_empty() {
                             continue;
                         }
-                        out.shells
-                            .push(Shell::new(shell_id.clone(), region_id.clone()));
+                        let mut built = Shell::new(shell_id.clone(), region_id.clone());
+                        if lost_face.is_some() {
+                            built.unstated = Some(Unstated::Members);
+                        }
+                        out.shells.push(built);
+                        pieces += 1;
                         region_shells.push(shell_id);
+                    }
+                    // A shell none of whose faces is stated holds no face and
+                    // says so; its region and body stay stated (§3.3).
+                    if pieces == 0 && lost_face.is_some() {
+                        annotate_group(
+                            AnnotationKey::from(&native_shell_id),
+                            Some((shell.offset, "00_51_shell")),
+                        )?;
+                        admit_brep_entity(ctx)?;
+                        let mut kept = Shell::new(native_shell_id.clone(), region_id.clone());
+                        kept.unstated = Some(Unstated::Members);
+                        out.shells.push(kept);
+                        region_shells.push(native_shell_id);
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.regions.push(Region::new(
-                    region_id.clone(),
-                    body_id.clone(),
-                    region_shells,
-                ));
-                body_regions.push(region_id);
+                out.regions
+                    .push(region_of(region_id, body_id.clone(), region_shells));
             }
         }
         admit_brep_entity(ctx)?;
+        note_body_precision(
+            &mut out,
+            &body_id,
+            body_record.map(|record| record.linear_resolution),
+        );
+        let kind = body_record.map_or_else(
+            || stored_kind.unwrap_or_else(|| unclassified_body_kind(&out, &body_faces)),
+            |record| record.kind,
+        );
         out.bodies.push(Body {
             id: body_id,
-            kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
+            kind,
             transform: None,
             name: None,
             color: None,
@@ -5286,44 +5586,8 @@ fn decode_graph_inner(
             unstated: None,
         });
     }
-
-    let mut body_ids_by_attr = HashMap::<u32, Option<&str>>::new();
-    for body in &out.bodies {
-        let Some(attr) = body
-            .id
-            .as_str()
-            .strip_prefix("sldprt:brep:body#")
-            .and_then(|value| value.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        match body_ids_by_attr.entry(attr) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(body.id.as_str()));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = None;
-            }
-        }
-    }
-    for (owner, values) in attrib::unique_payloads(entity_facts.body_payloads) {
-        if let Some(Some(id)) = body_ids_by_attr.get(&owner) {
-            let Some(body) = out.bodies.iter().find(|body| body.id.as_str() == *id) else {
-                continue;
-            };
-            let target = body.id.clone();
-            out.native_body_identities
-                .push(attrib::NativeIdentity { target, values });
-        }
-    }
-    for modifier in &mut out.body_modifiers {
-        modifier.target = if let Some(Some(id)) = body_ids_by_attr.get(&modifier.body_attr) {
-            let mut target = String::new();
-            target.push_str(id);
-            Some(target)
-        } else {
-            None
-        };
+    if !faces_stated {
+        state_unbuilt_records(ctx, &mut out, &mut annotations, &body_records, stream)?;
     }
 
     for curve in &out.curves {
@@ -5338,7 +5602,7 @@ fn decode_graph_inner(
         if let Some(indexed) = carriers.curve(attr) {
             let carrier = indexed.carrier();
             annotations.note(
-                curve.id.as_str(),
+                &curve.id,
                 &source_stream,
                 u64_from_index(carrier.offset),
                 Some("compact_curve"),
@@ -5347,7 +5611,7 @@ fn decode_graph_inner(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
             ) {
-                annotations.exactness(curve.id.as_str(), Exactness::Unknown);
+                annotations.exactness(&curve.id, Exactness::Unknown);
             }
         }
     }
@@ -5466,130 +5730,16 @@ fn phase_full_turn_edge_ranges(
         ) {
             edge.carrier = carrier;
             annotations
-                .derived(edge.id.as_str(), "carrier.param_range")
+                .derived(&edge.id, "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     Ok(())
 }
 
-fn prune_rejected_topology(out: &mut Brep) {
-    let kept_loops = out
-        .faces
-        .iter()
-        .flat_map(|face| face.loops.stated())
-        .map(cadmpeg_ir::ids::LoopId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.loops
-        .retain(|loop_| kept_loops.contains(loop_.id.as_str()));
-
-    let kept_coedges = out
-        .loops
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Loop::coedges)
-        .map(cadmpeg_ir::ids::CoedgeId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.coedges
-        .retain(|coedge| kept_coedges.contains(coedge.id.as_str()));
-    for coedge in &mut out.coedges {
-        if !kept_coedges.contains(coedge.radial_next.as_str()) {
-            coedge.radial_next = coedge.id.clone();
-        }
-    }
-
-    let kept_pcurves = out
-        .coedges
-        .iter()
-        .flat_map(|coedge| &coedge.pcurves)
-        .map(|use_| &use_.pcurve)
-        .map(cadmpeg_ir::ids::PcurveId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.pcurves
-        .retain(|pcurve| kept_pcurves.contains(pcurve.id.as_str()));
-
-    let kept_edges = out
-        .coedges
-        .iter()
-        .map(|coedge| coedge.edge.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.edges
-        .retain(|edge| kept_edges.contains(edge.id.as_str()));
-
-    let kept_vertices = out
-        .edges
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Edge::vertices)
-        .chain(
-            out.loops
-                .iter()
-                .flat_map(cadmpeg_ir::topology::Loop::vertices),
-        )
-        .map(cadmpeg_ir::ids::VertexId::as_str)
-        .collect::<std::collections::HashSet<_>>();
-    out.vertices
-        .retain(|vertex| kept_vertices.contains(vertex.id.as_str()));
-
-    let kept_points = out
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.points
-        .retain(|point| kept_points.contains(point.id.as_str()));
-
-    let kept_curves = out
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
-        .chain(out.procedural_surfaces.iter().filter_map(|surface| {
-            match surface.definition() {
-                ProceduralSurfaceDefinition::Blend(definition) => definition.spine().as_ref(),
-                ProceduralSurfaceDefinition::LinearSweep(definition) => {
-                    Some(definition.directrix())
-                }
-                _ => None,
-            }
-            .map(cadmpeg_ir::ids::CurveId::as_str)
-        }))
-        .collect::<std::collections::HashSet<_>>();
-    out.curves
-        .retain(|curve| kept_curves.contains(curve.id.as_str()));
-    let kept_constructions = out
-        .curves
-        .iter()
-        .filter_map(|curve| {
-            curve
-                .geometry
-                .procedural_construction()
-                .map(ProceduralCurveId::as_str)
-        })
-        .collect::<std::collections::HashSet<_>>();
-    out.procedural_curves
-        .retain(|procedural| kept_constructions.contains(procedural.id.as_str()));
-    let unknown_curves = out
-        .curves
-        .iter()
-        .filter(|curve| {
-            matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-            )
-        })
-        .map(|curve| curve.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    out.stats.unknown_curve_edges = out
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.curve()
-                .is_some_and(|curve_id| unknown_curves.contains(curve_id.as_str()))
-        })
-        .count();
-}
-
 fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
-    id: &str,
+    id: &SurfaceId,
     mut geometry: &SolvedSurfaceGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut path = String::from("geometry.value");
@@ -5814,8 +5964,8 @@ fn derive_planar_pcurves(
             }];
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note(id.as_str(), source_stream, 0, Some("derived_planar_pcurve"));
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_planar_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6193,13 +6343,8 @@ fn derive_cylindrical_pcurves(
             }];
             out.coedges[*index].pcurves = uses;
         }
-        annotations.note(
-            id.as_str(),
-            source_stream,
-            0,
-            Some("derived_cylindrical_pcurve"),
-        );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_cylindrical_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -6733,12 +6878,12 @@ fn derive_revolved_circle_pcurves(
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             0,
             Some("derived_revolved_circle_pcurve"),
         );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -7108,13 +7253,8 @@ fn derive_spherical_pcurves(
                     parameter_range,
                 });
         }
-        annotations.note(
-            id.as_str(),
-            source_stream,
-            0,
-            Some("derived_spherical_pcurve"),
-        );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.note(&id, source_stream, 0, Some("derived_spherical_pcurve"));
+        annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
@@ -7331,7 +7471,7 @@ fn derive_nurbs_isoparametric_pcurves(
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
-            id.as_str(),
+            &id,
             source_stream,
             0,
             Some(if cache {
@@ -7340,7 +7480,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 "derived_nurbs_isoparametric_pcurve"
             }),
         );
-        annotations.exactness(id.as_str(), Exactness::Derived);
+        annotations.exactness(&id, Exactness::Derived);
         if let Some(tolerance) = pcurve.fit_tolerance().filter(|_| cache) {
             out.approximations.inverse_boundary(tolerance.get());
         }
@@ -9285,14 +9425,14 @@ fn synthesize_cylinder_seams(
         let coedge_namespace = cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge");
         let seam_a = CoedgeId::compose(&coedge_namespace, suffix.clone().colon(0_u32));
         let seam_b = CoedgeId::compose(&coedge_namespace, suffix.colon(1_u32));
-        for id in [
-            curve_id.as_str(),
-            edge_id.as_str(),
-            seam_a.as_str(),
-            seam_b.as_str(),
+        for key in [
+            AnnotationKey::from(&curve_id),
+            AnnotationKey::from(&edge_id),
+            AnnotationKey::from(&seam_a),
+            AnnotationKey::from(&seam_b),
         ] {
-            annotations.note(id, source_stream, 0, Some("derived_periodic_seam"));
-            annotations.exactness(id, Exactness::Derived);
+            annotations.note(&key, source_stream, 0, Some("derived_periodic_seam"));
+            annotations.exactness(key, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
@@ -9502,13 +9642,8 @@ fn synthesize_sphere_seams(
             &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
             cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
         );
-        annotations.note(
-            curve_id.as_str(),
-            source_stream,
-            0,
-            Some("derived_sphere_seam"),
-        );
-        annotations.exactness(curve_id.as_str(), Exactness::Derived);
+        annotations.note(&curve_id, source_stream, 0, Some("derived_sphere_seam"));
+        annotations.exactness(&curve_id, Exactness::Derived);
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
             parameter_range: None,
@@ -9669,9 +9804,12 @@ fn synthesize_sphere_seams(
                     &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
                     seam_face_key.clone(),
                 );
-                for id in [point_id.as_str(), vertex_id.as_str()] {
-                    annotations.note(id, source_stream, 0, Some("derived_sphere_seam"));
-                    annotations.exactness(id, Exactness::Derived);
+                for key in [
+                    AnnotationKey::from(&point_id),
+                    AnnotationKey::from(&vertex_id),
+                ] {
+                    annotations.note(&key, source_stream, 0, Some("derived_sphere_seam"));
+                    annotations.exactness(key, Exactness::Derived);
                 }
                 admit_brep_entity(ctx)?;
                 out.points
@@ -9703,14 +9841,14 @@ fn synthesize_sphere_seams(
                     .unwrap_or(false)
             })
             .map_or(ring.len(), |index| index + 1);
-        for id in [
-            curve_id.as_str(),
-            edge_id.as_str(),
-            coedge_id.as_str(),
-            pcurve_id.as_str(),
+        for key in [
+            AnnotationKey::from(&curve_id),
+            AnnotationKey::from(&edge_id),
+            AnnotationKey::from(&coedge_id),
+            AnnotationKey::from(&pcurve_id),
         ] {
-            annotations.note(id, source_stream, 0, Some("derived_sphere_seam"));
-            annotations.exactness(id, Exactness::Derived);
+            annotations.note(&key, source_stream, 0, Some("derived_sphere_seam"));
+            annotations.exactness(key, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
         out.curves.push(Curve {
@@ -10767,9 +10905,10 @@ mod tests {
     }
 
     /// FIN 30 names FIN 31 as its forward link, and FIN 31 does not name it
-    /// back, so the only loop of the face is withheld.
+    /// back, so the only loop of the face is given up and the face keeps a
+    /// partial loop list.
     #[test]
-    fn a_face_without_a_decoded_loop_is_withheld_with_its_surface() {
+    fn a_face_whose_only_loop_is_given_up_keeps_a_partial_loop_list() {
         let mut body = crate::test_support::parasolid::triangle_body();
         let at = body
             .windows(4)
@@ -10784,11 +10923,27 @@ mod tests {
                 false,
             )
             .expect("triangle decodes");
+            let mut decoded = decoded;
             assert!(decoded.loops.is_empty());
-            assert!(decoded.faces.is_empty());
-            assert!(decoded.surfaces.is_empty());
-            assert_eq!(decoded.stats.withheld_fin_links, 1);
-            assert_eq!(decoded.stats.withheld_faces, 1);
+            let [face] = &decoded.faces[..] else {
+                panic!("the face is kept");
+            };
+            assert!(face.loops.is_partial());
+            assert_eq!(face.loops.stated().count(), 0);
+            assert_eq!(decoded.surfaces.len(), 1);
+            let losses = decoded.take_losses().unwrap();
+            let charges = losses
+                .iter()
+                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+                .map(|loss| loss.message.as_str())
+                .collect::<Vec<_>>();
+            let [charge] = charges[..] else {
+                panic!("one charge gives up the loop: {charges:?}");
+            };
+            assert!(
+                charge.starts_with("record sldprt:brep:loop#20 "),
+                "{charge}"
+            );
         });
     }
 
@@ -10926,6 +11081,7 @@ mod tests {
                 topology_refs: [7, 8, 9, 10, 1, 12, 11],
                 ownership_refs: Vec::new(),
                 kind: BodyKind::Sheet,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -10958,6 +11114,7 @@ mod tests {
                 attr: 100,
                 node_id: 900,
                 refs: [1, 1, 49, 7, 8],
+                front: None,
                 sense: Sense::Forward,
                 offset: 9,
                 end: 10,
@@ -11057,7 +11214,7 @@ mod tests {
             ..Default::default()
         };
 
-        super::prune_rejected_topology(&mut brep);
+        super::prune_rejected_topology(&mut brep, &[]);
         assert_eq!(brep.curves.first().map(|curve| &curve.id), Some(&spine));
     }
 

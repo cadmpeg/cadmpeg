@@ -4,6 +4,7 @@ mod partial_operands;
 mod repeated_owners;
 
 use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::Feature;
@@ -203,7 +204,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             decoded: &mut std::collections::BTreeMap::new(),
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
-            failed: std::collections::BTreeMap::new(),
+            failed: std::collections::BTreeSet::new(),
             scene_sources: &mut crate::scene::Sources::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
@@ -547,7 +548,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         configuration::{DesignConfiguration, DesignConfigurationKind},
     };
 
-    let configuration_payload = serde_json::json!({
+    let configuration_payload = cadmpeg_core::json!({
         "raw_text": "f3d:brep:entity#3",
         "nested": {
             "f3d:brep:entity#4": "f3d:brep:entity#5",
@@ -570,6 +571,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         asm_body_key_offset: 20,
         asm_body_key: 3,
         entity_suffix: 1,
+        browser_node_entity: 2,
         visible: true,
     })
     .unwrap();
@@ -614,6 +616,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         "f3d:role/occurrence-0@brep:entity#1"
     );
     assert_eq!(merged_visibility[0].stream(), "Design/BulkStream.dat");
+    assert_eq!(merged_visibility[0].browser_node_entity, 2);
 
     let merged_configurations: Vec<DesignConfiguration> = root
         .namespace("f3d")
@@ -881,7 +884,7 @@ fn parameter_document(
 
 #[test]
 fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
-    let mut fields = serde_json::json!({
+    let mut fields = cadmpeg_core::json!({
         "placement_source": {
             "stream": "f3d:Design/BulkStream.dat",
             "carrier_record_index": 71,
@@ -1237,7 +1240,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
     let scan = crate::container::scan(&ctx, bytes).unwrap();
     let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
     let archive = &session.archive;
-    let reference: XrefReference = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let reference: XrefReference = json::from_value(cadmpeg_core::json!({
         "id":"f3d:xref:reference#0", "ordinal":0, "from":"root.f3d",
         "relative_path":"member.f3d", "neutron_role":"member", "neutron_data":""
     }))
@@ -1443,7 +1446,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 decoded: &mut std::collections::BTreeMap::new(),
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
-                failed: std::collections::BTreeMap::new(),
+                failed: std::collections::BTreeSet::new(),
                 scene_sources: &mut crate::scene::Sources::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),

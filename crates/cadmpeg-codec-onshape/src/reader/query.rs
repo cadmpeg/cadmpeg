@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::io::Read;
 
 use base64::Engine;
@@ -9,6 +10,22 @@ use super::Mapping;
 const BYTES: usize = 1024 * 1024;
 const CACHE_BYTES: usize = 4 * BYTES;
 const REFUSED: &str = "the compressed query encoding is not supported yet";
+
+pub(super) fn needs_deterministic_ids(query: &Value) -> bool {
+    let has_expression = query.get("queryString").is_some_and(|value| {
+        !value.is_null() && value.as_str().is_none_or(|text| !text.trim().is_empty())
+    });
+    has_expression
+        && match query.get("deterministicIds") {
+            None | Some(Value::Null) => true,
+            Some(Value::Array(ids)) => ids.is_empty(),
+            _ => false,
+        }
+}
+
+pub(super) fn has_unresolved_ids(parameter: &Value) -> bool {
+    super::rows(parameter, "queries").is_ok_and(|rows| rows.iter().any(needs_deterministic_ids))
+}
 
 pub(super) fn resolved_leaves(source: &Value) -> Mapping<Vec<Value>> {
     let mut pending = vec![resolved(source)?];
@@ -224,9 +241,7 @@ impl Reader<'_> {
             _ => return Err(REFUSED.into()),
         };
         bounded_depth(&value, 0)?;
-        let size = cadmpeg_core::serde_erase::json::to_vec(&value)
-            .map_err(|_| REFUSED)?
-            .len();
+        let size = json::to_vec(&value).map_err(|_| REFUSED)?.len();
         self.charge(size)?;
         self.values.push((value.clone(), size));
         Ok(value)

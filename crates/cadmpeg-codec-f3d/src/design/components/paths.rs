@@ -306,6 +306,7 @@ pub(crate) fn bind_feature_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
     #[test]
@@ -486,7 +487,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, (stream, key))| {
-                    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                    json::from_value(cadmpeg_core::json!({
                         "id":format!("f3d:xref:reference#{index}"), "ordinal":index,
                         "from":"root.f3d", "relative_path":"part.f3d",
                         "neutron_role":"same-role", "neutron_data":"",
@@ -539,7 +540,7 @@ mod tests {
             .is_none());
         let key_c = "cccccccc-cccc-cccc-cccc-cccccccccccc";
         let mut table = table;
-        table.references[2] = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        table.references[2] = json::from_value(cadmpeg_core::json!({
             "id":"f3d:xref:reference#2", "ordinal":2,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":"same-role", "neutron_data":"",
@@ -579,17 +580,12 @@ mod tests {
             repeated_paths.resolve(stream, &keys(&[key_b, key_c])),
             Some((chain[2].id.clone(), 2))
         );
-        let encoded = cadmpeg_core::serde_erase::json::to_value(&table.references[0]).unwrap();
+        let encoded = json::to_value(&table.references[0]).unwrap();
         let retained: crate::records::xref::XrefReference =
-            cadmpeg_core::serde_erase::json::from_value(encoded.clone()).unwrap();
+            json::from_value(encoded.clone()).unwrap();
         assert_eq!(retained, table.references[0]);
         let mut invalid = encoded;
-        invalid["placement_source"]["occurrence_guid"] = serde_json::json!("part.f3d");
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<crate::records::xref::XrefReference>(
-                invalid
-            )
-            .is_err()
-        );
+        invalid["placement_source"]["occurrence_guid"] = cadmpeg_core::json!("part.f3d");
+        assert!(json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
     }
 }

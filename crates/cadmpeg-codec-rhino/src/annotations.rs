@@ -7,13 +7,13 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
-use cadmpeg_ir::SourceProvenance;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart};
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
-use crate::objects::{ClassUserdata, UserdataDescriptor};
+use crate::objects::{ClassUserdata, ObjectDescriptor, UserdataDescriptor};
 use crate::settings::{utf16_retained, CoordinateLane, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
@@ -276,7 +276,7 @@ fn anonymous(
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < expected_minor {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             chunk.body().start,
             "annotation wrapper version is unsupported",
         ));
@@ -318,13 +318,20 @@ fn scaled_plane(
     let origin = plane.origin.get();
     let mut scaled = [cadmpeg_ir::scalar::FiniteReal::ZERO; 3];
     for index in 0..3 {
-        scaled[index] = scaled_coordinate(origin[index], scale).ok_or_else(|| {
-            FramingError::structural(offset, "scaled annotation plane is invalid")
+        scaled[index] = scaled_coordinate(origin[index], scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                "scaled annotation plane is invalid",
+            ))
         })?;
     }
     plane.origin = crate::settings::CoordinateLane::Admitted(scaled.into());
-    let constant = scaled_coordinate(plane.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?;
+    let constant = scaled_coordinate(plane.equation[3], scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            offset,
+            "scaled annotation equation is invalid",
+        ))
+    })?;
     plane.equation = plane.equation.with_fourth(constant);
     Ok(plane)
 }
@@ -347,8 +354,11 @@ fn decode_annotation(
     let mut annotation = crate::dimensions::annotation(ctx, data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
     annotation.text_rectangle_width =
-        scaled_coordinate(annotation.text_rectangle_width.get(), scale).ok_or_else(|| {
-            FramingError::structural(range.start, "scaled text rectangle width is invalid")
+        scaled_coordinate(annotation.text_rectangle_width.get(), scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                range.start,
+                "scaled text rectangle width is invalid",
+            ))
         })?;
     let mut points = Vec::new();
     if leader {
@@ -367,14 +377,17 @@ fn decode_annotation(
                 FramingError::structural(outer.position() - 16, "leader point is not finite")
             })?;
             points.push([
-                scaled_coordinate(point[0], scale).ok_or_else(|| {
-                    FramingError::structural(
+                scaled_coordinate(point[0], scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
                         outer.position() - 16,
                         "scaled leader point is invalid",
-                    )
+                    ))
                 })?,
-                scaled_coordinate(point[1], scale).ok_or_else(|| {
-                    FramingError::structural(outer.position() - 8, "scaled leader point is invalid")
+                scaled_coordinate(point[1], scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
+                        outer.position() - 8,
+                        "scaled leader point is invalid",
+                    ))
                 })?,
             ]);
         }
@@ -408,7 +421,7 @@ fn decode_legacy_annotation(
     }
     let mut outer = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if outer.i32()? != 1 || outer.i32()? < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             chunk.body().start,
             "legacy annotation wrapper version is unsupported",
         ));
@@ -460,8 +473,11 @@ fn decode_v2_annotation(
                 "V2 text height is outside the source bound",
             ));
         }
-        let text_height = scaled_coordinate(raw_text_height, scale).ok_or_else(|| {
-            FramingError::structural(reader.position() - 8, "scaled V2 text height is invalid")
+        let text_height = scaled_coordinate(raw_text_height, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                reader.position() - 8,
+                "scaled V2 text height is invalid",
+            ))
         })?;
         Some(V2Text {
             face_name,
@@ -490,7 +506,7 @@ fn decode_dot(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "text-dot version is unsupported",
         ));
@@ -498,8 +514,11 @@ fn decode_dot(
     let raw_center = [reader.f64()?, reader.f64()?, reader.f64()?];
     let mut center = [FiniteReal::ZERO; 3];
     for (target, value) in center.iter_mut().zip(raw_center) {
-        *target = scaled_coordinate(value, scale).ok_or_else(|| {
-            FramingError::structural(range.start, "scaled text-dot center is invalid")
+        *target = scaled_coordinate(value, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                range.start,
+                "scaled text-dot center is invalid",
+            ))
         })?;
     }
     let height_points = reader.i32()?;
@@ -531,7 +550,7 @@ fn v2_version(
     kind: &str,
 ) -> Result<(), FramingError> {
     if reader.u8()? >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             offset,
             format!("V2 {kind} version is unsupported"),
         ));
@@ -548,8 +567,11 @@ fn v2_point(
     let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
     let mut point = [FiniteReal::ZERO; 3];
     for (target, value) in point.iter_mut().zip(raw_point) {
-        *target = scaled_coordinate(value, scale).ok_or_else(|| {
-            FramingError::structural(offset, format!("scaled V2 {kind} point is invalid"))
+        *target = scaled_coordinate(value, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                format!("scaled V2 {kind} point is invalid"),
+            ))
         })?;
     }
     Ok(point)
@@ -612,31 +634,40 @@ fn record_identity(
     (links, key, format!("{}", identity.object_id))
 }
 
+/// Gives up the annotation object `object` at `source_order` for `error`.
 fn annotation_record_dropped(
-    losses: &mut Vec<LossNote>,
-    source_id: &str,
-    source_offset: usize,
-    class_uuid: Uuid,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    source_order: usize,
+    object: &ObjectDescriptor,
+    cause: Cause,
     error: impl std::fmt::Display,
-) {
-    let loss = RhinoLossCode::AnnotationRecordDropped.note(format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"));
-    let tag = format!("ANNOTATION/source={source_id}/class={class_uuid}");
-    losses.push(
-        loss.with_provenance(
-            SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset))
-                .with_tag(tag),
+) -> Result<GivenUpPart, CodecError> {
+    let source_id = &object.identity.source_id;
+    let class_uuid = object.class_uuid;
+    let source_offset = object.range.start;
+    crate::container::give_up_object_record(
+        ctx,
+        data,
+        source_order,
+        object.range.clone(),
+        cause,
+        format_args!(
+            "annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"
         ),
-    );
+    )
 }
 
-/// Projects every supported general annotation into stable native records.
+/// Projects every supported general annotation into stable native records,
+/// and returns the losses and the given-up annotation objects.
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<(Vec<LossNote>, Vec<GivenUpPart>), CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
@@ -649,13 +680,14 @@ pub(crate) fn install(
         };
         let identity = &object.identity;
         let Some(scale) = binding.neutral_scale() else {
-            annotation_record_dropped(
-                &mut losses,
-                &identity.source_id,
-                object.range.start,
-                object.class_uuid,
+            given_up.push(annotation_record_dropped(
+                ctx,
+                scan.data,
+                source_order,
+                object,
+                Cause::Undecoded,
                 format_args!("no physical millimetre binding ({})", binding.label()),
-            );
+            )?);
             continue;
         };
         let mut v2_key = if matches!(&class, AnnotationClass::V2) {
@@ -705,13 +737,14 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        annotation_record_dropped(
-                            &mut losses,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
+                        given_up.push(annotation_record_dropped(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            object,
+                            error.cause(),
                             error,
-                        );
+                        )?);
                         continue;
                     }
                 };
@@ -769,13 +802,14 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        annotation_record_dropped(
-                            &mut losses,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
+                        given_up.push(annotation_record_dropped(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            object,
+                            error.cause(),
                             error,
-                        );
+                        )?);
                         continue;
                     }
                 };
@@ -839,13 +873,14 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        annotation_record_dropped(
-                            &mut losses,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
+                        given_up.push(annotation_record_dropped(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            object,
+                            error.cause(),
                             error,
-                        );
+                        )?);
                         continue;
                     }
                 };
@@ -924,13 +959,14 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        annotation_record_dropped(
-                            &mut losses,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
+                        given_up.push(annotation_record_dropped(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            object,
+                            error.cause(),
                             error,
-                        );
+                        )?);
                         continue;
                     }
                 };
@@ -953,13 +989,14 @@ pub(crate) fn install(
                 ) {
                     Ok(value) => value,
                     Err(error) => {
-                        annotation_record_dropped(
-                            &mut losses,
-                            &identity.source_id,
-                            object.range.start,
-                            object.class_uuid,
+                        given_up.push(annotation_record_dropped(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            object,
+                            error.cause(),
                             error,
-                        );
+                        )?);
                         continue;
                     }
                 };
@@ -983,7 +1020,7 @@ pub(crate) fn install(
     if !arrows.is_empty() {
         namespace.set_arena(ctx, "annotation_arrows", &arrows)?;
     }
-    Ok(losses)
+    Ok((losses, given_up))
 }
 
 #[cfg(test)]
@@ -1000,6 +1037,7 @@ mod tests {
         object_record_with_payload, scan_with_objects, set_identity,
     };
     use crate::wire::Uuid;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -1219,9 +1257,8 @@ mod tests {
                         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                         .expect("complete annotation decode"),
                 );
-                let ir: CadIr = cadmpeg_core::serde_erase::json::from_slice(
-                    &cadmpeg_core::serde_erase::json::to_vec(decoded.ir())
-                        .expect("annotation CADIR serialization"),
+                let ir: CadIr = json::from_slice(
+                    &json::to_vec(decoded.ir()).expect("annotation CADIR serialization"),
                 )
                 .expect("annotation CADIR admission");
                 let namespace = ir
@@ -1235,19 +1272,6 @@ mod tests {
                     "class={class} unit={unit:?} losses={:?}",
                     decoded.report().losses
                 );
-                let losses = decoded
-                    .report()
-                    .losses
-                    .iter()
-                    .filter(|loss| {
-                        loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind()
-                    })
-                    .collect::<Vec<_>>();
-                assert_eq!(
-                    losses.len(),
-                    usize::from(expected_scale.is_none()),
-                    "class={class} unit={unit:?}"
-                );
                 assert_eq!(
                     decoded
                         .source_fidelity()
@@ -1257,8 +1281,7 @@ mod tests {
                     Some(object.as_slice())
                 );
                 if let Some(scale) = expected_scale {
-                    let record = cadmpeg_core::serde_erase::json::to_value(&records[0])
-                        .expect("annotation record JSON");
+                    let record = json::to_value(&records[0]).expect("annotation record JSON");
                     assert_eq!(
                         record[position_field][0], scale,
                         "class={class} unit={unit:?}"
@@ -1269,30 +1292,27 @@ mod tests {
                     );
                     assert_eq!(
                         record["links"],
-                        serde_json::json!(["rhino:object:record#000000"])
+                        cadmpeg_core::json!(["rhino:object:record#000000"])
                     );
                     assert!(record.get("data").is_none());
                     assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
                 } else {
-                    let loss = losses[0];
+                    let loss = crate::container::tests::assert_part_given_up(
+                        decoded.ir(),
+                        decoded.source_fidelity(),
+                        &decoded.report().losses,
+                        ("object-record", source.range.start),
+                        Some("rhino:object:record#000000"),
+                        "rhino:object:record#000000",
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    );
                     assert!(loss.message.contains(&source.identity.source_id));
                     assert!(loss
                         .message
                         .contains(&format!("no physical millimetre binding ({binding_label})")));
-                    let provenance = loss.provenance.as_ref().expect("located annotation loss");
                     assert_eq!(
-                        provenance.offset,
-                        cadmpeg_core::decode::u64_from_index(source.range.start)
-                    );
-                    assert_eq!(
-                        provenance.tag.as_deref(),
-                        Some(
-                            format!(
-                                "ANNOTATION/source={}/class={class}",
-                                source.identity.source_id
-                            )
-                            .as_str()
-                        )
+                        loss.provenance.as_ref().map(|provenance| provenance.offset),
+                        Some(cadmpeg_core::decode::u64_from_index(source.range.start))
                     );
                 }
             }
@@ -1397,27 +1417,21 @@ mod tests {
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
         assert_eq!(namespace.arenas()["annotations"].len(), 4);
-        let text = cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["annotations"][0])
-            .expect("text JSON");
+        let text = json::to_value(&namespace.arenas()["annotations"][0]).expect("text JSON");
         assert_eq!(text["kind"], "text");
         assert_eq!(text["rich_text"], "text");
         assert_eq!(text["v2_default_text"], "default");
         assert_eq!(text["v2_face_name"], "Witness Sans");
         assert_eq!(text["v2_font_weight"], 700);
         assert_eq!(text["v2_text_height"], 12.5);
-        let leader =
-            cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["annotations"][1])
-                .expect("leader JSON");
+        let leader = json::to_value(&namespace.arenas()["annotations"][1]).expect("leader JSON");
         assert_eq!(leader["kind"], "leader");
         assert_eq!(leader["rich_text"], "leader");
         assert_eq!(leader["leader_points"][1][1], 4.0);
-        let base = cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["annotations"][2])
-            .expect("base JSON");
+        let base = json::to_value(&namespace.arenas()["annotations"][2]).expect("base JSON");
         assert_eq!(base["kind"], "text");
         assert_eq!(base["rich_text"], "base");
-        let unknown =
-            cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["annotations"][3])
-                .expect("unknown JSON");
+        let unknown = json::to_value(&namespace.arenas()["annotations"][3]).expect("unknown JSON");
         assert_eq!(unknown["kind"], "annotation");
         assert_eq!(unknown["annotation_type"], 123);
     }
@@ -1432,7 +1446,7 @@ mod tests {
             &payload,
         )]);
         let mut ir = CadIr::empty();
-        let losses = install(
+        let (losses, _) = install(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
@@ -1447,11 +1461,11 @@ mod tests {
             .arenas()["annotations"][0];
         assert_eq!(
             record.field("legacy_user_text"),
-            Some(serde_json::json!("legacy text"))
+            Some(cadmpeg_core::json!("legacy text"))
         );
         assert_eq!(
             record.field("legacy_text_height"),
-            Some(serde_json::json!(1.5))
+            Some(cadmpeg_core::json!(1.5))
         );
     }
 
@@ -1470,26 +1484,32 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let losses = install(
+        let (losses, given_up) = install(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
         .expect("annotation installation");
-        let loss = losses
-            .iter()
-            .find(|loss| loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind())
-            .expect("malformed annotation loss");
+        assert!(losses.is_empty(), "{losses:?}");
+        let [part] = given_up.as_slice() else {
+            panic!("one given-up annotation: {given_up:?}");
+        };
+        let loss = part.loss();
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
         assert!(loss.message.contains(&format!("offset {source_offset}")));
+        assert!(loss.message.contains(&source_id));
+        assert!(loss
+            .message
+            .contains("(class 5de6b210-486b-11d4-8014-0010830122f0)"));
         let provenance = loss.provenance.as_ref().expect("annotation provenance");
         assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
         assert_eq!(
             provenance.offset,
             cadmpeg_core::decode::u64_from_index(source_offset)
         );
-        let expected_tag =
-            format!("ANNOTATION/source={source_id}/class=5de6b210-486b-11d4-8014-0010830122f0");
-        assert_eq!(provenance.tag.as_deref(), Some(expected_tag.as_str()));
         assert!(ir
             .native
             .namespace("rhino")
@@ -1544,7 +1564,9 @@ mod tests {
         );
         assert!(records.iter().all(|record| {
             record.field("source_uuid")
-                == Some(serde_json::json!(Uuid::from_wire(duplicate_id).to_string()))
+                == Some(cadmpeg_core::json!(
+                    Uuid::from_wire(duplicate_id).to_string()
+                ))
         }));
     }
 
@@ -1703,13 +1725,11 @@ mod tests {
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
         assert_eq!(namespace.arenas()["text_dots"].len(), 1);
         assert_eq!(namespace.arenas()["annotation_arrows"].len(), 1);
-        let dot = cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["text_dots"][0])
-            .expect("dot JSON");
+        let dot = json::to_value(&namespace.arenas()["text_dots"][0]).expect("dot JSON");
         assert_eq!(dot["primary_text"], "V2 dot");
         assert_eq!(dot["center"][0], 1.25);
         let arrow =
-            cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["annotation_arrows"][0])
-                .expect("arrow JSON");
+            json::to_value(&namespace.arenas()["annotation_arrows"][0]).expect("arrow JSON");
         assert_eq!(arrow["tail"][2], 3.0);
         assert_eq!(arrow["head"][0], -4.0);
     }

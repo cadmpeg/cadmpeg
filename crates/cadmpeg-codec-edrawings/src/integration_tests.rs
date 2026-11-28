@@ -108,8 +108,9 @@ fn inspect_reports_a_model_member_whose_wrapper_does_not_read() {
 }
 
 #[test]
-fn decode_classifies_the_package_and_reports_a_broken_stream_as_blocking() {
-    let result = decode(&part_package(b"synthetic model stream")).unwrap();
+fn decode_classifies_the_package_and_gives_up_a_stream_with_an_unknown_opcode() {
+    let package = part_package(b"synthetic model stream");
+    let result = decode(&package).unwrap();
 
     let source = result.ir().source.as_ref().unwrap();
     let primary = source.dialect().unwrap();
@@ -131,15 +132,26 @@ fn decode_classifies_the_package_and_reports_a_broken_stream_as_blocking() {
     assert!(!result.report().geometry_transferred());
     assert_eq!(
         loss_codes(&result),
-        [EdrawingsLossCode::ModelMalformed.kind()]
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
     );
     let note = result.report().losses.first().unwrap();
-    assert_eq!(note.severity, cadmpeg_ir::report::Severity::Blocking);
-    assert!(note.message.contains("at byte 5"), "{}", note.message);
+    assert!(
+        note.message.contains("unknown opcode at byte 5"),
+        "{}",
+        note.message
+    );
     assert!(result.ir().geometry.bodies.is_empty());
 
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let pinned = decode_with(&package, &options).unwrap();
+    assert_eq!(
+        loss_codes(&pinned),
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
+    );
 }
 
 #[test]
@@ -182,15 +194,36 @@ fn bytes_after_the_zlib_stream_are_charged_unless_they_are_the_observed_tail() {
 }
 
 #[test]
-fn a_truncated_zlib_stream_decodes_with_a_blocking_stream_loss() {
+fn a_truncated_zlib_stream_gives_up_the_model_member() {
     let member = emodel(&[9_u8; 200]);
     let cut = member[..member.len() - 8].to_vec();
-    let result = decode(&package_of(&cut, &[])).unwrap();
+    let package = package_of(&cut, &[]);
+    let result = decode(&package).unwrap();
     assert_eq!(
         loss_codes(&result),
-        [EdrawingsLossCode::StreamMalformed.kind()]
+        [cadmpeg_ir::unknown::part::record_unreadable_kind()]
+    );
+    let note = result.report().losses.first().unwrap();
+    assert!(
+        note.message
+            .contains("the eModel model stream did not open"),
+        "{}",
+        note.message
     );
     assert!(!result.report().geometry_transferred());
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect_err("a pinned decode refuses an unreadable model member");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
 }
 
 #[test]
@@ -230,7 +263,7 @@ fn hostile_packages_are_errors_and_never_panics() {
     let result = decode(&package_of(&empty, &[])).unwrap();
     assert_eq!(
         loss_codes(&result),
-        [EdrawingsLossCode::StreamMalformed.kind()]
+        [cadmpeg_ir::unknown::part::record_unreadable_kind()]
     );
 }
 

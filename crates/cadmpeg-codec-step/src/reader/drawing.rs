@@ -14,6 +14,7 @@ use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId, UnknownId};
 use cadmpeg_ir::references::{InstanceTarget, ReferenceEntity};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 use serde::Serialize;
 
@@ -151,9 +152,11 @@ pub(super) fn decode(
         };
         let parameters = source_parameters(record, name);
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
-                "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-            )));
+            exchange.lost().give_up(
+                id,
+                Cause::Unreadable,
+                format!("STEP drawing record #{id} has too few {name} parameters"),
+            );
             continue;
         }
 
@@ -281,9 +284,13 @@ pub(super) fn decode(
         }
 
         let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
-            losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
-                "drawing #{id} position in the stored order exceeds the stated order width"
-            )));
+            exchange.lost().give_up(
+                id,
+                Cause::Undecoded,
+                format!(
+                    "drawing #{id} position in the stored order exceeds the stated order width"
+                ),
+            );
             continue;
         };
 
@@ -317,7 +324,7 @@ pub(super) fn decode(
                 assets: Vec::new(),
                 ..Drawing::new(
                     DrawingId::from(identity.clone()),
-                    identity.as_str().to_owned(),
+                    identity.clone(),
                     drawing_kind(name),
                     name.into(),
                     order,
@@ -1200,7 +1207,7 @@ fn value_text(
 ) -> Result<Option<String>, CodecError> {
     let _depth_guard = ctx.enter_nested("step_drawing_value_text_depth")?;
     let text = match value {
-        Value::UninterpretedLiteral => return Ok(None),
+        Value::UninterpretedLiteral(_) => return Ok(None),
         Value::Reference(id) => {
             format!("#{id}")
         }

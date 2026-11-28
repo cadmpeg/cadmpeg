@@ -2,6 +2,7 @@
 //! Independent metadata admission and bounded property indexing.
 
 use crate::native::PropertyBody;
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Write as _;
 
 #[test]
@@ -20,6 +21,19 @@ fn missing_and_legacy_counts_retain_the_actual_population_and_report_losses() {
         assert_eq!(graph.objects.len(), 1);
         assert_eq!(graph.losses.len(), 2);
     }
+}
+
+/// `TransientCount` is optional: a container that omits it beside
+/// `_Property` records states no count and records no loss.
+#[test]
+fn an_absent_transient_count_records_no_loss() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="Note" type="App::PropertyString"><String value="note"/></Property><_Property name="Temporary" type="App::PropertyString"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        super::parse(document.as_bytes(), "4", ctx)
+    })
+    .expect("a container without TransientCount");
+    assert_eq!(graph.properties.len(), 2);
+    assert!(graph.losses.is_empty(), "{:?}", graph.losses);
 }
 
 #[test]
@@ -83,11 +97,9 @@ fn malformed_unused_links_remain_explicitly_source_only() {
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
                 .note(String::new())
                 .code));
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(&graph.properties[0]).expect("serialize");
+        let wire = json::to_value(&graph.properties[0]).expect("serialize");
         let property: crate::native::PropertyRecord =
-            cadmpeg_core::serde_erase::json::from_value(wire)
-                .expect("deserialize source-only property");
+            json::from_value(wire).expect("deserialize source-only property");
         assert_eq!(property, graph.properties[0]);
     }
 }

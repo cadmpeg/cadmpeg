@@ -463,6 +463,7 @@ mod tests {
             lead: 0,
             body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),
+            compact_class: None,
             entity_id,
             value_schema_selections: Vec::new(),
             range_interval: None,
@@ -472,6 +473,7 @@ mod tests {
             reference_signature: None,
             suffix: None,
             suffix_schema_selection: None,
+            cached_value_views: crate::native::entity_record::CachedValueViews::default(),
         }
     }
 

@@ -735,7 +735,10 @@ fn open_or_defect(fault: GlobalFault) -> Result<RawOutcome, CodecError> {
 }
 
 fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
-    let bytes = global_bytes(scan);
+    parse_bytes(&global_bytes(scan))
+}
+
+fn parse_bytes(bytes: &[u8]) -> Result<RawOutcome, CodecError> {
     if bytes.is_empty() {
         return Ok(RawOutcome::Open(malformed("section is missing")));
     }
@@ -749,12 +752,12 @@ fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
             suffix_open: false,
         }));
     }
-    let (parameter_delimiter, mut cursor) = match first_delimiter(&bytes) {
+    let (parameter_delimiter, mut cursor) = match first_delimiter(bytes) {
         Ok(parsed) => parsed,
         Err(fault) => return open_or_defect(fault),
     };
     let (record_value, next, _) =
-        match delimited_value(&bytes, cursor, parameter_delimiter, None, true) {
+        match delimited_value(bytes, cursor, parameter_delimiter, None, true) {
             Ok(parsed) => parsed,
             Err(fault) => return open_or_defect(fault),
         };
@@ -792,7 +795,7 @@ fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
     loop {
         let retain = field_count < values.len();
         let framed = delimited_value(
-            &bytes,
+            bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
@@ -833,6 +836,72 @@ fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
         unreadable_suffix,
         suffix_open,
     }))
+}
+
+/// A Global field as the source wrote it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum SourceField {
+    Omitted,
+    Text(Vec<u8>),
+    Integer(i64),
+    Real(FiniteReal),
+    Unreadable,
+}
+
+/// The Global fields of `bytes`, columns 1 to 72 of the Global cards in
+/// order, by field index from 0. `None` when the section does not close or
+/// its delimiters are invalid. A field after an unreadable suffix is
+/// [`SourceField::Unreadable`].
+pub(crate) fn source_fields(bytes: &[u8]) -> Option<Vec<SourceField>> {
+    let Ok(RawOutcome::Closed(raw)) = parse_bytes(bytes) else {
+        return None;
+    };
+    Some(
+        raw.values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                if raw.unreadable_suffix.is_some() && index >= raw.field_count {
+                    return SourceField::Unreadable;
+                }
+                match value {
+                    Value::Omitted => SourceField::Omitted,
+                    Value::String(text) => SourceField::Text(text.clone()),
+                    Value::Atom(atom) => {
+                        numeric_text(atom).map_or(SourceField::Unreadable, |text| {
+                            text.parse::<i64>().map_or_else(
+                                |_| {
+                                    parse_real_text(text)
+                                        .map_or(SourceField::Unreadable, SourceField::Real)
+                                },
+                                SourceField::Integer,
+                            )
+                        })
+                    }
+                    Value::Malformed(_) | Value::ForbiddenString => SourceField::Unreadable,
+                }
+            })
+            .collect(),
+    )
+}
+
+/// The largest field 16 (maximum line weight gradations) the IGES 4.0 Global
+/// table admits.
+pub(crate) const MAXIMUM_V4_LINE_WEIGHT_GRADATIONS: i64 = 32_768;
+
+/// The Global section `bytes`, columns 1 to 72 of the Global cards in
+/// order, resolved as a decode resolves it. `None` when the section does not
+/// close or its delimiters are invalid.
+pub(crate) fn resolved(bytes: &[u8]) -> Option<ResolvedGlobal> {
+    let Ok(RawOutcome::Closed(raw)) = parse_bytes(bytes) else {
+        return None;
+    };
+    Some(resolve(raw).0)
+}
+
+/// Whether `bytes` is a Global date the `table` grammar admits.
+pub(crate) fn date_is_valid(bytes: &[u8], table: GlobalTable) -> bool {
+    date_value_is_valid(bytes, table.accepts_four_digit_date())
 }
 
 /// Recover the Global field boundaries, then resolve every field once.
@@ -1207,7 +1276,7 @@ impl Resolution {
         }
     }
 
-    fn significance(&mut self, index: usize) -> Supplied<u32> {
+    fn significance(&mut self, index: usize, global_table: GlobalTable) -> Supplied<u32> {
         let defect = match self.supplied_integer(index) {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
@@ -1216,12 +1285,13 @@ impl Resolution {
             },
             Supplied::Malformed => Defect::Malformed,
         };
-        self.charge(
-            IgesLossCode::GlobalSemanticContextSubstituted,
-            index,
-            defect,
-            SIGNIFICANCE_CONSEQUENCE,
-        );
+        let code = match defect {
+            Defect::Absent if !global_table.field_requires_value(index) => {
+                IgesLossCode::GlobalSemanticContextSubstituted
+            }
+            Defect::Absent | Defect::Malformed => IgesLossCode::GlobalSemanticContextInvalid,
+        };
+        self.charge(code, index, defect, SIGNIFICANCE_CONSEQUENCE);
         match defect {
             Defect::Absent => Supplied::Absent,
             Defect::Malformed => Supplied::Malformed,
@@ -1232,7 +1302,7 @@ impl Resolution {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
             SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
-                    IgesLossCode::GlobalSemanticContextSubstituted,
+                    IgesLossCode::GlobalSemanticContextInvalid,
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Absent,
                     RESOLUTION_CONSEQUENCE,
@@ -1244,7 +1314,7 @@ impl Resolution {
                 Ok(value) => value,
                 Err(_) => {
                     self.charge(
-                        IgesLossCode::GlobalSemanticContextSubstituted,
+                        IgesLossCode::GlobalSemanticContextInvalid,
                         FIELD_MINIMUM_RESOLUTION,
                         Defect::Malformed,
                         RESOLUTION_CONSEQUENCE,
@@ -1259,7 +1329,7 @@ impl Resolution {
                 }
                 Err(_) => {
                     self.charge(
-                        IgesLossCode::GlobalSemanticContextSubstituted,
+                        IgesLossCode::GlobalSemanticContextInvalid,
                         FIELD_MINIMUM_RESOLUTION,
                         Defect::Malformed,
                         RESOLUTION_CONSEQUENCE,
@@ -1269,7 +1339,7 @@ impl Resolution {
             },
             SuppliedReal::Malformed => {
                 self.charge(
-                    IgesLossCode::GlobalSemanticContextSubstituted,
+                    IgesLossCode::GlobalSemanticContextInvalid,
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Malformed,
                     RESOLUTION_CONSEQUENCE,
@@ -1288,7 +1358,9 @@ impl Resolution {
             }
             Supplied::Absent => (Some(1), None),
             Supplied::Value(value)
-                if value > 0 && (global_table != GlobalTable::V4_0 || value <= 32_768) =>
+                if value > 0
+                    && (global_table != GlobalTable::V4_0
+                        || value <= MAXIMUM_V4_LINE_WEIGHT_GRADATIONS) =>
             {
                 (Some(value), None)
             }
@@ -1519,7 +1591,9 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         .and_then(|value| u32::try_from(value).ok());
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE).value();
+    let single_significance = resolution
+        .significance(FIELD_SINGLE_SIGNIFICANCE, global_table)
+        .value();
     let double_magnitude =
         resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
     let double_significance = if global_table == GlobalTable::V5_0
@@ -1529,7 +1603,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         ) {
         Supplied::Absent
     } else {
-        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
+        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE, global_table)
     };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => {
@@ -1751,7 +1825,7 @@ impl ResolvedGlobal {
         }
         if matches!(self.numeric.double_significance, Supplied::Absent) {
             let note = global_loss_note(
-                IgesLossCode::GlobalSemanticContextSubstituted,
+                IgesLossCode::GlobalSemanticContextInvalid,
                 FIELD_DOUBLE_SIGNIFICANCE,
                 Defect::Absent,
                 SIGNIFICANCE_CONSEQUENCE,

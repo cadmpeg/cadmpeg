@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{Hierarchy, Subordinate, UseFlag};
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -145,19 +146,22 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
             .unwrap();
 
         let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas()["quarantined_directory_records"];
         let losses = &result.report().losses;
         assert!(native.arenas()["entities"].is_empty(), "{status}");
-        assert_eq!(quarantined.len(), 1, "{status}");
         assert_eq!(
-            quarantined[0].fields().unwrap()["defect"],
-            "status-number-invalid"
+            crate::test_support::given_up_part_bytes(&result, ("directory-entry", 1)).len(),
+            161,
+            "{status}"
         );
         assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,
-            IgesLossCode::DirectoryRecordQuarantined.kind()
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
         );
+        assert!(losses[0]
+            .message
+            .contains("the status number is neither blank"));
+        crate::test_support::assert_given_up(&losses[0], ("directory-entry", 1));
     }
 }
 
@@ -221,8 +225,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(parsed).unwrap(),
-            serde_json::json!({
+            json::to_value(parsed).unwrap(),
+            cadmpeg_core::json!({
                 "blank_status": 99,
                 "subordinate_status": 99,
                 "use_flag": 99,
@@ -239,8 +243,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         Some(UseFlag::Construction)
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(early).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(later).unwrap()
+        json::to_value(early).unwrap(),
+        json::to_value(later).unwrap()
     );
 }
 

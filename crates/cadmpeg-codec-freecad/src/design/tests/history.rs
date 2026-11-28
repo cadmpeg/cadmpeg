@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design history transfer unit tests.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::edit;
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
@@ -289,6 +290,72 @@ fn transfers_ordered_body_membership_and_active_tip() {
         .is_err());
     });
     assert_valid_document(&corrupted);
+}
+
+#[test]
+fn a_body_lists_only_the_features_it_holds() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="App::Part" name="Holder" id="1"/>
+ <Object type="PartDesign::Body" name="Body" id="2"/>
+ <Object type="PartDesign::Feature" name="Shared" id="3"/>
+ <Object type="PartDesign::Feature" name="Own" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Holder"><Properties Count="1">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Shared"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Body"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Own"/><Link value="Shared"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Shared"/></Property>
+ </Properties></Object>
+ <Object name="Shared"><Properties Count="0"/></Object>
+ <Object name="Own"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("a member another group holds");
+    let body = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Body"))
+        .expect("body");
+    let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
+        body.evaluation.definition()
+    else {
+        panic!("{:?}", body.evaluation.definition());
+    };
+    assert_eq!(
+        children
+            .iter()
+            .map(cadmpeg_ir::FeatureId::as_str)
+            .collect::<Vec<_>>(),
+        ["fcstd:design:feature#Own"]
+    );
+    assert_eq!(children.active_child(), &None);
+    let design = &result.ir().design;
+    let container = design
+        .containers
+        .iter()
+        .find(|container| container.id().as_str() == "fcstd:design:container#Body")
+        .expect("Body container");
+    let cadmpeg_ir::design::container::Container::Ordered { rollback, .. } = container else {
+        panic!("{container:?}");
+    };
+    assert_eq!(*rollback, None);
+    let state = &design.scopes[0].current[0];
+    assert_eq!(
+        state.at,
+        cadmpeg_ir::design::refs::Position::After(cadmpeg_ir::design::refs::Member::Container(
+            container.id().clone()
+        ))
+    );
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -637,12 +704,12 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("A1:B1")]
     );
     assert_valid_document(result.ir());
-    let mut corrupted = cadmpeg_core::serde_erase::json::to_value(sheet).expect("serialize sheet");
+    let mut corrupted = json::to_value(sheet).expect("serialize sheet");
     corrupted["merged_ranges"]
         .as_array_mut()
         .expect("merged ranges")
-        .push(serde_json::json!({"start": "A1", "end": "A2"}));
-    let error = cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
+        .push(cadmpeg_core::json!({"start": "A1", "end": "A2"}));
+    let error = json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
         .expect_err("overlapping merge ranges");
     assert!(error.to_string().contains("merged ranges overlap"));
 }
@@ -664,35 +731,15 @@ fn rejects_ambiguous_spreadsheet_selectors() {
 
     for (index, (count, properties, expected)) in [
         (
-            2,
-            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
-<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>"#,
-            "duplicate property name cells",
-        ),
-        (
             1,
             r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/><Cells Count="0"/></Property>"#,
             "multiple Cells values",
-        ),
-        (
-            3,
-            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
-<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>
-<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>"#,
-            "duplicate property name columnWidths",
         ),
         (
             2,
             r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
 <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/><ColumnInfo Count="0"/></Property>"#,
             "multiple ColumnInfo values",
-        ),
-        (
-            3,
-            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
-<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/></Property>
-<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/></Property>"#,
-            "duplicate property name rowHeights",
         ),
         (
             2,

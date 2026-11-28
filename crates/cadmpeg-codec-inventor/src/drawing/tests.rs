@@ -48,7 +48,7 @@ fn unresolved_drawing_records_emit_the_pinned_native_only_loss() {
 }
 
 #[test]
-fn refused_typed_drawing_records_emit_the_pinned_malformed_loss() {
+fn a_refused_typed_drawing_record_has_no_note_beside_its_give_up() {
     let inventory = Inventory {
         issues: vec![crate::native::StructuralIssueRecord {
             id: "inventor:drawing:record-issue#generated-0".into(),
@@ -57,16 +57,5 @@ fn refused_typed_drawing_records_emit_the_pinned_malformed_loss() {
         }],
         ..Inventory::default()
     };
-    let losses = inventory.losses();
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::InventorLossCode::DrawingRecordMalformed
-            .note("")
-            .code
-    );
-    assert_eq!(
-        losses[0].code.to_string(),
-        "inventor/drawing.record-malformed"
-    );
+    assert!(inventory.losses().is_empty());
 }

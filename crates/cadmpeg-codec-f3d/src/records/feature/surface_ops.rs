@@ -166,7 +166,7 @@ pub(crate) enum DesignSurfaceUntrimLoops {
 }
 
 /// Source selection form named by a `SurfaceOffset` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum DesignSurfaceOffsetSupport {
     /// A boundary carrier followed by edge recipes.
@@ -502,7 +502,7 @@ impl DesignPatchContinuity {
 }
 
 /// Versioned whole-surface normal state, independent of boundary-side ordinals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignSurfacePatchNormalState {
     Explicit {
@@ -553,6 +553,7 @@ mod tests {
         DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
         DesignSurfaceTrimOperationWire, SURFACE_TRIM_OPERATION_CLONE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     fn record(count: u32) -> DesignSurfaceTrimOperation {
         let cell_entries = (0..count)
@@ -592,8 +593,8 @@ mod tests {
         for operation in [record(1), record(2)] {
             let owned = DesignSurfaceTrimOperationWire::from(operation.clone());
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&operation).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+                json::to_vec(&operation).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }

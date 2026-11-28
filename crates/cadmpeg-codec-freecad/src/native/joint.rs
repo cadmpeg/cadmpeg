@@ -31,7 +31,7 @@ impl PairedJointFamily {
 
 /// A checked joint parameter value that retains its source spelling.
 #[derive(Debug, Clone, PartialEq)]
-enum JointParameter {
+pub(crate) enum JointParameter {
     Scalar { raw: String, value: FiniteReal },
     Boolean { raw: String, value: bool },
     Native { raw: String },
@@ -48,7 +48,7 @@ fn parameter_kind(name: &str) -> ParameterKind {
         "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2" | "LengthMin"
         | "LengthMax" => ParameterKind::Scalar,
         "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
-        | "Detach2" | "Suppressed" => ParameterKind::Boolean,
+        | "Detach2" | "Suppressed" | "Activated" => ParameterKind::Boolean,
         _ => ParameterKind::Native,
     }
 }
@@ -102,11 +102,27 @@ impl JointParameters {
         self.0.get(name).map(JointParameter::raw)
     }
 
+    /// Each parameter with its name, in name order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &JointParameter)> {
+        self.0
+            .iter()
+            .map(|(name, parameter)| (name.as_str(), parameter))
+    }
+
     pub(crate) fn bool_value(&self, name: &str) -> Option<bool> {
         match self.0.get(name) {
             Some(JointParameter::Boolean { value, .. }) => Some(*value),
             _ => None,
         }
+    }
+
+    /// The joint's suppression: the negation of `Activated`, the flag that
+    /// `Suppressed` replaces and that `FreeCAD`'s migration writes over it,
+    /// and `Suppressed` where the joint stores no `Activated`.
+    pub(crate) fn suppressed(&self) -> Option<bool> {
+        self.bool_value("Activated")
+            .map(|activated| !activated)
+            .or_else(|| self.bool_value("Suppressed"))
     }
 
     pub(crate) fn scalar_value(&self, name: &str) -> Option<FiniteReal> {
@@ -413,6 +429,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::scalar::FiniteReal;
@@ -440,8 +457,8 @@ mod tests {
                 ),
                 Err(cadmpeg_core::CodecError::Malformed(_))
             ));
-            let wire = serde_json::json!({"id": id, "object": object, "kind": "grounded", "references": [], "placements": [super::FiniteFrame::default().rows()], "offsets": [], "parameters": {}});
-            assert!(cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire).is_err());
+            let wire = cadmpeg_core::json!({"id": id, "object": object, "kind": "grounded", "references": [], "placements": [super::FiniteFrame::default().rows()], "offsets": [], "parameters": {}});
+            assert!(json::from_value::<JointRecord>(wire).is_err());
         }
     }
 
@@ -504,11 +521,10 @@ mod tests {
     #[test]
     fn missing_first_reference_keeps_second_wire_position() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
-        let wire = serde_json::json!({"id":"fcstd:native:joint#Joint", "object":"fcstd:native:object#Joint", "kind":"Fixed",
+        let wire = cadmpeg_core::json!({"id":"fcstd:native:joint#Joint", "object":"fcstd:native:object#Joint", "kind":"Fixed",
             "references":[null, {"document":null,"document_attribute":null,"object":"second","subelements":[]}],
             "placements":[identity,identity], "offsets":[identity,identity], "parameters":{}});
-        let record =
-            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap();
+        let record = json::from_value::<JointRecord>(wire.clone()).unwrap();
         let JointBody::Pair { connectors, .. } = &record.body else {
             panic!("paired joint")
         };
@@ -517,10 +533,7 @@ mod tests {
             connectors[1].reference.as_ref().unwrap().object(),
             Some("second")
         );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_value(record).unwrap(), wire);
     }
 
     #[test]
@@ -549,49 +562,40 @@ mod tests {
             BTreeMap::new(),
         )
         .unwrap();
-        let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
+        let wire = json::to_value(&record).unwrap();
         assert_eq!(wire["kind"], "CustomCoupling");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap(),
+            json::from_value::<JointRecord>(wire.clone()).unwrap(),
             record
         );
         for name in ["grounded", "Grounded"] {
             let mut invalid = wire.clone();
-            invalid["kind"] = serde_json::json!(name);
-            assert!(cadmpeg_core::serde_erase::json::from_value::<JointRecord>(invalid).is_err());
+            invalid["kind"] = cadmpeg_core::json!(name);
+            assert!(json::from_value::<JointRecord>(invalid).is_err());
         }
     }
 
     #[test]
     fn a_grounded_joint_writes_one_placement_slot_and_no_offsets() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
-        let reference = serde_json::json!({
+        let reference = cadmpeg_core::json!({
             "document": null, "document_attribute": null,
             "object": "fcstd:native:object#Part", "subelements": ["Face1"]
         });
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "fcstd:native:joint#Joint", "object": "fcstd:native:object#Joint", "kind": "grounded",
             "references": [reference],
             "placements": [identity],
             "offsets": [],
             "parameters": {"Suppressed": "true"}
         });
-        let record =
-            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-            wire
-        );
+        let record = json::from_value::<JointRecord>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
 
         let mut unreferenced = wire;
-        unreferenced["references"] = serde_json::json!([null]);
-        let record =
-            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(unreferenced.clone())
-                .unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-            unreferenced
-        );
+        unreferenced["references"] = cadmpeg_core::json!([null]);
+        let record = json::from_value::<JointRecord>(unreferenced.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), unreferenced);
     }
 
     #[test]
@@ -599,8 +603,8 @@ mod tests {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
         for (name, value) in [("Angle", "abc"), ("Angle", "NaN")] {
             let parameters =
-                serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
-            let wire = serde_json::json!({
+                serde_json::Map::from_iter([(name.to_owned(), cadmpeg_core::json!(value))]);
+            let wire = cadmpeg_core::json!({
                 "id": "fcstd:native:joint#Joint",
                 "object": "fcstd:native:object#Joint",
                 "kind": "Fixed",
@@ -609,15 +613,14 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": parameters
             });
-            let error =
-                cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire).unwrap_err();
+            let error = json::from_value::<JointRecord>(wire).unwrap_err();
             assert!(error.to_string().contains("invalid value"), "{error}");
         }
 
         for (name, value) in [("Angle", "15.5"), ("Suppressed", "false")] {
             let parameters =
-                serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
-            let wire = serde_json::json!({
+                serde_json::Map::from_iter([(name.to_owned(), cadmpeg_core::json!(value))]);
+            let wire = cadmpeg_core::json!({
                 "id": "fcstd:native:joint#Joint",
                 "object": "fcstd:native:object#Joint",
                 "kind": "Fixed",
@@ -626,7 +629,7 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": parameters
             });
-            let record = cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone())
+            let record = json::from_value::<JointRecord>(wire.clone())
                 .expect("valid known parameter values remain admissible");
             if name == "Angle" {
                 assert_eq!(
@@ -634,10 +637,7 @@ mod tests {
                     Some(15.5)
                 );
             }
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-                wire
-            );
+            assert_eq!(json::to_value(record).unwrap(), wire);
         }
     }
 
@@ -652,7 +652,7 @@ mod tests {
             ("TRUE", false),
             ("maybe", false),
         ] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "fcstd:native:joint#Joint",
                 "object": "fcstd:native:object#Joint",
                 "kind": "Fixed",
@@ -661,21 +661,18 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": {"Suppressed": raw}
             });
-            let record = cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone())
+            let record = json::from_value::<JointRecord>(wire.clone())
                 .expect("primary bool spellings remain admissible");
             assert_eq!(record.parameters().raw("Suppressed"), Some(raw));
             assert_eq!(record.parameters().bool_value("Suppressed"), Some(expected));
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-                wire
-            );
+            assert_eq!(json::to_value(record).unwrap(), wire);
         }
     }
 
     #[test]
     fn unknown_parameter_names_retain_their_wire_text() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "fcstd:native:joint#Joint",
             "object": "fcstd:native:object#Joint",
             "kind": "Fixed",
@@ -684,15 +681,11 @@ mod tests {
             "offsets": [identity, identity],
             "parameters": {"FutureJointSetting": "vendor spelling"}
         });
-        let record =
-            cadmpeg_core::serde_erase::json::from_value::<JointRecord>(wire.clone()).unwrap();
+        let record = json::from_value::<JointRecord>(wire.clone()).unwrap();
         assert_eq!(
             record.parameters().raw("FutureJointSetting"),
             Some("vendor spelling")
         );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_value(record).unwrap(), wire);
     }
 }

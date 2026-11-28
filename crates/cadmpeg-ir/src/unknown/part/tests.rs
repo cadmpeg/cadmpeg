@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The part helper's stub, retained bytes, and loss.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{
@@ -8,7 +9,7 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 
-use super::{link_committed, restate_loss, DecodeParts, GivenUpPart, Part};
+use super::{link_committed, restate_loss, Cause, DecodeParts, GivenUpPart, Part};
 use crate::document::CadIr;
 use crate::ids::Identity;
 use crate::report::Severity;
@@ -29,7 +30,7 @@ fn decode_part<T>(
 ) -> Result<Result<T, GivenUpPart>, CodecError> {
     match ctx.run_part(decode)? {
         Ok(value) => Ok(Ok(value)),
-        Err(error) => ctx.give_up_part(part, error).map(Err),
+        Err(error) => ctx.give_up_part(part, Cause::Unreadable, error).map(Err),
     }
 }
 
@@ -120,6 +121,7 @@ fn a_committed_stub_is_linked_to_the_record_defined_after_it() {
         .give_up_part(
             Part::new("synthetic", "record", root, [ArenaClass::Model])
                 .contained_in(identity("synthetic:native:document#0")),
+            Cause::Unreadable,
             CodecError::malformed("damaged"),
         )
         .expect("given up");
@@ -154,6 +156,7 @@ fn repeated_source_parts_commit_once_with_every_containing_record() {
         ctx.give_up_part(
             Part::new("synthetic", "record", root, [ArenaClass::Design])
                 .contained_in(identity(owner)),
+            Cause::Unreadable,
             CodecError::malformed("damaged"),
         )
         .unwrap()
@@ -213,7 +216,7 @@ fn the_loss_states_lost_entries_and_what_else_the_part_cost() {
     .losing_entries(["#7 entry #3".to_owned(), "#9 entry #3".to_owned()]);
     let id = part.id().expect("part id");
     let given_up = ctx
-        .give_up_part(part, CodecError::malformed("damaged"))
+        .give_up_part(part, Cause::Unreadable, CodecError::malformed("damaged"))
         .expect("given up");
     assert_eq!(
         given_up.loss().message,
@@ -239,6 +242,7 @@ fn a_digest_only_part_keeps_its_length_and_digest_without_a_copy() {
                 [ArenaClass::Model],
             )
             .digest_only(),
+            Cause::Unreadable,
             CodecError::malformed("damaged"),
         )
         .expect("given up")
@@ -279,6 +283,7 @@ fn a_rescoped_stub_is_restated_in_its_loss() {
                 root.child(4, 18).expect("extent"),
                 [ArenaClass::Model],
             ),
+            Cause::Unreadable,
             CodecError::malformed("damaged"),
         )
         .expect("given up");
@@ -373,6 +378,7 @@ fn a_session_refusal_or_io_error_is_not_given_up() {
     let error = ctx
         .give_up_part(
             Part::new("synthetic", "record", root, [ArenaClass::Model]),
+            Cause::Unreadable,
             CodecError::Io(std::io::Error::other("source unavailable")),
         )
         .expect_err("I/O is fatal");
@@ -387,6 +393,7 @@ fn a_part_already_given_up_is_not_committed_twice() {
     let give_up = || {
         ctx.give_up_part(
             Part::new("synthetic", "record", root, [ArenaClass::Model]),
+            Cause::Unreadable,
             CodecError::malformed("damaged"),
         )
         .expect("given up")
@@ -415,6 +422,7 @@ fn a_given_up_part_survives_the_wire() {
             root.child(4, 18).expect("extent"),
             [ArenaClass::Model],
         ),
+        Cause::Unreadable,
         CodecError::malformed("damaged"),
     )
     .expect("given up")
@@ -422,7 +430,7 @@ fn a_given_up_part_survives_the_wire() {
     .expect("commit");
     let parsed = CadIr::from_json(&ir.to_canonical_json().expect("serialize")).expect("parse");
     assert_eq!(parsed, ir);
-    let wire = cadmpeg_core::serde_erase::json::to_string(&fidelity).expect("serialize fidelity");
+    let wire = json::to_string(&fidelity).expect("serialize fidelity");
     assert_eq!(
         serde_json::from_str::<SourceFidelity>(&wire).expect("parse fidelity"),
         fidelity
@@ -446,7 +454,7 @@ fn a_part_of_a_nested_document_is_restated_in_its_container_stream() {
     let outer = part().id().expect("part id");
     let container = crate::stream_name!("Embedded");
     let nested = ctx
-        .give_up_part(part(), CodecError::malformed("damaged"))
+        .give_up_part(part(), Cause::Unreadable, CodecError::malformed("damaged"))
         .expect("given up")
         .nested_in(&ctx, &container)
         .expect("restated");
@@ -482,4 +490,241 @@ fn a_part_of_a_nested_document_is_restated_in_its_container_stream() {
     let retained = fidelity.retained_record(id.as_str()).expect("retained");
     assert_eq!(retained.stream(), "Embedded/Body.bin");
     assert_eq!(retained.data(), Some(b"[damaged part]".as_slice()));
+}
+
+#[test]
+fn a_record_given_up_whole_is_refused_by_a_pinned_decode_through_record_unreadable() {
+    use crate::provenance::SourceProvenance;
+    use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+    use crate::report::strictness::Strictness;
+
+    let why = LossNote::new(
+        LossKind::namespaced(
+            crate::loss_namespace!("step"),
+            "topology.root-rejected",
+            LossTaxonomy::SourceTopologyInvalid,
+        ),
+        "STEP topology root #12 rejected",
+    )
+    .with_severity(Severity::Warning)
+    .with_provenance(SourceProvenance::root("step", 40));
+    let unreadable = super::record_given_up(
+        Identity::new("step:data:shell#12").expect("an id"),
+        Cause::Unreadable,
+        &why,
+    );
+    assert_eq!(unreadable.code, super::record_unreadable_kind());
+    assert_eq!(unreadable.severity, Severity::Error);
+    assert_eq!(unreadable.provenance, why.provenance);
+    assert!(unreadable
+        .message
+        .split_whitespace()
+        .any(|token| token == "step:data:shell#12"));
+    assert_eq!(
+        unreadable.message,
+        "record step:data:shell#12 stream=\"\" offset=40 given up: step/topology.root-rejected: \
+         STEP topology root #12 rejected; dropped=[]"
+    );
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    assert!(pinned.refuses(&unreadable, false));
+    assert!(!Strictness::default().refuses(&unreadable, false));
+}
+
+/// A record that conforms to its format and that the decoder does not
+/// decode charges one `record.undecoded` Warning, which a pinned decode
+/// accepts and a lossy floor of Warning refuses (CADIR §3.2, §3.5).
+#[test]
+fn an_undecoded_record_is_one_warning_that_a_pinned_decode_accepts() {
+    use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+    use crate::report::strictness::{code_name, Strictness};
+
+    let why = LossNote::new(
+        LossKind::namespaced(
+            crate::loss_namespace!("step"),
+            "pmi.tolerance-unread",
+            LossTaxonomy::PmiOmitted,
+        ),
+        "a second tolerance on one dimension",
+    );
+    let undecoded = super::record_given_up(
+        Identity::new("step:data:tolerance#7").expect("an id"),
+        Cause::Undecoded,
+        &why,
+    );
+    assert_eq!(undecoded.code, super::record_undecoded_kind());
+    assert_eq!(code_name(&undecoded.code), "record.undecoded");
+    assert_eq!(undecoded.severity, Severity::Warning);
+    assert_eq!(undecoded.code.strict_floor(), None);
+    assert!(undecoded.message.ends_with(
+        "given up: step/pmi.tolerance-unread: a second tolerance on one dimension; dropped=[]"
+    ));
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    assert!(!pinned.refuses(&undecoded, false));
+    let lossy = Strictness {
+        floor: Some(Severity::Warning),
+        ..Strictness::default()
+    };
+    assert!(lossy.refuses(&undecoded, false));
+    assert!(super::gives_up(&undecoded.code));
+    assert!(super::gives_up(&super::record_unreadable_kind()));
+    assert!(!super::gives_up(&why.code));
+}
+
+/// A part whose decode a resource refusal of its own scope ends is cut by a
+/// bound, so its give-up is `record.undecoded` whatever cause its decoder
+/// states.
+#[test]
+fn a_part_cut_by_its_resource_ceiling_is_undecoded() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let limit = cadmpeg_core::decode::ResourceLimit {
+        dimension: ResourceDimension::RetainedBytes,
+        reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+        scope: LimitScope::Part,
+        limit: 1,
+        used: 1,
+        additional: 1,
+        operation: "a part's records",
+    };
+    let given_up = ctx
+        .give_up_part(
+            Part::new("synthetic", "record", root, [ArenaClass::Model]),
+            Cause::Unreadable,
+            CodecError::ResourceLimit(limit),
+        )
+        .expect("given up");
+    assert_eq!(given_up.loss().code, super::record_undecoded_kind());
+    assert_eq!(given_up.loss().severity, Severity::Warning);
+}
+
+/// A form the decoder has no reading for is a bound of the decoder, so its
+/// give-up is `record.undecoded` whatever cause its decoder states; a broken
+/// frame keeps the stated cause.
+#[test]
+fn a_form_without_a_reading_is_undecoded_and_a_broken_frame_keeps_its_cause() {
+    let unread = CodecError::NotImplemented("a later generation".into());
+    assert_eq!(Cause::Unreadable.of(&unread), Cause::Undecoded);
+    let broken = CodecError::Malformed("a frame".into());
+    assert_eq!(Cause::Unreadable.of(&broken), Cause::Unreadable);
+    assert_eq!(Cause::Undecoded.of(&broken), Cause::Undecoded);
+}
+
+#[test]
+fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
+    use crate::provenance::{SourceProvenance, StreamName};
+
+    let stream = StreamName::try_from("Body".to_owned()).expect("stream");
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let loss = super::GivenUpRecord::new(id("t:r:rec#7"), Cause::Unreadable, "carrier unsupported")
+        .at(SourceProvenance::in_stream("nx", stream, 96))
+        .spanning(24)
+        .dropping([id("t:r:rec#9"), id("t:r:rec#8"), id("t:r:rec#9")])
+        .loss();
+    assert_eq!(loss.code, super::record_unreadable_kind());
+    assert_eq!(loss.severity, Severity::Error);
+    assert_eq!(
+        loss.message,
+        "record t:r:rec#7 stream=\"Body\" offset=96 length=24 given up: carrier unsupported; \
+         dropped=[t:r:rec#8, t:r:rec#9]"
+    );
+    assert_eq!(
+        super::GivenUpRecord::new(id("t:r:rec#7"), Cause::Unreadable, "carrier unsupported")
+            .loss()
+            .message,
+        "record t:r:rec#7 given up: carrier unsupported; dropped=[]"
+    );
+}
+
+#[test]
+fn a_record_given_up_states_what_else_it_cost_before_its_lists() {
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let loss = super::GivenUpRecord::new(id("t:r:rec#7"), Cause::Undecoded, "carrier unsupported")
+        .costing("occurrence t:o:occ#1 states no transform")
+        .dropping([id("t:r:rec#8")])
+        .loss();
+    assert_eq!(
+        loss.message,
+        "record t:r:rec#7 given up: carrier unsupported; occurrence t:o:occ#1 states no \
+         transform; dropped=[t:r:rec#8]"
+    );
+}
+
+#[test]
+fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let mut loss = super::GivenUpRecord::new(id("t:r:rec#1"), Cause::Unreadable, "bad")
+        .dropping([id("t:b:rec#2")])
+        .loss();
+    loss.message.insert_str(0, "prefix: ");
+    super::name_released(
+        &mut loss,
+        ["t:b:rec#1".to_owned(), "t:b:rec#2".to_owned()],
+        ["t:m:rec#0".to_owned()],
+        ["delta of s: dropped=[t:d:rec#1]; marked=[]".to_owned()],
+    );
+    assert_eq!(
+        loss.message,
+        "prefix: record t:r:rec#1 given up: bad; dropped=[t:b:rec#1, t:b:rec#2]; \
+         marked=[t:m:rec#0]; delta of s: dropped=[t:d:rec#1]; marked=[]"
+    );
+    let (named, dropped) = super::charged(&loss).expect("a charge");
+    assert_eq!(named.as_str(), "t:r:rec#1");
+    assert_eq!(dropped, ["t:b:rec#1", "t:b:rec#2"]);
+
+    super::rescope_give_up(&mut loss, |text| Ok(text.replace(":rec#", ":rec#s/"))).unwrap();
+    assert_eq!(
+        loss.message,
+        "prefix: record t:r:rec#s/1 given up: bad; dropped=[t:b:rec#s/1, t:b:rec#s/2]; \
+         marked=[t:m:rec#s/0]; delta of s: dropped=[t:d:rec#1]; marked=[]"
+    );
+
+    let mut note = super::dropped_with(id("t:a:rec#1"), id("t:r:rec#1"));
+    assert!(super::needs(&note).is_some());
+    super::rescope_give_up(&mut note, |text| Ok(format!("{text}/s"))).unwrap();
+    assert_eq!(note.message, "record t:a:rec#1/s needs t:r:rec#1/s");
+    let (record, needs) = super::needs(&note).expect("a note");
+    assert_eq!(
+        (record.as_str(), needs.as_str()),
+        ("t:a:rec#1/s", "t:r:rec#1/s")
+    );
+}
+
+#[test]
+fn a_part_and_a_record_name_the_records_they_mark_sorted() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let part = Part::new(
+        "synthetic",
+        "face",
+        root.child(4, 18).expect("extent"),
+        [ArenaClass::Model],
+    )
+    .dropping([identity("t:m:face#3")])
+    .marking([identity("t:m:shell#9"), identity("t:m:shell#2")]);
+    let id = part.id().expect("part id");
+    let given_up = ctx
+        .give_up_part(part, Cause::Unreadable, CodecError::malformed("damaged"))
+        .expect("given up");
+    assert_eq!(
+        given_up.loss().message,
+        format!(
+            "part face stream=\"\" offset=4 length=14 record={id}: malformed container: damaged; \
+             dropped=[t:m:face#3]; marked=[t:m:shell#2, t:m:shell#9]"
+        )
+    );
+    assert_eq!(
+        super::GivenUpRecord::new(identity("t:m:loop#5"), Cause::Unreadable, "bad")
+            .marking([identity("t:m:face#4"), identity("t:m:face#4")])
+            .loss()
+            .message,
+        "record t:m:loop#5 given up: bad; dropped=[]; marked=[t:m:face#4]"
+    );
 }

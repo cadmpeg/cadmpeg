@@ -15,7 +15,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::parameter::{Token, TokenValue};
 use crate::test_support::test_curves_and_surfaces::{
-    function_offset_line_file, linear_offset_line_file,
+    function_offset_line_file, linear_offset_line_file, offset_file_with_source,
     offset_quarter_circle_with_absolute_native_parameters, placed_uniform_offset_circle_file,
     placed_uniform_offset_line_file, uniform_offset_circle_file,
     uniform_offset_circle_file_with_parameters, wide_control_linear_offset_line_file,
@@ -46,6 +46,7 @@ fn vector_distance(left: Vector3, right: Vector3) -> f64 {
 fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type,
         parameter_start: 1,
@@ -761,4 +762,84 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+/// The ids in the `dropped=[..]` list of a `record.unreadable` message.
+fn dropped_ids(message: &str) -> Vec<&str> {
+    message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .map_or_else(Vec::new, |list| {
+            list.split(", ").filter(|id| !id.is_empty()).collect()
+        })
+}
+
+#[test]
+fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
+    let bytes = offset_file_with_source(
+        "100",
+        b"100,0,0,0,2,0,0,3;",
+        b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;",
+    );
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{given_up:#?}");
+    crate::test_support::assert_given_up(given_up[0], ("entity", 1));
+    assert!(
+        dropped_ids(&given_up[0].message) == ["iges:model:curve#D3"],
+        "{}",
+        given_up[0].message
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
+    assert!(result.ir().geometry.curves.is_empty());
+}
+
+#[test]
+fn an_offset_of_a_source_that_no_pass_projects_keeps_its_own_charge() {
+    let bytes = offset_file_with_source(
+        "134",
+        b"134,0,0,0,0;",
+        b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;",
+    );
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 3)]);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .unwrap();
+    // A Type 134 source is a valid entity that no pass projects.
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        given_up.message.contains("offset source curve is missing"),
+        "{}",
+        given_up.message
+    );
+    assert!(
+        dropped_ids(&given_up.message).is_empty(),
+        "{}",
+        given_up.message
+    );
 }

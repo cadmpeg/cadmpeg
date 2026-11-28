@@ -1,5 +1,6 @@
 use super::super::tsplines::{InlineTSplineSubtransform, SubtypeTableIndex, TSplineSubtransform};
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn subtransform_admission_requires_nonempty_programs_and_nonnegative_indices() {
@@ -21,12 +22,8 @@ fn subtransform_wire_preserves_inline_and_reference_shapes() {
         inline.clone(),
         json!({"kind": "reference", "index": 4, "resolved": inline}),
     ] {
-        let value: TSplineSubtransform =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(value).unwrap(),
-            wire
-        );
+        let value: TSplineSubtransform = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(value).unwrap(), wire);
     }
 }
 
@@ -40,7 +37,7 @@ fn subtransform_wire_rejects_invalid_payloads_and_recursive_references() {
         json!({"kind": "reference", "index": 0, "resolved": {"kind": "reference", "index": 1}}),
         json!({"kind": "reference", "index": 0, "resolved": {"kind": "inline", "program": "", "values": "values"}}),
     ] {
-        assert!(cadmpeg_core::serde_erase::json::from_value::<TSplineSubtransform>(wire).is_err());
+        assert!(json::from_value::<TSplineSubtransform>(wire).is_err());
     }
 }
 
@@ -77,24 +74,17 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
     ] {
         assert!(admit(ranges, inline.clone()).is_err());
     }
-    let wire = cadmpeg_core::serde_erase::json::to_value(&valid).unwrap();
+    let wire = json::to_value(&valid).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<TSplineSurfaceConstruction>(wire.clone())
-            .unwrap(),
+        json::from_value::<TSplineSurfaceConstruction>(wire.clone()).unwrap(),
         valid
     );
     let mut reversed = wire.clone();
     reversed["parameter_ranges"] = json!([[1.0, 0.0], [0.0, 1.0]]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<TSplineSurfaceConstruction>(reversed)
-            .is_err()
-    );
+    assert!(json::from_value::<TSplineSurfaceConstruction>(reversed).is_err());
     let mut unresolved = wire;
     unresolved["subtransform"] = json!({"kind": "reference", "index": 0});
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<TSplineSurfaceConstruction>(unresolved)
-            .is_err()
-    );
+    assert!(json::from_value::<TSplineSurfaceConstruction>(unresolved).is_err());
 }
 
 #[test]
@@ -129,16 +119,13 @@ fn surface_admission_checks_its_revision_cache_form() {
             CacheContract::from_form(Some(form)),
         )
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(admit(form.clone()).unwrap()).unwrap();
+    let wire = json::to_value(admit(form.clone()).unwrap()).unwrap();
     assert_eq!(wire["cache"]["form"]["revision"], json!(1));
     for revision in [0, -1] {
         assert!(crate::scalar::PositiveI64::new(revision).is_none());
         let mut invalid = wire.clone();
         invalid["cache"]["form"]["revision"] = json!(revision);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<TSplineSurfaceConstruction>(invalid)
-                .is_err()
-        );
+        assert!(json::from_value::<TSplineSurfaceConstruction>(invalid).is_err());
     }
     let mut invalid = form;
     invalid.support_bounds[0] = Some(f64::NAN);
@@ -151,7 +138,7 @@ fn subtransform_wire_rejects_missing_resolved_payload() {
         json!({"kind": "reference", "index": 0}),
         json!({"kind": "reference", "index": 0, "resolved": null}),
     ] {
-        cadmpeg_core::serde_erase::json::from_value::<TSplineSubtransform>(wire)
+        json::from_value::<TSplineSubtransform>(wire)
             .expect_err("a reference states its resolved program");
     }
 }
@@ -174,12 +161,11 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
         crate::geometry::legacy_cache::CacheContract::from_form(None),
     )
     .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&construction).unwrap();
+    let wire = json::to_value(&construction).unwrap();
     assert!(wire.get("program_graph").is_none());
     assert!(wire.get("values_graph").is_none());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<TSplineSurfaceConstruction>(wire.clone())
-            .unwrap(),
+        json::from_value::<TSplineSurfaceConstruction>(wire.clone()).unwrap(),
         construction
     );
 
@@ -188,7 +174,7 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
         "program_graph".to_string(),
         json!({"headers": [], "records": [], "unparsed_lines": []}),
     );
-    let error = cadmpeg_core::serde_erase::json::from_value::<TSplineSurfaceConstruction>(restated)
+    let error = json::from_value::<TSplineSurfaceConstruction>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("program_graph"), "{error}");
@@ -215,7 +201,7 @@ fn a_tspline_construction_holds_its_admitted_discontinuities() {
     .unwrap();
     assert_eq!(FiniteReal::raw_lanes(construction.discontinuities()), lanes);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&construction).unwrap()["discontinuities"],
+        json::to_value(&construction).unwrap()["discontinuities"],
         json!(lanes)
     );
     let mut refused = lanes;

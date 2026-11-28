@@ -639,6 +639,30 @@ pub(super) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64
     }
 }
 
+/// The place, from 0, of each expression of `namespace` in the record order
+/// of its expression table: by stored offset, ties by id. Empty where the
+/// expressions come from more than one table, since then no one list holds
+/// them all.
+pub(crate) fn expression_places(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<BTreeMap<String, u32>, cadmpeg_ir::native::NativeConvertError> {
+    let mut expressions = namespace.arena_as::<ParameterFormula>("expressions")?;
+    if expressions
+        .iter()
+        .any(|expression| expression.source_table != expressions[0].source_table)
+    {
+        return Ok(BTreeMap::new());
+    }
+    expressions.sort_by(|left, right| {
+        (left.source_offset, &left.id).cmp(&(right.source_offset, &right.id))
+    });
+    Ok(expressions
+        .into_iter()
+        .zip(0..)
+        .map(|(expression, place)| (expression.id, place))
+        .collect())
+}
+
 pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> {
     match unit {
         "millimeter" => Some(value),
@@ -2418,55 +2442,43 @@ pub(super) struct StringValue {
 #[cfg(test)]
 mod printable_value_wire_tests {
     use super::StringValue;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn object_record_requires_identity_and_its_offset() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "record", "object_id": 1, "object_id_source_offset": 10,
             "section_ordinal": 0, "record_ordinal": 0, "section_offset": 0,
             "byte_len": 1, "sha256": "d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa", "source_entry": "entry", "source_offset": 20
         });
-        let record: super::ObjectRecord =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
-            wire
-        );
+        let record: super::ObjectRecord = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
         for field in ["object_id", "object_id_source_offset"] {
             let mut invalid = wire.clone();
             invalid[field] = serde_json::Value::Null;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::ObjectRecord>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(json::from_value::<super::ObjectRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
         let mut invalid = wire;
         invalid["object_id"] = serde_json::Value::Null;
         invalid["object_id_source_offset"] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::ObjectRecord>(invalid).is_err()
-        );
+        assert!(json::from_value::<super::ObjectRecord>(invalid).is_err());
     }
 
     #[test]
     fn retained_printable_value_preserves_spaces_and_rejects_invalid_text() {
         let json = r#"{"id":"value","record":"record","object_id":1,"ordinal":0,"value":"  A ~ ","source_entry":"entry","source_offset":10}"#;
         let value: StringValue = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&value).unwrap(), json);
         for invalid in ["", "\n", "μ"] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire["value"] = invalid.into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<StringValue>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("value")
-            );
+            assert!(json::from_value::<StringValue>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("value"));
         }
     }
 }
@@ -2874,7 +2886,9 @@ fn parse_material_texture_catalog(
         }
         let ordinal = catalog.len();
         let source_offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                document.source_range(node.range()).start,
+            ))
             .ok_or_else(|| CodecError::malformed("NX material catalog source offset overflows"))?;
 
         catalog.push(MaterialTextureCatalogEntry {
@@ -3325,7 +3339,9 @@ pub(super) fn configurations(
         };
         let is_default = node.attribute("Default") == Some("YES");
         let source_offset = offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                document.source_range(node.range()).start,
+            ))
             .ok_or_else(|| CodecError::malformed("NX arrangement source offset overflows"))?;
         output.push(Configuration {
             id: format!("nx:arrangements-{entry_index}:configuration#{ordinal}"),
@@ -3473,7 +3489,9 @@ fn parse_part_attributes(
             return Ok(None);
         };
         let source_offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                document.source_range(node.range()).start,
+            ))
             .ok_or_else(|| CodecError::malformed("NX part attribute source offset overflows"))?;
         output.push(PartAttribute {
             id: format!("nx:part-attributes-{entry_index}:attribute#{ordinal}"),

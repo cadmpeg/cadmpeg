@@ -11,6 +11,7 @@ use crate::subd::{
 };
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn subd_round_trip_and_directed_ring_validation() {
@@ -62,7 +63,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         .is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&ir.geometry.subds[0]).unwrap();
+    let wire = json::to_value(&ir.geometry.subds[0]).unwrap();
     assert!(wire.get("vertices").is_none());
     assert_eq!(wire["cage"]["vertices"].as_array().unwrap().len(), 3);
     assert_eq!(wire["cage"]["edges"].as_array().unwrap().len(), 3);
@@ -71,8 +72,8 @@ fn subd_round_trip_and_directed_ring_validation() {
         3
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(SubdEdgeTag::SmoothX).unwrap(),
-        serde_json::json!("smooth_x")
+        json::to_value(SubdEdgeTag::SmoothX).unwrap(),
+        cadmpeg_core::json!("smooth_x")
     );
     let cage = &ir.geometry.subds[0].cage;
     let mut edges: Vec<_> = cage.faces[0].edge_uses().copied().collect();
@@ -88,13 +89,13 @@ fn subd_round_trip_and_directed_ring_validation() {
 
 #[test]
 fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
-    let phantom_wire = serde_json::json!({"kind": "phantom"});
+    let phantom_wire = cadmpeg_core::json!({"kind": "phantom"});
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(SubdGripWedge::Phantom {}).unwrap(),
+        json::to_value(SubdGripWedge::Phantom {}).unwrap(),
         phantom_wire
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<SubdGripWedge>(phantom_wire).unwrap(),
+        json::from_value::<SubdGripWedge>(phantom_wire).unwrap(),
         SubdGripWedge::Phantom {}
     );
 
@@ -104,22 +105,16 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
         spokes: Vec::new(),
         sectors: Vec::new(),
     };
-    let slot_wire = serde_json::json!({
+    let slot_wire = cadmpeg_core::json!({
         "kind": "slot",
         "edge": 3,
         "spokes": [],
         "sectors": [],
     });
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&slot).unwrap(),
-        slot_wire
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<SubdGripWedge>(slot_wire).unwrap(),
-        slot
-    );
+    assert_eq!(json::to_value(&slot).unwrap(), slot_wire);
+    assert_eq!(json::from_value::<SubdGripWedge>(slot_wire).unwrap(), slot);
 
-    let error = cadmpeg_core::serde_erase::json::from_value::<SubdGripWedge>(serde_json::json!({
+    let error = json::from_value::<SubdGripWedge>(cadmpeg_core::json!({
         "kind": "phantom",
         "edge": 3,
     }))
@@ -127,7 +122,7 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
     .to_string();
     assert!(error.contains("edge"), "{error}");
 
-    let error = cadmpeg_core::serde_erase::json::from_value::<SubdGripWedge>(serde_json::json!({
+    let error = json::from_value::<SubdGripWedge>(cadmpeg_core::json!({
         "kind": "slot",
         "edge": 3,
         "spokes": [],
@@ -161,10 +156,10 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
         Vec::new(),
     )
     .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&symmetry).unwrap();
+    let wire = json::to_value(&symmetry).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": {
                 "kind": "radial",
                 "segments": 4,
@@ -181,22 +176,19 @@ fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
             "vertex_pairs": [],
         })
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(wire).unwrap(),
-        symmetry
-    );
+    assert_eq!(json::from_value::<SubdSymmetry>(wire).unwrap(), symmetry);
 }
 
 #[test]
 fn a_correspondence_symmetry_has_no_radial_maps_key() {
-    let plane = serde_json::json!({
+    let plane = cadmpeg_core::json!({
         "origin": { "x": 0.0, "y": 0.0, "z": 0.0 },
         "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
         "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
     });
-    let maps = serde_json::json!([{ "selector": "ef", "pairs": [[1, 2]] }]);
+    let maps = cadmpeg_core::json!([{ "selector": "ef", "pairs": [[1, 2]] }]);
 
-    let error = cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(serde_json::json!({
+    let error = json::from_value::<SubdSymmetry>(cadmpeg_core::json!({
         "kind": { "kind": "correspondence" },
         "plane": plane,
         "radial_maps": maps,
@@ -208,7 +200,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     .to_string();
     assert!(error.contains("radial_maps"), "{error}");
 
-    let error = cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(serde_json::json!({
+    let error = json::from_value::<SubdSymmetry>(cadmpeg_core::json!({
         "kind": { "kind": "correspondence", "radial_maps": maps },
         "plane": plane,
         "face_pairs": [],
@@ -219,7 +211,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     .to_string();
     assert!(error.contains("radial_maps"), "{error}");
 
-    let symmetry = cadmpeg_core::serde_erase::json::from_value::<SubdSymmetry>(serde_json::json!({
+    let symmetry = json::from_value::<SubdSymmetry>(cadmpeg_core::json!({
         "kind": { "kind": "radial", "segments": 4, "sweep": 1.0, "radial_maps": maps },
         "plane": plane,
         "face_pairs": [],
@@ -228,7 +220,7 @@ fn a_correspondence_symmetry_has_no_radial_maps_key() {
     }))
     .unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&symmetry).unwrap()["kind"]["radial_maps"],
+        json::to_value(&symmetry).unwrap()["kind"]["radial_maps"],
         maps
     );
 }
@@ -303,12 +295,11 @@ fn a_cage_is_closed_where_every_edge_borders_two_faces() {
 }
 
 fn rejects_cage_wire(wire: serde_json::Value) {
-    let parts: super::SubdCageWire =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let parts: super::SubdCageWire = json::from_value(wire.clone()).unwrap();
     assert!(
         super::SubdCage::new(parts.vertices, parts.edges, parts.faces, parts.symmetries,).is_err()
     );
-    assert!(cadmpeg_core::serde_erase::json::from_value::<super::SubdCage>(wire).is_err());
+    assert!(json::from_value::<super::SubdCage>(wire).is_err());
 }
 
 #[test]
@@ -322,10 +313,7 @@ fn face_admission_requires_three_edge_uses() {
             count
         ];
         assert!(SubdFace::from_edge_uses(edges.clone()).is_err());
-        assert!(cadmpeg_core::serde_erase::json::from_value::<SubdFace>(
-            serde_json::json!({ "edges": edges })
-        )
-        .is_err());
+        assert!(json::from_value::<SubdFace>(cadmpeg_core::json!({ "edges": edges })).is_err());
     }
     assert!(SubdFace::from_edge_uses(vec![
         SubdEdgeUse {
@@ -340,39 +328,39 @@ fn face_admission_requires_three_edge_uses() {
 #[test]
 fn cage_admission_requires_valid_edge_indices_and_closed_directed_rings() {
     for endpoints in [[0, 3], [3, 0]] {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
-        wire["edges"][0]["vertices"] = serde_json::json!(endpoints);
+        let mut wire = json::to_value(triangle_cage()).unwrap();
+        wire["edges"][0]["vertices"] = cadmpeg_core::json!(endpoints);
         rejects_cage_wire(wire);
     }
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     wire["faces"][0]["sides"][0]["edges"][0]["edge"] = 3.into();
     rejects_cage_wire(wire);
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     wire["faces"][0]["sides"][0]["edges"][0]["reversed"] = true.into();
     rejects_cage_wire(wire);
 }
 
 #[test]
 fn cage_admission_requires_valid_sector_arity() {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
-    wire["vertices"][0]["secondary_grips"] = serde_json::json!({
+    let mut wire = json::to_value(triangle_cage()).unwrap();
+    wire["vertices"][0]["secondary_grips"] = cadmpeg_core::json!({
         "direction": "north",
         "wedges": [{ "kind": "slot", "edge": 0, "spokes": [null], "sectors": [] }]
     });
-    assert!(cadmpeg_core::serde_erase::json::from_value::<super::SubdCage>(wire).is_err());
+    assert!(json::from_value::<super::SubdCage>(wire).is_err());
 }
 
 /// A vertex with no secondary grips has one form: an absent layout.
 #[test]
 fn an_empty_grip_layout_reads_and_constructs_as_absent() {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     wire["vertices"][0]["secondary_grips"] =
-        serde_json::json!({ "direction": "north", "wedges": [] });
-    let cage = cadmpeg_core::serde_erase::json::from_value::<super::SubdCage>(wire).unwrap();
+        cadmpeg_core::json!({ "direction": "north", "wedges": [] });
+    let cage = json::from_value::<super::SubdCage>(wire).unwrap();
     assert!(cage.vertices()[0].secondary_grips().is_none());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&cage).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap()
+        json::to_value(&cage).unwrap(),
+        json::to_value(triangle_cage()).unwrap()
     );
     let empty =
         super::SubdVertexGripLayout::new(super::SubdGripDirection::North, Vec::new()).unwrap();
@@ -393,12 +381,12 @@ fn cage_admission_requires_incident_grip_topology() {
         (0, None, Some(1)),
         (3, None, Some(0)),
     ] {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
+        let mut wire = json::to_value(triangle_cage()).unwrap();
         if owner == 3 {
             let extra = wire["vertices"][0].clone();
             wire["vertices"].as_array_mut().unwrap().push(extra);
         }
-        let mut wedge = serde_json::json!({ "kind": "slot", "spokes": [], "sectors": [] });
+        let mut wedge = cadmpeg_core::json!({ "kind": "slot", "spokes": [], "sectors": [] });
         if let Some(edge) = edge {
             wedge["edge"] = edge.into();
         }
@@ -406,23 +394,23 @@ fn cage_admission_requires_incident_grip_topology() {
             wedge["sector_face"] = face.into();
         }
         wire["vertices"][owner]["secondary_grips"] =
-            serde_json::json!({ "direction": "north", "wedges": [wedge] });
+            cadmpeg_core::json!({ "direction": "north", "wedges": [wedge] });
         rejects_cage_wire(wire);
     }
 }
 
 #[test]
 fn grip_indices_are_unique_across_the_whole_cage() {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
+    let mut wire = json::to_value(triangle_cage()).unwrap();
     for owner in 0..2 {
-        wire["vertices"][owner]["secondary_grips"] = serde_json::json!({
+        wire["vertices"][owner]["secondary_grips"] = cadmpeg_core::json!({
             "direction": "north", "wedges": [{ "kind": "slot", "edge": 0,
             "spokes": [{ "source_index": 42, "point": { "x": 0.0, "y": 0.0, "z": 0.0 }, "weight": 1.0 }], "sectors": [null] }]
         });
     }
     rejects_cage_wire(wire.clone());
     wire["vertices"][1]["secondary_grips"]["wedges"][0]["spokes"][0]["source_index"] = 43.into();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<super::SubdCage>(wire).is_ok());
+    assert!(json::from_value::<super::SubdCage>(wire).is_ok());
 }
 
 #[test]
@@ -455,8 +443,8 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
 
 #[test]
 fn cage_symmetry_references_stay_in_range() {
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(triangle_cage()).unwrap();
-    wire["symmetries"] = serde_json::json!([{
+    let mut wire = json::to_value(triangle_cage()).unwrap();
+    wire["symmetries"] = cadmpeg_core::json!([{
         "kind": { "kind": "correspondence" },
         "plane": { "origin": { "x": 0.0, "y": 0.0, "z": 0.0 }, "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 }, "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 } },
         "face_pairs": [],
@@ -464,16 +452,16 @@ fn cage_symmetry_references_stay_in_range() {
         "vertex_pairs": [[0, 3]]
     }]);
     rejects_cage_wire(wire.clone());
-    wire["symmetries"][0]["vertex_pairs"] = serde_json::json!([[1, 1]]);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<super::SubdCage>(wire).is_ok());
+    wire["symmetries"][0]["vertex_pairs"] = cadmpeg_core::json!([[1, 1]]);
+    assert!(json::from_value::<super::SubdCage>(wire).is_ok());
 }
 
 #[test]
 fn edge_admission_requires_distinct_endpoints() {
     assert!(SubdEdge::new([0, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err());
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&triangle_cage().edges[0]).unwrap();
-    wire["vertices"] = serde_json::json!([0, 0]);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(wire).is_err());
+    let mut wire = json::to_value(&triangle_cage().edges[0]).unwrap();
+    wire["vertices"] = cadmpeg_core::json!([0, 0]);
+    assert!(json::from_value::<SubdEdge>(wire).is_err());
     assert!(SubdEdge::new(
         [u32::MAX, 0],
         [0.0, 0.0],
@@ -486,7 +474,7 @@ fn edge_admission_requires_distinct_endpoints() {
 
 #[test]
 fn edge_numeric_admission_rejects_invalid_controls() {
-    let base = cadmpeg_core::serde_erase::json::to_value(&triangle_cage().edges[0]).unwrap();
+    let base = json::to_value(&triangle_cage().edges[0]).unwrap();
     for invalid in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for index in 0..2 {
             let mut sharpness = [0.0, 0.0];
@@ -495,8 +483,8 @@ fn edge_numeric_admission_rejects_invalid_controls() {
                 SubdEdge::new([0, 1], sharpness, SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err()
             );
             let mut wire = base.clone();
-            wire["sharpness"] = serde_json::json!(sharpness);
-            assert!(cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(wire).is_err());
+            wire["sharpness"] = cadmpeg_core::json!(sharpness);
+            assert!(json::from_value::<SubdEdge>(wire).is_err());
         }
     }
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -512,7 +500,7 @@ fn edge_numeric_admission_rejects_invalid_controls() {
     for invalid in [0.0, -1.0] {
         let mut wire = base.clone();
         wire["knot_interval"] = invalid.into();
-        assert!(cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(wire).is_err());
+        assert!(json::from_value::<SubdEdge>(wire).is_err());
     }
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for index in 0..2 {
@@ -522,8 +510,8 @@ fn edge_numeric_admission_rejects_invalid_controls() {
                 SubdEdge::new([0, 1], [0.0, 0.0], SubdEdgeTag::Smooth, None, coefficients).is_err()
             );
             let mut wire = base.clone();
-            wire["sector_coefficients"] = serde_json::json!(coefficients);
-            assert!(cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(wire).is_err());
+            wire["sector_coefficients"] = cadmpeg_core::json!(coefficients);
+            assert!(json::from_value::<SubdEdge>(wire).is_err());
         }
     }
 }
@@ -543,18 +531,15 @@ fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
         assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, f64::MAX]);
         assert_eq!(edge.knot_interval.map(PositiveReal::get), interval);
         assert_eq!(edge.sector_coefficients.map(FiniteReal::get), [-2.0, 3.0]);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&edge).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(wire).unwrap(),
-            edge
-        );
+        let wire = json::to_value(&edge).unwrap();
+        assert_eq!(json::from_value::<SubdEdge>(wire).unwrap(), edge);
     }
 }
 
 #[test]
 fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
     let point = Point3::new(-1.0, 2.0, 3.0);
-    let base = serde_json::json!({"source_index": 0, "point": point, "weight": 1.0});
+    let base = cadmpeg_core::json!({"source_index": 0, "point": point, "weight": 1.0});
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for point in [
             Point3::new(invalid, 0.0, 0.0),
@@ -563,32 +548,27 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
         ] {
             assert!(super::SubdSecondaryGrip::new(0, point, 1.0).is_err());
             let mut wire = base.clone();
-            wire["point"] = serde_json::json!(point);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<super::SubdSecondaryGrip>(wire)
-                    .is_err()
-            );
+            wire["point"] = cadmpeg_core::json!(point);
+            assert!(json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
         }
     }
     for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(super::SubdSecondaryGrip::new(0, point, invalid).is_err());
         let mut wire = base.clone();
-        wire["weight"] = serde_json::json!(invalid);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::SubdSecondaryGrip>(wire).is_err()
-        );
+        wire["weight"] = cadmpeg_core::json!(invalid);
+        assert!(json::from_value::<super::SubdSecondaryGrip>(wire).is_err());
     }
     for weight in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
         let grip = super::SubdSecondaryGrip::new(u32::MAX, point, weight).unwrap();
         assert_eq!(grip.point, point);
         assert_eq!(grip.weight.get(), weight);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&grip).unwrap();
+        let wire = json::to_value(&grip).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"source_index": u32::MAX, "point": point, "weight": weight})
+            cadmpeg_core::json!({"source_index": u32::MAX, "point": point, "weight": weight})
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<super::SubdSecondaryGrip>(wire).unwrap(),
+            json::from_value::<super::SubdSecondaryGrip>(wire).unwrap(),
             grip
         );
     }
@@ -615,9 +595,9 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
             slot(vec![None, None], Vec::new()),
         ],
     ] {
-        let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
+        let wire = cadmpeg_core::json!({ "direction": "north", "wedges": wedges });
         assert!(SubdVertexGripLayout::new(SubdGripDirection::North, wedges,).is_err());
-        assert!(cadmpeg_core::serde_erase::json::from_value::<SubdVertexGripLayout>(wire).is_err());
+        assert!(json::from_value::<SubdVertexGripLayout>(wire).is_err());
     }
     for wedges in [
         Vec::new(),
@@ -628,14 +608,11 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
             slot(vec![None, None], vec![None, None]),
         ],
     ] {
-        let wire = serde_json::json!({ "direction": "north", "wedges": wedges });
+        let wire = cadmpeg_core::json!({ "direction": "north", "wedges": wedges });
         let layout = SubdVertexGripLayout::new(SubdGripDirection::North, wedges).unwrap();
+        assert_eq!(json::to_value(&layout).unwrap(), wire);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&layout).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<SubdVertexGripLayout>(wire).unwrap(),
+            json::from_value::<SubdVertexGripLayout>(wire).unwrap(),
             layout
         );
     }
@@ -664,8 +641,8 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
         [UnitVector3::X_AXIS, UnitVector3::Y_AXIS]
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(frame).unwrap(),
-        serde_json::json!({
+        json::to_value(frame).unwrap(),
+        cadmpeg_core::json!({
             "origin": point,
             "first_axis": Vector3::new(1.0, 0.0, 0.0),
             "second_axis": Vector3::new(0.0, 1.0, 0.0),
@@ -682,28 +659,24 @@ fn user_knots_distinguish_absence_inheritance_and_explicit_zero() {
     let mut edge =
         SubdEdge::new([0, 1], [0.0; 2], SubdEdgeTag::Smooth, Some(0.25), [0.0; 2]).unwrap();
     assert_eq!(edge.effective_knot_interval(), Some(0.25));
-    assert!(cadmpeg_core::serde_erase::json::to_value(&edge)
-        .unwrap()
-        .get("user_knot")
-        .is_none());
-    let mut null_wire = cadmpeg_core::serde_erase::json::to_value(&edge).unwrap();
+    assert!(json::to_value(&edge).unwrap().get("user_knot").is_none());
+    let mut null_wire = json::to_value(&edge).unwrap();
     null_wire["user_knot"] = serde_json::Value::Null;
-    assert!(cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(null_wire).is_err());
+    assert!(json::from_value::<SubdEdge>(null_wire).is_err());
     edge.user_knot = Some(SubdUserKnot::Inherit);
     assert_eq!(edge.effective_knot_interval(), Some(0.25));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&edge).unwrap()["user_knot"],
-        serde_json::json!({"kind":"inherit"})
+        json::to_value(&edge).unwrap()["user_knot"],
+        cadmpeg_core::json!({"kind":"inherit"})
     );
     edge.user_knot = Some(SubdUserKnot::Override(NonNegativeReal::new(0.0).unwrap()));
     assert_eq!(edge.effective_knot_interval(), Some(0.0));
-    let decoded: SubdEdge =
-        serde_json::from_str(&cadmpeg_core::serde_erase::json::to_string(&edge).unwrap()).unwrap();
+    let decoded: SubdEdge = serde_json::from_str(&json::to_string(&edge).unwrap()).unwrap();
     assert_eq!(decoded, edge);
     assert_eq!(decoded.knot_interval.map(PositiveReal::get), Some(0.25));
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(edge).unwrap();
+    let mut wire = json::to_value(edge).unwrap();
     wire["user_knot"]["value"] = (-0.5).into();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<SubdEdge>(wire).is_err());
+    assert!(json::from_value::<SubdEdge>(wire).is_err());
 }
 
 #[test]

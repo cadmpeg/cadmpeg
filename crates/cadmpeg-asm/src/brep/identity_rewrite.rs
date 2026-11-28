@@ -2,6 +2,7 @@
 //! Walk the typed ASM graph without rebuilding it through serde.
 
 use super::annotations::AnnotationRecord;
+use super::given_up::WithheldRecord;
 use super::{AsmBrep, Stats, UnboundedFace};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -23,7 +24,7 @@ macro_rules! graph {
         }
     };
 }
-graph!(AsmBrep; bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves, procedural_surfaces, procedural_curves, edge_continuities, edge_ownerships, vertex_ownerships, face_sidedness, face_native_keys, tolerant_coedge_parameters, tolerant_edge_tails, tolerant_vertex_tails, mesh_surface_sentinels, transform_hints, body_native_keys, wire_topologies, attributes, unknowns, stats, annotation_records, unbounded_faces);
+graph!(AsmBrep; bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves, procedural_surfaces, procedural_curves, edge_continuities, edge_ownerships, vertex_ownerships, face_sidedness, face_native_keys, tolerant_coedge_parameters, tolerant_edge_tails, tolerant_vertex_tails, mesh_surface_sentinels, transform_hints, body_native_keys, wire_topologies, attributes, unknowns, stats, annotation_records, unbounded_faces, withheld);
 graph!(Stats; missing_face_surface_kinds, unknown_surface_kinds, mesh_surface_faces, nurbs_surfaces, nurbs_curves, procedural_curve_kinds, undecoded_pcurve_kinds, partial_procedural_supports, other_record_kinds);
 
 impl RewriteIdentities for UnboundedFace {
@@ -47,17 +48,37 @@ impl RewriteIdentities for UnboundedFace {
 impl RewriteIdentities for AnnotationRecord {
     fn visit_identity_references(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
-        visitor(&self.id)
+        self.id.visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities(
         mut self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
-        self.id = map.identity(&self.id)?;
+        self.id = self.id.rewrite_identities(ctx, map)?;
+        Ok(self)
+    }
+}
+
+impl RewriteIdentities for WithheldRecord {
+    fn visit_identity_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        self.dropped.visit_identity_references(ctx, visitor)?;
+        self.marked.visit_identity_references(ctx, visitor)
+    }
+    fn rewrite_identities(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        map: &mut IdentityMap<'_>,
+    ) -> Result<Self, CodecError> {
+        self.dropped = self.dropped.rewrite_identities(ctx, map)?;
+        self.marked = self.marked.rewrite_identities(ctx, map)?;
         Ok(self)
     }
 }

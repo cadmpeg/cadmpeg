@@ -4,6 +4,7 @@
 //! states, the timeline marker after it, and the later features rolled back
 //! (f3d.md §3.1, "Feature item tail").
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -369,7 +370,7 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
         .iter()
         .filter_map(|feature| feature.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["Sketch 1", "Extrude 1", "Extrude 2"]);
+    assert_eq!(names, ["Sketch1", "Extrude1", "Extrude2"]);
     let missing = loss(&report, EVALUATION_MISSING);
     let rolled = missing
         .iter()
@@ -483,29 +484,38 @@ fn every_kind_with_a_definition_writer_follows_the_marker_with_the_no_state_tail
     );
 }
 
-/// `ir` with an `f3d` namespace whose one native Design record is a Fusion
-/// Design type row: the writer writes the Design stream from its native
-/// records.
+/// `ir` with an `f3d` namespace whose native Design records are a Fusion
+/// Design type row and a record header: the writer writes the Design stream
+/// from its native records.
 fn with_a_native_design(mut ir: CadIr) -> CadIr {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
-    crate::test_support::native_test::f3d_native_mut(&mut ir).design_types =
-        vec![SegmentType::try_new(
-            "f3d:generated/MetaStream.dat:design-type#0".into(),
-            SegmentTypeData {
-                byte_offset: 0,
-                module: "Fusion".to_owned(),
-                entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
-                type_guid: "11111111-2222-3333-4444-555555555555"
-                    .to_owned()
-                    .try_into()
-                    .expect("type GUID"),
-                type_guid_offset: 0,
-                base_type_guid: BaseTypeGuid::Absent,
-                version: 7,
-                version_offset: 0,
-            },
-        )
-        .expect("a Design type row")];
+    let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+    native.design_record_headers = vec![DesignRecordHeader {
+        id: "f3d:generated:record-header#1".into(),
+        record_index: 584,
+        class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+    }];
+    native.design_types = vec![SegmentType::try_new(
+        "f3d:generated/MetaStream.dat:design-type#0".into(),
+        SegmentTypeData {
+            byte_offset: 0,
+            module: "Fusion".to_owned(),
+            entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
+            type_guid: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version: 7,
+            version_offset: 0,
+        },
+    )
+    .expect("a Design type row")];
+    drop(native);
     ir
 }
 
@@ -521,6 +531,7 @@ fn a_native_design_rolled_back_writes_the_chosen_form() {
             )),
             "{omitted}"
         );
+        assert!(!omitted.contains("arena `design_types`"), "{omitted}");
     };
 
     let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
@@ -616,7 +627,7 @@ pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
         &[corners.map(|corner| (corner, Side::Line)).to_vec()],
         [0.0, SIDE],
     );
-    let renamed = cadmpeg_core::serde_erase::json::to_string(&solid.geometry)
+    let renamed = json::to_string(&solid.geometry)
         .expect("the prism serializes")
         .replace('#', "#second-");
     let serde_json::Value::Object(arenas) =
@@ -624,8 +635,7 @@ pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
     else {
         panic!("the prism's arenas");
     };
-    let mut merged =
-        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("the cube serializes");
+    let mut merged = json::to_value(&ir.geometry).expect("the cube serializes");
     let mut body = None;
     for (arena, records) in arenas {
         let serde_json::Value::Array(records) = records else {
@@ -641,9 +651,8 @@ pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
             .or_insert_with(|| serde_json::Value::Array(Vec::new()));
         slot.as_array_mut().expect("an arena").extend(records);
     }
-    ir.geometry = cadmpeg_core::serde_erase::json::from_value(merged).expect("the merged arenas");
-    let body = cadmpeg_core::serde_erase::json::from_value(body.expect("the prism's body"))
-        .expect("a body id");
+    ir.geometry = json::from_value(merged).expect("the merged arenas");
+    let body = json::from_value(body.expect("the prism's body")).expect("a body id");
     ir.design.scopes[0].current[0].bodies.push(body);
     ir.finalize();
     (ir, second_id)
@@ -1023,6 +1032,35 @@ fn a_history_true_join_after_a_held_state_writes_that_state_and_its_body() {
     );
 }
 
+/// The history-true form resolves the held state under the caller's chain
+/// ceiling: a chain one link past it refuses the session (cadir-v11.md
+/// §2.5), and a ceiling that admits the chain writes the state.
+#[test]
+fn a_history_true_held_state_past_the_chain_ceiling_refuses_the_session() {
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceLimits};
+    use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+
+    let (ir, _) = joined_after_the_cube(true);
+    let plan = |max_state_chain_depth| {
+        crate::F3dCodec.plan(
+            EncodeInput::new(&ir, None)
+                .with_missing_states(MissingStateForm::HistoryTrue)
+                .with_limits(ResourceLimits {
+                    max_state_chain_depth,
+                    ..ResourceLimits::desktop()
+                }),
+        )
+    };
+    let refused = plan(0);
+    let Err(EncodeError::ResourceLimit(limit)) = &refused else {
+        panic!("a chain past the ceiling refuses the write: {refused:?}");
+    };
+    assert_eq!(limit.scope, LimitScope::Session);
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!((limit.limit, limit.additional), (0, 1));
+    assert!(plan(1).is_ok(), "the ceiling admits the chain");
+}
+
 /// [`with_a_second_extrude`] with a new body whose faces lie on the cube's
 /// surfaces where the two have the same surface, so that the two bodies
 /// share those carriers. Returns the design and the number of shared
@@ -1031,8 +1069,7 @@ fn sharing_carriers() -> (CadIr, usize) {
     use std::collections::BTreeMap;
     let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
     let content = |surface: &cadmpeg_ir::geometry::Surface| {
-        let mut value =
-            cadmpeg_core::serde_erase::json::to_value(surface).expect("a surface serializes");
+        let mut value = json::to_value(surface).expect("a surface serializes");
         value
             .as_object_mut()
             .expect("a surface object")

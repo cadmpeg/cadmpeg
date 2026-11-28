@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 fn offset_bundle(flipped: bool, kind: &str) -> Vec<u8> {
     changed(&fixture("unsupported"), |path, value| {
@@ -167,8 +168,7 @@ fn matrix_bundle(matrix: &Value) -> Vec<u8> {
     )
     .unwrap();
     let response = json!({"sketches":[{"featureId":"Base sketch", "sketchMatrix":matrix}]});
-    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
-        .unwrap();
+    zip.write_all(&json::to_vec(&response).unwrap()).unwrap();
     zip.finish().unwrap().into_inner()
 }
 
@@ -321,18 +321,15 @@ fn native_sketch_clears_plane_assumption() {
 }
 
 #[test]
-fn unreadable_stale_and_duplicate_sketch_responses_retain_exact_bytes() {
+fn unreadable_and_stale_sketch_responses_are_given_up_and_duplicates_kept() {
     for (data, duplicate) in [
         (b"{malformed".to_vec(), false),
         (
-            cadmpeg_core::serde_erase::json::to_vec(
-                &json!({"microversionId":"stale", "sketches":[]}),
-            )
-            .unwrap(),
+            json::to_vec(&json!({"microversionId":"stale", "sketches":[]})).unwrap(),
             false,
         ),
         (
-            cadmpeg_core::serde_erase::json::to_vec(
+            json::to_vec(
                 &json!({"sketches":[{"featureId":"Base sketch"},{"featureId":"Base sketch"}]}),
             )
             .unwrap(),
@@ -351,30 +348,42 @@ fn unreadable_stale_and_duplicate_sketch_responses_retain_exact_bytes() {
         let (model, report) = read(&bytes).unwrap();
         assert_eq!(kinds(&model), ["datum_offset_plane", "sketch", "extrude"]);
         let decoded = crate::test_support::review::decode(&bytes);
-        let asset = decoded
-            .ir()
-            .model
-            .assets
+        let asset = decoded.ir().model.assets.iter().find(|asset| {
+            asset
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str() == "partstudios/studio/sketches.json")
+        });
+        let given_up = decoded
+            .report()
+            .losses
             .iter()
-            .find(|asset| {
-                asset
-                    .name
-                    .as_ref()
-                    .is_some_and(|name| name.as_str() == "partstudios/studio/sketches.json")
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss
+                        .message
+                        .starts_with("part archive-entry \"partstudios/studio/sketches.json\"")
             })
-            .unwrap();
-        let cadmpeg_ir::assets::AssetContent::Embedded { data: retained } = &asset.content else {
-            panic!("embedded asset required")
-        };
-        assert_eq!(retained.as_bytes(), data);
+            .count();
         if duplicate {
+            let cadmpeg_ir::assets::AssetContent::Embedded { data: retained } =
+                &asset.expect("the sketch response stays an asset").content
+            else {
+                panic!("embedded asset required")
+            };
+            assert_eq!(retained.as_bytes(), data);
+            assert_eq!(given_up, 0);
             assert!(report.losses().iter().any(|loss| loss.code.as_deref()
                 == Some("onshape/sketch.plane-assumed")
                 && loss.detail.contains("identity repeats")));
         } else {
-            assert!(report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/member.unreadable")
-                && loss.detail.contains("retained the member bytes")));
+            assert!(asset.is_none());
+            assert_eq!(given_up, 1);
+            assert!(report
+                .losses()
+                .iter()
+                .any(|loss| loss.detail.contains("onshape/member.unreadable: ")
+                    && loss.detail.contains("omitted the member")));
         }
         assert!(report
             .losses()
@@ -399,11 +408,12 @@ fn assert_support_frame_kept(model: &Model, case: &str) {
     );
 }
 
-fn has_loss(report: &Report, code: &str, detail: &str) -> bool {
+/// Whether `report` states `code` as `charge` with `detail`.
+fn has_loss(report: &Report, code: &str, detail: &str, charge: Charge) -> bool {
     report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some(code) && loss.detail.contains(detail))
+        .any(|loss| loss.states(code, charge) && loss.detail.contains(detail))
 }
 
 #[test]
@@ -446,17 +456,16 @@ fn malformed_stored_matrices_keep_the_support_frame_with_named_assumption() {
             zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
-        zip.write_all(
-            &cadmpeg_core::serde_erase::json::to_vec(&json!({"sketches":[row]})).unwrap(),
-        )
-        .unwrap();
+        zip.write_all(&json::to_vec(&json!({"sketches":[row]})).unwrap())
+            .unwrap();
         let (model, report) = read(&zip.finish().unwrap().into_inner()).unwrap();
         assert_support_frame_kept(&model, case);
         assert!(
             has_loss(
                 &report,
                 "onshape/sketch.plane-assumed",
-                "assumed the support"
+                "assumed the support",
+                Charge::Note
             ),
             "{case}: {:?}",
             report.losses()
@@ -471,7 +480,8 @@ fn absent_sketch_response_keeps_the_support_frame_with_named_assumption() {
     assert!(has_loss(
         &report,
         "onshape/sketch.plane-assumed",
-        "assumed the support"
+        "assumed the support",
+        Charge::Note
     ));
 }
 
@@ -488,15 +498,15 @@ fn sketch_response_microversion_must_match_the_bundle() {
     ];
     let response = json!({"sourceMicroversion":"another-microversion",
         "sketches":[{"featureId":"Base sketch","sketchMatrix":matrix}]});
-    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
-        .unwrap();
+    zip.write_all(&json::to_vec(&response).unwrap()).unwrap();
     let (model, report) = read(&zip.finish().unwrap().into_inner()).unwrap();
     assert_support_frame_kept(&model, "wrong-microversion");
     // cadmpeg reports a stale member as unreadable and retains its bytes.
     assert!(has_loss(
         &report,
         "onshape/member.unreadable",
-        "microversion"
+        "microversion",
+        Charge::GivenUp(Cause::Unreadable)
     ));
 }
 
@@ -509,14 +519,14 @@ fn sketch_response_row_count_is_bounded() {
     )
     .unwrap();
     let response = json!({"sketches":vec![json!({}); crate::reader::ROWS + 1]});
-    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
-        .unwrap();
+    zip.write_all(&json::to_vec(&response).unwrap()).unwrap();
     let (model, report) = read(&zip.finish().unwrap().into_inner()).unwrap();
     assert_support_frame_kept(&model, "row-limit");
     assert!(has_loss(
         &report,
         "onshape/sketch.plane-assumed",
-        "row limit"
+        "row limit",
+        Charge::Note
     ));
 }
 
@@ -525,14 +535,12 @@ fn optional_sketch_response_preserves_existing_default_plane_output() {
     let baseline = crate::test_support::review::decode(&fixture("default-plane-regions"));
     let bytes =
         crate::test_support::review::members(&fixture("default-plane-regions"), |members| {
-            let response: Value = cadmpeg_core::serde_erase::json::from_slice(
-                &members["partstudios/studio/features.json"],
-            )
-            .unwrap();
+            let response: Value =
+                json::from_slice(&members["partstudios/studio/features.json"]).unwrap();
             let native = response["features"][0]["featureId"].clone();
             members.insert(
                 "partstudios/studio/sketches.json".into(),
-                cadmpeg_core::serde_erase::json::to_vec(&json!({
+                json::to_vec(&json!({
                 "sketches":[{"featureId":native,"sketchMatrix":[
                     1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
                     0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0]}]}))
@@ -547,4 +555,34 @@ fn optional_sketch_response_preserves_existing_default_plane_output() {
     actual["model"]["assets"] = json!([]);
     assert_eq!(expected, actual);
     crate::test_support::review::validate(updated);
+}
+
+#[test]
+fn accounting_reports_only_the_unused_datum_control() {
+    let bytes = changed(&offset_bundle(false, "OFFSET"), |path, value| {
+        if path.ends_with("features.json") {
+            value["features"][0]["parameters"]
+                .as_array_mut()
+                .unwrap()
+                .extend([
+                    json!({"parameterId":"futureFlag","value":true}),
+                    json!({"parameterId":"flipNormal","value":false}),
+                ]);
+        }
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[0], "datum_offset_plane");
+    let losses: Vec<_> = report
+        .losses()
+        .iter()
+        .filter(|loss| {
+            loss.code.as_deref() == Some("onshape/history.parameter-not-projected")
+                && loss.detail.ends_with("; subject: Raised datum")
+        })
+        .map(|loss| loss.detail.as_str())
+        .collect();
+    assert_eq!(
+        losses,
+        ["parameter futureFlag has no projected design field; subject: Raised datum"]
+    );
 }

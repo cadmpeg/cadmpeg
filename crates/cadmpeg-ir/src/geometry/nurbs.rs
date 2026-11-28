@@ -179,7 +179,14 @@ pub struct WeightedPole3<P = Point3> {
 /// exactly one spelling.
 // A source states raw positions; a `NurbsCurve` holds the admitted poles,
 // whose positions are `FinitePoint3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -497,7 +504,14 @@ impl<P: Copy> NurbsPoles3<P> {
 /// ```
 // A source states raw positions; a `NurbsSurface` holds the admitted grid,
 // whose positions are `FinitePoint3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -859,6 +873,14 @@ pub enum NurbsError {
         index: usize,
         /// The refused weight.
         weight: f64,
+    },
+    /// A source stated a pole coordinate that is not finite.
+    #[error("{field}: pole {index} is not finite")]
+    NonFinitePole {
+        /// The carrier field the pole belongs to.
+        field: String,
+        /// Position of the pole in the lane the source stated.
+        index: usize,
     },
     /// A knot vector, degree, grid or coordinate the carrier cannot state.
     #[error("{0}")]

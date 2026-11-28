@@ -17,6 +17,7 @@ use cadmpeg_ir::design::expr::{
     self, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use cadmpeg_ir::design::projection::fields::{ModelParameterField, ParameterField};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::parameters::{
     DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
@@ -36,7 +37,9 @@ const STORED_VALUE_AGREEMENT: f64 = 1e-9;
 /// Restate every user parameter the decoder transferred as a parameter of
 /// `scope`, and add to `losses` the note naming those that drop an input.
 /// The decoder files no CATIA parameter under a feature; one it did would
-/// need its owner stated, and is left out.
+/// need its owner stated, and is left out. Each takes its rank in the
+/// stored order of the user parameters as its position, where those ranks
+/// are distinct.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -50,6 +53,12 @@ pub(super) fn project(
         .filter(|parameter| parameter.owner.is_none())
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
+    let ranked = user
+        .values()
+        .map(|parameter| parameter.ordinal)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == user.len();
     let mut projected = Vec::with_capacity(user.len());
     let mut dropped = Vec::new();
     for parameter in user.values() {
@@ -71,6 +80,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: scope.clone(),
             owner: None,
+            position: ranked.then_some(parameter.ordinal),
             name: NonBlankString::new(parameter.name.clone()),
             value: value(parameter.value.as_ref(), &kind),
             definition: ParameterDefinition::Expression(expression),
@@ -124,6 +134,53 @@ fn dropped_inputs<'a>(
                 |reference| matches!(&reference.target, RefTarget::Parameter(id) if id == *input),
             )
         })
+        .collect()
+}
+
+/// The model parameter fields [`project`] reads to build `field`. The kind
+/// is the signature's `value_type` property; a literal's tree is its stored
+/// value where the stored expression restates that value.
+#[deny(clippy::wildcard_enum_match_arm)]
+pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
+    match field {
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind => &[ModelParameterField::Properties],
+        ParameterField::Definition => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Dependencies,
+            ModelParameterField::Value,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::Value => &[ModelParameterField::Value, ModelParameterField::Properties],
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Position => &[ModelParameterField::Ordinal],
+        ParameterField::Scope
+        | ParameterField::Owner
+        | ParameterField::Unit
+        | ParameterField::Display
+        | ParameterField::Tolerance
+        | ParameterField::Decimals
+        | ParameterField::Comment
+        | ParameterField::NativeOptions
+        | ParameterField::SourceSettings => &[],
+    }
+}
+
+/// The projected parameters whose signature declares no kind.
+pub(super) fn defaulted_kinds(ir: &CadIr) -> Vec<&ParameterId> {
+    let projected = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    ir.model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            projected.contains(parameter.id.as_str()) && property(parameter, "value_type").is_none()
+        })
+        .map(|parameter| &parameter.id)
         .collect()
 }
 

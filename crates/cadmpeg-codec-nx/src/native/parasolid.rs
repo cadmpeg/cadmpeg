@@ -155,8 +155,18 @@ impl Clone for ParasolidGroupMember {
 /// Deltas records use partition pairing only for source namespace attribution.
 /// A record in an unpaired deltas stream remains exact native
 /// evidence but has no partition-local namespace assignment.
+#[cfg(test)]
 pub(super) fn parasolid_groups(
     streams: &[Stream],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+    deltas: &ParasolidDeltasEvents,
+) -> Result<(Vec<ParasolidGroupRecord>, Vec<ParasolidGroupMember>), CodecError> {
+    parasolid_groups_with_parsed(streams, None, delta_pairs, deltas)
+}
+
+pub(super) fn parasolid_groups_with_parsed(
+    streams: &[Stream],
+    parsed: Option<&ParsedStreams<'_>>,
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     deltas: &ParasolidDeltasEvents,
 ) -> Result<(Vec<ParasolidGroupRecord>, Vec<ParasolidGroupMember>), CodecError> {
@@ -181,8 +191,15 @@ pub(super) fn parasolid_groups(
             continue;
         };
 
-        let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(&stream.inflated)?
-        else {
+        let owned_primary;
+        let primary = match parsed {
+            Some(parsed) => parsed.primary(stream_ordinal),
+            None => {
+                owned_primary = cadmpeg_parasolid::records::PrimaryRecords::read(&stream.inflated)?;
+                owned_primary.as_ref()
+            }
+        };
+        let Some(primary) = primary else {
             continue;
         };
         for record in primary.groups() {
@@ -412,6 +429,7 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
 #[cfg(test)]
 mod deltas_record_wire_tests {
     use super::ParasolidDeltasRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn group_and_region_projections_preserve_values_and_reject_conflicting_controls() {
@@ -420,25 +438,19 @@ mod deltas_record_wire_tests {
             r#"{"id":"nx:test:region#0","stream_ordinal":0,"family":"REGION","kind":19,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"region_type":83,"byte_len":24,"inflated_offset":0}"#,
         ] {
             let value: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&value).unwrap(), json);
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &value,
                 serde_json::from_str::<serde_json::Value>(json).unwrap(),
             );
             for (field, invalid) in [
-                ("kind", serde_json::json!(12)),
-                ("xmt", serde_json::json!(1)),
-                ("references", serde_json::json!([0, 1, 1, 1, 1])),
+                ("kind", cadmpeg_core::json!(12)),
+                ("xmt", cadmpeg_core::json!(1)),
+                ("references", cadmpeg_core::json!([0, 1, 1, 1, 1])),
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
                 wire[field] = invalid;
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasRecord>(wire)
-                        .is_err()
-                );
+                assert!(json::from_value::<ParasolidDeltasRecord>(wire).is_err());
             }
         }
     }
@@ -1032,47 +1044,44 @@ impl TryFrom<ParasolidTermUseRecordWire> for ParasolidTermUseRecord {
 #[cfg(test)]
 mod term_use_wire_tests {
     use super::ParasolidTermUseRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn complete_limit_retains_both_native_points_and_holds_one_zero() {
         let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","data":{"layout":"xyz3","hvecs":[[0.0,-0.0,1.0],[0.0,-0.0,1.0]]},"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+            json::to_string(&record).unwrap(),
             json.replace("-0.0", "0.0")
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::ParasolidTermUseRecordWire::from(
-                record.clone()
-            ))
-            .unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&super::ParasolidTermUseRecordWire::from(record.clone())).unwrap()
         );
     }
 
     #[test]
     fn term_use_wire_rejects_count_form_and_storage_disagreement() {
-        let valid = serde_json::json!({"id":"term", "stream_ordinal":0, "xmt":2,
+        let valid = cadmpeg_core::json!({"id":"term", "stream_ordinal":0, "xmt":2,
             "count":2,"form":"TF", "data":{"layout":"xyz3","hvecs":[[0.0,0.0,0.0],[1.0,0.0,0.0]]},
             "framing":"direct","inflated_offset":0});
         for (field, value) in [
-            ("count", serde_json::json!(1)),
-            ("form", serde_json::json!("L?")),
+            ("count", cadmpeg_core::json!(1)),
+            ("form", cadmpeg_core::json!("L?")),
             (
                 "data",
-                serde_json::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
+                cadmpeg_core::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
             ),
-            ("data", serde_json::json!({"layout":"xyz3","hvecs":[]})),
+            ("data", cadmpeg_core::json!({"layout":"xyz3","hvecs":[]})),
             (
                 "data",
-                serde_json::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
+                cadmpeg_core::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
             ),
         ] {
             let mut malformed = valid.clone();
             malformed[field] = value;
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ParasolidTermUseRecord>(malformed)
-                    .is_err(),
+                json::from_value::<ParasolidTermUseRecord>(malformed).is_err(),
                 "{field}"
             );
         }
@@ -1108,6 +1117,7 @@ mod term_use_identity_tests {
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
 pub(super) fn parasolid_term_use_records(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
     let mut records = Vec::new();
     for (ordinal, stream) in streams.iter().enumerate() {
@@ -1120,7 +1130,11 @@ pub(super) fn parasolid_term_use_records(
         let Some(point_layout) = subtype.chart_point_layout() else {
             continue;
         };
-        let rows = crate::intersection::stream_term_use_records(&stream.inflated, point_layout)?;
+        let rows = crate::intersection::stream_term_use_records_in(
+            &stream.inflated,
+            point_layout,
+            parsed.primary(ordinal),
+        );
         if rows.is_empty() {
             continue;
         }
@@ -1322,27 +1336,23 @@ pub(super) struct ParasolidBlendSurfaceRecord {
 #[cfg(test)]
 mod blend_surface_wire_tests {
     use super::ParasolidBlendSurfaceRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn checked_blend_state_retains_the_flat_native_wire() {
         let json = r#"{"id":"blend","stream_ordinal":0,"xmt":20,"support_xmts":[6,7],"spine_xmt":0,"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0],"inflated_offset":10}"#;
         let record: ParasolidBlendSurfaceRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&record).unwrap(), json);
         for (field, value) in [
-            ("support_xmts", serde_json::json!([1, 7])),
-            ("offsets", serde_json::json!([3.0, 4.0])),
+            ("support_xmts", cadmpeg_core::json!([1, 7])),
+            ("offsets", cadmpeg_core::json!([3.0, 4.0])),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = value;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ParasolidBlendSurfaceRecord>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(json::from_value::<ParasolidBlendSurfaceRecord>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 }
@@ -2186,6 +2196,7 @@ impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClas
 /// Retain named attribute-class declarations from all Parasolid streams.
 pub(super) fn parasolid_attribute_definitions(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2194,7 +2205,10 @@ pub(super) fn parasolid_attribute_definitions(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
+        for definition in crate::parasolid::attribute_definitions_in(
+            &stream.inflated,
+            parsed.primary(stream_ordinal),
+        ) {
             let name = definition.name.as_str().to_owned();
             let name = cadmpeg_core::printable::PrintableString::new(name)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
@@ -2228,6 +2242,7 @@ pub(super) fn parasolid_attribute_definitions(
 /// Decode every counted type-99 attribute field-name record.
 pub(super) fn parasolid_field_names_records(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidFieldNamesRecord>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2236,7 +2251,10 @@ pub(super) fn parasolid_field_names_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::field_names_records(&stream.inflated);
+        let scanned = crate::parasolid::field_names_records_in(
+            &stream.inflated,
+            parsed.primary(stream_ordinal),
+        );
         for record in scanned {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -2441,6 +2459,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
 /// and the decoder omits.
 pub(super) fn parasolid_omitted_entity_51_xmts(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<BTreeSet<(u32, u32)>, CodecError> {
     let mut omitted = BTreeSet::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2450,9 +2469,12 @@ pub(super) fn parasolid_omitted_entity_51_xmts(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
         omitted.extend(
-            crate::parasolid::omitted_entity_51_xmts(&stream.inflated)
-                .into_iter()
-                .map(|xmt| (ordinal, xmt)),
+            crate::parasolid::omitted_entity_51_xmts_in(
+                &stream.inflated,
+                parsed.primary(stream_ordinal),
+            )
+            .into_iter()
+            .map(|xmt| (ordinal, xmt)),
         );
     }
     Ok(omitted)
@@ -2461,6 +2483,7 @@ pub(super) fn parasolid_omitted_entity_51_xmts(
 /// Decode every framed type-81 entity/attribute-list record.
 pub(super) fn parasolid_entity_51_records(
     streams: &[Stream],
+    parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidEntity51Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
@@ -2469,7 +2492,10 @@ pub(super) fn parasolid_entity_51_records(
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let scanned = crate::parasolid::entity_51_records(&stream.inflated);
+        let scanned = crate::parasolid::entity_51_records_in(
+            &stream.inflated,
+            parsed.primary(stream_ordinal),
+        );
         for record in scanned {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -2494,8 +2520,16 @@ pub(super) fn parasolid_entity_51_records(
     Ok(records)
 }
 
+#[cfg(test)]
 pub(super) fn parasolid_entity_value_records(
     streams: &[Stream],
+) -> Result<ParasolidEntityValueRecords, CodecError> {
+    parasolid_entity_value_records_with_parsed(streams, None)
+}
+
+pub(super) fn parasolid_entity_value_records_with_parsed(
+    streams: &[Stream],
+    parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<ParasolidEntityValueRecords, CodecError> {
     let mut records = ParasolidEntityValueRecords {
         integers: Vec::new(),
@@ -2512,7 +2546,13 @@ pub(super) fn parasolid_entity_value_records(
         if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
             continue;
         }
-        let values = crate::parasolid::referenced_value_records(&stream.inflated)?;
+        let values = match parsed {
+            Some(parsed) => crate::parasolid::referenced_value_records_in(
+                &stream.inflated,
+                parsed.primary(stream_ordinal),
+            )?,
+            None => crate::parasolid::referenced_value_records(&stream.inflated)?,
+        };
         for record in values.integers {
             let id = parasolid_offset_record_id(
                 stream_ordinal,

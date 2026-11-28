@@ -95,6 +95,8 @@ mod helix;
 
 pub(crate) mod holes;
 
+pub(crate) mod lane_cache;
+
 pub(crate) mod markers;
 
 pub(crate) mod names;
@@ -143,6 +145,8 @@ pub(crate) mod stream_readings;
 mod sketch_write;
 
 pub(crate) mod terminations;
+
+pub(crate) mod walked_patterns;
 
 pub(crate) mod sweeps;
 

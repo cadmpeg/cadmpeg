@@ -15,6 +15,7 @@ use cadmpeg_ir::subd::{
     SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex,
     SubdVertexGripLayout, SubdVertexTag,
 };
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
@@ -138,13 +139,13 @@ enum GripVertexMarker {
 
 /// Decode every active-asset T-spline control cage in archive order.
 ///
-/// A cage whose program is internally inconsistent degrades to an
-/// error-severity loss note instead of failing the document decode; its
-/// entry bytes remain retained in the container, and the serializer-backed
-/// Form join leaves the affected Form on native retention.
+/// A cage that the decoder does not read is given up as an undecoded part;
+/// its entry bytes remain retained in the container, and the
+/// serializer-backed Form join leaves the affected Form on native retention.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let Some(folder) = scan.design_asset_folder() else {
         return Ok((Vec::new(), Vec::new()));
@@ -176,8 +177,15 @@ pub(crate) fn decode(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = format!("T-spline control cage not decoded: {error}");
-                losses.push(F3dLossCode::TsplineCageUndecoded.note(message));
+                given_up.extend(scan.give_up_entry(
+                    ctx,
+                    &entry.name,
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    crate::design::decode::record::give_up_error(
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!("T-spline control cage not decoded: {error}"),
+                    ),
+                )?);
             }
         }
     }
@@ -1729,6 +1737,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 mod tests {
     mod user_knots;
 
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::subd;
     use cadmpeg_test_support::wire;
 
@@ -2270,7 +2279,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             pairs: vec![pair],
         })
         .collect();
-        let synthetic = cadmpeg_core::serde_erase::json::to_string(&[RadialFixture {
+        let synthetic = json::to_string(&[RadialFixture {
             source,
             face_pairs: vec![[0, 0]],
             edge_pairs: vec![[0, 1]],

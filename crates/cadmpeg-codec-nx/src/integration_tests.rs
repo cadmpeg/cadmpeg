@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_test_support::bytes::put_u16;
@@ -63,6 +64,7 @@ mod assembly_placement;
 mod blend_history;
 mod body_write;
 
+mod annotation_paths;
 mod assembly_occurrences;
 mod attachment_containment;
 mod current_bodies;
@@ -70,6 +72,7 @@ mod deltas_source;
 mod dialect;
 mod enlarge;
 mod extract_face;
+mod part_tolerances;
 mod swp104;
 mod symbolic_thread;
 
@@ -471,13 +474,8 @@ fn unselected_deltas_preserve_primary_geometry_and_topology() {
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value((&result.ir().geometry, &result.ir().model))
-                .unwrap(),
-            cadmpeg_core::serde_erase::json::to_value((
-                &baseline.ir().geometry,
-                &baseline.ir().model
-            ))
-            .unwrap()
+            json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+            json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(result.report().geometry_transferred());
         assert_eq!(result.ir().geometry.bodies.len(), 1);
@@ -516,6 +514,8 @@ fn display_jt_pipeline_decodes_mesh_scene_lod_and_property_streams() {
 
 #[test]
 fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
     let result = decode(composed_feature_history_prt());
     assert!(!result.ir().model.features.is_empty());
     let mut ordinals = result
@@ -580,6 +580,39 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
             }
         };
     let csys = find_feature("DATUM_CSYS");
+    let design = result
+        .ir()
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id == csys.id)
+        .expect("projected datum coordinate system");
+    assert_eq!(design.name.as_deref(), Some("DATUM_CSYS"));
+    let export = CadirEncoder
+        .plan(EncodeInput::new(result.ir(), None))
+        .expect("CADIR write plan");
+    for loss in &export.report().losses {
+        if loss.code.local_code() != "arena.omitted"
+            || !loss.message.contains("model arena `features`")
+        {
+            continue;
+        }
+        let (omitted, partial) = loss
+            .message
+            .split_once(" stated in part: ")
+            .unwrap_or((loss.message.as_str(), ""));
+        assert!(
+            !omitted
+                .split([' ', ','])
+                .any(|token| token == csys.id.as_str()),
+            "{}",
+            loss.message
+        );
+        if let Some((_, fields)) = partial.split_once(&format!("{} (", csys.id)) {
+            let (fields, _) = fields.split_once(')').expect("field list");
+            assert!(!fields.split(", ").any(|field| field == "name"), "{fields}");
+        }
+    }
     assert_native_links(
         csys,
         "feature_datum_csys_payload_scalar_pairs",

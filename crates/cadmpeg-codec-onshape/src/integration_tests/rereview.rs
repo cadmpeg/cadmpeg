@@ -3,9 +3,11 @@
 use crate::test_support::review::{decode, edit, members, parameter, validate, wire};
 use crate::test_support::{codec, fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::CodecBackend;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn kind(wire: &Value, ordinal: usize) -> &Value {
     &wire["model"]["features"][ordinal]["definition"]["value"]["kind"]
@@ -69,30 +71,56 @@ fn history_admission_reserves_each_midpoint_output_arena() {
 #[test]
 fn midpoint_expansion_refuses_the_history_budget_before_emission() {
     let bytes = midpoint_sketch();
-    for ceiling in [15, 16, 17, 18, 20, 21, 22] {
+    let full = crate::test_support::review::decode(&bytes);
+    let design = &full.ir().design;
+    // Each bound is the entity count the decode has admitted after one
+    // charge: the history 18; the design timeline its feature, container and
+    // scope; the design sketch the sketch, its entities and its constraints;
+    // the stated root definition 1; and the member assets 3.
+    let history = 18;
+    let count = |n: usize| u64::try_from(n).unwrap();
+    let timeline = history + count(design.features.len()) + 2;
+    let sketch = timeline
+        + count(
+            design.sketches.len() + design.sketch_entities.len() + design.sketch_constraints.len(),
+        );
+    let root = sketch + 1;
+    let assets = root + 3;
+    for ceiling in [
+        history - 1,
+        history,
+        timeline - 1,
+        timeline,
+        sketch - 1,
+        sketch,
+        root,
+        assets - 1,
+        assets,
+    ] {
         let mut policy = DecodePolicy::default();
         policy.limits.max_entities = ceiling;
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let result = codec().decode_impl(&ctx, root);
-        if ceiling < 18 {
+        let (ctx, root_view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = codec().decode_impl(&ctx, root_view);
+        let refused = if ceiling < history {
+            Some("Onshape history admission")
+        } else if ceiling < timeline {
+            Some("Onshape design timeline")
+        } else if ceiling < sketch {
+            Some("Onshape design sketch")
+        } else if ceiling < root {
+            Some("root product definition")
+        } else if ceiling < assets {
+            Some("Onshape asset")
+        } else {
+            None
+        };
+        if let Some(operation) = refused {
             let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-                panic!("history admission must return the caller resource refusal")
+                panic!("every admission must return the caller resource refusal")
             };
             assert_eq!(limit.dimension, ResourceDimension::Entities);
-            assert_eq!(limit.operation, "Onshape history admission");
-        } else if ceiling < 21 {
-            let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-                panic!("member assets must share the caller entity budget")
-            };
-            assert_eq!(limit.dimension, ResourceDimension::Entities);
-            assert_eq!(limit.operation, "Onshape asset");
-        } else if ceiling < 22 {
-            let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-                panic!("the root definition must share the caller entity budget")
-            };
-            assert_eq!(limit.dimension, ResourceDimension::Entities);
-            assert_eq!(limit.operation, "root product definition");
+            assert_eq!(limit.operation, operation, "{ceiling}");
         } else {
             let decoded = result.unwrap();
             assert_eq!(decoded.ir.model.sketch_entities.len(), 6);
@@ -212,15 +240,13 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
             .any(|loss| loss.message.contains("producer is ambiguous")));
         validate(result);
         let bracketed = members(&ambiguous, |members| {
-            let mut before: Value = cadmpeg_core::serde_erase::json::from_slice(
-                &members["partstudios/studio/bodydetails/3.json"],
-            )
-            .unwrap();
+            let mut before: Value =
+                json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
             before["bodies"][0]["edges"] = json!([]);
             before["bodies"][0]["faces"] = json!([]);
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                cadmpeg_core::serde_erase::json::to_vec(&before).unwrap(),
+                json::to_vec(&before).unwrap(),
             );
             members.insert(
                 "partstudios/studio/bodydetails/index.json".into(),
@@ -258,17 +284,15 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         );
         validate(result);
         let unchanged = members(&bracketed, |members| {
-            let mut before: Value = cadmpeg_core::serde_erase::json::from_slice(
-                &members["partstudios/studio/bodydetails/3.json"],
-            )
-            .unwrap();
+            let mut before: Value =
+                json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
             before["bodies"][0]["edges"][0]["curve"]["origin"]["x"] = json!(0);
             if operand == "face" {
                 before["bodies"][0]["faces"][0]["surface"]["normal"]["z"] = json!(1);
             }
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                cadmpeg_core::serde_erase::json::to_vec(&before).unwrap(),
+                json::to_vec(&before).unwrap(),
             );
         });
         let result = decode(&unchanged);
@@ -293,10 +317,8 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         );
         validate(result);
         let changed = members(&bracketed, |members| {
-            let mut before: Value = cadmpeg_core::serde_erase::json::from_slice(
-                &members["partstudios/studio/bodydetails/3.json"],
-            )
-            .unwrap();
+            let mut before: Value =
+                json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
             if operand == "face" {
                 for edge in before["bodies"][0]["edges"].as_array_mut().unwrap() {
                     let x = edge["curve"]["origin"]["x"].as_f64().unwrap();
@@ -313,7 +335,7 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
             }
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                cadmpeg_core::serde_erase::json::to_vec(&before).unwrap(),
+                json::to_vec(&before).unwrap(),
             );
         });
         let result = decode(&changed);

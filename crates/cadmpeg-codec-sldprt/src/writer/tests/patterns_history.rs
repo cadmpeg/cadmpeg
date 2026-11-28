@@ -2,6 +2,7 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1501,7 +1502,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         SketchInputKind::LineOrCircle
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
         r#""line_or_circle""#
     );
 
@@ -1725,6 +1726,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -1755,6 +1757,7 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &lane,
         &native.feature_histories,
         &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();

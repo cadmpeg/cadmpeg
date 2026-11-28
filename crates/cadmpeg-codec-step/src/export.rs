@@ -81,8 +81,8 @@ pub(crate) fn write_step(
         options: opts.clone(),
     }
     .plan(
-        EncodeInput::new(ir, None),
-        TargetRequest::Explicit(schema.descriptor().id.as_str()),
+        EncodeInput::new(ir, None)
+            .with_target(TargetRequest::Explicit(schema.descriptor().id.as_str())),
     )
     .map_err(std::io::Error::other)?;
     plan.write_to(w).map_err(std::io::Error::other)
@@ -108,6 +108,7 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
+    context: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
     // STEP holds no cage, so a cage body is not written as an empty shell
     // either (§5.6); the cage's `geometry.subd-omitted` loss names both.
@@ -115,7 +116,7 @@ pub(crate) fn write_step_outcome(
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
     let ir = cageless.as_ref().unwrap_or(ir);
     let (ir, dangling) = without_dangling_occurrences(ir);
-    let mut b = Builder::new(&ir, schema, recovered_edges)?;
+    let mut b = Builder::new(&ir, schema, recovered_edges, context)?;
     b.model_name = &opts.product_name;
     b.cage_bodies = cage_bodies;
     if let Some(note) = dangling {
@@ -319,7 +320,9 @@ pub(crate) struct Builder<'a> {
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Vec<Ref>>,
     edge_midpoints: HashMap<String, Ref>,
-    edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
+    model_index: cadmpeg_ir::index::ModelIndex<'a>,
+    /// The encode's evaluation session, under the caller's limits.
+    context: &'a cadmpeg_core::decode::DecodeContext<'a>,
     edge_split_error: Option<cadmpeg_core::CodecError>,
     /// Written edge occurrence of each coedge whose edge a closed shell uses
     /// more than twice. A STEP closed shell admits two uses per edge, so each
@@ -487,8 +490,9 @@ impl<'a> Builder<'a> {
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
+        context: &'a cadmpeg_core::decode::DecodeContext<'a>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let construction_supports = ownership::construction_supports(ir)?;
+        let construction_supports = ownership::construction_supports(ir, context)?;
         let loop_faces = ir
             .geometry
             .faces
@@ -528,7 +532,7 @@ impl<'a> Builder<'a> {
             }
         }
         let mut builder = Builder {
-            approximations: approximation::Approximator::new(ir),
+            approximations: approximation::Approximator::new(ir, context),
             ir,
             schema,
             recovered_edges,
@@ -631,7 +635,8 @@ impl<'a> Builder<'a> {
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
             edge_midpoints: HashMap::new(),
-            edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            model_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            context,
             edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
@@ -1086,7 +1091,7 @@ impl<'a> Builder<'a> {
                     (self.vertex_refs.get(id.as_str()).copied(), StyleKind::Point)
                 }
                 AppearanceTarget::Tessellation(id) => (
-                    self.tessellation_step_refs.get(id).copied(),
+                    self.tessellation_step_refs.get(id.as_str()).copied(),
                     StyleKind::Surface,
                 ),
                 AppearanceTarget::Body(_)
@@ -1104,7 +1109,7 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Edge(id) => id.as_str().to_owned(),
                     AppearanceTarget::Point(id) => id.as_str().to_owned(),
                     AppearanceTarget::Vertex(id) => id.as_str().to_owned(),
-                    AppearanceTarget::Tessellation(id) => id.clone(),
+                    AppearanceTarget::Tessellation(id) => id.as_str().to_owned(),
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
                     | AppearanceTarget::Occurrence(_)
@@ -1427,7 +1432,7 @@ impl<'a> Builder<'a> {
                     }
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
-                        .get(tessellation)
+                        .get(tessellation.as_str())
                         .copied()
                         .into_iter()
                         .collect(),
@@ -3864,7 +3869,7 @@ impl<'a> Builder<'a> {
                 return Ok(false);
             };
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Write(self.context),
                 &pcurve.geometry,
                 0.5 * (first + second),
             ))?
@@ -3873,8 +3878,8 @@ impl<'a> Builder<'a> {
             };
             let uv = uv.get();
             let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                EvaluationAdmission::Standard,
-                self.ir,
+                EvaluationAdmission::Write(self.context),
+                &self.model_index,
                 &surface.geometry,
                 uv.u,
                 uv.v,
@@ -4232,7 +4237,7 @@ impl<'a> Builder<'a> {
         let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
             Some(*vertex)
         } else {
-            match edge_split::midpoint(&self.edge_split_index, edge) {
+            match edge_split::midpoint(&self.model_index, edge, self.context) {
                 Ok(edge_split::Split::At(point)) => {
                     let point = geometry::point(&mut self.emitter, point);
                     let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
@@ -4451,7 +4456,7 @@ impl<'a> Builder<'a> {
         let at = |parameter: f64| {
             Ok::<_, cadmpeg_core::decode::ResourceLimit>(
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.context),
                     aligned.as_ref(),
                     parameter,
                 ))?
@@ -4503,7 +4508,7 @@ impl<'a> Builder<'a> {
         };
         let lift = |parameter: f64| {
             let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Write(self.context),
                 pcurve,
                 parameter,
             ))?
@@ -4512,8 +4517,8 @@ impl<'a> Builder<'a> {
             };
             let uv = uv.get();
             finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                EvaluationAdmission::Standard,
-                self.ir,
+                EvaluationAdmission::Write(self.context),
+                &self.model_index,
                 &surface.geometry,
                 uv.u,
                 uv.v,
@@ -7014,20 +7019,6 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let unknown_count = self
-            .ir
-            .native
-            .loss_counts()
-            .into_iter()
-            .filter(|count| count.kind == "unknowns")
-            .map(|count| count.count.get())
-            .sum::<usize>();
-        if unknown_count > 0 {
-            self.loss(
-                StepLossCode::PassthroughRecordOmitted,
-                format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
-            );
-        }
         if self.unstyled_colors > 0 {
             self.loss(
                 StepLossCode::DisplayColorUnstyled,
@@ -7294,22 +7285,6 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::ProceduralDefinitionNotWritten,
                 format!("{omitted_surface_count} procedural surface definition(s) and {omitted_curve_count} procedural curve definition(s) had no emitted STEP construction or solved carrier"),
-            );
-        }
-        let source_native_records: usize = self
-            .ir
-            .native
-            .loss_counts()
-            .iter()
-            .filter(|loss| loss.kind != "unknowns")
-            .map(|loss| loss.count.get())
-            .sum();
-        if source_native_records > 0 {
-            self.loss(
-                StepLossCode::SourceNativeRecordOmitted,
-                format!(
-                    "{source_native_records} source-native record(s) were not represented in STEP"
-                ),
             );
         }
     }

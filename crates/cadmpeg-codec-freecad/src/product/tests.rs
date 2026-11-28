@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::assembly;
 
 use crate::native;
@@ -17,6 +18,7 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
+mod partial;
 mod restoration;
 
 /// The identity of the definition that owns `occurrence`.
@@ -39,6 +41,55 @@ fn owned_suffixes<'ir>(ir: &'ir cadmpeg_ir::CadIr, definition: &str) -> Vec<&'ir
         .iter()
         .map(|id| &id.as_str()[id.as_str().rfind('#').unwrap_or_default()..])
         .collect()
+}
+
+/// Whether `result` reports the property `name` of object `object` given up
+/// (§3.3).
+fn gives_up(result: &cadmpeg_ir::DecodeResult, object: &str, name: &str) -> bool {
+    let head = format!("record fcstd:native:property#{object}:{name} given up");
+    result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(&head)
+    })
+}
+
+/// The product record of object `object`.
+fn product_node(
+    result: &cadmpeg_ir::DecodeResult,
+    object: &str,
+) -> Option<native::ProductNodeRecord> {
+    result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes")
+        .into_iter()
+        .find(|node| node.object == format!("fcstd:native:object#{object}"))
+}
+
+/// The occurrence whose identity ends with `suffix`.
+fn occurrence<'ir>(
+    result: &'ir cadmpeg_ir::DecodeResult,
+    suffix: &str,
+) -> &'ir cadmpeg_ir::products::Occurrence {
+    result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with(suffix))
+        .unwrap_or_else(|| panic!("{suffix}: {:?}", result.ir().model.occurrences))
+}
+
+fn decode_document(document: &str) -> cadmpeg_ir::DecodeResult {
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("a product decode reports an unreadable product property")
 }
 
 #[test]
@@ -363,7 +414,7 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
 }
 
 #[test]
-fn selects_the_active_link_placement_carrier() {
+fn applies_link_placement_whatever_link_transform_holds() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="Part::Feature" name="Prototype" id="1"/>
@@ -407,7 +458,16 @@ fn selects_the_active_link_placement_carrier() {
             .expect("link placement")
     };
     assert_eq!(x("Propagating"), 2.0);
-    assert_eq!(x("LocalOnly"), 30.0);
+    assert_eq!(x("LocalOnly"), 3.0);
+    let stale = crate::loss::FreecadLossCode::AssemblyPlacementAliasNoncanonical
+        .note("")
+        .code;
+    for name in ["Propagating", "LocalOnly"] {
+        assert!(result.report().losses.iter().any(|loss| loss.code == stale
+            && loss
+                .message
+                .contains(&format!("fcstd:native:object#{name} "))));
+    }
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
@@ -579,8 +639,10 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
 }
 
 #[test]
-fn rejects_ambiguous_link_placement_without_policy() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+fn link_placements_without_a_policy_apply_link_placement() {
+    let document = |link_placement: &str| {
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
  <Object type="Part::Feature" name="Prototype" id="1"/>
  <Object type="App::Link" name="Occurrence" id="2"/>
@@ -589,24 +651,41 @@ fn rejects_ambiguous_link_placement_without_policy() {
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="3">
   <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
-  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="{link_placement}" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
-</ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
+</ObjectData></Document>"#
         )
-        .expect_err("ambiguous placement carriers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    };
+    let stale = crate::loss::FreecadLossCode::AssemblyPlacementAliasNoncanonical
+        .note("")
+        .code;
+    for (link_placement, x, differs) in [("2", 2.0, true), ("20", 20.0, false)] {
+        let result = decode_document(&document(link_placement));
+        let node = product_node(&result, "Occurrence").expect("link record");
+        assert_eq!(
+            node.placement_property(),
+            Some("fcstd:native:property#Occurrence:LinkPlacement")
+        );
+        assert_eq!(node.link_transform(), None);
+        let rows = occurrence(&result, "#Occurrence:instance")
+            .transform
+            .expect("the link's LinkPlacement")
+            .affine_rows();
+        assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [x, 0.0, 0.0]);
+        assert_eq!(
+            result.report().losses.iter().any(|loss| loss.code == stale
+                && loss.message.contains("fcstd:native:object#Occurrence")),
+            differs,
+            "{:?}",
+            result.report().losses
+        );
+        assert_valid_document(result.ir());
+    }
 }
 
 #[test]
-fn rejects_ambiguous_link_prototype_carriers() {
+fn an_ambiguous_link_prototype_carrier_leaves_the_link_with_no_prototype() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="Part::Feature" name="First" id="1"/>
@@ -620,83 +699,35 @@ fn rejects_ambiguous_link_prototype_carriers() {
   <Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("multiple linked-object carriers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let result = decode_document(document);
+    assert!(gives_up(&result, "Occurrence", "LinkedObject"));
+    assert_eq!(
+        product_node(&result, "Occurrence")
+            .expect("the link keeps its record")
+            .prototype(),
+        None
+    );
+    let instance = occurrence(&result, "#Occurrence:instance");
+    assert!(
+        instance.prototype.as_str().ends_with(":unresolved"),
+        "{instance:?}"
+    );
+    assert_eq!(
+        instance.transform,
+        Some(cadmpeg_ir::transform::Transform::identity())
+    );
+    assert_valid_document(result.ir());
 }
 
 #[test]
-fn rejects_duplicate_product_carriers() {
-    for document in [
-        r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
- <Object type="Part::Feature" name="First" id="1"/>
- <Object type="Part::Feature" name="Second" id="2"/>
- <Object type="App::Link" name="Occurrence" id="3"/>
-</Objects>
-<ObjectData Count="3">
- <Object name="First"><Properties Count="0"/></Object>
- <Object name="Second"><Properties Count="0"/></Object>
- <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="First"/></Property>
-  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Second"/></Property>
- </Properties></Object>
-</ObjectData></Document>"#,
-        r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
- <Object type="Part::Feature" name="Prototype" id="1"/>
- <Object type="App::Link" name="Occurrence" id="2"/>
-</Objects>
-<ObjectData Count="2">
- <Object name="Prototype"><Properties Count="0"/></Object>
- <Object name="Occurrence"><Properties Count="4">
-  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
-  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
-  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
- </Properties></Object>
-</ObjectData></Document>"#,
-        r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
- <Object type="Part::Feature" name="Prototype" id="1"/>
- <Object type="App::Link" name="Occurrence" id="2"/>
-</Objects>
-<ObjectData Count="2">
- <Object name="Prototype"><Properties Count="0"/></Object>
- <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
-  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
- </Properties></Object>
-</ObjectData></Document>"#,
-    ] {
-        let error = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default(),
-            )
-            .expect_err("duplicate product carrier");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
-}
-
-#[test]
-fn rejects_invalid_product_placement_values() {
+fn invalid_link_placement_values_are_given_up() {
     for placement in [
         r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>"#,
         r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#,
         r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="0"/></Property>"#,
         r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" A="1" Ox="0" Oy="0"/></Property>"#,
         r#"<Property name="Placement" type="App::PropertyString"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
     ] {
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
@@ -706,20 +737,18 @@ fn rejects_invalid_product_placement_values() {
 {placement}
 </Properties></Object></ObjectData></Document>"#
         );
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(&document)),
-                &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+        let result = decode_document(&document);
+        assert!(gives_up(&result, "Occurrence", "Placement"), "{placement}");
+        let node = product_node(&result, "Occurrence").expect("link record");
+        assert_eq!(node.local_transform(), None);
+        assert_eq!(node.placement_property(), None);
+        assert_eq!(occurrence(&result, "#Occurrence:instance").transform, None);
+        assert_valid_document(result.ir());
     }
 }
 
 #[test]
-fn rejects_overlapping_product_membership_for_neutral_projection() {
+fn overlapping_product_membership_keeps_the_first_container() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="App::Part" name="First"/><Object type="App::Part" name="Second"/><Object type="Part::Feature" name="Member"/></Objects>
 <ObjectData Count="3">
@@ -727,16 +756,45 @@ fn rejects_overlapping_product_membership_for_neutral_projection() {
  <Object name="Second"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
  <Object name="Member"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
             &DecodeOptions::default(),
         )
-        .expect_err("overlapping product membership");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .expect("overlapping product membership");
+    assert!(gives_up(&result, "Second", "Group"));
+    let member = occurrence(&result, "#Member:container");
+    assert!(owner_id(result.ir(), &member.id).ends_with("#First:definition"));
+    assert_eq!(
+        owned_suffixes(result.ir(), "#Second:definition"),
+        Vec::<&str>::new()
+    );
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_copy_on_change_group_yields_its_member_to_another_container() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="App::LinkGroup" name="CopyOnChangeGroup"/><Object type="App::Part" name="Part"/><Object type="Part::Feature" name="Member"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="4">
+ <Object name="CopyOnChangeGroup"><Properties Count="1"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Part"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="4" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Member"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="3">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Member"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="CopyOnChangeGroup"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = decode_document(document);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
+    let member = occurrence(&result, "#Member:container");
+    assert!(owner_id(result.ir(), &member.id).ends_with("#Part:definition"));
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -764,7 +822,7 @@ fn product_runtime_dispatch_requires_exact_registered_types() {
 }
 
 #[test]
-fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
+fn wrong_runtime_type_for_copy_on_change_policy_is_given_up() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2">
@@ -774,51 +832,99 @@ fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
   <Property name="LinkCopyOnChange" type="App::PropertyInteger"><Integer value="2"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("wrong copy-on-change carrier type");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let result = decode_document(document);
+    assert!(gives_up(&result, "Occurrence", "LinkCopyOnChange"));
+    let node = product_node(&result, "Occurrence").expect("link record");
+    assert_eq!(node.prototype(), Some("fcstd:native:object#Prototype"));
+    assert!(occurrence(&result, "#Occurrence:instance")
+        .transform
+        .is_some());
+    assert_valid_document(result.ir());
 }
 
 #[test]
-fn rejects_wrong_runtime_types_for_named_product_carriers() {
-    for carrier in [
-        r#"<Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
-        r#"<Property name="LinkTransform" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
-        r#"<Property name="ElementCount" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
-        r#"<Property name="ScaleVector" type="App::PropertyFloat"><Float value="1"/></Property>"#,
-        r#"<Property name="VisibilityList" type="App::PropertyString"><String value="1"/></Property>"#,
-        r#"<Property name="ElementList" type="App::PropertyLink"><Link value="Prototype"/></Property>"#,
+fn wrong_runtime_types_for_named_product_carriers_are_given_up() {
+    // (carrier, whether the link keeps its record, whether it keeps its
+    // transform)
+    for (name, carrier, kept, placed) in [
+        (
+            "LinkedObject",
+            r#"<Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
+            true,
+            true,
+        ),
+        (
+            "LinkTransform",
+            r#"<Property name="LinkTransform" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+            true,
+            true,
+        ),
+        (
+            "ElementCount",
+            r#"<Property name="ElementCount" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+            true,
+            true,
+        ),
+        (
+            "ScaleVector",
+            r#"<Property name="ScaleVector" type="App::PropertyFloat"><Float value="1"/></Property>"#,
+            true,
+            false,
+        ),
+        (
+            "VisibilityList",
+            r#"<Property name="VisibilityList" type="App::PropertyString"><String value="1"/></Property>"#,
+            true,
+            true,
+        ),
+        (
+            "ElementList",
+            r#"<Property name="ElementList" type="App::PropertyLink"><Link value="Prototype"/></Property>"#,
+            false,
+            false,
+        ),
     ] {
+        let properties = if name == "LinkedObject" {
+            carrier.to_owned()
+        } else {
+            format!(
+                r#"<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>{carrier}"#
+            )
+        };
+        let count = if name == "LinkedObject" { 1 } else { 2 };
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
-<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
-<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
-{carrier}
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="{count}">
+{properties}
 </Properties></Object></ObjectData></Document>"#
         );
-        let error = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(&document)),
-                &DecodeOptions::default(),
-            )
-            .expect_err("wrong named product carrier type");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+        let result = decode_document(&document);
+        assert!(
+            gives_up(&result, "Occurrence", name),
+            "{name}: {:?}",
+            result.report().losses
+        );
+        assert_eq!(
+            product_node(&result, "Occurrence").is_some(),
+            kept,
+            "{name}"
+        );
+        if kept {
+            assert_eq!(
+                occurrence(&result, "#Occurrence:instance")
+                    .transform
+                    .is_some(),
+                placed,
+                "{name}"
+            );
+        }
+        assert_valid_document(result.ir());
     }
 }
 
 #[test]
-fn rejects_nonfinite_product_scale_at_source_admission() {
+fn nonfinite_product_scale_is_given_up() {
     for (property, name) in [
         (
             r#"<Property name="Scale" type="App::PropertyFloat"><Float value="NaN"/></Property>"#,
@@ -836,15 +942,12 @@ fn rejects_nonfinite_product_scale_at_source_admission() {
 {property}
 </Properties></Object></ObjectData></Document>"#
         );
-        let error = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(&document)),
-                &DecodeOptions::default(),
-            )
-            .expect_err("nonfinite product scale");
-        assert!(error
-            .to_string()
-            .contains(&format!("invalid finite value for {name}")));
+        let result = decode_document(&document);
+        assert!(gives_up(&result, "Occurrence", name));
+        assert!(result.report().losses.iter().any(|loss| loss
+            .message
+            .contains(&format!("invalid finite value for {name}"))));
+        assert_eq!(occurrence(&result, "#Occurrence:instance").transform, None);
     }
 }
 
@@ -873,22 +976,19 @@ fn link_group_retains_element_list_on_the_native_wire() {
     };
     assert_eq!(group.element_objects(), ["fcstd:native:object#Member"]);
     assert!(matches!(group.node, native::ProductNode::LinkGroup { .. }));
-    let wire = cadmpeg_core::serde_erase::json::to_value(group).expect("link group wire");
+    let wire = json::to_value(group).expect("link group wire");
     assert_eq!(wire["kind"], "link_group");
     assert_eq!(
         wire["element_objects"],
-        serde_json::json!(["fcstd:native:object#Member"])
+        cadmpeg_core::json!(["fcstd:native:object#Member"])
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<native::ProductNodeRecord>(wire.clone())
-            .unwrap(),
+        json::from_value::<native::ProductNodeRecord>(wire.clone()).unwrap(),
         *group
     );
     let mut invalid = wire;
-    invalid["prototype"] = serde_json::json!("fcstd:native:object#Member");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<native::ProductNodeRecord>(invalid).is_err()
-    );
+    invalid["prototype"] = cadmpeg_core::json!("fcstd:native:object#Member");
+    assert!(json::from_value::<native::ProductNodeRecord>(invalid).is_err());
 }
 
 #[test]
@@ -1009,28 +1109,31 @@ fn link_array_occurrences_are_admitted_before_they_are_built() {
 }
 
 #[test]
-fn link_array_element_count_above_the_named_limit_is_malformed() {
+fn link_array_element_count_above_the_named_limit_is_given_up() {
     let limit = super::MAX_LINK_ARRAY_ELEMENTS;
-    FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(&stated_link_array("2"))),
-            &DecodeOptions::default(),
-        )
-        .expect("small link array");
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(&stated_link_array(&(limit + 1).to_string()))),
-            &DecodeOptions::default(),
-        )
-        .expect_err("element count above MAX_LINK_ARRAY_ELEMENTS");
-    assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                if message.contains(&format!("exceeds {limit}"))
-        ),
-        "{error:?}"
+    let result = decode_document(&stated_link_array(&(limit + 1).to_string()));
+    assert!(gives_up(&result, "Occurrence", "ElementCount"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&format!("exceeds {limit}"))));
+    assert_eq!(
+        product_node(&result, "Occurrence")
+            .expect("link record")
+            .element_count(),
+        None
     );
+    let uses = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#Occurrence")
+        })
+        .count();
+    assert_eq!(uses, 1);
 }
 
 #[test]
@@ -1296,7 +1399,7 @@ fn preserves_external_copy_on_change_targets_when_local_names_collide() {
 }
 
 #[test]
-fn rejects_non_schema_link_carrier_aliases() {
+fn a_non_schema_link_carrier_alias_leaves_the_link_with_no_prototype() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
 <ObjectData Count="1"><Object name="Link"><Properties Count="1">
@@ -1320,10 +1423,14 @@ fn rejects_non_schema_link_carrier_aliases() {
         .expect("namespace")
         .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
-    assert!(
-        records.is_empty(),
-        "unreadable prototype is not an empty link"
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.object.as_str(), record.prototype()))
+            .collect::<Vec<_>>(),
+        [("fcstd:native:object#Link", None)]
     );
+    assert!(gives_up(&result, "Link", "LinkedObject"));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -1358,7 +1465,7 @@ fn restores_shadowed_link_subelement_name() {
 }
 
 #[test]
-fn rejects_conflicting_xlink_subelement_carriers() {
+fn a_conflicting_xlink_subelement_carrier_leaves_the_link_with_no_prototype() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
 <ObjectData Count="1"><Object name="Link"><Properties Count="1">
@@ -1382,10 +1489,14 @@ fn rejects_conflicting_xlink_subelement_carriers() {
         .expect("namespace")
         .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
-    assert!(
-        records.is_empty(),
-        "unreadable prototype is not an empty link"
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.object.as_str(), record.prototype()))
+            .collect::<Vec<_>>(),
+        [("fcstd:native:object#Link", None)]
     );
+    assert!(gives_up(&result, "Link", "LinkedObject"));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -1408,9 +1519,7 @@ fn reconvergent_product_graph_is_not_a_cycle() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert!(product_cycle_nodes(&nodes)
-        .expect("cycle analysis")
-        .is_empty());
+    assert!(product_cycle_nodes(&nodes).is_empty());
 }
 
 #[test]
@@ -1420,10 +1529,7 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert_eq!(
-        product_cycle_nodes(&nodes).expect("cycle analysis"),
-        HashSet::from(["B", "C"])
-    );
+    assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
 }
 
 #[test]
@@ -1532,7 +1638,7 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
 }
 
 #[test]
-fn malformed_copy_on_change_integer_is_rejected_at_source_admission() {
+fn malformed_copy_on_change_integer_is_given_up() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2">
@@ -1542,16 +1648,14 @@ fn malformed_copy_on_change_integer_is_rejected_at_source_admission() {
 <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="abc"/></Property>
 </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("product decode rejects the malformed enum integer");
-    assert!(
-        error.to_string().contains("invalid enumeration Integer"),
-        "{error}"
-    );
+    let result = decode_document(document);
+    assert!(gives_up(&result, "Occurrence", "LinkCopyOnChange"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("invalid enumeration Integer")));
+    assert!(product_node(&result, "Occurrence").is_some());
 }
 
 #[test]
@@ -1638,7 +1742,7 @@ fn equal_stale_arrays_do_not_establish_missing_element_count() {
         .expect("link occurrence");
     assert_eq!(
         occurrence["element_visibility"],
-        serde_json::json!([true, false])
+        cadmpeg_core::json!([true, false])
     );
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -1674,10 +1778,9 @@ fn preserves_unknown_numeric_copy_on_change_index() {
         .arena_as::<native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
     assert_eq!(records[0].copy_on_change(), Some("99"));
-    let restored = cadmpeg_ir::CadIr::from_json(
-        &cadmpeg_core::serde_erase::json::to_string(result.ir()).expect("CADIR serialization"),
-    )
-    .expect("complete CADIR admission");
+    let restored =
+        cadmpeg_ir::CadIr::from_json(&json::to_string(result.ir()).expect("CADIR serialization"))
+            .expect("complete CADIR admission");
     let restored_records = restored
         .native
         .namespace("fcstd")

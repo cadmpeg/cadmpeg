@@ -413,8 +413,188 @@ fn bad_shells_are_left_out_and_charged() {
         strips: vec![vec![0, 1, 7]],
     });
     let result = decode(&part_package(&model_of(items, None).stream()));
-    assert!(codes(&result).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    assert!(!codes(&result).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(given_up.contains("model.shell-invalid"), "{given_up}");
     assert_eq!(result.ir().geometry.faces.len(), 6);
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_shell_that_does_not_decode() {
+    let mut items = box_shells([CUBE_EDGE; 3]);
+    items.push(Item::Shell {
+        points: vec![[0.0; 3]; 3],
+        strips: vec![vec![0, 1, 7]],
+    });
+    let package = part_package(&model_of(items, None).stream());
+    let admitted = decode(&package);
+    assert!(!codes(&admitted).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    let [given_up] = charges(&admitted)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        given_up.starts_with("part model-object stream=\"eModel\" offset="),
+        "{given_up}"
+    );
+    assert!(
+        given_up.contains("edrawings/model.shell-invalid: strip index lies outside the shell"),
+        "{given_up}"
+    );
+    assert!(given_up.contains("; dropped=[]"), "{given_up}");
+    assert_eq!(admitted.ir().geometry.faces.len(), 6);
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect_err("a pinned decode refuses a given-up shell");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert_eq!(rejection.loss().message, given_up);
+}
+
+/// The messages of the `record.unreadable` charges of `result`.
+fn charges(result: &DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn a_shell_that_does_not_decode_drops_its_body_and_occurrence() {
+    let mut spec = assembly();
+    spec.bodies[1] = BodySpec {
+        colour: None,
+        subs: vec![vec![Item::Shell {
+            points: vec![[0.0; 3]; 3],
+            strips: vec![vec![0, 1, 7]],
+        }]],
+    };
+    let result = decode(&assembly_package(&spec.stream()));
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(given_up.starts_with("part model-object "), "{given_up}");
+    let dropped = given_up
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the charge lists its dropped records");
+    let [body, occurrence] = dropped.as_slice() else {
+        panic!("a body and an occurrence: {dropped:?}");
+    };
+    assert!(body.starts_with("edrawings:model:body#"), "{body}");
+    assert!(
+        occurrence.starts_with("edrawings:model:occurrence#"),
+        "{occurrence}"
+    );
+    let ir = result.ir();
+    assert!(ir.geometry.bodies.iter().all(|b| b.id.to_string() != *body));
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(|o| o.id.to_string() != *occurrence));
+    assert_eq!(ir.model.occurrences.len(), 4);
+}
+
+#[test]
+fn objects_outside_a_body_and_repeated_ids_give_up_their_own_records() {
+    let mut s = Stream::new();
+    s.shell_placeholder().slot();
+    s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
+    s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
+    s.raw(b"z");
+    let result = decode(&part_package(s.bytes()));
+    let offset = |message: &str| -> u64 {
+        let tail = message
+            .strip_prefix("part model-object stream=\"eModel\" offset=")
+            .unwrap_or_else(|| panic!("an object part: {message}"));
+        tail.split_once(' ').unwrap().0.parse().unwrap()
+    };
+    let [orphan] = undecoded(&result)[..] else {
+        panic!("one record.undecoded: {:?}", result.report().losses);
+    };
+    assert!(
+        orphan.message.contains("outside every library body"),
+        "{}",
+        orphan.message
+    );
+    let [repeated] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        repeated.contains("an earlier object has the id 0"),
+        "{repeated}"
+    );
+    assert!(offset(&orphan.message) < offset(&repeated));
+}
+
+/// The `record.undecoded` charges of `result`.
+fn undecoded(result: &DecodeResult) -> Vec<&LossNote> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+        .collect()
+}
+
+#[test]
+fn a_pinned_decode_accepts_a_body_past_the_coordinate_bound() {
+    let far = 1.0e9_f32;
+    let items = vec![Item::Shell {
+        points: vec![[far, 0.0, 0.0], [0.0; 3], [0.0, far, 0.0]],
+        strips: vec![vec![0, 1, 2]],
+    }];
+    let package = part_package(&model_of(items, None).stream());
+    let admitted = decode(&package);
+    assert!(admitted.ir().geometry.bodies.is_empty());
+    let [given_up] = undecoded(&admitted)[..] else {
+        panic!("one record.undecoded: {:?}", admitted.report().losses);
+    };
+    assert!(given_up
+        .message
+        .split_whitespace()
+        .any(|token| token.starts_with("edrawings:model:body#")));
+    assert!(charges(&admitted).is_empty());
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let pinned = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect("a pinned decode accepts a body dropped at the coordinate bound");
+    assert_eq!(undecoded(&pinned).len(), 1);
+}
+
+#[test]
+fn a_body_whose_shells_hold_no_triangle_is_undecoded() {
+    let items = vec![Item::Shell {
+        points: vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        strips: vec![vec![0, 1]],
+    }];
+    let result = decode(&part_package(&model_of(items, None).stream()));
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert!(charges(&result).is_empty(), "{:?}", result.report().losses);
+    let [given_up] = undecoded(&result)[..] else {
+        panic!("one record.undecoded: {:?}", result.report().losses);
+    };
+    assert!(
+        given_up.message.contains("mesh has no triangles"),
+        "{}",
+        given_up.message
+    );
 }
 
 #[test]
@@ -430,20 +610,37 @@ fn an_instance_without_a_library_body_is_charged() {
     assert_eq!(
         codes(&result),
         [
-            EdrawingsLossCode::ModelObjectInvalid.kind(),
-            EdrawingsLossCode::ModelNoGeometry.kind()
+            EdrawingsLossCode::ModelNoGeometry.kind(),
+            cadmpeg_ir::unknown::part::record_undecoded_kind(),
         ]
+    );
+    let [given_up] = undecoded(&result)[..] else {
+        panic!("one record.undecoded: {:?}", result.report().losses);
+    };
+    let given_up = &given_up.message;
+    assert!(
+        given_up.starts_with("part tree-node stream=\"eModel\" offset="),
+        "{given_up}"
+    );
+    assert!(
+        given_up.contains("edrawings/model.object-invalid: the instance names no library body"),
+        "{given_up}"
     );
 }
 
 #[test]
-fn broken_streams_are_blocking_losses_with_offsets() {
+fn broken_streams_give_up_the_model_member_with_offsets() {
     let mut bytes = cube_part().stream();
     bytes.push(0);
     let result = decode(&part_package(&bytes));
-    let note = result.report().losses.first().unwrap();
-    assert_eq!(note.code, EdrawingsLossCode::ModelMalformed.kind());
-    assert_eq!(note.severity, Severity::Blocking);
+    let [note] = result.report().losses.as_slice() else {
+        panic!("one charge: {:?}", result.report().losses);
+    };
+    assert_eq!(
+        note.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert_eq!(note.severity, Severity::Error);
     assert!(note.message.contains("24 byte trailer"), "{}", note.message);
     assert!(result.ir().geometry.bodies.is_empty());
     assert!(!result.report().geometry_transferred());
@@ -451,7 +648,10 @@ fn broken_streams_are_blocking_losses_with_offsets() {
     let mut cut = cube_part().stream();
     cut.truncate(cut.len() / 2);
     let result = decode(&part_package(&cut));
-    assert_eq!(codes(&result), [EdrawingsLossCode::ModelMalformed.kind()]);
+    assert_eq!(
+        codes(&result),
+        [cadmpeg_ir::unknown::part::record_unreadable_kind()]
+    );
 }
 
 #[test]
@@ -462,7 +662,10 @@ fn a_non_finite_plain_part_matrix_builds_no_body() {
     );
     let result = decode(&part_package(&spec.stream()));
     assert!(!result.report().geometry_transferred());
-    assert!(codes(&result).contains(&EdrawingsLossCode::GeometryBodyFailed.kind()));
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(given_up.contains("could not be built"), "{given_up}");
 }
 
 fn decode_solidworks(model: &crate::test_support::solidworks::SolidWorksModel) -> DecodeResult {
@@ -710,7 +913,13 @@ fn a_cross_body_source_that_is_missing_is_charged() {
         *source = 99;
     }
     let result = decode_solidworks(&model);
-    assert!(codes(&result).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    assert!(!codes(&result).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    assert!(
+        charges(&result)
+            .iter()
+            .any(|given_up| given_up
+                .contains("model.shell-invalid: object is missing from the store"))
+    );
     assert_eq!(
         result
             .ir()
@@ -837,7 +1046,10 @@ fn a_stream_of_the_other_grammar_under_the_solidworks_version_is_malformed() {
     let package = assembly_package_of(SOLIDWORKS_VERSION, &assembly().stream());
     let result = decode(&package);
     let note = result.report().losses.first().unwrap();
-    assert_eq!(note.code, EdrawingsLossCode::ModelMalformed.kind());
+    assert_eq!(
+        note.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
     assert!(note.message.contains("at byte 0"), "{}", note.message);
     assert!(!result.report().geometry_transferred());
 }

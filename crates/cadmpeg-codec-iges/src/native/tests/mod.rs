@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -30,8 +31,8 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
         parameters: &tokens,
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(instance).unwrap(),
-        serde_json::json!({
+        json::to_value(instance).unwrap(),
+        cadmpeg_core::json!({
             "id": "iges:native:macro-instance#D3",
             "source_entity": "iges:entity:directory#3",
             "entity_type": 621,
@@ -61,9 +62,8 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         b"e".to_vec(),
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(super::NativeParameterRecordSlot(Some(&record)))
-            .unwrap(),
-        serde_json::json!({
+        json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
+        cadmpeg_core::json!({
             "parameter_line_start": 1,
             "parameter_line_end": 2,
             "parameter_bytes": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice()),
@@ -87,23 +87,31 @@ mod serialization;
 
 fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
     let tag = format!("directory_entry:D{sequence}");
+    let part = format!("part entity \"D{sequence}\" ");
     report
         .losses
         .iter()
-        .filter(|loss| {
-            loss.provenance
+        .filter_map(|loss| {
+            // The give-up of the entity's part carries the codec code of its
+            // cause in its text.
+            if cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&part) {
+                let (_, text) = loss.message.split_once(": iges/")?;
+                return text.split_once(':').map(|(code, _)| code.to_owned());
+            }
+            (loss
+                .provenance
                 .as_ref()
                 .and_then(|source| source.tag.as_deref())
-                == Some(&tag)
+                == Some(&tag))
+            .then(|| loss.code.local_code().to_owned())
         })
-        .map(|loss| loss.code.local_code().to_owned())
         .collect()
 }
 
 /// Run the overdeclared-count contract for one defective Directory Entry: the
 /// loss is charged once in both decode modes, it is the entry's only loss when
 /// no projection runs, a full decode also refuses that entry's projection, and
-/// a strict decode refuses the document on the count.
+/// a strict decode refuses the document on the count or on the entry given up.
 fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
     for depth in [
@@ -160,7 +168,13 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert!(
                 rejection.loss().code == overdeclared
-                    || rejection.loss().code == IgesLossCode::GeometryNotProjected.kind()
+                    || rejection.loss().code == cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "{:#?}",
+                rejection.loss()
+            );
+            assert_eq!(
+                code_count(rejection.report(), IgesLossCode::ParameterCountOverdeclared),
+                1
             );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
@@ -265,7 +279,9 @@ fn decode_preserves_native_entities_and_graph() {
     );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
-    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
+    assert!(!crate::test_support::with_service_context(&[], |ctx| {
+        result.source_fidelity().edited(ctx, result.ir()).unwrap()
+    }));
     assert_eq!(
         result
             .source_fidelity()
@@ -306,11 +322,11 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         parameters: super::NativeParameterRecordSlot<'a>,
     }
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(Record {
+        json::to_value(Record {
             parameters: super::NativeParameterRecordSlot(None)
         })
         .unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,
             "parameter_bytes": "",

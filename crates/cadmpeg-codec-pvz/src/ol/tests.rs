@@ -2,9 +2,10 @@
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 
 use super::{
-    decode, exact_stream, generation, Container, Generation, MemberGeometry, PackageResidue,
+    decode, generation, stored_exact_streams, Container, Generation, MemberGeometry, PackageResidue,
 };
 use crate::layout::token::{
     STREAM_ATTRIBUTES, STREAM_EDGE_TESSELLATION, STREAM_EXACT_F64, STREAM_SURFACE_TESSELLATION,
@@ -28,13 +29,18 @@ const SQUARE: [[f32; 3]; 4] = [
 
 fn geometry(bytes: &[u8]) -> Result<MemberGeometry, CodecError> {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    decode(&ctx, View::over_retained(bytes))
+    decode(&ctx, "member.ol", View::over_retained(bytes))
 }
 
 fn losses(geometry: &MemberGeometry) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     let mut residue = PackageResidue::default();
     residue.absorb("member.ol", &geometry.residue);
-    residue.losses().into_iter().map(|loss| loss.code).collect()
+    residue
+        .losses()
+        .into_iter()
+        .chain(geometry.given_up.iter().map(GivenUpPart::loss))
+        .map(|loss| loss.code)
+        .collect()
 }
 
 /// A member whose surface stream holds `records` after its stream index.
@@ -138,16 +144,20 @@ fn a_directory_that_does_not_tile_the_member_is_refused() {
 fn the_exact_stream_is_expanded_on_request() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let plate = plate_member();
-    let exact = exact_stream(&ctx, View::over_retained(&plate))
-        .unwrap()
-        .unwrap();
+    let streams = stored_exact_streams(&ctx, View::over_retained(&plate)).unwrap();
+    let [exact] = streams.as_slice() else {
+        panic!("the plate member carries one exact-geometry stream");
+    };
     assert_eq!(exact.stream_id, STREAM_EXACT_F64);
-    assert_eq!(exact.payload.window(), stream_index(STREAM_EXACT_F64));
+    assert_eq!(
+        crate::gzip::expand(&ctx, exact.stored).unwrap().window(),
+        stream_index(STREAM_EXACT_F64)
+    );
 
     let bracket = bracket_member();
-    assert!(exact_stream(&ctx, View::over_retained(&bracket))
+    assert!(stored_exact_streams(&ctx, View::over_retained(&bracket))
         .unwrap()
-        .is_none());
+        .is_empty());
 
     let two = member(
         "DIV-OL08BL",
@@ -157,7 +167,12 @@ fn the_exact_stream_is_expanded_on_request() {
             (STREAM_EXACT_F64, stream_index(STREAM_EXACT_F64)),
         ],
     );
-    assert!(exact_stream(&ctx, View::over_retained(&two)).is_err());
+    let ids = stored_exact_streams(&ctx, View::over_retained(&two))
+        .unwrap()
+        .iter()
+        .map(|exact| exact.stream_id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids, [0x0100_0003, STREAM_EXACT_F64]);
 }
 
 #[test]
@@ -289,19 +304,29 @@ fn a_malformed_surface_stream_is_reported_and_the_member_survives() {
             vertex_block(&SQUARE, None),
             primitive(0x1b, &[0, 1]),
         ],
-        vec![
-            patch_header(0xffff_ffff, 0),
-            tlv(0x0100_0016, &[2, 0, 0, 0, 0]),
-        ],
         vec![tlv(0x0100_000d, &[0; 12])],
     ] {
         let geometry = geometry(&surface_member(&[], &records)).unwrap();
         assert!(geometry.meshes.is_empty());
         assert_eq!(
             losses(&geometry),
-            [PvzLossCode::GeometryStreamUndecoded.kind()]
+            [cadmpeg_ir::unknown::part::record_unreadable_kind()]
         );
     }
+}
+
+#[test]
+fn a_vertex_layout_bit_outside_the_defined_bits_is_charged_as_undecoded() {
+    let records = [
+        patch_header(0xffff_ffff, 0),
+        tlv(0x0100_0016, &[2, 0, 0, 0, 0]),
+    ];
+    let geometry = geometry(&surface_member(&[], &records)).unwrap();
+    assert!(geometry.meshes.is_empty());
+    assert_eq!(
+        losses(&geometry),
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
+    );
 }
 
 #[test]
@@ -325,7 +350,7 @@ fn edge_groups_are_decoded_and_reported() {
     );
     assert_eq!(
         losses(&geometry(&odd).unwrap()),
-        [PvzLossCode::GeometryStreamUndecoded.kind()]
+        [cadmpeg_ir::unknown::part::record_unreadable_kind()]
     );
 }
 

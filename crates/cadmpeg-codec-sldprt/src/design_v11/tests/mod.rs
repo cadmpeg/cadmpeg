@@ -2,6 +2,7 @@
 //! Decode tests of the v11 design of a part.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -235,7 +236,7 @@ fn part_without_a_history_states_no_design() {
 fn expression_json(
     parameter: &cadmpeg_ir::design::parameter::DesignParameter,
 ) -> serde_json::Value {
-    cadmpeg_core::serde_erase::json::to_value(&parameter.definition).unwrap()["value"].clone()
+    json::to_value(&parameter.definition).unwrap()["value"].clone()
 }
 
 #[test]
@@ -290,6 +291,165 @@ fn configurations_mark_the_active_one() {
             && material.material == MaterialRef::Named(cadmpeg_core::nonblank_literal!("Aluminum"))
     ));
     assert_no_design_findings(&ir);
+}
+
+/// A configuration takes its place in the history's configuration list.
+#[test]
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
+}
+
+/// A configuration is restated without its custom properties, and one other
+/// than the active one without the feature suppressions that differ from the
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
+#[test]
+fn a_configuration_is_restated_without_what_its_record_does_not_state() {
+    use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Model,
+    };
+    use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let id =
+        |key: &str| ConfigurationId::mint(format!("sldprt:model:configuration#{key}")).unwrap();
+    let boss = FeatureId::mint("sldprt:model:feature#boss").unwrap();
+    let state = |evaluation| ConfigurationFeatureState {
+        evaluation,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    };
+    let model = |key: &str, ordinal, evaluation, properties: &[(&str, &str)]| Model {
+        id: id(key),
+        ordinal,
+        active: ordinal == 0,
+        source_index: Some(ordinal),
+        name: Some(key.to_owned()),
+        material: None,
+        properties: properties
+            .iter()
+            .map(|(name, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new(*name).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(boss.clone(), state(evaluation))]),
+        native_ref: None,
+    };
+    let design = |key: &str| DesignConfiguration {
+        id: id(key),
+        scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
+        name: key.to_owned(),
+        position: None,
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: Some(key.to_owned()),
+    };
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        model(
+            "default",
+            0,
+            ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            &[],
+        ),
+        model(
+            "short",
+            1,
+            ConfigurationEvaluation::Suppressed {},
+            &[("PartNo", "2")],
+        ),
+    ];
+    let configurations = super::configurations::Configurations {
+        records: vec![design("default"), design("short")],
+        active: Some(id("default")),
+    };
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    let active = Restater::Record(id("default").as_str().to_owned());
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::from(["ordinal"]))
+    );
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    let by = Restater::Record(id("short").as_str().to_owned());
+    assert_eq!(
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec!["feature_states", "ordinal", "properties"])
+    );
+
+    let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
+    ir.model.configurations[1].properties.clear();
+    ir.model.configurations[1].feature_states = BTreeMap::from([(
+        boss.clone(),
+        ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other])
+                .unwrap(),
+            definition: FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane,
+            }),
+        },
+    )]);
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        boss.clone(),
+        state(ConfigurationEvaluation::Active {
+            outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        }),
+    )]);
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    assert_eq!(
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec![
+            "feature_states.definition",
+            "feature_states.dependencies",
+            "ordinal"
+        ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
+    );
 }
 
 #[test]
@@ -664,8 +824,9 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -697,12 +858,12 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     let sketch = "sldprt:model:sketch#test";
     let entity = |key: &str| format!("sldprt:model:sketch-entity#test:{key}");
     let point = |key: &str, u: f64, v: f64| {
-        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": sketch, "construction": false,
             "native_ref": format!("native:{key}"), "endpoint_refs": [],
             "geometry": {"kind": "point", "position": {"u": u, "v": v}}})
     };
     let line = |key: &str, from: (&str, f64, f64), to: (&str, f64, f64)| {
-        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": sketch, "construction": false,
             "endpoint_refs": [format!("native:{}", from.0), format!("native:{}", to.0)],
             "geometry": {"kind": "line", "start": {"u": from.1, "v": from.2},
                 "end": {"u": to.1, "v": to.2}}})
@@ -721,19 +882,18 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
         let to = corners[(index + 1) % corners.len()];
         entities.push(line(&format!("l{index}"), *from, to));
     }
-    entities.push(serde_json::json!({"id": entity("hole"), "sketch": sketch,
+    entities.push(cadmpeg_core::json!({"id": entity("hole"), "sketch": sketch,
         "construction": false, "endpoint_refs": [],
         "geometry": {"kind": "circle", "center": {"u": 25.0, "v": 15.0}, "radius": 5.0}}));
-    ir.model.sketch_entities =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::Value::Array(entities)).unwrap();
-    ir.model.sketches = cadmpeg_core::serde_erase::json::from_value(serde_json::json!([{
+    ir.model.sketch_entities = json::from_value(serde_json::Value::Array(entities)).unwrap();
+    ir.model.sketches = json::from_value(cadmpeg_core::json!([{
         "id": sketch, "name": "Sketch1",
         "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 1.0, "z": 0.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
         "profiles": []
     }]))
     .unwrap();
-    ir.model.sketch_constraints = cadmpeg_core::serde_erase::json::from_value(serde_json::json!([
+    ir.model.sketch_constraints = json::from_value(cadmpeg_core::json!([
         {"id": "sldprt:model:sketch-constraint#test:0", "sketch": sketch,
             "definition": {"kind": "coincident_loci", "loci": [
                 {"kind": "end", "value": entity("l0")}, {"kind": "start", "value": entity("l1")}]}},
@@ -758,10 +918,10 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     .unwrap();
     for feature in &mut ir.model.features {
         let definition = if feature.id == sketch_feature {
-            serde_json::json!({"kind": "operation", "value": {"kind": "sketch",
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sketch",
                 "value": {"sketch": {"kind": "planar", "sketch": sketch}}}})
         } else if feature.id == boss {
-            serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
                 "profile": {"kind": "planar", "value": {"kind": "feature",
                     "value": sketch_feature.as_str()}},
                 "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
@@ -770,7 +930,7 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
         } else {
             continue;
         };
-        let definition = cadmpeg_core::serde_erase::json::from_value(definition).unwrap();
+        let definition = json::from_value(definition).unwrap();
         feature.evaluation.edit(|current, _| *current = definition);
     }
     (ir, native)
@@ -867,6 +1027,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
@@ -1024,6 +1185,7 @@ fn typed_timeline<'a>(
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     (timeline, entries, typed)
@@ -1111,8 +1273,7 @@ fn a_two_sided_extrude_binds_only_the_depth_its_record_lists() {
         .unwrap()
         .id
         .clone();
-    let definition =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"kind": "operation",
+    let definition = json::from_value(cadmpeg_core::json!({"kind": "operation",
         "value": {"kind": "extrude", "value": {
             "profile": {"kind": "planar", "value": {"kind": "feature",
                 "value": sketch_feature.as_str()}},
@@ -1121,7 +1282,7 @@ fn a_two_sided_extrude_binds_only_the_depth_its_record_lists() {
                 "first": {"termination": {"kind": "blind", "length": 10.0}},
                 "second": {"termination": {"kind": "blind", "length": 5.0}}},
             "op": "join", "solid": true}}}))
-        .unwrap();
+    .unwrap();
     ir.model
         .features
         .iter_mut()
@@ -1209,23 +1370,21 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
 fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved() {
     assert_sketch_unresolved(
         |ir| {
-            let mut constraints =
-                cadmpeg_core::serde_erase::json::to_value(&ir.model.sketch_constraints).unwrap();
+            let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
             for constraint in constraints.as_array_mut().unwrap() {
                 if constraint["id"].as_str().unwrap().ends_with(":1") {
                     constraint["definition"]["parameter"] =
-                        serde_json::json!("sldprt:model:parameter#unlisted");
+                        cadmpeg_core::json!("sldprt:model:parameter#unlisted");
                 }
             }
-            ir.model.sketch_constraints =
-                cadmpeg_core::serde_erase::json::from_value(constraints).unwrap();
+            ir.model.sketch_constraints = json::from_value(constraints).unwrap();
         },
         "a sketch dimension binds no parameter",
     );
     assert_sketch_unresolved(
         |ir| {
             ir.model.sketch_entities.push(
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": "sldprt:model:sketch-entity#test:text",
                     "sketch": "sldprt:model:sketch#test",
                     "construction": false, "endpoint_refs": [],
@@ -1248,31 +1407,31 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
 
     const MINTED: &str = "sldprt:model:parameter#reference";
     let (mut ir, native) = sketch_and_extrude();
-    let mut constraints =
-        cadmpeg_core::serde_erase::json::to_value(&ir.model.sketch_constraints).unwrap();
+    let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
     let constraints_list = constraints.as_array_mut().unwrap();
     let hole_constraint = constraints_list
         .iter_mut()
         .find(|constraint| constraint["id"].as_str().unwrap().ends_with(":4"))
         .unwrap();
-    hole_constraint["driving"] = serde_json::json!(false);
+    hole_constraint["driving"] = cadmpeg_core::json!(false);
     let hole_parameter = hole_constraint["definition"]["parameter"].clone();
     let mut reference = hole_constraint.clone();
-    reference["id"] = serde_json::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
-    reference["definition"]["parameter"] = serde_json::json!(MINTED);
+    reference["id"] =
+        cadmpeg_core::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
+    reference["definition"]["parameter"] = cadmpeg_core::json!(MINTED);
     constraints_list.push(reference);
-    ir.model.sketch_constraints = cadmpeg_core::serde_erase::json::from_value(constraints).unwrap();
-    let mut parameters = cadmpeg_core::serde_erase::json::to_value(&ir.model.parameters).unwrap();
+    ir.model.sketch_constraints = json::from_value(constraints).unwrap();
+    let mut parameters = json::to_value(&ir.model.parameters).unwrap();
     let parameters_list = parameters.as_array_mut().unwrap();
     let mut minted = parameters_list
         .iter()
         .find(|parameter| parameter["id"] == hole_parameter)
         .unwrap()
         .clone();
-    minted["id"] = serde_json::json!(MINTED);
-    minted["name"] = serde_json::json!("D9");
+    minted["id"] = cadmpeg_core::json!(MINTED);
+    minted["name"] = cadmpeg_core::json!("D9");
     parameters_list.push(minted);
-    ir.model.parameters = cadmpeg_core::serde_erase::json::from_value(parameters).unwrap();
+    ir.model.parameters = json::from_value(parameters).unwrap();
     change(&mut ir);
     let (timeline, entries, typed) = typed_timeline(&ir, &native);
     assert!(typed.sketches.records.is_empty(), "{reason}");
@@ -1406,7 +1565,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1425,6 +1584,7 @@ fn members_follow_the_features_they_depend_on() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
@@ -1437,10 +1597,39 @@ fn members_follow_the_features_they_depend_on() {
 }
 
 #[test]
+fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::native::SldprtNative::load_under(
+        ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
+    let id = |name| {
+        timeline.features[member_position(&timeline, name)]
+            .id
+            .clone()
+    };
+    let active = [id("Boss"), id("Fillet1")];
+    let alternate = [id("Boss"), id("Odd"), id("Fillet1")];
+    let reversed = [id("Fillet1"), id("Odd")];
+    super::order::regeneration_order(
+        &mut timeline,
+        &ir.model,
+        [&active[..], &alternate[..], &reversed[..]],
+    );
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Odd"));
+    assert!(member_position(&timeline, "Odd") < member_position(&timeline, "Fillet1"));
+}
+
+#[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -1455,7 +1644,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model);
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1469,11 +1658,18 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
             last: 2,
         }]
     );
+    let group = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Group"))
+        .unwrap();
+    assert_eq!(timeline.folder_records, std::slice::from_ref(&group.id));
 
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty()).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()
@@ -1484,6 +1680,54 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
         ["Origin", "Boss", "Fillet1", "Odd", "Sketch1"]
     );
     assert!(timeline.folders.is_empty());
+}
+
+const NESTED_FOLDERS: &[u8] = br#"<Keywords Name="Bracket">
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Feature Name="Group" Type="FtrFolder" id="110">
+                <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                    <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+                </Extrusion>
+                <Feature Name="Inner" Type="FtrFolder" id="120">
+                    <Fillet Name="Fillet1" id="9"/>
+                </Feature>
+            </Feature>
+        </Keywords>"#;
+
+/// A folder's run holds the sketch its extrude absorbs and the members of
+/// the folder nested in it, so the `Folder` states the folder node's
+/// children: the timeline restates both folder nodes without `definition`.
+#[test]
+fn a_folder_states_its_nested_folder_and_absorbed_sketch_as_children() {
+    let ir = part_with_history(
+        NESTED_FOLDERS,
+        &[
+            ("moOriginProfileFeature_c", "Origin", 106),
+            ("moFtrFolder_c", "Group", 110),
+            ("moFtrFolder_c", "Inner", 120),
+        ],
+    );
+    let [Container::Ordered { id, folders, .. }] = ir.design.containers.as_slice() else {
+        panic!("one timeline: {:#?}", ir.design.containers);
+    };
+    assert_eq!(folders.len(), 2, "{folders:?}");
+    let timeline =
+        cadmpeg_ir::design::projection::restated::Restater::Record(id.as_str().to_owned());
+    for name in ["Group", "Inner"] {
+        let folder = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let cut = ir
+            .model
+            .restated()
+            .get(folder.id.as_str())
+            .and_then(|restating| restating.cut_by(|by| by == &timeline))
+            .unwrap_or_else(|| panic!("the timeline restates {name}"));
+        assert!(!cut.contains("definition"), "{name}: {cut:?}");
+    }
 }
 
 #[test]
@@ -1572,8 +1816,10 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 }
 
 mod configuration_states;
+mod datum;
 mod dimension_curves;
 mod parameters;
+mod pattern;
 mod revolve;
 mod rollback;
 mod state_zero;

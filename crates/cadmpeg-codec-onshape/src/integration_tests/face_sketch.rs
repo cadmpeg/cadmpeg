@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use super::projection::{face_sketch_bundle, kinds, read};
 
@@ -14,8 +16,7 @@ fn with_sketch_matrix(bytes: Vec<u8>, matrix: &Value) -> Vec<u8> {
     )
     .unwrap();
     let response = json!({"sketches":[{"featureId":"side-sketch","sketchMatrix":matrix}]});
-    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
-        .unwrap();
+    zip.write_all(&json::to_vec(&response).unwrap()).unwrap();
     zip.finish().unwrap().into_inner()
 }
 
@@ -122,24 +123,18 @@ fn face_sketch_without_a_usable_attachment_row_keeps_the_sketch_native() {
     assert_native(&base(), unresolved);
     let other_row = json!({"sketches":[{"featureId":"other","sketchMatrix":IDENTITY}]});
     assert_native(
-        &with_sketches_bytes(
-            base(),
-            &cadmpeg_core::serde_erase::json::to_vec(&other_row).unwrap(),
-        ),
+        &with_sketches_bytes(base(), &json::to_vec(&other_row).unwrap()),
         unresolved,
     );
     let row = json!({"featureId":"side-sketch","sketchMatrix":IDENTITY});
     let repeated = json!({"sketches":[row, row]});
     assert_native(
-        &with_sketches_bytes(
-            base(),
-            &cadmpeg_core::serde_erase::json::to_vec(&repeated).unwrap(),
-        ),
+        &with_sketches_bytes(base(), &json::to_vec(&repeated).unwrap()),
         "attachment identity repeats",
     );
     assert_native(
         &with_sketches_bytes(base(), b"not json"),
-        "the member bytes",
+        "omitted the member",
     );
 }
 
@@ -269,7 +264,7 @@ fn face_sketch_matrix_with_missing_or_non_finite_entries_keeps_the_sketch_native
     assert_native(
         &with_sketches_bytes(
             face_sketch_bundle([0.0, 0.0, 1.0], true),
-            &cadmpeg_core::serde_erase::json::to_vec(&row).unwrap(),
+            &json::to_vec(&row).unwrap(),
         ),
         "sketchMatrix is missing or exceeds the row limit",
     );

@@ -4,6 +4,7 @@ use crate::document::CadIr;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::check::Finding;
 use crate::transform::Transform;
+use cadmpeg_core::serde_erase::json;
 
 fn occurrence(id: &str, prototype: &str) -> Occurrence {
     Occurrence::new(
@@ -255,7 +256,7 @@ fn product_sketch_references_exist_and_have_one_definition() {
     let mut ir = CadIr::empty();
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),
@@ -287,7 +288,7 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
     let mut ir = CadIr::empty();
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),

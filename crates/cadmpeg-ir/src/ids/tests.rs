@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
@@ -23,29 +24,6 @@ fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
         assert_eq!(IdentityKey::try_new(key.as_str().to_owned()).unwrap(), key);
         assert!(seen.insert(key));
     }
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn identity_schemas_constrain_strings_and_map_keys() {
-    use std::collections::BTreeMap;
-    macro_rules! check {
-        ($identity:ty) => {{
-            let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!($identity)).unwrap();
-            let string_schema = match schema["$ref"].as_str() {
-                Some(reference) => schema.pointer(reference.strip_prefix('#').unwrap()).unwrap(),
-                None => &schema,
-            };
-            assert_eq!(string_schema["type"], "string");
-            let pattern = string_schema["pattern"].as_str().unwrap();
-            let map = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
-            assert_eq!(map["additionalProperties"], false);
-            assert!(map["patternProperties"].get(pattern).is_some());
-        }};
-    }
-    check!(super::Identity);
-    check!(super::BodyId);
-    check!(super::HistoricalBodyId);
 }
 
 #[test]
@@ -96,7 +74,7 @@ fn the_format_component_is_a_codec_id() {
         let id = format!("{format}:file:signature#0");
         assert_eq!(is_valid_identity(&id), valid, "{format}");
         assert_eq!(
-            serde_json::from_value::<super::Identity>(serde_json::json!(id)).is_ok(),
+            json::from_value::<super::Identity>(cadmpeg_core::json!(id)).is_ok(),
             valid,
             "{format}"
         );
@@ -132,10 +110,7 @@ fn two_component_ids_are_rejected() {
 #[test]
 fn typed_ids_keep_their_canonical_json_string_shape() {
     let id = crate::ids::BodyId::mint("test:model:body#1").unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&id).unwrap(),
-        "\"test:model:body#1\""
-    );
+    assert_eq!(json::to_string(&id).unwrap(), "\"test:model:body#1\"");
     assert_eq!(
         serde_json::from_str::<crate::ids::BodyId>("\"test:model:body#1\"").unwrap(),
         id
@@ -163,7 +138,7 @@ fn fallible_conversions_enforce_entity_identity_grammar() {
     ] {
         assert!(BodyId::try_from(invalid).is_err(), "{invalid:?}");
         assert!(BodyId::try_from(invalid.to_owned()).is_err(), "{invalid:?}");
-        let wire = cadmpeg_core::serde_erase::json::to_string(invalid).unwrap();
+        let wire = json::to_string(invalid).unwrap();
         assert!(
             serde_json::from_str::<BodyId>(&wire).is_err(),
             "{invalid:?}"
@@ -185,7 +160,7 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
             HistoricalBodyId::try_from(invalid.to_owned()).is_err(),
             "{invalid:?}"
         );
-        let wire = cadmpeg_core::serde_erase::json::to_string(invalid).unwrap();
+        let wire = json::to_string(invalid).unwrap();
         assert!(
             serde_json::from_str::<HistoricalBodyId>(&wire).is_err(),
             "{invalid:?}"
@@ -193,10 +168,7 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
     }
     let id = HistoricalBodyId::try_from("member-1").unwrap();
     assert_eq!(id.as_str(), "member-1");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&id).unwrap(),
-        "\"member-1\""
-    );
+    assert_eq!(json::to_string(&id).unwrap(), "\"member-1\"");
 }
 
 #[test]
@@ -274,10 +246,7 @@ fn checked_identity_admission_and_typed_conversion() {
         IdentityKey::try_new("1".to_owned()).unwrap(),
     );
     assert_eq!(identity.as_str(), text);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&identity).unwrap(),
-        "\"test:model:body#1\""
-    );
+    assert_eq!(json::to_string(&identity).unwrap(), "\"test:model:body#1\"");
     assert_eq!(
         serde_json::from_str::<Identity>("\"test:model:body#1\"").unwrap(),
         identity
@@ -292,10 +261,7 @@ fn checked_identity_admission_and_typed_conversion() {
         "test:model:body#a b",
     ] {
         assert!(Identity::new(invalid).is_err());
-        assert!(serde_json::from_str::<Identity>(
-            &cadmpeg_core::serde_erase::json::to_string(invalid).unwrap()
-        )
-        .is_err());
+        assert!(serde_json::from_str::<Identity>(&json::to_string(invalid).unwrap()).is_err());
     }
 }
 

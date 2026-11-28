@@ -2,6 +2,7 @@
 //! Persistent polyedge-reference construction decoding.
 
 use crate::loss::Diagnostics;
+use cadmpeg_core::serde_erase::json;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -131,7 +132,7 @@ fn counted(
     let value = req_i32(view)?;
     let count = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
     if count > ITEM_CAP {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             offset,
             "polyedge count exceeds cap",
         ));
@@ -170,7 +171,7 @@ fn segment(
             FramingError::structural(chunk.body().start, "polyedge segment body out of range")
         })?;
     if req_i32(&mut body)? != 1 || req_i32(&mut body)? < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             chunk.body().start,
             "unsupported polyedge-segment version",
         ));
@@ -214,7 +215,7 @@ pub(crate) fn decode(
 
     let version = req_u8(&mut body)?;
     if version >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "unsupported polyedge-curve version",
         ));
@@ -343,7 +344,7 @@ impl Serialize for SemanticUuid {
 }
 
 pub(crate) fn semantic_json(polyedge: &PersistentPolyEdge) -> Option<String> {
-    cadmpeg_core::serde_erase::json::to_string(&SemanticJson(polyedge)).ok()
+    json::to_string(&SemanticJson(polyedge)).ok()
 }
 
 #[cfg(test)]

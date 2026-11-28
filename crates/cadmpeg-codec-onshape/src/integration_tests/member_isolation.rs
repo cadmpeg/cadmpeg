@@ -1,26 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Member isolation and admitted-feature annotation regression tests.
 use crate::loss::OnshapeLossCode;
-use crate::test_support::fixture;
 use crate::test_support::review::{decode, edit, members, validate, wire};
+use crate::test_support::{fixture, Charge};
 use cadmpeg_core::decode::{index_from_u32, View};
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_ir::unknown::part::Cause;
 use std::io::{Cursor, Read, Write};
 
 const TABLE: &str = "partstudios/studio/bodydetails/2.json";
 
-fn has(result: &cadmpeg_ir::codec::DecodeResult, code: OnshapeLossCode) -> usize {
+fn has(result: &cadmpeg_ir::codec::DecodeResult, code: OnshapeLossCode, charge: Charge) -> usize {
+    let code = code.note("").code.to_string();
     result
         .report()
         .losses
         .iter()
-        .filter(|note| code.matches(note))
+        .filter(|note| {
+            crate::test_support::states(&code, charge, &note.code.to_string(), &note.message)
+        })
         .count()
 }
 
-fn retained(bytes: &[u8]) {
+/// The give-ups of the archive entry `name` as a part.
+fn given_up_entries(result: &cadmpeg_ir::codec::DecodeResult, name: &str) -> usize {
+    let head = format!("part archive-entry {name:?} stream=\"\" offset=");
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&head)
+        })
+        .count()
+}
+
+/// The losses whose text names `subject`.
+fn naming(result: &cadmpeg_ir::codec::DecodeResult, subject: &str) -> usize {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains(subject))
+        .count()
+}
+
+/// A pinned decode of `bytes` refuses through the part loss of entry `name`.
+fn assert_pinned_refusal(bytes: Vec<u8>, name: &str) {
+    use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+    use cadmpeg_ir::unknown::part::record_unreadable_kind;
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let error = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up entry");
+    let head = format!("part archive-entry {name:?} stream=\"\" offset=");
+    assert!(matches!(
+        error,
+        DecodeFailure::StrictRejected { rejection }
+            if rejection.loss().code == record_unreadable_kind()
+                && rejection.loss().message.starts_with(&head)
+    ));
+}
+
+fn retained(bytes: &[u8], charge: Charge) {
     let result = decode(bytes);
-    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
+    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable, charge), 1);
     assert_eq!(result.ir().model.features.len(), 3);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     validate(result);
@@ -82,7 +127,24 @@ fn deflated_table() -> Vec<u8> {
 fn crc_failure_omits_one_member() {
     let mut bytes = fixture("plate-fillet");
     patch(&mut bytes, TABLE, 16, 14, &0u32.to_le_bytes());
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Unreadable));
+}
+
+#[test]
+fn strict_decode_refuses_a_member_with_a_crc_failure() {
+    let mut bytes = fixture("plate-fillet");
+    patch(&mut bytes, TABLE, 16, 14, &0u32.to_le_bytes());
+    let admitted = decode(&bytes);
+    assert_eq!(
+        has(
+            &admitted,
+            OnshapeLossCode::MemberUnreadable,
+            Charge::GivenUp(Cause::Unreadable)
+        ),
+        1
+    );
+    assert_eq!(given_up_entries(&admitted, TABLE), 1);
+    assert_pinned_refusal(bytes, TABLE);
 }
 
 #[test]
@@ -95,14 +157,14 @@ fn inflate_failure_omits_one_member() {
         + usize::from(View::u16_le_at(&bytes, local + 26).unwrap())
         + usize::from(View::u16_le_at(&bytes, local + 28).unwrap());
     bytes[data] = 7;
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Unreadable));
 }
 
 #[test]
 fn lying_expanded_header_omits_one_member() {
     let mut bytes = deflated_table();
     patch(&mut bytes, TABLE, 24, 22, &1u32.to_le_bytes());
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Unreadable));
 }
 
 #[test]
@@ -111,29 +173,38 @@ fn unreadable_local_header_omits_one_member() {
     let offset = central(&bytes, TABLE);
     let local = index_from_u32(View::u32_le_at(&bytes, offset + 42).unwrap());
     bytes[local..local + 4].fill(0);
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Unreadable));
 }
 
 #[test]
 fn non_utf8_json_omits_one_member() {
-    retained(&members(&fixture("plate-fillet"), |rows| {
-        rows.insert(TABLE.into(), vec![255]);
-    }));
+    retained(
+        &members(&fixture("plate-fillet"), |rows| {
+            rows.insert(TABLE.into(), vec![255]);
+        }),
+        Charge::GivenUp(Cause::Unreadable),
+    );
 }
 
 #[test]
 fn malformed_json_omits_one_member() {
-    retained(&members(&fixture("plate-fillet"), |rows| {
-        rows.insert(TABLE.into(), b"{\"bodies\":[".to_vec());
-    }));
+    retained(
+        &members(&fixture("plate-fillet"), |rows| {
+            rows.insert(TABLE.into(), b"{\"bodies\":[".to_vec());
+        }),
+        Charge::GivenUp(Cause::Unreadable),
+    );
 }
 
 #[test]
 fn bad_member_names_omit_one_member() {
     for name in ["notes/a:b.txt", "notes/../a.txt", "notes\\a.txt"] {
-        retained(&members(&fixture("plate-fillet"), |rows| {
-            rows.insert(name.into(), vec![1]);
-        }));
+        retained(
+            &members(&fixture("plate-fillet"), |rows| {
+                rows.insert(name.into(), vec![1]);
+            }),
+            Charge::GivenUp(Cause::Unreadable),
+        );
     }
 }
 
@@ -141,14 +212,28 @@ fn bad_member_names_omit_one_member() {
 fn unsupported_method_omits_one_member() {
     let mut bytes = fixture("plate-fillet");
     patch(&mut bytes, TABLE, 10, 8, &99u16.to_le_bytes());
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Undecoded));
 }
 
+/// An encrypted member is a valid member that the decoder does not read: one
+/// `record.undecoded` gives it up, and a pinned decode admits it.
 #[test]
-fn encrypted_member_omits_one_member() {
+fn encrypted_member_is_given_up_as_undecoded_and_a_pinned_decode_admits_it() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = fixture("plate-fillet");
     patch(&mut bytes, TABLE, 8, 6, &1u16.to_le_bytes());
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Undecoded));
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect("a pinned decode admits an undecoded member");
+    assert_eq!(given_up_entries(&result, TABLE), 1);
+    let head = format!("part archive-entry {TABLE:?} stream=\"\" offset=");
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.starts_with(&head)
+    }));
 }
 
 #[test]
@@ -163,7 +248,15 @@ fn repeated_name_keeps_first_member() {
         }
     }
     let result = decode(&bytes);
-    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
+    assert_eq!(
+        has(
+            &result,
+            OnshapeLossCode::MemberUnreadable,
+            Charge::GivenUp(Cause::Unreadable)
+        ),
+        1
+    );
+    assert_eq!(given_up_entries(&result, "notes/first.txt"), 1);
     let asset = result
         .ir()
         .model
@@ -182,6 +275,52 @@ fn repeated_name_keeps_first_member() {
     assert_eq!(data.as_bytes(), b"first");
     assert_eq!(result.ir().model.features.len(), 3);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
+    validate(result);
+}
+
+#[test]
+fn two_directory_records_of_one_stored_span_are_one_part() {
+    let mut bytes = members(&fixture("plate-fillet"), |rows| {
+        rows.insert("notes/a.bin".into(), b"alias".to_vec());
+        rows.insert("notes/b.bin".into(), b"alias".to_vec());
+    });
+    let first = central(&bytes, "notes/a.bin");
+    let local = bytes[first + 42..first + 46].to_vec();
+    let second = central(&bytes, "notes/b.bin");
+    bytes[second + 42..second + 46].copy_from_slice(&local);
+    patch(&mut bytes, "notes/a.bin", 16, 14, &0u32.to_le_bytes());
+    patch(&mut bytes, "notes/b.bin", 16, 14, &0u32.to_le_bytes());
+    let result = decode(&bytes);
+    assert_eq!(
+        has(
+            &result,
+            OnshapeLossCode::MemberUnreadable,
+            Charge::GivenUp(Cause::Unreadable)
+        ),
+        1
+    );
+    assert_eq!(given_up_entries(&result, "notes/a.bin"), 1);
+    assert_eq!(given_up_entries(&result, "notes/b.bin"), 0);
+    let second = crate::archive::source_record("notes/b.bin");
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                && loss
+                    .message
+                    .split(|c: char| c.is_whitespace() || matches!(c, '[' | ']' | ','))
+                    .any(|token| token == second.as_str())
+        }),
+        "the second directory record is dropped with the part"
+    );
+    let stubs = result
+        .ir()
+        .native
+        .0
+        .get("onshape")
+        .and_then(|namespace| namespace.arenas().get("unknowns"))
+        .map_or(0, Vec::len);
+    assert_eq!(stubs, 1);
+    assert_eq!(result.ir().model.features.len(), 3);
     validate(result);
 }
 
@@ -228,8 +367,18 @@ fn oversized_step_is_omitted_before_or_after_history() {
             write_step(&mut output);
         }
         let result = decode(&output.finish().unwrap().into_inner());
-        assert_eq!(has(&result, OnshapeLossCode::MemberTooLarge), 1);
-        assert_eq!(has(&result, OnshapeLossCode::StepUnreadable), 1);
+        let step = "partstudios/studio/export.step";
+        assert_eq!(given_up_entries(&result, step), 1);
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains("expanded member exceeds")
+        }));
+        // The give-up of the member is the one entry for its final geometry.
+        assert_eq!(
+            has(&result, OnshapeLossCode::StepUnreadable, Charge::Any),
+            0
+        );
+        assert_eq!(naming(&result, step), 1);
         assert_eq!(result.ir().model.features.len(), 3);
         assert!(result.ir().geometry.bodies.is_empty());
         validate(result);
@@ -245,7 +394,14 @@ fn stale_or_malformed_microversion_omits_one_table() {
             }
         });
         let result = decode(&bytes);
-        assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
+        assert_eq!(
+            has(
+                &result,
+                OnshapeLossCode::MemberUnreadable,
+                Charge::GivenUp(Cause::Unreadable)
+            ),
+            1
+        );
         assert_eq!(
             wire(&result)["model"]["features"][2]["definition"]["value"]["kind"],
             "native"
@@ -257,10 +413,17 @@ fn stale_or_malformed_microversion_omits_one_table() {
 
 #[test]
 fn malformed_features_retain_step() {
-    for value in [
-        json!({"sourceMicroversion":"stale","features":[]}),
-        json!({"features":42}),
-        json!({"sourceMicroversion":42,"features":[]}),
+    let history = "partstudios/studio/features.json";
+    for (value, code) in [
+        (
+            json!({"sourceMicroversion":"stale","features":[]}),
+            OnshapeLossCode::MemberUnreadable,
+        ),
+        (json!({"features":42}), OnshapeLossCode::HistoryNotSupported),
+        (
+            json!({"sourceMicroversion":42,"features":[]}),
+            OnshapeLossCode::MemberUnreadable,
+        ),
     ] {
         let bytes = edit(&fixture("plate-fillet"), |path, response| {
             if path.ends_with("features.json") {
@@ -268,7 +431,10 @@ fn malformed_features_retain_step() {
             }
         });
         let result = decode(&bytes);
-        assert_eq!(has(&result, OnshapeLossCode::HistoryNotSupported), 1);
+        // The give-up of the member is the one entry for the lost history.
+        assert_eq!(has(&result, code, Charge::GivenUp(Cause::Unreadable)), 1);
+        assert_eq!(naming(&result, history), 1);
+        assert_eq!(given_up_entries(&result, history), 1);
         assert!(result.ir().model.features.is_empty());
         assert_eq!(result.ir().geometry.bodies.len(), 1);
         validate(result);
@@ -396,13 +562,11 @@ fn remaining_capacity_omits_the_later_member_in_both_orders() {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
         assert!(ctx.per_expand_allowance() >= (200 << 20));
         let bundle = crate::archive::Bundle::open(&ctx, root).unwrap();
+        assert!(bundle.losses.is_empty());
+        assert_eq!(bundle.given_up.len(), 1);
         assert_eq!(
-            bundle
-                .losses
-                .iter()
-                .filter(|note| OnshapeLossCode::MemberTooLarge.matches(note))
-                .count(),
-            1
+            bundle.given_up[0].loss().code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
         );
         assert!(bundle.contains(order[0].0));
         assert!(!bundle.contains(order[1].0));
@@ -427,7 +591,14 @@ fn unreadable_step_member_has_one_typed_loss() {
         &0u32.to_le_bytes(),
     );
     let result = decode(&bytes);
-    assert_eq!(has(&result, OnshapeLossCode::StepUnreadable), 1);
+    assert_eq!(
+        has(
+            &result,
+            OnshapeLossCode::StepUnreadable,
+            Charge::GivenUp(Cause::Unreadable)
+        ),
+        1
+    );
     assert_eq!(result.ir().model.features.len(), 3);
     assert!(result.ir().geometry.bodies.is_empty());
     validate(result);
@@ -439,7 +610,7 @@ fn unreadable_step_named_asset_keeps_the_canonical_step_geometry() {
         rows.insert("notes/export.step".into(), b"opaque asset".to_vec());
     });
     patch(&mut bytes, "notes/export.step", 16, 14, &0u32.to_le_bytes());
-    retained(&bytes);
+    retained(&bytes, Charge::GivenUp(Cause::Unreadable));
 }
 
 #[test]
@@ -456,9 +627,21 @@ fn invalid_optional_timestamp_omits_one_member_and_keeps_history_and_step() {
     let size = View::u32_le_at(&bytes, footer + 12).unwrap();
     bytes[footer + 12..footer + 16].copy_from_slice(&(size + 4).to_le_bytes());
     let result = decode(&bytes);
-    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
+    assert_eq!(
+        has(
+            &result,
+            OnshapeLossCode::MemberUnreadable,
+            Charge::GivenUp(Cause::Unreadable)
+        ),
+        1
+    );
     assert!(result.report().losses.iter().any(|note| {
-        OnshapeLossCode::MemberUnreadable.matches(note) && note.message.contains("notes/time.txt")
+        crate::test_support::states(
+            "onshape/member.unreadable",
+            Charge::GivenUp(Cause::Unreadable),
+            &note.code.to_string(),
+            &note.message,
+        ) && note.message.contains("notes/time.txt")
     }));
     assert!(result.ir().model.assets.iter().all(|asset| {
         asset

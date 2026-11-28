@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::DistinctMembers;
-use serde_json::json;
 
 use super::*;
 
@@ -32,12 +33,85 @@ fn projected(parameters: Vec<LegacyParameter>) -> Vec<DesignParameter> {
     let mut ir = CadIr::empty();
     ir.model.parameters = parameters;
     let definition = ProductDefinitionId::mint("nx:document:product-definition#root").unwrap();
-    project(&mut ir, &definition);
+    project(&mut ir, &definition).expect("expressions");
     ir.design.parameters
 }
 
+/// Each native expression `(key, table, offset)` of `expressions` in the
+/// `expressions` arena of `ir`.
+fn with_expressions(ir: &mut CadIr, expressions: &[(&str, &str, u64)]) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let records = expressions
+        .iter()
+        .map(|(key, table, offset)| {
+            json!({
+                "id": format!("nx:om-entry-0:expression#{key}"),
+                "object_id": null,
+                "record": null,
+                "name": key,
+                "parameter_index": null,
+                "qualifier": null,
+                "unit": "millimeter",
+                "expression": "1",
+                "source_entry": "om",
+                "source_table": table,
+                "source_offset": offset,
+            })
+        })
+        .collect::<Vec<_>>();
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("nx"))
+        .set_arena(&ctx, "expressions", &records)
+        .unwrap();
+}
+
+fn positions(ir: &CadIr) -> Vec<(&str, Option<u32>)> {
+    ir.design
+        .parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.name.as_ref().unwrap().as_str(),
+                parameter.position,
+            )
+        })
+        .collect()
+}
+
+/// An expression's position is its place in the record order of its table,
+/// whatever its dependency rank, and expressions of two tables have none.
+#[test]
+fn an_expression_is_placed_by_the_record_order_of_its_table() {
+    let definition = ProductDefinitionId::mint("nx:document:product-definition#root").unwrap();
+    let parameters = || {
+        let mut a = parameter("a", "a", "mm", "b + 1");
+        a.ordinal = 1;
+        let b = parameter("b", "b", "mm", "2");
+        vec![a, b]
+    };
+    let mut ir = CadIr::empty();
+    ir.model.parameters = parameters();
+    with_expressions(&mut ir, &[("a", TABLE, 10), ("b", TABLE, 20)]);
+    project(&mut ir, &definition).unwrap();
+    assert_eq!(positions(&ir), [("a", Some(0)), ("b", Some(1))]);
+    let mut ir = CadIr::empty();
+    ir.model.parameters = parameters();
+    with_expressions(
+        &mut ir,
+        &[
+            ("a", TABLE, 10),
+            ("b", "nx:om-entry-0:feature#equations-1", 20),
+        ],
+    );
+    project(&mut ir, &definition).unwrap();
+    assert_eq!(positions(&ir), [("a", None), ("b", None)]);
+}
+
 fn definition_json(parameter: &DesignParameter) -> serde_json::Value {
-    cadmpeg_core::serde_erase::json::to_value(&parameter.definition).expect("definition")
+    json::to_value(&parameter.definition).expect("definition")
 }
 
 fn reference_json(key: &str) -> serde_json::Value {
@@ -108,7 +182,7 @@ fn a_unit_of_unit_symbols_declares_its_quantity() {
     ]);
     let kinds = projected
         .iter()
-        .map(|parameter| cadmpeg_core::serde_erase::json::to_value(&parameter.kind).unwrap())
+        .map(|parameter| json::to_value(&parameter.kind).unwrap())
         .collect::<Vec<_>>();
     let quantity = |length: i8, mass: i8, time: i8| json!({"kind": "quantity", "value": {"length": length, "mass": mass, "angle": 0, "time": time}});
     assert_eq!(
@@ -122,7 +196,7 @@ fn a_unit_of_unit_symbols_declares_its_quantity() {
         ]
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&projected[2].unit).unwrap(),
+        json::to_value(&projected[2].unit).unwrap(),
         json!([
             {"symbol": "kg", "power": 1},
             {"symbol": "m", "power": 1},

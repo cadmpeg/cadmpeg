@@ -2,6 +2,7 @@
 
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 
@@ -12,7 +13,7 @@ use crate::decode::{
     project_property_set_issue, project_protein_records, project_protein_state,
     project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
     project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
-    project_ufrx_state, property_set_name, structural_issue,
+    project_ufrx_state, property_set_name, structural_issue, Rejections,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -94,8 +95,13 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
         detail: "metadata issue".into(),
     };
     container.rse.segments[0].bulk = SegmentBulkState::Malformed("bulk issue".into());
-    container.rse.unpaired_metadata.push(token.clone());
-    container.rse.unpaired_bulk.push(token);
+    let pair = &container.rse.segments[0].pair;
+    let streams = (pair.metadata, pair.bulk);
+    container
+        .rse
+        .unpaired_metadata
+        .push((token.clone(), streams.0));
+    container.rse.unpaired_bulk.push((token, streams.1));
     rse_native_projection::project(&ctx, &container).expect("malformed segments project");
 }
 
@@ -229,7 +235,7 @@ fn root_product_has_the_root_identity() {
 #[test]
 fn kernel_annotation_is_admitted() {
     let record = cadmpeg_asm::brep::annotations::AnnotationRecord {
-        id: "inventor:body#one".into(),
+        id: cadmpeg_ir::ids::Identity::new("inventor:asm:body#one").expect("identity grammar"),
         stream: "carrier".into(),
         offset: 7,
         tag: cadmpeg_asm::brep::annotations::AnnotationTag::ProceduralSurface,
@@ -340,7 +346,7 @@ fn protein_asset_record_is_projected() {
     let records = project_protein_records(&ctx, protein_asset_instance()).expect("admitted asset");
     assert_eq!(records.assets.len(), 1);
     assert!(records.rejections.is_empty());
-    assert!(records.issues.is_empty());
+    assert!(records.rejected.issues.is_empty());
 }
 
 #[test]
@@ -352,7 +358,7 @@ fn protein_rejection_record_is_projected() {
         project_protein_records(&ctx, protein_rejection_instance()).expect("admitted rejection");
     assert!(records.assets.is_empty());
     assert_eq!(records.rejections.len(), 1);
-    assert!(records.issues.is_empty());
+    assert!(records.rejected.issues.is_empty());
 }
 
 #[test]
@@ -361,7 +367,7 @@ fn absent_ufrx_state_names_the_root() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
     assert!(matches!(
-        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new()).expect("admitted state"),
+        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Rejections::default()).expect("admitted state"),
         UfrxRecord::Absent { id } if id == "inventor:ufrx:state#root"
     ));
 }
@@ -388,11 +394,11 @@ fn ufrx_model_state_with_a_parameter_is_admitted() {
         }],
         suffix: source,
     };
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(project_ufrx_model_state(&setup_ctx, 0, &state, &mut issues)
         .expect("admitted model state")
         .is_some());
-    assert!(issues.is_empty());
+    assert!(issues.issues.is_empty());
 }
 
 #[test]
@@ -410,17 +416,17 @@ fn protein_conversion_failure_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let wire = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let wire = json::from_value(cadmpeg_core::json!({
         "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
         "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
             "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
     }))
     .expect("Protein asset wire fixture");
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
         .expect("admit the Protein asset")
         .is_none());
-    assert_eq!(issues.len(), 1);
+    assert_eq!(issues.issues.len(), 1);
 }
 
 #[test]
@@ -437,11 +443,11 @@ fn ufrx_model_state_conversion_failure_becomes_an_issue() {
         parameters: Vec::new(),
         suffix: source,
     };
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
         .expect("project the UFRx model state")
         .is_none());
-    assert_eq!(issues.len(), 1);
+    assert_eq!(issues.issues.len(), 1);
 }
 
 fn external_reference(path: &str) -> InventorExternalReference {
@@ -470,7 +476,7 @@ fn ufrx_external_reference_with_a_state_group_is_admitted() {
         &ctx,
         0,
         &external_reference("part.ipt"),
-        &mut Vec::new()
+        &mut Rejections::default()
     )
     .expect("admitted reference")
     .is_some());
@@ -481,13 +487,21 @@ fn ufrx_external_conversion_failure_becomes_an_issue() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     assert!(
         project_ufrx_external_reference(&ctx, 0, &external_reference(""), &mut issues)
             .expect("project the UFRx external reference")
             .is_none()
     );
-    assert_eq!(issues.len(), 1);
+    assert_eq!(issues.issues.len(), 1);
+    assert_eq!(
+        issues
+            .records
+            .iter()
+            .map(|(record, _)| record.as_str())
+            .collect::<Vec<_>>(),
+        ["inventor:ufrx:external-reference#0"]
+    );
 }
 
 #[test]
@@ -511,7 +525,7 @@ fn ufrx_embedded_reference_is_admitted() {
         source,
     };
     assert!(
-        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Vec::new())
+        project_ufrx_embedded_reference(&ctx, 0, &reference, &mut Rejections::default())
             .expect("admitted embedded reference")
             .is_some()
     );
@@ -535,7 +549,7 @@ fn ufrx_occurrence_is_admitted() {
         source,
     };
     assert!(
-        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Vec::new())
+        project_ufrx_occurrence(&ctx, 0, &occurrence, &mut Rejections::default())
             .expect("admitted occurrence")
             .is_some()
     );
@@ -554,7 +568,7 @@ fn ufrx_representation_is_admitted() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
     assert!(
-        project_ufrx_representation(&ctx, &representation, &mut Vec::new())
+        project_ufrx_representation(&ctx, &representation, &mut Rejections::default())
             .expect("admitted representation")
             .is_some()
     );
@@ -604,11 +618,19 @@ fn empty_external_identity_does_not_fail_file_decode() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("invalid external identity must not fail file decode");
     assert_ufrx_issue(decoded.ir(), "ufrx-external-reference-0", "document_id");
-    assert!(decoded
-        .report()
-        .losses
+    let losses = &decoded.report().losses;
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
+    let given_up = losses
+        .iter()
+        .filter(|loss| loss.message.contains("inventor:ufrx:external-reference#0"))
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(
+        given_up[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     let namespace = decoded
         .ir()
         .native
@@ -738,7 +760,7 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
 
 #[test]
 fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
         "transform_prefix": false, "transform_encoding": [0, 0],
@@ -750,8 +772,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let bad: AssemblyPlacementRecordWire =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("wire fixture");
+    let bad: AssemblyPlacementRecordWire = json::from_value(wire.clone()).expect("wire fixture");
     assert!(admit_assembly_placement(&ctx, bad, &mut issues)
         .expect("admit the assembly placement")
         .is_none());
@@ -760,8 +781,8 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
     assert_eq!(issues[0].record_ordinal, 1);
     assert!(issues[0].detail.contains("suffix_sha256"));
     let mut wire = wire;
-    wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
-    let good = cadmpeg_core::serde_erase::json::from_value(wire).expect("wire fixture");
+    wire["suffix_sha256"] = cadmpeg_core::json!("0".repeat(64));
+    let good = json::from_value(wire).expect("wire fixture");
     assert!(admit_assembly_placement(&ctx, good, &mut issues)
         .expect("admit the assembly placement")
         .is_some());
@@ -769,7 +790,7 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
 }
 
 fn placement_wire(suffix_len: u64, suffix_sha256: &str) -> AssemblyPlacementRecordWire {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
         "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
         "transform_prefix": false, "transform_encoding": [0, 0],
@@ -903,11 +924,18 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     container.ufrx = UfrxState::Parsed(Box::new(document));
     let decoded = decode_container(&ctx, root, &container)
         .expect("rejected native record must not fail decode");
-    assert!(decoded
-        .body
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+    assert_eq!(
+        decoded
+            .body
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()
+                    || cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            )
+            .count(),
+        1
+    );
     decoded
 }
 
@@ -964,11 +992,11 @@ fn protein_admission_keeps_later_assets_and_rejections() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    let mut issues = Vec::new();
+    let mut issues = Rejections::default();
     let assets = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
         .filter_map(|entry_name| {
-            let wire = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            let wire = json::from_value(cadmpeg_core::json!({
                 "id": "asset", "entry_name": entry_name, "ordinal": 3,
                 "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
                     "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
@@ -979,9 +1007,9 @@ fn protein_admission_keeps_later_assets_and_rejections() {
         })
         .collect::<Vec<_>>();
     assert_eq!(assets.len(), 1);
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].scope, "asset");
-    assert!(issues[0].detail.contains("entry_name"));
+    assert_eq!(issues.issues.len(), 1);
+    assert_eq!(issues.issues[0].scope, "asset");
+    assert!(issues.issues[0].detail.contains("entry_name"));
     let rejections = ["bad.bin", "assets/InstanceProperties.bin"]
         .into_iter()
         .filter_map(|entry_name| {
@@ -999,14 +1027,24 @@ fn protein_admission_keeps_later_assets_and_rejections() {
         })
         .collect::<Vec<_>>();
     assert_eq!(rejections.len(), 1);
-    assert_eq!(issues.len(), 2);
-    assert_eq!(issues[1].scope, "rejection");
-    assert!(issues[1].detail.contains("entry_name"));
+    assert_eq!(issues.issues.len(), 2);
+    assert_eq!(
+        issues
+            .records
+            .iter()
+            .map(|(record, _)| record.as_str())
+            .collect::<Vec<_>>(),
+        ["asset", "rejection"]
+    );
+    assert_eq!(issues.issues[1].scope, "rejection");
+    assert!(issues.issues[1].detail.contains("entry_name"));
 }
 
 #[test]
 fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
-    let bytes = fixture_with_ufrx(b"unreadable optional table");
+    // Schema 15 with a three-entry section-version table, which §8 needs to
+    // hold at least five entries.
+    let bytes = fixture_with_ufrx(&[15, 0, 3, 0, 1, 0, 1, 0, 1, 0]);
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("bounded optional table");
@@ -1032,9 +1070,118 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
         |finding| finding.severity == cadmpeg_ir::report::Severity::Error
             && finding.message.contains("missing arenas")
     ));
-    assert!(decoded
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::unknown::part::record_unreadable_kind()
+        && loss.message.contains("ufrx")));
+}
+
+/// A schema-15 `UFRxDoc` whose section-version count passes the decoder's
+/// bound holds a form that the decoder does not read: the stream is given up
+/// as undecoded, which does not refuse a pinned decode.
+#[test]
+fn ufrx_count_above_the_decoder_bound_is_undecoded() {
+    let mut ufrx = vec![15, 0];
+    ufrx.extend_from_slice(&300_u16.to_le_bytes());
+    ufrx.extend(std::iter::repeat_n(1_u8, 600));
+    let bytes = fixture_with_ufrx(&ufrx);
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a default decode admits the stream");
+    let ufrx_losses = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
+        .filter(|loss| loss.message.contains("ufrx-stream"))
+        .collect::<Vec<_>>();
+    assert_eq!(ufrx_losses.len(), 1, "{ufrx_losses:#?}");
+    assert_eq!(
+        ufrx_losses[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        ufrx_losses[0].message.contains("decoder's bound 256"),
+        "{}",
+        ufrx_losses[0].message
+    );
+}
+
+/// A property section with an unsupported code page gives up its values.
+/// The set directory remains readable.
+#[test]
+fn property_section_in_an_unread_code_page_is_undecoded() {
+    let value = b"abc\0";
+    let section_size = 8 + 2 * 8 + 8 + 8 + 4;
+    let mut set = Vec::new();
+    set.extend_from_slice(&0xfffe_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&0x0002_0006_u32.to_le_bytes());
+    set.extend_from_slice(&[0; 16]);
+    set.extend_from_slice(&1_u32.to_le_bytes());
+    set.extend_from_slice(&[
+        0xe0, 0x85, 0x9f, 0xf2, 0xf9, 0x4f, 0x68, 0x10, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3,
+        0xd9,
+    ]);
+    set.extend_from_slice(&48_u32.to_le_bytes());
+    set.extend_from_slice(&u32::try_from(section_size).expect("fits").to_le_bytes());
+    set.extend_from_slice(&2_u32.to_le_bytes());
+    for (id, offset) in [(1_u32, 24_u32), (2, 32)] {
+        set.extend_from_slice(&id.to_le_bytes());
+        set.extend_from_slice(&offset.to_le_bytes());
+    }
+    set.extend_from_slice(&2_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&65000_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&0x001e_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&u32::try_from(value.len()).expect("fits").to_le_bytes());
+    set.extend_from_slice(value);
+    let mut bytes = fixture_with_ufrx(&set);
+    let entry_start = 512 + 3 * 128;
+    let name = "ZProperty";
+    bytes[entry_start..entry_start + 64].fill(0);
+    for (index, unit) in name.encode_utf16().enumerate() {
+        let offset = entry_start + index * 2;
+        bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    let name_len = u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fits");
+    bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a default decode admits the property set");
+    let set_losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("stream=\"inventor:ZProperty\""))
+        .collect::<Vec<_>>();
+    let [loss] = set_losses.as_slice() else {
+        panic!("one loss for the set's section: {set_losses:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message.starts_with("part property-section "),
+        "{loss:?}"
+    );
+    assert!(
+        loss.message
+            .contains(&format!("offset=48 length={section_size}")),
+        "{loss:?}"
+    );
+    assert!(loss.message.contains("OLE code page 65000"), "{loss:?}");
+    let sets = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace")
+        .arena_as::<crate::native::PropertySetRecord>("property_sets")
+        .expect("the readable property set");
+    let [set] = sets.as_slice() else {
+        panic!("one set is retained: {sets:#?}");
+    };
+    assert_eq!(set.path, "ZProperty");
+    assert_eq!(set.section_count, 0);
 }

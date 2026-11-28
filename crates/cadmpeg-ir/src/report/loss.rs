@@ -99,8 +99,15 @@ pub enum LossTaxonomy {
     /// Named feature operations and their dependency tables were retained as
     /// native passthrough rather than replayed.
     FeatureHistoryRetained,
-    /// The part is an assembly; component geometry lives in external referenced
-    /// files, not inline.
+    /// Content of an assembly that lies in another file or layer and did not
+    /// transfer. On read: a component, member, placement, link, or layer that
+    /// a referenced file holds and the decode did not read or resolve (an
+    /// external component file, a missing, undecoded, or cyclic archive
+    /// member, an unsolved placement or joint occurrence, an unresolved
+    /// component link, an uncomposed layer). On write: an output of an encode
+    /// set that is not written, a link to another output that is not written,
+    /// or a record that no output holds whole because it needs a record of
+    /// another output.
     AssemblyComponentsExternal,
     /// Assembly component occurrence placements were not transferred.
     AssemblyPlacementsNotTransferred,
@@ -293,8 +300,9 @@ impl LossTaxonomy {
 
 /// The shared codes §3.2 spells without a namespace, whichever codec charges
 /// them, each with the strict floor §3.2 states for it.
-pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 6] = [
+pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 7] = [
     ("record.unreadable", Some(Severity::Error)),
+    ("record.undecoded", None),
     ("sidecar.stale", None),
     ("geometry.vertex-tolerance-widened", None),
     ("topology.face-boundary-unstated", None),
@@ -581,6 +589,11 @@ pub struct LossNote {
         deserialize_with = "deserialize_count"
     )]
     pub count: Option<u64>,
+    /// The ids of the give-up this note charges or notes, which the decode
+    /// wrapper reads (CADIR §3.3). The wire form leaves them out.
+    #[serde(skip)]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    pub(crate) give_up: Option<Box<crate::unknown::part::GiveUpIds>>,
 }
 
 impl LossNote {
@@ -593,6 +606,7 @@ impl LossNote {
             message: message.into(),
             provenance: None,
             count: None,
+            give_up: None,
         }
     }
 

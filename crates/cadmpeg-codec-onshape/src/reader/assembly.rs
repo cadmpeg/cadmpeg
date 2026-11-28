@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bundle product structure projection.
 
-use super::{empty, id, optional_rows, rows, studio, text, Mapping, Model, Report, ROWS};
+use super::{empty, id, optional_rows, rows, studio, text, Mapping, Model, Report, Session, ROWS};
 use crate::archive::Bundle;
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocument, JointConnector, JointOperand, Occurrence, ProductDefinition,
     ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,15 +21,33 @@ mod index;
 mod mates;
 
 const ASSEMBLY_DEPTH: usize = 64;
+
+/// The rows of an optional array field of a source record.
+enum Rows<'v> {
+    /// The field is absent or holds an array within the row limit.
+    Read(&'v [Value]),
+    /// The field holds an array over the row limit.
+    Bounded(String),
+    /// The field holds no array.
+    Malformed(String),
+}
+
+fn split_rows<'v>(row: &'v Value, field: &str) -> Rows<'v> {
+    match optional_rows(row, field) {
+        Ok(rows) => Rows::Read(rows),
+        Err(reason) if row.get(field).is_some_and(Value::is_array) => Rows::Bounded(reason),
+        Err(_) => Rows::Malformed(format!("{field} is not an array")),
+    }
+}
 const MATE_NOTES_PER_LEVEL: usize = 16;
 const MATE_NOTE_LIMIT: usize = 256;
 
-pub(super) fn read(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
+pub(super) fn read<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
     step_decoder: crate::StepDecoder,
     report: &mut Report,
-    bundle: &Bundle<'_>,
+    bundle: &Bundle<'a>,
     mid: &str,
     manifest: &Value,
 ) -> Result<Model, Error> {
@@ -41,22 +61,43 @@ pub(super) fn read(
             declared.entry(eid).or_insert(position);
         }
     }
+    let root_id = match manifest.get("root_element") {
+        None | Some(Value::Null) => elements
+            .iter()
+            .find(|element| element.get("type").and_then(Value::as_str) == Some("ASSEMBLY"))
+            .and_then(|element| element.get("id"))
+            .and_then(Value::as_str),
+        Some(Value::String(eid)) => Some(eid.as_str()),
+        Some(Value::Object(root)) => root.get("id").and_then(Value::as_str),
+        Some(_) => None,
+    };
+    let mut session = Session {
+        ctx,
+        bundle,
+        root,
+        step_decoder,
+        studios: BTreeMap::new(),
+    };
     for (position, element) in elements.iter().enumerate() {
         if let Some(eid) = element.get("id").and_then(Value::as_str) {
-            if declared.get(eid) != Some(&position) {
+            if let Some(&first) = declared.get(eid).filter(|&&first| first != position) {
                 report.push_coded(
                     eid,
                     OnshapeLossCode::AssemblyRecordRepeated,
-                    "element id repeats; retained the first declaration",
+                    if elements.get(first) == Some(element) {
+                        "element id repeats with the same content; retained the first declaration"
+                    } else {
+                        "element id repeats with different content; retained the first declaration"
+                    },
                 );
                 continue;
             }
         }
+        let stated = element.get("id").and_then(Value::as_str);
+        // The give-up of the root names an invalid root id.
         if element.get("type").and_then(Value::as_str) == Some("ASSEMBLY")
-            && !element
-                .get("id")
-                .and_then(Value::as_str)
-                .is_some_and(element_id)
+            && !stated.is_some_and(element_id)
+            && (stated.is_none() || stated != root_id)
         {
             report.push_coded(
                 "assembly element",
@@ -70,35 +111,54 @@ pub(super) fn read(
         let eid = match text(element, "id") {
             Ok(eid) => eid,
             Err(reason) => {
-                report.push_coded(
+                report.give_up_as(
+                    &format!("manifest.json#/elements/{position}"),
                     "element",
-                    OnshapeLossCode::AssemblyReferenceUnresolved,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                    ),
                     reason,
                 );
                 continue;
             }
         };
         if !element_id(eid) {
-            report.push_coded(
+            report.give_up_as(
+                &format!("manifest.json#/elements/{position}"),
                 eid,
-                OnshapeLossCode::AssemblyRecordUnsupported,
+                (
+                    Cause::Unreadable,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                ),
                 "element id has an invalid folder character",
             );
             continue;
         }
-        let part = match ctx.run_part(|| {
-            studio(ctx, root, step_decoder, report, bundle, mid, eid).map_err(Into::into)
-        })? {
-            Ok(part) => part,
-            Err(error) => {
-                report.push_coded(
-                    eid,
-                    OnshapeLossCode::AssemblyReferenceUnresolved,
-                    error.to_string(),
-                );
-                continue;
-            }
-        };
+        let part =
+            match ctx.run_part(|| studio(&mut session, report, mid, eid).map_err(Into::into))? {
+                Ok(part) => part,
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => {
+                    report.push_coded(
+                        eid,
+                        OnshapeLossCode::AssemblyReferenceUnresolved,
+                        error.to_string(),
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    report.give_up_as(
+                        &format!("partstudios/{eid}"),
+                        eid,
+                        (
+                            crate::archive::cause_of(&error),
+                            OnshapeLossCode::AssemblyReferenceUnresolved,
+                        ),
+                        error.to_string(),
+                    );
+                    continue;
+                }
+            };
         let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(format!(
             "/{}",
             cadmpeg_ir::ids::IdentityKey::encode_key_text(eid)
@@ -151,46 +211,36 @@ pub(super) fn read(
         let ledger: cadmpeg_ir::report::decode::TransferLedger =
             rescope_home(ctx, &part.body.transfer_ledger, &home)?;
         model.body.transfer_ledger.entries.extend(ledger.entries);
-        model.body.losses.extend(part.body.losses);
+        let mut losses = part.body.losses;
+        for loss in &mut losses {
+            cadmpeg_ir::unknown::part::rescope_give_up(loss, |id| Ok(home.map(id)))
+                .map_err(|e| Error::Decode(e.to_string()))?;
+        }
+        model.body.losses.extend(losses);
         model.body.notes.extend(part.body.notes);
     }
     model.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
         ctx.depth(),
         !model.ir.geometry.bodies.is_empty(),
     );
-    let root_id = match manifest.get("root_element") {
-        None | Some(Value::Null) => rows(manifest, "elements")
-            .map_err(Error::Decode)?
-            .iter()
-            .find(|element| element.get("type").and_then(Value::as_str) == Some("ASSEMBLY"))
-            .and_then(|element| element.get("id"))
-            .and_then(Value::as_str),
-        Some(Value::String(eid)) => Some(eid.as_str()),
-        Some(Value::Object(root)) => root.get("id").and_then(Value::as_str),
-        Some(_) => None,
-    };
     if root_id.is_none()
         && manifest
             .get("root_element")
             .is_some_and(|root| !root.is_null())
     {
-        report.push_coded(
+        report.give_up_as(
+            "manifest.json#/root_element",
             "root_element",
-            OnshapeLossCode::AssemblyRecordUnsupported,
+            (
+                Cause::Unreadable,
+                OnshapeLossCode::AssemblyRecordUnsupported,
+            ),
             "root_element requires a string or an object with a string id",
         );
     }
     let Some(root_id) = root_id else {
         return Ok(model);
     };
-    if !element_id(root_id) {
-        report.push_coded(
-            root_id,
-            OnshapeLossCode::AssemblyRecordUnsupported,
-            "assembly root id has an invalid folder character",
-        );
-        return Ok(model);
-    }
     if declared.get(root_id).is_some_and(|position| {
         elements
             .get(*position)
@@ -200,19 +250,50 @@ pub(super) fn read(
     }) {
         return Ok(model);
     }
-    let definition = match bundle.json(&format!("assemblies/{root_id}/definition.json")) {
+    if !element_id(root_id) {
+        let root_record = match manifest.get("root_element") {
+            None | Some(Value::Null) => declared.get(root_id).map_or_else(
+                || "manifest.json#/elements".to_owned(),
+                |position| format!("manifest.json#/elements/{position}"),
+            ),
+            Some(_) => "manifest.json#/root_element".to_owned(),
+        };
+        report.give_up_as(
+            &root_record,
+            root_id,
+            (
+                Cause::Unreadable,
+                OnshapeLossCode::AssemblyRecordUnsupported,
+            ),
+            "assembly root id has an invalid folder character",
+        );
+        return Ok(model);
+    }
+    let definition_path = format!("assemblies/{root_id}/definition.json");
+    let definition_path = definition_path.as_str();
+    let definition = match bundle.json(definition_path) {
         Ok(value) => value,
         Err(error) => {
-            report.push_coded(
-                root_id,
-                OnshapeLossCode::AssemblyRecordUnsupported,
-                error.to_string(),
-            );
+            if !bundle.omitted(definition_path) {
+                report.push_coded(
+                    root_id,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    error.to_string(),
+                );
+            }
             return Ok(model);
         }
     };
     let studio_definitions = model.ir.model.product_definitions.len();
-    let index = index::Index::build(ctx, definition, manifest, bundle, mid, report)?;
+    let index = index::Index::build(
+        ctx,
+        definition,
+        definition_path,
+        manifest,
+        bundle,
+        mid,
+        report,
+    )?;
     let mut products = BTreeMap::new();
     for (position, product) in model.ir.model.product_definitions.iter().enumerate() {
         ctx.charge_entities(1, "Onshape product identity index")?;
@@ -233,20 +314,31 @@ pub(super) fn read(
         single_bodies: &single_bodies,
         microversion: mid,
         root_element: root_id,
+        definition: definition_path,
         placements: BTreeMap::new(),
+        given_up: BTreeMap::new(),
         products,
         joint_ids,
+        joint_paths: BTreeMap::new(),
         count: 0,
         mate_work: 0,
         mate_notes: 0,
         omitted_mate_notes: 0,
         mate_exhausted: false,
     };
+    let mut structure_root = None;
     if let Some(root) = definition
         .get("rootAssembly")
         .filter(|root| root.is_object())
     {
-        let product = structure.level(root, &[], Some(Transform::identity()), false)?;
+        let product = structure.level(
+            root,
+            &[],
+            Some(Transform::identity()),
+            false,
+            &format!("{definition_path}#/rootAssembly"),
+        )?;
+        structure_root = Some(product.clone());
         if let Some(position) = structure.products.get(&product) {
             if let Some(product) = structure
                 .model
@@ -262,9 +354,13 @@ pub(super) fn read(
             }
         }
     } else {
-        structure.report.push_coded(
+        structure.report.give_up_as(
+            definition_path,
             root_id,
-            OnshapeLossCode::AssemblyRecordUnsupported,
+            (
+                Cause::Unreadable,
+                OnshapeLossCode::AssemblyRecordUnsupported,
+            ),
             "rootAssembly is missing or malformed",
         );
     }
@@ -279,7 +375,18 @@ pub(super) fn read(
         );
     }
 
+    let root = structure_root;
+    let joint_paths = structure.resolved_paths();
     release_bound_bodies(&mut model.ir.model.product_definitions, studio_definitions);
+    if let Some(root) = root {
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "Onshape assembly",
+            &mut model.ir,
+            &mut report.notes,
+            |ir, _| crate::reader::design::assembly::project(ctx, ir, &root, &joint_paths),
+        )?;
+    }
     Ok(model)
 }
 
@@ -382,7 +489,7 @@ fn rescope_home<T: serde::Serialize + serde::de::DeserializeOwned>(
     }
     let mut value = cadmpeg_ir::schema::structural::project(ctx, home, "Onshape home projection")?;
     visit(ctx, &mut value, rehome)?;
-    cadmpeg_core::serde_erase::json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
+    json::from_value(value).map_err(|e| Error::Decode(e.to_string()))
 }
 
 fn merge_design(target: &mut cadmpeg_ir::document::Design, source: cadmpeg_ir::document::Design) {
@@ -420,6 +527,12 @@ struct Placement {
     id: OccurrenceId,
     world: Option<Transform>,
 }
+/// The native paths of a mate: of each connector's occurrence, and of the
+/// sub-assembly that lists it, empty at the root.
+struct NativePaths {
+    connectors: [Vec<String>; 2],
+    listed: Vec<String>,
+}
 struct Structure<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
     report: &'a mut Report,
@@ -431,14 +544,70 @@ struct Structure<'a, 'ctx> {
     single_bodies: &'a BTreeMap<String, Option<BodyId>>,
     microversion: &'a str,
     root_element: &'a str,
+    /// The member path of the assembly definition.
+    definition: &'a str,
     placements: BTreeMap<Vec<String>, Placement>,
+    /// The source address of each instance the decode gives up, by its
+    /// occurrence path.
+    given_up: BTreeMap<Vec<String>, String>,
     products: BTreeMap<ProductDefinitionId, usize>,
     joint_ids: BTreeSet<cadmpeg_ir::products::JointId>,
+    /// The native path from the root of each connector of each mate, and of
+    /// the sub-assembly that lists the mate.
+    joint_paths: BTreeMap<cadmpeg_ir::products::JointId, NativePaths>,
     count: usize,
     mate_work: usize,
     mate_notes: usize,
     omitted_mate_notes: usize,
     mate_exhausted: bool,
+}
+impl Structure<'_, '_> {
+    /// The occurrence path of each mate whose native paths every placement
+    /// resolves.
+    fn resolved_paths(&self) -> crate::reader::design::assembly::JointPaths {
+        let steps = |path: &[String]| {
+            (1..=path.len())
+                .map(|level| {
+                    self.placements
+                        .get(&path[..level])
+                        .map(|placement| placement.id.clone())
+                })
+                .collect::<Option<Vec<_>>>()
+        };
+        self.joint_paths
+            .iter()
+            .filter_map(|(joint, paths)| {
+                let component = if paths.listed.is_empty() {
+                    None
+                } else {
+                    let placed = self.placements.get(&paths.listed)?;
+                    Some(
+                        self.model
+                            .ir
+                            .model
+                            .occurrences
+                            .iter()
+                            .find(|occurrence| occurrence.id == placed.id)?
+                            .prototype
+                            .clone(),
+                    )
+                };
+                // A path starts at the definition that lists the mate.
+                let local = |path: &[String]| {
+                    let steps = steps(path)?;
+                    steps.get(paths.listed.len()..).map(<[_]>::to_vec)
+                };
+                let [first, second] = &paths.connectors;
+                Some((
+                    joint.clone(),
+                    crate::reader::design::assembly::Paths {
+                        connectors: [local(first)?, local(second)?],
+                        component,
+                    },
+                ))
+            })
+            .collect()
+    }
 }
 fn element_id(eid: &str) -> bool {
     !eid.is_empty()
@@ -448,7 +617,7 @@ fn element_id(eid: &str) -> bool {
 }
 
 fn key(path: &[String]) -> String {
-    cadmpeg_core::serde_erase::json::to_string(path).unwrap_or_default()
+    json::to_string(path).unwrap_or_default()
 }
 fn product_id(native: &str) -> Result<ProductDefinitionId, Error> {
     id("product", native)
@@ -520,20 +689,23 @@ impl Structure<'_, '_> {
         }
         Ok(())
     }
+    /// Maps the assembly `assembly`, the source record at `source`, at the
+    /// occurrence path `path`.
     fn level(
         &mut self,
         assembly: &Value,
         path: &[String],
         parent: Option<Transform>,
         suppressed: bool,
+        source: &str,
     ) -> Result<ProductDefinitionId, Error> {
         let _depth = self.ctx.enter_nested("Onshape assembly structure")?;
         let pid = product_id(&format!("assembly:{}", key(path)))?;
         let mut product = ProductDefinition::new(pid.clone(), Storage::Embedded);
         product.kind = Some(ProductDefinitionKind::Assembly);
-        let instances = match optional_rows(assembly, "instances") {
-            Ok(rows) => rows,
-            Err(reason) => {
+        let instances = match split_rows(assembly, "instances") {
+            Rows::Read(rows) => rows,
+            Rows::Bounded(reason) => {
                 self.report.push_coded(
                     &key(path),
                     OnshapeLossCode::AssemblyRecordUnsupported,
@@ -541,8 +713,21 @@ impl Structure<'_, '_> {
                 );
                 &[]
             }
+            Rows::Malformed(reason) => {
+                self.report.give_up_as(
+                    &format!("{source}/instances"),
+                    &key(path),
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
+                    reason,
+                );
+                &[]
+            }
         };
-        for instance in instances {
+        let mut kept = BTreeMap::<&str, &Value>::new();
+        for (position, instance) in instances.iter().enumerate() {
             if self.count >= ROWS {
                 self.report.push_coded(
                     &key(path),
@@ -553,35 +738,81 @@ impl Structure<'_, '_> {
             }
             self.count += 1;
             self.ctx.charge_entities(3, "Onshape assembly instance")?;
-            match self.instance(instance, path, parent, suppressed) {
-                Ok(occurrence) => product.occurrences.push(occurrence),
-                Err(Error::Decode(reason)) => self.report.push_coded(
-                    &key(path),
-                    OnshapeLossCode::AssemblyRecordUnsupported,
-                    reason,
-                ),
+            let record = format!("{source}/instances/{position}");
+            let native = match text(instance, "id") {
+                Ok(native) => native,
+                Err(reason) => {
+                    self.report.give_up_as(
+                        &record,
+                        &key(path),
+                        (
+                            Cause::Unreadable,
+                            OnshapeLossCode::AssemblyRecordUnsupported,
+                        ),
+                        reason,
+                    );
+                    continue;
+                }
+            };
+            let mut child = path.to_vec();
+            child.push(native.to_owned());
+            if let Some(&first) = kept.get(native) {
+                if first == instance {
+                    self.report.push_coded(
+                        &key(&child),
+                        OnshapeLossCode::AssemblyRecordRepeated,
+                        "instance path repeats with the same content; retained the first instance",
+                    );
+                } else {
+                    self.report.give_up_as(
+                        &record,
+                        &key(&child),
+                        (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
+                        "instance path repeats with different content; retained the first instance",
+                    );
+                }
+                continue;
+            }
+            match self.instance(instance, native, &child, parent, suppressed) {
+                Ok(occurrence) => {
+                    product.occurrences.push(occurrence);
+                    kept.insert(native, instance);
+                    // A later instance that holds the path of a given-up one
+                    // keeps the mates that name the path.
+                    self.given_up.remove(&child);
+                }
+                Err(Error::Decode(reason)) => {
+                    self.report.give_up_as(
+                        &record,
+                        &key(&child),
+                        (
+                            Cause::Unreadable,
+                            OnshapeLossCode::AssemblyRecordUnsupported,
+                        ),
+                        reason,
+                    );
+                    self.given_up.insert(child, record);
+                }
                 Err(error) => return Err(error),
             }
         }
         self.ctx.charge_entities(1, "Onshape assembly definition")?;
         self.insert_product(product);
-        mates::project(self, assembly, path, suppressed)?;
+        mates::project(self, assembly, path, suppressed, source)?;
         Ok(pid)
     }
 
+    /// Maps the instance `instance`, whose id is `native`, at the occurrence
+    /// path `path`.
     fn instance(
         &mut self,
         instance: &Value,
-        parent_path: &[String],
+        native: &str,
+        path: &[String],
         parent: Option<Transform>,
         inherited_suppressed: bool,
     ) -> Result<OccurrenceId, Error> {
-        let native = text(instance, "id").map_err(Error::Decode)?;
-        let mut path = parent_path.to_vec();
-        path.push(native.to_owned());
-        if self.placements.contains_key(&path) {
-            return Err(Error::Decode("instance path repeats".into()));
-        }
+        let path = path.to_vec();
         let occurrence = self.index.occurrences.get(&path).copied();
         let world = occurrence
             .and_then(|o| o.get("transform"))
@@ -642,8 +873,9 @@ impl Structure<'_, '_> {
                     .get(&self.index.definition_key(instance))
                     .copied();
                 match sub {
-                    Some(sub) if path.len() < ASSEMBLY_DEPTH => {
-                        self.level(sub, &path, trusted_world, suppressed)?
+                    Some((position, sub)) if path.len() < ASSEMBLY_DEPTH => {
+                        let source = format!("{}#/subAssemblies/{position}", self.definition);
+                        self.level(sub, &path, trusted_world, suppressed, &source)?
                     }
                     Some(_) => {
                         self.report.push_coded(

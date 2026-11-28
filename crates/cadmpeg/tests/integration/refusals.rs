@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Refusals and exit statuses: what the CLI declines to do, and how it says so.
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 
 use assert_cmd::Command;
@@ -90,8 +91,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         ])
         .assert()
         .code(1);
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert!(value["decode_report"].is_object());
     assert!(value["export"].is_null());
 
@@ -124,8 +124,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .code(1)
             .stderr(predicate::str::contains("the decode's strictness refuses"));
 
-        let value: serde_json::Value =
-            cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_eq!(value["status"], "refused");
         assert_eq!(value["refusal"]["stage"], "decode");
         assert_eq!(value["refusal"]["code"], "strict_decode_rejected");
@@ -137,8 +136,8 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .unwrap()
             .iter()
             .any(|loss| {
-                loss["code"]["value"]["namespace"] == "rhino"
-                    && loss["code"]["value"]["code"] == "object.framing-undecodable"
+                loss["code"]["value"]["namespace"] == "decode"
+                    && loss["code"]["value"]["code"] == "record.unreadable"
             }));
     }
 }
@@ -162,8 +161,7 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ISO-10303-21"));
-    let report: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let report: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert!(report["export"]["losses"]
         .as_array()
         .unwrap()
@@ -195,8 +193,7 @@ fn convert_writes_a_container_only_document_to_step() {
         .assert()
         .success();
     assert!(fs::read(&output).unwrap().starts_with(b"ISO-10303-21"));
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert!(value["export"]["losses"]
         .as_array()
         .unwrap()
@@ -240,8 +237,7 @@ fn convert_writes_a_container_only_document_to_iges_and_reject_empty_refuses_it(
     let report = dir.path().join("written.json");
     run(&output, &report, false).success();
     assert!(!fs::read(&output).unwrap().is_empty());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert!(value["export"]["losses"]
         .as_array()
         .unwrap()
@@ -253,8 +249,7 @@ fn convert_writes_a_container_only_document_to_iges_and_reject_empty_refuses_it(
     let report = dir.path().join("refused.json");
     run(&refused, &report, true).code(1);
     assert!(!refused.exists());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "strict_export_rejected");
 }
 
@@ -285,8 +280,7 @@ fn convert_replays_a_container_only_f3z_and_reports_the_carried_source() {
         .assert()
         .success();
     assert_eq!(fs::read(&output).unwrap(), source.as_slice());
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["export"]["write_path"]["kind"], "verbatim_replay");
     assert!(value["export"]["losses"]
         .as_array()
@@ -355,8 +349,7 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
         ])
         .assert()
         .code(1);
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["stage"], "plan");
     assert_eq!(value["refusal"]["code"], "unsupported_output_format");
     assert!(value["decode_report"].is_null());
@@ -464,8 +457,7 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("iges cannot write 9.9"));
-    let value: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
     assert_eq!(
         value["refusal"]["target"]["refusal"]["kind"],
@@ -614,17 +606,16 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             predicate::str::contains("the write's strictness refuses")
                 .and(predicate::str::contains("the decode's strictness").not()),
         );
-    let report: serde_json::Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(export_report).unwrap()).unwrap();
+    let report: serde_json::Value = json::from_slice(&fs::read(export_report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "strict_export_rejected");
     assert_eq!(report["refusal"]["stage"], "export");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["kind"], "native");
+    // The decode's one native record is a `creo` `unknowns` stub, which
+    // incurs no omission loss (Rule W3).
     let losses = report["export"]["losses"].as_array().unwrap();
-    assert_eq!(losses.len(), 2);
-    assert!(losses
-        .iter()
-        .any(|loss| loss["code"]["value"]["code"] == "output.empty"));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0]["code"]["value"]["code"], "output.empty");
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &{
         let mut cube = unit_cube().expect("unit cube fixture is admitted");
@@ -696,7 +687,8 @@ fn a_cross_format_convert_that_names_no_target_is_not_refused() {
             ])
             .assert()
             .success();
-        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(report).unwrap()).unwrap();
         assert_eq!(
             report["export"]["identity"]["target"], "step:ap214",
             "{name}"
@@ -807,10 +799,8 @@ fn closed_stdout_pipe_exits_on_sigpipe_without_panic() {
 #[test]
 fn reject_lossy_decode_judges_the_cadir_read_report() {
     let dir = tempdir().unwrap();
-    let mut value = cadmpeg_core::serde_erase::json::to_value(
-        unit_cube().expect("unit cube fixture is admitted"),
-    )
-    .expect("the unit cube writes");
+    let mut value = json::to_value(unit_cube().expect("unit cube fixture is admitted"))
+        .expect("the unit cube writes");
     value["geometry"]["points"]
         .as_array_mut()
         .unwrap()

@@ -3,7 +3,7 @@
 
 use crate::records::{
     recipes::ConstructionRecipeKind,
-    references::PersistentReferenceKind,
+    references::{PersistentReference, PersistentReferenceKind},
     sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
 use crate::writer::primitives::zero_fill_to;
@@ -21,11 +21,35 @@ use super::{
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
+#[derive(Default)]
 pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) bytes: Vec<u8>,
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+    /// The record indices of the indexed records the stream holds with no
+    /// primary index entry.
+    pub(super) without_primary: BTreeSet<u64>,
+}
+
+impl EncodedDesignBulkStream {
+    /// The record index of every indexed record the stream holds.
+    fn written(&self) -> BTreeSet<u64> {
+        self.primary_records
+            .iter()
+            .map(|record| record.entity_id)
+            .chain(self.without_primary.iter().copied())
+            .collect()
+    }
+}
+
+/// Design parameter records and their record indices, which the stream
+/// holds with no primary index entry.
+#[derive(Default)]
+pub(in crate::writer::generate) struct ParameterRecords {
+    pub(in crate::writer::generate) bytes: Vec<u8>,
+    pub(in crate::writer::generate) indices: Vec<u32>,
 }
 
 pub(super) fn tolerant_coedge_range(
@@ -44,27 +68,28 @@ pub(super) fn native_tolerant_coedge_extension(
     index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
 ) -> Result<(), CodecError> {
-    let extension = index
-        .tolerant_coedges
-        .get(coedge.as_str())
-        .map(|parameters| &parameters.extension);
-    match extension {
+    let parameters = index.tolerant_coedges.get(coedge.as_str()).copied();
+    match parameters.map(|parameters| (&parameters.extension, parameters.parameter_range)) {
         None
-        | Some(
+        | Some((
             cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None },
-        ) => {
+            _,
+        )) => {
             native_ref(records, -1);
             native_i64(records, 0);
             native_i64(records, 0);
             Ok(())
         }
-        Some(cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-            target: None,
-            curve_reversed,
-            parameter_range,
-            ..
-        }) => {
+        Some((
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                curve_reversed,
+                parameter_range,
+                ..
+            },
+            record_range,
+        )) => {
             let model_coedge = target
                 .geometry
                 .coedges
@@ -87,6 +112,15 @@ pub(super) fn native_tolerant_coedge_extension(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
+            let written_range = if super::preconditions::reads_as_use_curve_range(
+                (*parameter_range).unwrap_or(record_range),
+                curve,
+                use_curve.parameter_range,
+            ) {
+                (*parameter_range).map(cadmpeg_ir::units::FiniteVector::get)
+            } else {
+                Some(use_curve.parameter_range.endpoints())
+            };
             let mut native_curve = curve.clone();
             if *curve_reversed {
                 native_curve.reverse_parameterization();
@@ -97,8 +131,7 @@ pub(super) fn native_tolerant_coedge_extension(
             records.push(0x0f);
             native_nurbs_curve(records, &native_curve)?;
             records.push(0x10);
-            if let Some(range) = *parameter_range {
-                let [start, end] = range.get();
+            if let Some([start, end]) = written_range {
                 records.push(0x0a);
                 native_f64(records, start);
                 records.push(0x0a);
@@ -115,33 +148,28 @@ pub(super) fn native_tolerant_coedge_extension(
     }
 }
 
+/// The sketch headers whose member run the written Design stream leaves
+/// out: the written header form stores the reference list and the
+/// base-record slot.
+pub(super) fn member_run_loss(native: &F3dNative) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these sketch headers without their member run: the written header form stores the reference list and the base-record slot",
+        native
+            .design_entity_headers
+            .iter()
+            .filter(|header| header.member_values().next().is_some())
+            .map(|header| header.id.clone()),
+    )
+}
+
 pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
-    parameter_bytes: Vec<u8>,
+    parameters: ParameterRecords,
     neutral: Option<&super::design::frames::DesignRecords>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    if !native.design_parameter_companions.is_empty()
-        || !native.design_dimension_annotation_frames.is_empty()
-        || !native.design_dimension_presentation_frames.is_empty()
-        || !native.design_face_source_groups.is_empty()
-        || !native.design_dimension_locus_pairs.is_empty()
-        || !native.design_dimension_locus_groups.is_empty()
-        || !native.design_dimension_null_locus_pairs.is_empty()
-        || !native.design_dimension_recipe_records.is_empty()
-        || !native.design_parameter_owners.is_empty()
-        || !native.design_parameter_scopes.is_empty()
-        || !native.design_sketch_placements.is_empty()
-        || native
-            .design_entity_headers
-            .iter()
-            .any(|header| header.member_values().next().is_some())
-    {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D Design parameter records are not writable".into(),
-        ));
-    }
     let has_body_visibility = target
         .geometry
         .bodies
@@ -149,6 +177,7 @@ pub(super) fn encode_design_bulkstream(
         .any(|body| body.visible.is_some());
     if neutral.is_none()
         && native.design_parameters.is_empty()
+        && parameters.bytes.is_empty()
         && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -156,7 +185,6 @@ pub(super) fn encode_design_bulkstream(
         && native.design_entity_headers.is_empty()
         && native.design_record_headers.is_empty()
         && native.design_face_source_groups.is_empty()
-        && native.design_material_assignments.is_empty()
         && native.sketch_points.is_empty()
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()
@@ -166,34 +194,52 @@ pub(super) fn encode_design_bulkstream(
         return Ok(None);
     }
 
-    let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
-    if let Some(body_map) = &registry.body_map {
-        let class_tag = body_map.class_tag.as_str();
-        let record_index = body_map.record_index;
-        primary_records.push(primary_record(record_index, out.len())?);
-        native_lp_ascii(&mut out, class_tag)?;
-        out.extend_from_slice(&record_index.to_le_bytes());
-        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(body_map.entries.as_map().len())
-            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
-        out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
-            out.extend_from_slice(&body_key.to_le_bytes());
-            out.extend_from_slice(&entity_suffix.to_le_bytes());
-        }
-        out.extend_from_slice(&0u64.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes());
-        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
+    let mut without_primary = parameters
+        .indices
+        .into_iter()
+        .map(u64::from)
+        .collect::<BTreeSet<_>>();
+    // A primary-indexed record extends to the next primary-indexed record, so
+    // the reference runs, which no primary entry bounds, precede every record.
+    let mut out = Vec::new();
+    for reference in standalone_references(native) {
+        out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&reference.value.to_le_bytes());
     }
-    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
-    if let Some(records) = neutral {
-        let base = out.len();
-        for &(record_index, offset) in &records.primaries {
-            primary_records.push(primary_record(record_index, base + offset)?);
+    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
+        if let Some(previous) = ordinal
+            .checked_sub(1)
+            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
+        {
+            if previous.next_class_tag != reference.class_tag
+                || previous.next_record_index != reference.record_index
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D lost-edge record {} does not continue the preceding indexed run",
+                    reference.id
+                )));
+            }
+        } else {
+            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
+            out.extend_from_slice(&reference.record_index.to_le_bytes());
+            without_primary.insert(u64::from(reference.record_index));
         }
-        out.extend_from_slice(&records.bytes);
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&19u32.to_le_bytes());
+        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
+        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+        without_primary.insert(u64::from(reference.next_record_index));
     }
+    out.extend_from_slice(&parameters.bytes);
+    // The recipes, the `BodiesRoot` record and the record-header stubs hold
+    // no primary index entry, so they precede the first primary record.
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -215,6 +261,7 @@ pub(super) fn encode_design_bulkstream(
             ));
         };
         prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
+        without_primary.insert(u64::from(record_index.value.cast_unsigned()));
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {
@@ -244,9 +291,48 @@ pub(super) fn encode_design_bulkstream(
         }
         out.push(0);
     }
-    for header in &native.design_record_headers {
+    // The prefix of a typed sketch record is written with that record.
+    let own = super::preconditions::own_record_headers(native);
+    for header in native
+        .design_record_headers
+        .iter()
+        .filter(|header| !own.contains(header.id.as_str()))
+    {
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
+        without_primary.insert(u64::from(header.record_index));
+    }
+    if let Some(body_map) = &registry.body_map {
+        let class_tag = body_map.class_tag.as_str();
+        let record_index = body_map.record_index;
+        primary_records.push(primary_record(record_index, out.len())?);
+        native_lp_ascii(&mut out, class_tag)?;
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+        let count = u32::try_from(body_map.entries.as_map().len())
+            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
+        out.extend_from_slice(&count.to_le_bytes());
+        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
+            out.extend_from_slice(&body_key.to_le_bytes());
+            out.extend_from_slice(&entity_suffix.to_le_bytes());
+        }
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
+    }
+    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    if let Some(records) = neutral {
+        let base = out.len();
+        for &(record_index, offset) in &records.primaries {
+            primary_records.push(primary_record(record_index, base + offset)?);
+        }
+        without_primary.extend(
+            records
+                .secondaries
+                .iter()
+                .map(|&(record_index, _)| u64::from(record_index)),
+        );
+        out.extend_from_slice(&records.bytes);
     }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
@@ -344,41 +430,10 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
-    for reference in &native.persistent_references {
-        out.extend_from_slice(persistent_reference_name(reference.kind));
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&14u32.to_le_bytes());
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&reference.value.to_le_bytes());
-    }
-    for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
-        if let Some(previous) = ordinal
-            .checked_sub(1)
-            .and_then(|ordinal| native.lost_edge_references.get(ordinal))
-        {
-            if previous.next_class_tag != reference.class_tag
-                || previous.next_record_index != reference.record_index
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D lost-edge record {} does not continue the preceding indexed run",
-                    reference.id
-                )));
-            }
-        } else {
-            native_lp_ascii(&mut out, reference.class_tag.as_str())?;
-            out.extend_from_slice(&reference.record_index.to_le_bytes());
-        }
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&19u32.to_le_bytes());
-        out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
-        out.extend_from_slice(&reference.next_record_index.to_le_bytes());
-    }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
+        without_primary,
     }))
 }
 
@@ -401,27 +456,36 @@ fn primary_record_u64(
     })
 }
 
+/// A parameter record in the user form the Design stream writes, with its
+/// family discriminator, source ordinal, expression and value in database
+/// units.
+pub(super) struct UserParameter<'a> {
+    pub(super) record: &'a crate::records::parameters::DesignParameter,
+    pub(super) family_discriminator: crate::records::parameters::DesignParameterDiscriminator,
+    pub(super) source_ordinal: u32,
+    pub(super) expression: &'a str,
+    pub(super) evaluated: f64,
+}
+
 /// The document parameters as Design records whose tails name the parameter
 /// collection `collection_record_index`.
 pub(super) fn encode_document_parameters(
-    parameters: &[crate::records::parameters::DesignParameter],
+    parameters: &[UserParameter<'_>],
     collection_record_index: u32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<ParameterRecords, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
-    for parameter in parameters {
-        let crate::records::parameters::DesignParameterSource::User {
-            family_discriminator: Some(family_discriminator),
-            ..
-        } = parameter.source()
-        else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D owned Design parameter records are not writable".into(),
-            ));
-        };
+    for UserParameter {
+        record: parameter,
+        family_discriminator,
+        source_ordinal,
+        expression,
+        evaluated,
+    } in parameters
+    {
         if !parameter_indices.insert(parameter.record_index)
-            || !parameter_ordinals.insert(parameter.source_ordinal)
+            || !parameter_ordinals.insert(*source_ordinal)
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} duplicates a record index or source ordinal",
@@ -435,12 +499,12 @@ pub(super) fn encode_document_parameters(
         // (empty when none), the ordinal, the null owner, the expression, the
         // ten-byte trailer with the document flag, and the empty text value.
         out.extend_from_slice(&[0; 11]);
-        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
+        out.extend_from_slice(&family_discriminator.code().to_le_bytes());
         out.push(0);
         native_lp_utf16(&mut out, parameter.comment().unwrap_or_default())?;
-        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+        out.extend_from_slice(&source_ordinal.to_le_bytes());
         out.push(0);
-        native_lp_utf16(&mut out, parameter.expression())?;
+        native_lp_utf16(&mut out, expression)?;
         out.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
@@ -450,12 +514,18 @@ pub(super) fn encode_document_parameters(
             out.extend_from_slice(&0u32.to_le_bytes());
         }
         native_lp_utf16(&mut out, parameter.name())?;
-        out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
+        out.extend_from_slice(&evaluated.to_le_bytes());
         out.extend_from_slice(&[0, 1]);
         out.extend_from_slice(&collection_record_index.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
     }
-    Ok(out)
+    Ok(ParameterRecords {
+        bytes: out,
+        indices: parameters
+            .iter()
+            .map(|parameter| parameter.record.record_index)
+            .collect(),
+    })
 }
 
 fn encode_sketch_record_header(
@@ -860,6 +930,32 @@ fn write_reference(out: &mut Vec<u8>, target: u32) {
     out.extend_from_slice(&[0, 0]);
 }
 
+/// Append the `DesignConfigurationRoot` record `record_index` of type
+/// `class_tag`, which names row `row_id` of table `table_id` (f3d.md §1.2).
+pub(super) fn encode_configuration_root(
+    bulk: &mut EncodedDesignBulkStream,
+    class_tag: &crate::records::references::DesignClassTag,
+    record_index: u32,
+    table_id: &str,
+    row_id: &str,
+) -> Result<(), CodecError> {
+    use crate::layout::configuration_root_prefix as root;
+
+    let out = &mut bulk.bytes;
+    bulk.primary_records
+        .push(primary_record(record_index, out.len())?);
+    native_lp_ascii(out, class_tag.as_str())?;
+    out.extend_from_slice(&record_index.to_le_bytes());
+    out.extend_from_slice(&root::ZERO_U32_VALUE.to_le_bytes());
+    native_lp_ascii(out, crate::design::decode::configuration_root::ROOT_KEY)?;
+    out.extend_from_slice(&[0; root::CONSTANT_ONE - root::ZERO_RUN_11]);
+    out.extend_from_slice(&root::CONSTANT_ONE_VALUE.to_le_bytes());
+    native_lp_utf16(out, table_id)?;
+    native_lp_utf16(out, row_id)?;
+    out.extend_from_slice(&0u32.to_le_bytes());
+    Ok(())
+}
+
 fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {
     match kind {
         ConstructionRecipeKind::Body => b"body_recipe_data",
@@ -867,6 +963,53 @@ fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {
         ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data",
         ConstructionRecipeKind::Edge => b"edge_recipe_data",
         ConstructionRecipeKind::Vertex => b"vertex_recipe_data",
+    }
+}
+
+/// The persistent references the written sketch records do not restate. A
+/// written sketch point stores its `pt_tag` reference and a written sketch
+/// curve its `crv_primary_id` and `crv_secondary_id` references, which read
+/// back as persistent references; each restates one reference of its kind
+/// and value.
+fn standalone_references(native: &F3dNative) -> Vec<&PersistentReference> {
+    let mut restated = BTreeMap::<(u8, u64), usize>::new();
+    let mut restate = |kind: PersistentReferenceKind, value: u64| {
+        *restated
+            .entry((reference_kind_key(kind), value))
+            .or_default() += 1;
+    };
+    for point in &native.sketch_points {
+        if let Some(persistent_id) = point.persistent_id() {
+            restate(PersistentReferenceKind::Point, persistent_id);
+        }
+    }
+    for curve in &native.sketch_curve_identities {
+        restate(
+            PersistentReferenceKind::CurvePrimary,
+            curve.primary_id.get(),
+        );
+        restate(PersistentReferenceKind::CurveSecondary, curve.secondary_id);
+    }
+    native
+        .persistent_references
+        .iter()
+        .filter(|reference| {
+            match restated.get_mut(&(reference_kind_key(reference.kind), reference.value)) {
+                Some(count) if *count > 0 => {
+                    *count -= 1;
+                    false
+                }
+                _ => true,
+            }
+        })
+        .collect()
+}
+
+fn reference_kind_key(kind: PersistentReferenceKind) -> u8 {
+    match kind {
+        PersistentReferenceKind::Point => 0,
+        PersistentReferenceKind::CurvePrimary => 1,
+        PersistentReferenceKind::CurveSecondary => 2,
     }
 }
 
@@ -878,13 +1021,20 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
     }
 }
 
+/// The Design `MetaStream` of `registry`'s types and the primary index of
+/// `bulk`, the sibling `BulkStream`. Each type lists only the records `bulk`
+/// holds (f3d.md §3.1).
 pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
-    primary_records: &[crate::metastream::RecordIndexEntry],
+    bulk: Option<&EncodedDesignBulkStream>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if registry.types.is_empty() {
         return Ok(None);
     }
+    let written = bulk
+        .map(EncodedDesignBulkStream::written)
+        .unwrap_or_default();
+    let primary_records = bulk.map_or(&[][..], |bulk| bulk.primary_records.as_slice());
 
     // A generated segment writes the modern header shape, the type table, and
     // the primary offsets captured while writing its sibling BulkStream.
@@ -919,11 +1069,16 @@ pub(super) fn encode_design_metastream(
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
-        let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
+        let entity_ids = design_type
+            .entity_ids
+            .iter()
+            .filter(|entity_id| written.contains(entity_id))
+            .collect::<Vec<_>>();
+        let count = u32::try_from(entity_ids.len()).map_err(|_| {
             CodecError::NotImplemented("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
-        for entity_id in &design_type.entity_ids {
+        for entity_id in entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
             let next = entity_id.checked_add(1).ok_or_else(|| {
                 CodecError::Malformed("generated Design next entity id overflows".into())
@@ -1055,10 +1210,36 @@ mod tests {
         ])
     }
 
+    /// A stream holding one primary record of `entity_id`.
+    fn written_record(entity_id: u64) -> super::EncodedDesignBulkStream {
+        super::EncodedDesignBulkStream {
+            primary_records: vec![crate::metastream::RecordIndexEntry {
+                entity_id,
+                bulk_offset: 0,
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn metastream_lists_only_written_records() {
+        let bytes = super::encode_design_metastream(
+            &registry_with_entity(7),
+            Some(&super::EncodedDesignBulkStream::default()),
+        )
+        .unwrap()
+        .unwrap();
+        let meta = crate::metastream::parse(&bytes, "MetaStream.dat").unwrap();
+        assert_eq!(meta.types[0].entities.values().count(), 0);
+    }
+
     #[test]
     fn metastream_rejects_overflowed_next_entity_id() {
-        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[])
-            .expect_err("the next identity cannot be represented");
+        let error = super::encode_design_metastream(
+            &registry_with_entity(u64::MAX),
+            Some(&written_record(u64::MAX)),
+        )
+        .expect_err("the next identity cannot be represented");
         assert!(
             matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
             if message == "generated Design next entity id overflows")
@@ -1067,9 +1248,12 @@ mod tests {
 
     #[test]
     fn metastream_preserves_largest_representable_next_entity_id() {
-        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[])
-            .unwrap()
-            .unwrap();
+        let bytes = super::encode_design_metastream(
+            &registry_with_entity(u64::MAX - 1),
+            Some(&written_record(u64::MAX - 1)),
+        )
+        .unwrap()
+        .unwrap();
         let next_offset = bytes.len() - 16;
         assert_eq!(
             cadmpeg_core::decode::View::u64_le_at(&bytes, next_offset),

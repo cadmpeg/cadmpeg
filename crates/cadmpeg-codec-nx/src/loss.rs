@@ -77,6 +77,12 @@ loss_codes! {
     PrimaryNodeUnresolved => ("topology.primary-node-unresolved", Warning, TopologyNotTransferred),
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque => ("intersection.records-opaque", Warning, ObjectRecordsUntransferred),
+    /// Two or more surface-intersection records of a stream share one
+    /// identity, and each is withheld.
+    IntersectionIdentityDuplicated => ("intersection.identity-duplicated", Warning, ObjectRecordsUntransferred),
+    /// A surface-intersection record's references state no construction,
+    /// and the record is withheld.
+    IntersectionRecordUnresolved => ("intersection.record-unresolved", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
     /// intersection pcurve lanes were complete.
     IntersectionPcurveCompletionBounded => ("intersection.pcurve-completion-bounded", Warning, ObjectRecordsUntransferred),
@@ -130,23 +136,6 @@ loss_codes! {
     AssemblyExternalFilenameAssumed => ("assembly.external-filename-assumed", Warning, DecodeDiagnostic),
     /// A roster prototype has no unique retained external document filename.
     AssemblyExternalDocumentUnresolved => ("assembly.external-document-unresolved", Warning, MetadataNotTransferred),
-    /// A carrier record of the right family states lanes the IR carrier refuses.
-    CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
-    /// A B-spline record stores a control-point weight that is zero or negative.
-    CarrierSplineWeightNonpositive => ("carrier.spline-weight-nonpositive", Warning, ObjectRecordsUntransferred),
-    /// A B-spline record's dimension, counts, or multiplicities contradict
-    /// each other or its arrays.
-    CarrierSplineFieldsInconsistent => ("carrier.spline-fields-inconsistent", Warning, ObjectRecordsUntransferred),
-    /// A CONE record stores a negative sine or cosine of its half-angle,
-    /// whose surface is unresolved.
-    CarrierConeHalfAngleSignUnresolved => ("carrier.cone-half-angle-sign-unresolved", Warning, ObjectRecordsUntransferred),
-    /// A CONE record's stored sine and cosine break the unit identity.
-    CarrierConeHalfAngleIdentityRefused => ("carrier.cone-half-angle-identity-refused", Warning, ObjectRecordsUntransferred),
-    /// A TORUS record stores a negative major radius, whose surface is
-    /// unresolved (`PS-43`).
-    CarrierTorusNegativeMajorUnresolved => ("carrier.torus-negative-major-unresolved", Warning, ObjectRecordsUntransferred),
-    /// A B-spline carrier's descriptor names no control values that resolve to it.
-    CarrierControlsUnresolved => ("carrier.controls-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
     /// A face loop states no resolvable coedge ring: it is omitted, and its face
@@ -161,8 +150,12 @@ loss_codes! {
     /// A face states no loop on a plane, cylinder, or cone, which no face
     /// covers whole: its boundary is unstated, and the face is stated partial.
     TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
-    /// A shell with no admitted face, or a body with no emitted shell, is withheld.
+    /// A BODY that a SHELL names, that has no emitted SHELL, and that the
+    /// stream graph does not hold as a node is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
+    /// A topology record names a record that does not resolve: it is withheld
+    /// with the records that need it.
+    TopologyRecordUnresolved => ("topology.record-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
     /// A record search reached its local work bound and skipped the records
@@ -177,16 +170,22 @@ loss_codes! {
     /// A Display-JT polygon mesh did not resolve to a tessellation and was
     /// skipped.
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
-    /// Native object-model attachment failed; none of its records were kept.
-    NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
+    /// A BODY stores a `res_linear` that states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
+    /// A BODY's `res_linear` is in a node the primary records do not read.
+    BodyResolutionUnread => ("body.resolution-unread", Warning, DecodeDiagnostic),
+    /// The feature recognisers compare evaluated geometry at a floor coarser
+    /// than the document tolerances.
+    FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
 }
 
 impl NxLossCode {
-    /// The strict floor `siemens_nx.md` §10 states: a given-up native object
-    /// model pins Error.
+    /// The strict floor `siemens_nx.md` §10 states: a `res_linear` that breaks
+    /// the rule of `parasolid.md` §4 pins Warning.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::NativeAttachmentFailed => Some(Severity::Error),
+            Self::BodyResolutionInvalid => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -240,6 +239,8 @@ mod tests {
                 "topology.primary-edge-unresolved",
                 "topology.primary-node-unresolved",
                 "intersection.records-opaque",
+                "intersection.identity-duplicated",
+                "intersection.record-unresolved",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",
                 "deltas.selection-unresolved",
@@ -266,25 +267,21 @@ mod tests {
                 "assembly.placement-parent-assumed",
                 "assembly.external-filename-assumed",
                 "assembly.external-document-unresolved",
-                "carrier.lanes-unpaired",
-                "carrier.spline-weight-nonpositive",
-                "carrier.spline-fields-inconsistent",
-                "carrier.cone-half-angle-sign-unresolved",
-                "carrier.cone-half-angle-identity-refused",
-                "carrier.torus-negative-major-unresolved",
-                "carrier.controls-unresolved",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
                 "topology.vertex-loop-unresolved",
                 "topology.face-boundary-unstated",
                 "topology.shell-withheld",
+                "topology.record-unresolved",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
                 "native.record-identity-bounded",
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
-                "native.attachment-failed",
+                "body.resolution-invalid",
+                "body.resolution-unread",
+                "feature.recognition-tolerance-floor",
             ]
         );
     }
@@ -317,21 +314,16 @@ mod tests {
         }
     }
 
-    /// `siemens_nx.md` §10 states a strict floor for an attachment failure
-    /// and for no other code.
+    /// `body.resolution-invalid` is the one NX code that pins a strict floor,
+    /// Warning (`siemens_nx.md` §10).
     #[test]
-    fn only_an_attachment_failure_pins_a_strict_floor() {
+    fn only_an_invalid_resolution_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
-            let expected = match code {
-                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
+            let floor = match code {
+                NxLossCode::BodyResolutionInvalid => Some(cadmpeg_ir::report::Severity::Warning),
                 _ => None,
             };
-            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+            assert_eq!(code.kind().strict_floor(), floor, "{}", code.code());
         }
-        assert!(cadmpeg_ir::report::strictness::Strictness {
-            pinned: true,
-            ..Default::default()
-        }
-        .refuses(&NxLossCode::NativeAttachmentFailed.note("x"), false));
     }
 }

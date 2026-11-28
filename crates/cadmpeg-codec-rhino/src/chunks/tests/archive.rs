@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_test_support::wire;
@@ -281,8 +282,8 @@ fn repeat_decode_is_byte_deterministic_for_ir_and_report() {
             .as_bytes()
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(first.report()).expect("required invariant"),
-        cadmpeg_core::serde_erase::json::to_vec(second.report()).expect("required invariant")
+        json::to_vec(first.report()).expect("required invariant"),
+        json::to_vec(second.report()).expect("required invariant")
     );
 }
 
@@ -642,25 +643,28 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .expect("required invariant")[1]
         .links
         .is_empty());
-    let failure = result
+    let failures = result
         .report()
         .losses
         .iter()
-        .find(|loss| loss.severity == Severity::Error)
-        .expect("mesh failure loss");
+        .filter(|loss| {
+            loss.message
+                .contains("4ed7d4e4-e947-11d3-bfe5-0010830122f0")
+        })
+        .collect::<Vec<_>>();
+    let [failure] = failures.as_slice() else {
+        panic!("one loss of the mesh record: {failures:?}");
+    };
     assert_eq!(
         failure.code,
-        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
-    assert!(failure.message.contains(
-        "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
-    ));
+    assert!(failure
+        .message
+        .contains("of class 4ed7d4e4-e947-11d3-bfe5-0010830122f0: mesh failed: "));
     let provenance = failure.provenance.as_ref().expect("failure provenance");
     assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
-    assert!(provenance
-        .tag
-        .as_deref()
-        .is_some_and(|tag| tag.starts_with("OBJECT_RECORD/class=4ed7d4e4")));
+    assert_eq!(provenance.tag.as_deref(), Some("object-record"));
 
     let mut optional_crc = mesh_payload(3, 5, false, false);
     let vertex_buffer = 1 + 8 + 64 + 16 + 64 + 4 + 5 + 4 + 8;
@@ -684,11 +688,10 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
 }
 
-/// `ObjectFramingUndecodable` carries severity `Error` and pins its strict
-/// floor at `Warning`, above the tolerable floor of its `DecodeDiagnostic`
-/// taxonomy, so the loss rejects. Strict decode therefore refuses the archive,
-/// and it refuses with the policy class that names the loss: the container
-/// parses, one record payload does not, and salvage mode keeps the result.
+/// A framed object record that does not decode is a given-up part. Its
+/// `record.unreadable` charge refuses a pinned decode, and the refusal names
+/// the retained object record: the container parses, one record payload does
+/// not, and salvage mode keeps the result.
 #[test]
 fn strict_decode_refuses_an_undecodable_framed_object_record() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
@@ -705,15 +708,63 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
     };
     assert_eq!(
         rejection.loss().code,
-        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
+    let message = &rejection.loss().message;
     assert!(
-        rejection
-            .loss()
-            .message
-            .starts_with("1 framed object record(s)"),
-        "the refusal carries the loss message alone: {}",
-        rejection.loss().message
+        message.starts_with("part object-record stream=\"\" offset="),
+        "the refusal names the given-up part: {message}"
+    );
+    assert!(message
+        .split_whitespace()
+        .any(|token| token == "rhino:object:record#000000"));
+}
+
+/// A framed object record the decoder gives up charges `record.unreadable`
+/// naming its retained source record: a pinned decode refuses with that
+/// charge in its report, and a default decode admits the document and reports
+/// the charge as the one loss of the record.
+#[test]
+fn a_given_up_framed_object_record_is_charged_as_unreadable() {
+    let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
+    let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
+    let bytes = archive(&[bad_mesh, point]);
+    let charged = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.severity == Severity::Error
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|token| token == "rhino:object:record#000000")
+        })
+    };
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+
+    let error = RhinoCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses a given-up framed object record");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
+        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
+    };
+    assert!(charged(&rejection.report().losses), "{error}");
+
+    let result = decode(&bytes);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(charged(&result.report().losses));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss
+                .message
+                .contains("4ed7d4e4-e947-11d3-bfe5-0010830122f0"))
+            .count(),
+        1,
+        "{:?}",
+        result.report().losses
     );
 }
 
@@ -1021,7 +1072,9 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
                 .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
-                .len(),
+                .iter()
+                .filter(|record| record.id.as_str().starts_with("rhino:object:record#"))
+                .count(),
             2
         );
         let unknown = &result

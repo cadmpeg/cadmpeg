@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::wire;
+use cadmpeg_core::serde_erase::json;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -230,16 +231,14 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "identity": {"kind": "unclassified", "format": "foreign"},
-                "container_kind": "flat",
-                "entries": [],
-                "losses": [],
-                "notes": []
-            }))
-            .expect("foreign inspection fixture"),
-        )
+        Ok(json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": "foreign"},
+            "container_kind": "flat",
+            "entries": [],
+            "losses": [],
+            "notes": []
+        }))
+        .expect("foreign inspection fixture"))
     }
 
     fn decode_impl(
@@ -419,7 +418,7 @@ fn sealed_decode_keeps_the_geometry_when_the_design_projection_fails() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
     assert!(unreadable[0]
@@ -590,7 +589,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -987,14 +986,14 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
         result.source_fidelity().content_digest,
         Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
-    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
+    assert!(!result.source_fidelity().edited(&ctx, result.ir()).unwrap());
 
     let (mut ir, _, fidelity) = result.into_parts();
     let mut scope = ContentScope::full();
     scope.process = false;
     ir.set_scope(scope);
     assert!(
-        fidelity.edited(&ir).unwrap(),
+        fidelity.edited(&ctx, &ir).unwrap(),
         "a change of scope alone is an edit"
     );
 }
@@ -1055,7 +1054,7 @@ impl CodecBackend for DeepContextCodec {
 }
 
 /// A value outside every record that passes a bound is stated as the value
-/// it takes when unstated, with one `record.unreadable` Error that names its
+/// it takes when unstated, with one `record.undecoded` Warning that names its
 /// field, so the decode returns a document within the bounds (§2.5, §3.3)
 /// and digests it.
 #[test]
@@ -1073,12 +1072,12 @@ fn a_value_past_the_bound_outside_every_record_is_unstated_with_its_loss() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     let [loss] = unreadable.as_slice() else {
         panic!("one loss for the value outside every record: {unreadable:?}");
     };
-    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert_eq!(loss.severity, crate::report::Severity::Warning);
     assert!(loss.message.contains("(repro)"), "{}", loss.message);
 }
 
@@ -1168,12 +1167,12 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+            .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
             .collect::<Vec<_>>();
         let [loss] = unreadable.as_slice() else {
             panic!("one loss for the one record: {unreadable:?}");
         };
-        assert_eq!(loss.severity, crate::report::Severity::Error);
+        assert_eq!(loss.severity, crate::report::Severity::Warning);
         assert!(
             loss.message.contains(PastTheBoundCodec::PAST)
                 && loss.message.contains("native.test.deep"),
@@ -1207,22 +1206,37 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
             result.source_fidelity().content_digest,
             Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
         );
-        let text = cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap();
+        let text = json::to_string(result.ir()).unwrap();
         assert!(CadIr::from_json(&text).is_ok());
     }
 }
 
+/// A record cut by a bound of §2.5 conforms to its format: its give-up is
+/// `record.undecoded`, which a pinned decode keeps and a lossy floor of
+/// Warning refuses (§3.2, §3.5).
 #[test]
-fn a_pinned_decode_refuses_a_record_given_up_past_the_document_bound() {
-    let error = PastTheBoundCodec
+fn a_pinned_decode_keeps_a_record_given_up_past_the_document_bound() {
+    PastTheBoundCodec
         .decode(
             &mut Cursor::new(Vec::new()),
             &strict_options(DecodeDepth::Full),
         )
+        .expect("a pinned decode keeps an undecoded record");
+    let error = PastTheBoundCodec
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &DecodeOptions {
+                strictness: Strictness {
+                    floor: Some(crate::report::Severity::Warning),
+                    ..Strictness::default()
+                },
+                ..DecodeOptions::default()
+            },
+        )
         .unwrap_err();
     assert_eq!(
         refused_code(error),
-        crate::unknown::part::record_unreadable_kind()
+        crate::unknown::part::record_undecoded_kind()
     );
 }
 
@@ -1305,7 +1319,7 @@ fn the_sealed_wrapper_gives_up_records_whose_text_passes_the_base_retained_allow
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), LargePastTheBoundCodec::RECORDS);
     for index in 0..LargePastTheBoundCodec::RECORDS {
@@ -1439,7 +1453,7 @@ fn add_procedural_surface(
 
 /// The decode result of `ir` after the wrapper's digest walk in a decode
 /// under the service policy, the stock policy with the lowest recursion
-/// ceiling, with its `record.unreadable` losses.
+/// ceiling, with its `record.undecoded` losses.
 fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
     let mut result = decode_result(ir);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1447,14 +1461,14 @@ fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
     result
         .record_content_digest(&ctx, FormatId::new("test"))
         .expect("a record past the bound does not refuse the decode");
-    let unreadable = result
+    let undecoded = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .cloned()
         .collect();
-    (result, unreadable)
+    (result, undecoded)
 }
 
 /// Every construction has exactly one owning carrier and every carrier's
@@ -1497,7 +1511,7 @@ fn assert_resolves(result: &DecodeResult) {
         .filter(|finding| finding.check == crate::report::check::Check::ReferentialIntegrity)
         .collect::<Vec<_>>();
     assert!(unresolved.is_empty(), "{unresolved:?}");
-    let text = cadmpeg_core::serde_erase::json::to_string(ir).unwrap();
+    let text = json::to_string(ir).unwrap();
     assert!(CadIr::from_json(&text).is_ok());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();
@@ -1507,7 +1521,7 @@ fn assert_resolves(result: &DecodeResult) {
     );
 }
 
-/// The record a `record.unreadable` loss gives up, and the ids its
+/// The record a give-up loss gives up, and the ids its
 /// `dropped=[…]` names.
 fn given_up_record(message: &str) -> (String, std::collections::BTreeSet<String>) {
     let record = message
@@ -1701,3 +1715,271 @@ fn records_past_the_bound_in_one_walk_are_each_given_up_at_their_place() {
         .any(|procedural| procedural.id.as_str() == "test:model:construction#c"));
     assert_resolves(&result);
 }
+
+/// A decoder that gives up the cube's first point, keeps the vertex that
+/// needs it, and drops two source records that need it in turn, and two
+/// source records whose need it never gives up.
+struct GivenUpPointCodec;
+
+impl CodecBackend for GivenUpPointCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the given-up point test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        use crate::unknown::part::{dropped_with, GivenUpRecord};
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let point = ir.geometry.points.remove(0).id;
+        let mut decoded = decoded(ir);
+        let instance = |key: u32| {
+            crate::ids::Identity::new(format!("test:file:instance#{key}")).expect("an id")
+        };
+        decoded.body.losses.extend([
+            dropped_with(instance(10), instance(9)),
+            dropped_with(instance(9), point.clone()),
+            GivenUpRecord::new(
+                point,
+                crate::unknown::part::Cause::Unreadable,
+                "the point's coordinates do not read",
+            )
+            .loss(),
+            dropped_with(instance(6), instance(7)),
+            dropped_with(instance(7), instance(8)),
+        ]);
+        Ok(decoded)
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_names_each_record_dropped_with_a_given_up_record_in_its_one_loss() {
+    let result = GivenUpPointCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a given-up point does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    let point = cube.geometry.points[0].id.as_str();
+    let vertex = cube.geometry.vertices[0].id.as_str();
+    assert!(!result
+        .ir()
+        .geometry
+        .vertices
+        .iter()
+        .any(|kept| kept.id.as_str() == vertex));
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| crate::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    let [given_up, unneeded] = charges.as_slice() else {
+        panic!("one loss for the point and one for the record whose need is kept: {charges:?}");
+    };
+    assert!(given_up
+        .message
+        .starts_with(&format!("record {point} given up: ")));
+    let (_, dropped) = crate::unknown::part::charged(given_up).expect("a charge");
+    for id in ["test:file:instance#10", "test:file:instance#9", vertex] {
+        assert!(dropped.iter().any(|dropped| dropped == id), "{given_up:?}");
+        assert!(given_up.message.contains(id), "{given_up:?}");
+    }
+    assert_eq!(
+        unneeded.message,
+        "record test:file:instance#7 given up: it needs test:file:instance#8, which no give-up \
+         of the decode names; dropped=[test:file:instance#6]"
+    );
+    let with = super::loss::DecodeLossCode::RecordDroppedWith.kind();
+    assert!(!result.report().losses.iter().any(|loss| loss.code == with));
+}
+
+/// A decoder that keeps the cube with the edits of `.0` and charges the id
+/// `.1` given up.
+pub(super) struct ChargesLabelCodec(pub(super) fn(&mut CadIr), pub(super) &'static str);
+
+impl CodecBackend for ChargesLabelCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the charged-label test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        (self.0)(&mut ir);
+        let mut decoded = decoded(ir);
+        decoded.body.losses.push(
+            crate::unknown::part::GivenUpRecord::new(
+                crate::ids::Identity::new(self.1).expect("an id"),
+                crate::unknown::part::Cause::Unreadable,
+                "the record does not read",
+            )
+            .loss(),
+        );
+        Ok(decoded)
+    }
+}
+
+pub(super) fn decode_charging(codec: &ChargesLabelCodec) -> DecodeResult {
+    codec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a given-up record does not refuse the file")
+}
+
+/// A kept native record whose label field states the id of the record a
+/// decoder gave up, as a structural issue states the scope it rejects,
+/// keeps its place.
+#[test]
+fn a_native_record_whose_label_equals_a_charged_id_is_kept() {
+    fn issue(ir: &mut CadIr) {
+        let record = crate::NativeRecord::new(
+            crate::ids::Identity::new("test:native:issue#1").unwrap(),
+            [("scope".to_owned(), cadmpeg_core::json!("test:file:scope#3"))]
+                .into_iter()
+                .collect(),
+        )
+        .unwrap();
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+            .set_arena_records("issues", vec![record])
+            .unwrap();
+    }
+    let result = decode_charging(&ChargesLabelCodec(issue, "test:file:scope#3"));
+    let issues = result
+        .ir()
+        .native
+        .namespace("test")
+        .and_then(|namespace| namespace.arena_as::<serde_json::Value>("issues").ok())
+        .unwrap_or_default();
+    assert_eq!(
+        issues,
+        [cadmpeg_core::json!({"id": "test:native:issue#1", "scope": "test:file:scope#3"})]
+    );
+}
+
+/// A kept surface whose source object states the id of the record a decoder
+/// gave up keeps its place, and so do the faces on it.
+#[test]
+fn a_surface_whose_source_object_equals_a_charged_id_is_kept() {
+    fn labelled(ir: &mut CadIr) {
+        ir.geometry.surfaces[0].source_object = Some(
+            json::from_value(cadmpeg_core::json!({
+                "format": "test",
+                "object_id": "test:file:surface#7",
+                "instance_path": []
+            }))
+            .unwrap(),
+        );
+    }
+    let cube = unit_cube().unwrap();
+    let result = decode_charging(&ChargesLabelCodec(labelled, "test:file:surface#7"));
+    let ir = result.ir();
+    assert_eq!(ir.geometry.surfaces.len(), cube.geometry.surfaces.len());
+    assert_eq!(ir.geometry.faces.len(), cube.geometry.faces.len());
+    assert_eq!(
+        ir.geometry.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("test:file:surface#7")
+    );
+}
+
+/// An appearance binding of `target`, an `AppearanceTarget` in its wire
+/// form.
+fn binding_on(target: &serde_json::Value) -> crate::appearance::AppearanceBinding {
+    json::from_value(cadmpeg_core::json!({
+        "id": "test:model:appearance-binding#1",
+        "target": {"entity": target},
+        "appearance": "test:model:appearance#1",
+        "channels": {}
+    }))
+    .unwrap()
+}
+
+/// Asserts that the decode left no appearance binding and that the one
+/// charge names the binding among the records it dropped.
+#[track_caller]
+fn assert_binding_dropped(result: &DecodeResult) {
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    let unreadable = crate::unknown::part::record_unreadable_kind();
+    let [charge] = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unreadable)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one charge: {:?}", result.report().losses);
+    };
+    let (_, dropped) = crate::unknown::part::charged(charge).expect("a charge");
+    assert!(
+        dropped
+            .iter()
+            .any(|id| id == "test:model:appearance-binding#1"),
+        "{charge:?}"
+    );
+}
+
+/// An appearance on a tessellation names it by its id: the decode drops the
+/// binding of a tessellation the decoder gave up (§3.3).
+#[test]
+fn a_binding_on_a_charged_tessellation_is_dropped() {
+    fn bound(ir: &mut CadIr) {
+        ir.model.appearance_bindings = vec![binding_on(&cadmpeg_core::json!(
+            {"kind": "tessellation", "value": "test:model:tessellation#9"}
+        ))];
+    }
+    assert_binding_dropped(&decode_charging(&ChargesLabelCodec(
+        bound,
+        "test:model:tessellation#9",
+    )));
+}
+
+/// A `Record` target names its record by its id: the decode drops the
+/// binding of a record the decoder gave up (§3.3).
+#[test]
+fn a_binding_on_a_charged_record_is_dropped() {
+    fn bound(ir: &mut CadIr) {
+        ir.model.appearance_bindings = vec![binding_on(&cadmpeg_core::json!(
+            {"kind": "record", "value": {"arena": "point_clouds", "id": "test:model:cloud#9"}}
+        ))];
+    }
+    assert_binding_dropped(&decode_charging(&ChargesLabelCodec(
+        bound,
+        "test:model:cloud#9",
+    )));
+}
+
+mod unread_xml;

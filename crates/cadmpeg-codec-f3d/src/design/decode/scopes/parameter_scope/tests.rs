@@ -3,6 +3,7 @@
 use super::first_marked_reference_offsets;
 use super::reference_table_ends_at;
 use crate::test_support::lp_utf16;
+use cadmpeg_core::serde_erase::json;
 
 fn marked_named_combine(
     label: &str,
@@ -91,9 +92,9 @@ fn registered_boundary_fill_admits_a_named_tail_with_odd_associated_reference_co
     assert_eq!(tail.associated[0].value, 700);
     assert_eq!(tail.closing.as_ref().unwrap().value, 701);
     assert_eq!(scope.previous_history_state_id(), Some(4));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let wire = json::to_value(&scope).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wire).unwrap(),
+        json::from_value::<super::DesignParameterScope>(wire).unwrap(),
         scope
     );
     assert!(
@@ -124,27 +125,17 @@ fn named_combine_preserves_middle_reference_and_scope_identity() {
     assert_eq!(tail.middle.as_ref().unwrap().value, 900);
     assert_eq!(tail.middle.as_ref().unwrap().offset, 215);
     assert_eq!(tail.closing, None);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let cloned_wire = cadmpeg_core::serde_erase::json::to_value(scope.clone()).unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let cloned_wire = json::to_value(scope.clone()).unwrap();
     assert_eq!(wire, cloned_wire);
-    let roundtrip: super::DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(roundtrip).unwrap(),
-        wire
-    );
+    let roundtrip: super::DesignParameterScope = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(roundtrip).unwrap(), wire);
     let mut wrong_offset = wire.clone();
-    wrong_offset["combine_named_tail"]["middle"]["offset"] = serde_json::json!(214);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wrong_offset)
-            .is_err()
-    );
+    wrong_offset["combine_named_tail"]["middle"]["offset"] = cadmpeg_core::json!(214);
+    assert!(json::from_value::<super::DesignParameterScope>(wrong_offset).is_err());
     let mut wrong_kind = wire;
-    wrong_kind["kind"] = serde_json::json!("SplitFace");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wrong_kind)
-            .is_err()
-    );
+    wrong_kind["kind"] = cadmpeg_core::json!("SplitFace");
+    assert!(json::from_value::<super::DesignParameterScope>(wrong_kind).is_err());
 }
 
 #[test]
@@ -391,13 +382,10 @@ fn typed_canvas_scope_validates_reference_types_and_fixed_tail() {
             .collect::<Vec<_>>(),
         [55, 56]
     );
-    let wire = cadmpeg_core::serde_erase::json::to_string(&scope).unwrap();
+    let wire = json::to_string(&scope).unwrap();
     let decoded: crate::records::feature::scope::DesignParameterScope =
         serde_json::from_str(&wire).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_string(&decoded).unwrap(), wire);
     for offset in [
         11, 20, 28, 79, 137, 141, 161, 169, 207, 223, 240, 278, 285, 331,
     ] {
@@ -465,13 +453,10 @@ fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
     assert_eq!(scope.kind_name(), "Hole");
     assert_eq!(scope.history_state_id(), Some(9));
     assert_eq!(scope.previous_history_state_id(), Some(8));
-    let wire = cadmpeg_core::serde_erase::json::to_string(&scope).unwrap();
+    let wire = json::to_string(&scope).unwrap();
     let decoded: crate::records::feature::scope::DesignParameterScope =
         serde_json::from_str(&wire).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
-        wire
-    );
+    assert_eq!(json::to_string(&decoded).unwrap(), wire);
     for offset in [
         0, 4, 12, 17, 21, 28, 32, 38, 40, 42, 46, 52, 74, 78, 85, 87, 91, 98, 102, 108,
     ] {
@@ -581,13 +566,12 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
             let scope = parse_hole_scope(&tail).expect("reciprocal Hole tail");
             assert_eq!(scope.history_state_id(), Some(9));
             assert_eq!(scope.previous_history_state_id(), Some(8), "{length}");
-            let wire = cadmpeg_core::serde_erase::json::to_string(&scope).unwrap();
+            assert_eq!(scope.tail_flags, None);
+            assert_eq!(scope.stored_suppression(), Some(suppressed));
+            let wire = json::to_string(&scope).unwrap();
             let decoded: crate::records::feature::scope::DesignParameterScope =
                 serde_json::from_str(&wire).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
-                wire
-            );
+            assert_eq!(json::to_string(&decoded).unwrap(), wire);
         }
     }
 }
@@ -650,8 +634,7 @@ fn parse_thread_scope(
 
 /// The suppression flag of a Thread companion tail decodes as the Thread's
 /// suppression, with its location, and the tail stores no item tail state:
-/// the flag byte sits where an item tail stores its `01` marker. The
-/// reciprocal Hole tails leave the tail state unread.
+/// the flag byte sits where an item tail stores its `01` marker.
 #[test]
 fn a_thread_companion_tail_decodes_its_suppression_flag() {
     use crate::layout::thread_hole_companion_tail as companion;
@@ -667,12 +650,10 @@ fn a_thread_companion_tail_decodes_its_suppression_flag() {
                 offset: cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS),
             })
         );
-        let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+        let wire = json::to_value(&scope).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<
-                crate::records::feature::scope::DesignParameterScope,
-            >(wire.clone())
-            .unwrap(),
+            json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire.clone())
+                .unwrap(),
             scope
         );
         let flag_at = cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS);
@@ -685,23 +666,10 @@ fn a_thread_companion_tail_decodes_its_suppression_flag() {
             let mut moved = wire.clone();
             moved["companion_suppressed"]["offset"] = offset.into();
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<
-                    crate::records::feature::scope::DesignParameterScope,
-                >(moved)
-                .is_err(),
+                json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
+                    .is_err(),
                 "offset {offset}"
             );
-        }
-        for (members, further) in [
-            (&[12][..], false),
-            (&[12][..], true),
-            (&[12, 100][..], false),
-            (&[12, 100][..], true),
-        ] {
-            let scope = parse_hole_scope(&reciprocal_hole_tail(members, further, suppressed))
-                .expect("reciprocal Hole tail");
-            assert_eq!(scope.tail_flags, None, "{members:?} {further}");
-            assert_eq!(scope.companion_suppressed, None, "{members:?} {further}");
         }
     }
 }
@@ -773,8 +741,8 @@ fn thread_envelopes_that_differ_only_in_the_companion_flag_keep_the_later() {
 }
 
 #[test]
-fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
-    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
+fn named_reciprocal_hole_retains_its_label_preceding_state_and_suppression() {
+    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, true);
     let closing_references_width = 2 * 11 + 1;
     reciprocal.insert(reciprocal.len() - closing_references_width, 0);
     let mut tail = reciprocal[..8].to_vec();
@@ -788,6 +756,18 @@ fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
     );
     assert_eq!(scope.previous_history_state_id(), Some(8));
     assert_eq!(scope.tail_flags, None);
+    assert_eq!(scope.stored_suppression(), Some(true));
+    let wire = json::to_value(&scope).unwrap();
+    assert_eq!(
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire.clone())
+            .unwrap(),
+        scope
+    );
+    let mut moved = wire;
+    moved["companion_suppressed"]["offset"] = scope.feature_ordinal_offset().into();
+    assert!(
+        json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved).is_err()
+    );
     tail[count_at] = 1;
     assert!(parse_hole_scope(&tail).is_none());
 }
@@ -922,15 +902,12 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                 super::parameter_scope_payload_length(scope),
                 Some(scope.frame_length() - 14)
             );
-            let wire = cadmpeg_core::serde_erase::json::to_string(scope).unwrap();
+            let wire = json::to_string(scope).unwrap();
             let restored: DesignParameterScope = serde_json::from_str(&wire).unwrap();
             assert_eq!(&restored, scope);
             let mut wrong_width: serde_json::Value = serde_json::from_str(&wire).unwrap();
             wrong_width["source_kind"] = "Perçages".into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wrong_width)
-                    .is_err()
-            );
+            assert!(json::from_value::<DesignParameterScope>(wrong_width).is_err());
         }
     });
 }
@@ -1152,11 +1129,11 @@ fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
         value
     };
     let standard = |offset: u64| {
-        serde_json::json!({"hole_extent": {"standard": {
+        cadmpeg_core::json!({"hole_extent": {"standard": {
             "offset": offset, "standard": "ISO", "fit": "Normal",
             "size": "M6", "fastener": "Socket head cap screw"}}})
     };
     assert_eq!(stripped(standard(120)), stripped(standard(480)));
-    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    let alignment = |x: f64| cadmpeg_core::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
     assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

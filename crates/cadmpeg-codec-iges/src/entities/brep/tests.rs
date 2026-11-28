@@ -360,8 +360,9 @@ fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
         .iter()
         .all(|body| body.id.as_str() != "iges:model:body#D55"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            == "IGES entity type 186 form 0 geometry was not projected: closed shell does not use every edge exactly twice with opposite senses"
+        loss.message.contains(
+            "IGES entity type 186 form 0 geometry was not projected: closed shell does not use every edge exactly twice with opposite senses",
+        )
     }));
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["entities"].len(),
@@ -476,6 +477,74 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
+    let mut bytes = explicit_tetrahedron_solid_file();
+    let edge_list = bytes
+        .windows(8)
+        .position(|window| window == b"504,6,21")
+        .expect("edge-list Parameter Data");
+    bytes[edge_list..edge_list + 3].copy_from_slice(b"505");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.ir().geometry.bodies.is_empty());
+    let native = result.ir().native.namespace("iges").unwrap();
+    let mut dependents = Vec::new();
+    let mut bodies = Vec::new();
+    for record in &native.arenas()["entities"] {
+        let fields = record.fields().unwrap();
+        let sequence = fields["directory_sequence"].as_u64().unwrap();
+        if matches!(fields["entity_type"].as_i64(), Some(508 | 510 | 514 | 186)) {
+            dependents.push(sequence);
+        }
+        if fields["entity_type"].as_i64() == Some(186) {
+            bodies.push(format!("iges:model:body#D{sequence}"));
+        }
+    }
+    assert_eq!(dependents.len(), 10);
+    assert_eq!(bodies.len(), 1);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    for sequence in &dependents {
+        assert!(
+            !given_up.iter().any(|loss| loss
+                .message
+                .starts_with(&format!("part entity \"D{sequence}\" "))),
+            "D{sequence}: {given_up:#?}"
+        );
+    }
+    let edges = given_up
+        .iter()
+        .find(|loss| loss.message.starts_with("part parameter-data "))
+        .expect("the give-up of the edge list");
+    let dropped = edges
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap()
+        .split(", ")
+        .collect::<Vec<_>>();
+    // The loop, face and shell entities mint no single id; the body names
+    // the solid.
+    assert_eq!(dropped, bodies, "{}", edges.message);
+    for record in &native.arenas()["entities"] {
+        assert!(!dropped.contains(&record.id()), "{}", edges.message);
+    }
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
 }
 
 #[test]
@@ -1047,7 +1116,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
             .get();
             cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
-                ir,
+                &cadmpeg_ir::index::ModelIndex::new_model_only(ir),
                 &surface.geometry,
                 uv.u,
                 uv.v,
@@ -1068,4 +1137,21 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
     let validation =
         cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok());
+}
+
+#[test]
+fn a_brep_input_read_only_by_a_dropped_loop_is_lost_with_its_give_up() {
+    // The second edge use of the loop D17 names the parameter curve D15,
+    // whose Parameter Data is quarantined. The loop and the face D19 that
+    // uses it are dropped with D15, and so are the edge list D11 and the
+    // vertex list D9 that only the loop reads: the give-up of D15 is the one
+    // entry for the lost face.
+    let source = include_bytes!("../../../tests/golden/fixtures/explicit_cylinder_seam.igs");
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
+        .unwrap();
+    let losses = &result.report().losses;
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(cadmpeg_ir::unknown::part::gives_up(&losses[0].code));
+    assert!(losses[0].message.contains("\"D15\""), "{losses:#?}");
 }

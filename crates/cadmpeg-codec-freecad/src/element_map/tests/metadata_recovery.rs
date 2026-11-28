@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::test_support::test_archive::rewrite_entry;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
@@ -20,15 +21,22 @@ fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
         .decode(&mut Cursor::new(&original), &DecodeOptions::default())
         .unwrap();
     assert!(!expected.ir().geometry.faces.is_empty());
-    for (before, after) in [
-        ("threshold=\"0\"", "threshold=\"invalid\""),
-        ("saveall=\"0\"", "saveall=\"invalid\""),
-        ("HasherIndex=\"0\"", "HasherIndex=\"invalid\""),
+    let unresolved = "element-map.metadata-unresolved";
+    for (before, after, code) in [
+        ("threshold=\"0\"", "threshold=\"invalid\"", unresolved),
+        ("saveall=\"0\"", "saveall=\"invalid\"", unresolved),
+        ("HasherIndex=\"0\"", "HasherIndex=\"invalid\"", unresolved),
         (
             "HasherIndex=\"0\"",
             "HasherIndex=\"9999999999999999999999999\"",
+            unresolved,
         ),
-        ("HasherIndex=\"0\"", "HasherIndex=\"9999\""),
+        // An index past the document's string tables dangles.
+        (
+            "HasherIndex=\"0\"",
+            "HasherIndex=\"9999\"",
+            "element-map.string-reference-dangling",
+        ),
     ] {
         let source = rewrite_entry(&original, "Document.xml", |data| {
             let text = std::str::from_utf8(data).unwrap();
@@ -44,12 +52,11 @@ fn malformed_naming_metadata_keeps_geometry_and_valid_native_state() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "element-map.metadata-unresolved"));
+            .any(|loss| loss.code.local_code() == code));
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
-        let wire = cadmpeg_core::serde_erase::json::to_value(recovered.ir()).unwrap();
-        let roundtrip =
-            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::CadIr>(wire).unwrap();
+        let wire = json::to_value(recovered.ir()).unwrap();
+        let roundtrip = json::from_value::<cadmpeg_ir::CadIr>(wire).unwrap();
         assert!(crate::test_support::validate_native(&roundtrip).is_empty());
     }
 }

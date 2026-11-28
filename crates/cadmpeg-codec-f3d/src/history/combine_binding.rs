@@ -9,9 +9,10 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use super::body_selections::{
     bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies,
-    combine_external_local_tools, combine_recipe_family_tool_slots, pattern_combine_tool_slots,
-    singleton_revised_input_body_across_state_chain, unique_feature_history_states,
-    CombineOperandRefusal, CombineOperandSide, FeatureBodySelectionInputs,
+    combine_external_local_tools, combine_external_tools_refusal, combine_recipe_family_tool_slots,
+    pattern_combine_tool_slots, singleton_revised_input_body_across_state_chain,
+    unique_feature_history_states, CombineOperandRefusal, CombineOperandSide,
+    FeatureBodySelectionInputs,
 };
 use super::face_resolution::{body_member, historical_brep_source};
 use super::history_states::{effective_scope_previous_history_state_id, unique_history_state_pair};
@@ -48,6 +49,7 @@ pub(super) fn bind_combine_operands<'a>(
                 *tools = local;
             }
         }
+        losses.extend(combine_external_tools_refusal(scope));
         return;
     };
     bind_historical_combine_operands(
@@ -83,6 +85,7 @@ fn bind_historical_combine_operands<'a>(
     if let Some(local) = combine_external_local_tools(scope) {
         *tools = local;
     }
+    losses.extend(combine_external_tools_refusal(scope));
     let Some(operation) = scope.combine_operation().filter(|operation| {
         operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
     }) else {
@@ -103,7 +106,7 @@ fn bind_historical_combine_operands<'a>(
         scope,
         operation,
         (feature_id, previous_state_id),
-        (inputs.histories, inputs.scopes),
+        (inputs.histories, inputs.scopes, inputs.scope_histories),
         &mut refusals,
     ) == Some(true);
     if shared_body {
@@ -118,9 +121,12 @@ fn bind_historical_combine_operands<'a>(
         (inputs, body_candidates),
         true,
     );
+    let source = unique_history_state_pair(inputs.histories, state_id, previous_state_id)
+        .and_then(|(history, _, _)| historical_brep_source(&history.id));
     let (merged_target, merged_tools) = merge_operand_list_bindings(
         (target.clone(), tools.clone()),
         (recipe_target, recipe_tools),
+        source,
     );
     operand_refusals.extend(unbound_refusals((&merged_target, &merged_tools), refusals));
     losses.extend(tool_replacement_loss(feature_id, tools, &merged_tools));
@@ -151,10 +157,13 @@ fn names_model_bodies(selection: &BodySelection) -> bool {
 /// slot leaves it native. The tools take the recipe binding when it names
 /// model bodies or when their slots leave them native. A pair whose target
 /// and tools overlap is refused: the tools then keep their slot binding, and
-/// when that pair also overlaps, both operands keep their slot bindings.
+/// when that pair also overlaps, both operands keep their slot bindings. A
+/// model-body tool in BREP `source` whose slot is a slot of a historical
+/// target overlaps that target.
 fn merge_operand_list_bindings(
     (slot_target, slot_tools): (BodySelection, BodySelection),
     (recipe_target, recipe_tools): (BodySelection, BodySelection),
+    source: Option<&str>,
 ) -> (BodySelection, BodySelection) {
     let target = if native_operand(&slot_target) {
         recipe_target
@@ -168,8 +177,42 @@ fn merge_operand_list_bindings(
     };
     [(target.clone(), tools), (target, slot_tools.clone())]
         .into_iter()
-        .find(|(target, tools)| CombineOperands::new(target.clone(), tools.clone()).is_ok())
+        .find(|(target, tools)| {
+            CombineOperands::new(target.clone(), tools.clone()).is_ok()
+                && !model_tool_at_target_slot((target, tools), source)
+        })
         .unwrap_or((slot_target, slot_tools))
+}
+
+/// Whether a model-body tool in BREP `source` holds a slot of a historical
+/// target.
+fn model_tool_at_target_slot(
+    (target, tools): (&BodySelection, &BodySelection),
+    source: Option<&str>,
+) -> bool {
+    let target_slots = match target {
+        BodySelection::Historical { bodies, .. } => bodies
+            .as_slice()
+            .iter()
+            .filter_map(|body| super::body_selections::historical_body_slot(body.as_str()))
+            .collect::<BTreeSet<_>>(),
+        BodySelection::HistoricalSet { members, .. } => members
+            .bodies()
+            .filter_map(|body| super::body_selections::historical_body_slot(body.as_str()))
+            .collect(),
+        _ => return false,
+    };
+    let in_source = |id: &str| {
+        id.starts_with("f3d:brep:")
+            || source
+                .is_some_and(|source| super::face_resolution::entity_in_brep_source(id, source))
+    };
+    selection_bodies(tools)
+        .into_iter()
+        .filter(|_| names_model_bodies(tools))
+        .filter(|id| in_source(id))
+        .filter_map(super::body_closures::stable_ref)
+        .any(|slot| target_slots.contains(&slot))
 }
 
 /// The loss for merged tools that replace slot tools that bind.

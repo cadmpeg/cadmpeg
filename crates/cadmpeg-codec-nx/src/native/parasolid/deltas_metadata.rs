@@ -39,7 +39,7 @@ enum Production {
     FinalTerminator,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "production", rename_all = "snake_case", deny_unknown_fields)]
 enum MetadataWire {
     Map {
@@ -244,7 +244,8 @@ pub(in crate::native) fn admit(
 mod tests {
     use super::*;
     use crate::test_support::with_decode_context;
-    use serde_json::json;
+    use cadmpeg_core::json;
+    use cadmpeg_core::serde_erase::json;
 
     fn map() -> serde_json::Value {
         json!({"id":"nx:s0:deltas-metadata#100", "stream_ordinal":0, "inflated_offset":100,
@@ -254,20 +255,12 @@ mod tests {
     #[test]
     fn wire_checks_identity_extents_values_and_unknown_fields() {
         let original = map();
-        let parsed: ParasolidDeltasMetadata =
-            cadmpeg_core::serde_erase::json::from_value(original.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(parsed).unwrap(),
-            original
-        );
+        let parsed: ParasolidDeltasMetadata = json::from_value(original.clone()).unwrap();
+        assert_eq!(json::to_value(parsed).unwrap(), original);
         let mut widest = original.clone();
         widest["terminal_bytes"] = json!([255, 255, 255, 255]);
-        let parsed: ParasolidDeltasMetadata =
-            cadmpeg_core::serde_erase::json::from_value(widest.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(parsed).unwrap(),
-            widest
-        );
+        let parsed: ParasolidDeltasMetadata = json::from_value(widest.clone()).unwrap();
+        assert_eq!(json::to_value(parsed).unwrap(), widest);
         for (key, value) in [
             ("id", json!("nx:s0:deltas-metadata#101")),
             ("stream_ordinal", json!(1)),
@@ -285,18 +278,14 @@ mod tests {
             let mut bad = original.clone();
             bad[key] = value;
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasMetadata>(bad)
-                    .is_err(),
+                json::from_value::<ParasolidDeltasMetadata>(bad).is_err(),
                 "{key}"
             );
         }
         let mut overflow = original.clone();
         overflow["inflated_offset"] = json!(u64::MAX);
         overflow["id"] = json!(format!("nx:s0:deltas-metadata#{}", u64::MAX));
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasMetadata>(overflow)
-                .is_err()
-        );
+        assert!(json::from_value::<ParasolidDeltasMetadata>(overflow).is_err());
         let mut terminator = original;
         terminator.as_object_mut().unwrap().remove("entries");
         terminator.as_object_mut().unwrap().remove("terminal_bytes");
@@ -304,17 +293,9 @@ mod tests {
         terminator["byte_len"] = json!(4);
         terminator["closes"] = json!("leading");
         terminator["section_offset"] = json!(100);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasMetadata>(
-                terminator.clone()
-            )
-            .is_ok()
-        );
+        assert!(json::from_value::<ParasolidDeltasMetadata>(terminator.clone()).is_ok());
         terminator["section_offset"] = json!(101);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasMetadata>(terminator)
-                .is_err()
-        );
+        assert!(json::from_value::<ParasolidDeltasMetadata>(terminator).is_err());
     }
 
     #[test]

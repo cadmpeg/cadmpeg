@@ -6,6 +6,7 @@
 //! example documents for the writer. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -47,10 +48,8 @@ fn layer_inputs() -> Vec<(String, Vec<u8>)> {
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match UsdCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
-        Ok(summary) => {
-            cadmpeg_core::serde_erase::json::to_value(summary).expect("serialize inspect summary")
-        }
-        Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+        Ok(summary) => json::to_value(summary).expect("serialize inspect summary"),
+        Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -59,13 +58,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match UsdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": result.ir(),
                 "report": result.report(),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -75,13 +74,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 fn encode_snapshot(bytes: &[u8]) -> String {
     let value = match UsdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
         Ok(result) => match try_encode(result.ir(), TargetRequest::Unnamed) {
-            Ok((text, report)) => serde_json::json!({
+            Ok((text, report)) => cadmpeg_core::json!({
                 "report": report,
                 "usda": text.lines().collect::<Vec<_>>(),
             }),
-            Err(error) => serde_json::json!({ "encode_error": error.to_string() }),
+            Err(error) => cadmpeg_core::json!({ "encode_error": error.to_string() }),
         },
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -96,7 +95,7 @@ fn ir_encode_snapshot(bytes: &[u8]) -> String {
     }
     .expect("build the example");
     let (text, report) = encode(&ir);
-    snapshot_text(&serde_json::json!({
+    snapshot_text(&cadmpeg_core::json!({
         "report": report,
         "usda": text.lines().collect::<Vec<_>>(),
     }))

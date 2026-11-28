@@ -89,20 +89,19 @@
       "code": {
         "kind": "namespaced",
         "value": {
-          "code": "parameter.data-quarantined",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "iges",
-          "strict_floor": "warning"
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "strict_floor": "error"
         }
       },
-      "message": "IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
+      "message": "part parameter-data \"D1\" stream=\"\" offset=405 length=161 record=iges:source:part#879b107aa7bcef4bfef1d5575bb930d7b4f04bf8fb80dbb1fde964327c75f786: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
       "provenance": {
         "format": "iges",
-        "offset": 467,
-        "stream": "iges",
-        "tag": "D1:parameter"
+        "offset": 405,
+        "tag": "parameter-data"
       },
-      "severity": "warning"
+      "severity": "error"
     }
   ],
   "notes": [

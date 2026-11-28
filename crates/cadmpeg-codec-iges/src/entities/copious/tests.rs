@@ -31,12 +31,16 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
             count,
         ),
     };
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[ring(32_770), ring(5)])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    // 9² pairs exceed the pass's 80, and the 5² of the second ring fit.
+    let result = crate::reader::decode_with_test_limits(
+        &owned_test_file(&[ring(9), ring(5)]),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            planar_point_pairs: 80,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     let curve_ids: Vec<_> = result
         .ir()
@@ -48,8 +52,8 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
     assert!(!curve_ids.contains(&"iges:model:curve#D1"), "{curve_ids:?}");
     assert!(curve_ids.contains(&"iges:model:curve#D3"), "{curve_ids:?}");
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
-            && loss.message.contains("32770 points")
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
+            && loss.message.contains("9 points")
             && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
     }));
 }
@@ -96,7 +100,7 @@ fn decode_skips_a_copious_tuple_count_over_its_projection_limit() {
 
     assert!(decoded.ir().geometry.curves.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("tuple count exceeds 1000000")
     }));
 }
@@ -126,7 +130,7 @@ fn decode_rejects_presentation_copious_forms_without_annotation_use_flag() {
 
         assert!(result.ir().geometry.curves.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::EntityNotProjected.kind()
+            crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
                 && loss
                     .message
                     .contains("Type 106 presentation forms require Entity Use Flag 01")
@@ -236,7 +240,7 @@ fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
     assert!(result.ir().geometry.points.is_empty());
     assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss
                 .message
                 .contains("linear paths require at least 2 tuple(s)")
@@ -323,11 +327,49 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
                 .expect("validate the neutral model");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         } else {
-            assert!(result.report().losses.iter().any(|loss| loss
-                .message
-                .contains("endpoints disagree beyond the minimum resolution")));
+            // The file's positive field 19 states the coincidence rule the
+            // closure breaks.
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::Cause::Unreadable.kind()
+                    && loss
+                        .message
+                        .contains("endpoints disagree beyond the minimum resolution")
+            }));
         }
     }
+}
+
+#[test]
+fn a_form_63_gap_under_a_zero_minimum_resolution_is_undecoded() {
+    // Field 19 is zero, so the file states no coincidence tolerance for the
+    // closure to break.
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.0,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,4,0,0,0,1,0,0,1,0.001,0;".into(),
+                }],
+                global,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().geometry.curves.is_empty());
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::Cause::Undecoded.kind()
+                && loss
+                    .message
+                    .contains("endpoints disagree beyond the minimum resolution")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]
@@ -369,7 +411,7 @@ fn decode_rejects_form_63_self_intersections_without_duplicate_points() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+            .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
     }
 }
 
@@ -390,13 +432,9 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
                 .contains("interpretation flag disagrees with the entity form")
         })
         .expect("copious-data projection loss");
+    crate::test_support::assert_given_up(loss, ("entity", 1));
     let provenance = loss.provenance.as_ref().expect("Directory provenance");
     assert_eq!(wire::field::<String>(&provenance, "format"), "iges");
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(&provenance, "stream").as_deref(),
-        Some("iges")
-    );
-    assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(
         bytes[usize::try_from(provenance.offset).expect("test offset fits memory") + 72],
         b'D'
@@ -482,18 +520,27 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 }
 
 #[test]
-fn a_pinned_decode_admits_an_unusable_required_copious_geometry_record() {
+fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(
+        crate::test_support::reported_count(result.report(), IgesLossCode::GeometryNotProjected),
+        1
+    );
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect("an unprojected geometry record pins no strict floor");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+    match IgesCodec.decode(&mut Cursor::new(bytes), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
 }
 
 #[test]

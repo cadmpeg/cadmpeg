@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -19,6 +20,108 @@ pub(crate) struct Evaluated {
     pub expression: String,
     pub dependencies: Vec<String>,
     pub display_unit: Option<String>,
+}
+
+/// The definition of a stored quantity: its text, the variables it reads,
+/// and the model properties that keep its source text where the text is
+/// the reader's rendering.
+pub(crate) struct Definition {
+    pub expression: String,
+    pub dependencies: Vec<String>,
+    pub properties: Value,
+}
+
+/// The definition of the stored quantity `parameter` of `dimension`. An
+/// expression the reader evaluates is its rendering. An expression with no
+/// variable that the reader does not evaluate is its source text. A
+/// quantity with no expression is its stored value in its stored unit.
+pub(crate) fn definition(
+    parameter: &Value,
+    dimension: Dimension,
+    model: &Model,
+    unresolved: &BTreeSet<String>,
+) -> Mapping<Definition> {
+    if let Some(source) = parameter.get("expression") {
+        let source = source
+            .as_str()
+            .ok_or("quantity expression must be a string")?;
+        return match evaluate(source, dimension, model, unresolved) {
+            Ok(evaluated) => Ok(Definition {
+                properties: source_text(source, &evaluated.expression),
+                expression: evaluated.expression,
+                dependencies: evaluated.dependencies,
+            }),
+            Err(_) => Ok(Definition {
+                expression: source.to_owned(),
+                dependencies: Vec::new(),
+                properties: cadmpeg_core::json!({"untranslated_expression": "true"}),
+            }),
+        };
+    }
+    let unit = if dimension == Dimension::Scalar {
+        ""
+    } else {
+        unit(super::text(parameter, "units")?)
+            .filter(|(_, actual, _)| *actual == dimension)
+            .ok_or("quantity units are not supported yet")?
+            .2
+    };
+    Ok(Definition {
+        expression: format!("{} {unit}", number(parameter, "value")?)
+            .trim_end()
+            .to_owned(),
+        dependencies: Vec::new(),
+        properties: cadmpeg_core::json!({}),
+    })
+}
+
+/// The model properties that keep the source text `source` of an
+/// expression the reader rendered as `rendered`.
+pub(crate) fn source_text(source: &str, rendered: &str) -> Value {
+    if source == rendered {
+        cadmpeg_core::json!({})
+    } else {
+        cadmpeg_core::json!({"source_expression": source})
+    }
+}
+
+pub(super) fn unit(unit: &str) -> Option<(f64, Dimension, &'static str)> {
+    Some(match unit {
+        "mm" | "millimeter" => (1.0, Dimension::Length, "mm"),
+        "cm" | "centimeter" => (10.0, Dimension::Length, "cm"),
+        "m" | "meter" => (1000.0, Dimension::Length, "m"),
+        "in" | "inch" => (25.4, Dimension::Length, "in"),
+        "ft" | "foot" => (304.8, Dimension::Length, "ft"),
+        "rad" | "radian" => (1.0, Dimension::Angle, "rad"),
+        "deg" | "degree" => (std::f64::consts::PI / 180.0, Dimension::Angle, "deg"),
+        _ => return None,
+    })
+}
+
+pub(super) fn stored(parameter: &Value, dimension: Dimension) -> Option<f64> {
+    let factor = if dimension == Dimension::Scalar {
+        1.0
+    } else {
+        let (factor, actual, _) = unit(super::text(parameter, "units").ok()?)?;
+        if actual != dimension {
+            return None;
+        }
+        factor
+    };
+    let value = number(parameter, "value").ok()? * factor;
+    value.is_finite().then_some(value)
+}
+
+/// Whether the source states one signed number with an optional unit suffix.
+pub(super) fn literal(source: &str) -> bool {
+    let mut words = source.split_whitespace();
+    match (words.next(), words.next(), words.next()) {
+        (Some(number), None, None) => number.parse::<f64>().is_ok(),
+        (Some(number), Some(suffix), None) => {
+            number.parse::<f64>().is_ok() && unit(suffix).is_some()
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn evaluate(
@@ -150,7 +253,7 @@ impl Parser<'_> {
             if found.next().is_some() {
                 return Err("variable reassignment is not supported yet".into());
             }
-            let wire = cadmpeg_core::serde_erase::json::to_value(param).map_err(|_| REFUSED)?;
+            let wire = json::to_value(param).map_err(|_| REFUSED)?;
             let value = wire.get("value").ok_or(REFUSED)?;
             let dim = match value.get("kind").and_then(Value::as_str) {
                 Some("length") => Dimension::Length,
@@ -171,6 +274,14 @@ impl Parser<'_> {
             return Ok((number(value, "value")?, dim, param.name.clone()));
         }
         self.rest = self.rest.trim_start();
+        if self.rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
+            let word = self.word()?;
+            let (factor, dimension, canonical) = unit(&word).ok_or(REFUSED)?;
+            if self.display_unit.is_none() {
+                self.display_unit = Some(canonical.to_owned());
+            }
+            return Ok((factor, dimension, format!("1 {canonical}")));
+        }
         let end = self
             .rest
             .char_indices()
@@ -215,16 +326,7 @@ impl Parser<'_> {
             .is_some_and(|c| c.is_ascii_alphabetic())
         {
             let unit = self.word()?;
-            let (factor, dim, canonical) = match unit.as_str() {
-                "mm" | "millimeter" => (1.0, Dimension::Length, "mm"),
-                "cm" | "centimeter" => (10.0, Dimension::Length, "cm"),
-                "m" | "meter" => (1000.0, Dimension::Length, "m"),
-                "in" | "inch" => (25.4, Dimension::Length, "in"),
-                "ft" | "foot" => (304.8, Dimension::Length, "ft"),
-                "rad" | "radian" => (1.0, Dimension::Angle, "rad"),
-                "deg" | "degree" => (std::f64::consts::PI / 180.0, Dimension::Angle, "deg"),
-                _ => return Err(REFUSED.into()),
-            };
+            let (factor, dim, canonical) = self::unit(&unit).ok_or(REFUSED)?;
             let value = value * factor;
             if !value.is_finite() {
                 return Err("the variable expression exceeds the finite range".into());

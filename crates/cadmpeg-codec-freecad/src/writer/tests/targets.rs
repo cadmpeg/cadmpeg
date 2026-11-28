@@ -2,6 +2,7 @@
 //! Resolution of a write request against the source: the synthesis catalog,
 //! preservation, and the refusals.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use crate::native::DocumentFacts;
@@ -25,8 +26,8 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let decoded = &*CORE_DESIGN;
     let unsupported = FcstdCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("fcstd:schema-9"),
+            EncodeInput::new(decoded.ir(), None)
+                .with_target(TargetRequest::Explicit("fcstd:schema-9")),
         )
         .expect_err("a target that names no catalog or replay row is refused");
     let EncodeError::UnsupportedTarget(refusal) = &unsupported else {
@@ -35,8 +36,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire =
-                cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal");
+            let wire = json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -47,7 +47,8 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         Some("fcstd:schema-9")
     );
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
+        cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal")["refusal"]
+            ["kind"],
         "unknown_explicit"
     );
 
@@ -61,15 +62,15 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         std::collections::BTreeMap::new(),
     ));
     let missing_graph = FcstdCodec
-        .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&step_source, None))
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
     let EncodeError::UnsupportedTarget(refusal) = &missing_graph else {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({
+        json::to_value(refusal).expect("serialize refusal")["refusal"],
+        cadmpeg_core::json!({
             "kind": "default_unavailable",
             "target": "fcstd:schema-4",
             "source": {"kind": "foreign_format", "value": "step"},
@@ -84,14 +85,14 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     // naming that row.
     let replay = FcstdCodec
         .plan(
-            EncodeInput::new(&step_source, None),
-            TargetRequest::Explicit("fcstd:schema-2"),
+            EncodeInput::new(&step_source, None)
+                .with_target(TargetRequest::Explicit("fcstd:schema-2")),
         )
         .expect_err("a replay row with no retained Document.xml is refused");
     let EncodeError::UnsupportedTarget(refusal) = &replay else {
         panic!("expected a target refusal, got {replay}");
     };
-    let wire = serde_json::to_value(refusal).expect("serialize refusal");
+    let wire = cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal");
     assert_eq!(
         (
             &wire["refusal"]["kind"],
@@ -99,9 +100,9 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
             &wire["refusal"]["requested"],
         ),
         (
-            &serde_json::json!("explicit_unavailable"),
-            &serde_json::json!("fcstd:schema-2"),
-            &serde_json::json!("fcstd:schema-2"),
+            &cadmpeg_core::json!("explicit_unavailable"),
+            &cadmpeg_core::json!("fcstd:schema-2"),
+            &cadmpeg_core::json!("fcstd:schema-2"),
         )
     );
 }
@@ -122,11 +123,7 @@ fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
-    Encoder::plan(
-        &FcstdCodec,
-        EncodeInput::new(ir, fidelity),
-        TargetRequest::Inherit,
-    )
+    Encoder::plan(&FcstdCodec, EncodeInput::new(ir, fidelity))
 }
 
 /// Names every archive entry with its payload, so preservation can be
@@ -335,8 +332,7 @@ fn an_explicit_target_writes_fcstd_entries_under_a_source_of_another_format() {
     let explicit = |ir: &CadIr| {
         Encoder::plan(
             &FcstdCodec,
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit("fcstd:schema-4"),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit("fcstd:schema-4")),
         )
     };
 
@@ -402,8 +398,7 @@ fn an_explicit_schema_four_target_writes_a_schema_two_source_as_schema_two() {
         .expect("decode schema 2");
     let plan = Encoder::plan(
         &FcstdCodec,
-        EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit("fcstd:schema-4"),
+        EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit("fcstd:schema-4")),
     )
     .expect("the retained schema-2 document is written");
     let mut written = Vec::new();
@@ -470,7 +465,7 @@ fn write_and_read_dialect(
     request: TargetRequest<'_>,
 ) -> (String, Vec<(String, String)>) {
     let mut written = Vec::new();
-    let report = Encoder::plan(&FcstdCodec, EncodeInput::new(ir, None), request)
+    let report = Encoder::plan(&FcstdCodec, EncodeInput::new(ir, None).with_target(request))
         .expect("the retained Document.xml is written")
         .write_to(&mut written)
         .expect("write");
@@ -630,7 +625,7 @@ fn inherit_writes_a_source_that_records_no_dialect_as_its_declared_dialect() {
         .clone();
     let meta = ir.source.take().expect("the decode records a source");
     ir.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": meta.format()},
             "attributes": meta.attributes,
         }))
@@ -727,12 +722,8 @@ fn an_untyped_retained_record_is_patched_and_reported() {
     let decoded = decode_at(DecodeDepth::Full);
     let (ir, _, mut fidelity) = decoded.into_parts();
     let write = |fidelity: &cadmpeg_ir::SourceFidelity| {
-        let plan = Encoder::plan(
-            &FcstdCodec,
-            EncodeInput::new(&ir, Some(fidelity)),
-            TargetRequest::Inherit,
-        )
-        .expect("the retained document patches");
+        let plan = Encoder::plan(&FcstdCodec, EncodeInput::new(&ir, Some(fidelity)))
+            .expect("the retained document patches");
         let mut bytes = Vec::new();
         let report = plan.write_to(&mut bytes).expect("the patch writes");
         (report, bytes)
@@ -908,7 +899,7 @@ fn a_document_whose_held_digest_does_not_compute_reports_the_edit_dropped() {
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "unknowns",
-            &[serde_json::json!({"id": unknown, "field": "value"})],
+            &[cadmpeg_core::json!({"id": unknown, "field": "value"})],
         )
         .expect("set the unknowns arena");
     let (report, bytes) = patched(&ir, Some(CORE_DESIGN.source_fidelity()));

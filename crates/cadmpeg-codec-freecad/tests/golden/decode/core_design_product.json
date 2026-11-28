@@ -3,14 +3,634 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Box"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Cut"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Cylinder"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DesignedFeature"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Occurrence"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Parameters"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Profile"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "combine"
+              }
+            },
+            "refine": true
+          },
+          "id": "fcstd:design:feature#Cut",
+          "name": "Cut",
+          "native_ref": "fcstd:native:object#Cut"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Cylinder",
+          "name": "Cylinder",
+          "native_ref": "fcstd:native:object#Cylinder"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DesignedFeature",
+          "name": "DesignedFeature",
+          "native_ref": "fcstd:native:object#DesignedFeature",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "place",
+              "value": {
+                "base": "own_occurrence",
+                "constraints": [],
+                "native_options": {},
+                "occurrence": "fcstd:model:occurrence#Occurrence:instance",
+                "placement": {
+                  "after": [
+                    {
+                      "kind": "fixed",
+                      "value": [
+                        [
+                          1.0,
+                          0.0,
+                          0.0,
+                          40.0
+                        ],
+                        [
+                          0.0,
+                          1.0,
+                          0.0,
+                          0.0
+                        ],
+                        [
+                          0.0,
+                          0.0,
+                          1.0,
+                          0.0
+                        ]
+                      ]
+                    }
+                  ],
+                  "inputs": [],
+                  "resolved": {
+                    "origin": {
+                      "x": 40.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "x_axis": {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "y_axis": {
+                      "x": 0.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    "z_axis": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    }
+                  },
+                  "resolved_in": {}
+                },
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Occurrence",
+          "name": "Occurrence",
+          "native_ref": "fcstd:native:object#Occurrence"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "spreadsheet",
+              "value": "fcstd:design:spreadsheet#Parameters"
+            }
+          },
+          "id": "fcstd:design:feature#Parameters",
+          "name": "Parameters",
+          "native_ref": "fcstd:native:object#Parameters"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Profile",
+          "name": "Profile",
+          "native_ref": "fcstd:native:object#Profile"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "30[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Box:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Box:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Box"
+          },
+          "position": 8,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 30.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "360[deg]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Cylinder:Angle",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Angle",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Cylinder:Angle",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Cylinder"
+          },
+          "position": 0,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 6.283185307179586
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "4[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Cylinder:Radius",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Radius",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Cylinder:Radius",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Cylinder"
+          },
+          "position": 14,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 4.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "5[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DesignedFeature:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DesignedFeature:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DesignedFeature"
+          },
+          "position": 4,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 5.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "\"Length\""
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:A1",
+          "kind": {
+            "kind": "text"
+          },
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "Length"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "\"Width\""
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:A2",
+          "kind": {
+            "kind": "text"
+          },
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "Width"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "30[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:B1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "ProductLength",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 30.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:B2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "12[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Profile:constraint:3",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Profile:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Profile"
+          },
+          "position": 2,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 12.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "8[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Profile:constraint:4",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Profile:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Profile"
+          },
+          "position": 3,
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 8.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Box"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Box",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Cut"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Cut:Shape:Cut.Shape.brp:44%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Cut",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Cylinder"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Cylinder",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#DesignedFeature"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#DesignedFeature",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": [
+            "fcstd:model:body#Profile:Shape:Profile.Shape.brp:9%40location1"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -18,7 +638,33 @@
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": []
+      "spreadsheets": [
+        {
+          "cells": [
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
+            },
+            {
+              "address": "A2",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A2"
+            },
+            {
+              "address": "B2",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B2"
+            }
+          ],
+          "column_widths": [],
+          "id": "fcstd:design:spreadsheet#Parameters",
+          "merged_ranges": [],
+          "native_ref": "fcstd:native:object#Parameters",
+          "row_heights": []
+        }
+      ]
     },
     "fragment": false,
     "geometry": {

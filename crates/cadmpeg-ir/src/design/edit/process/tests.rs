@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What a design edit marks and refreshes in the process and PMI layers.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
-use serde_json::json;
 
 use crate::design::configuration::{DesignConfiguration, Overrides};
 use crate::design::container::{Container, OrderedKind, Rollback};
@@ -98,6 +99,7 @@ fn blank_parameter(key: u32) -> DesignParameter {
         id: parameter_id(key),
         scope: definition(),
         owner: None,
+        position: None,
         name: Some(NonBlankString::new(format!("p{key}")).unwrap()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -132,7 +134,7 @@ fn native_feature(key: u32, operation: FeatureOperation) -> Feature {
 }
 
 fn operation(key: u32, kind: &serde_json::Value) -> Operation {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": operation_id(key).as_str(),
         "kind": kind,
         "native_kind": {"codec": "test", "value": {"kind": "text", "value": "op"}},
@@ -156,7 +158,7 @@ fn machining(key: u32) -> Operation {
 }
 
 fn setup(key: u32, steps: &[u32]) -> Setup {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": setup_id(key).as_str(),
         "scope": definition().as_str(),
         "steps": steps
@@ -372,7 +374,7 @@ fn an_unrelated_design_edit_leaves_the_process_alone() {
 fn a_choice_selected_by_a_dependent_parameter_loses_its_value() {
     let mut document = machined();
     document.process.operations[1].cycle = Some(
-        cadmpeg_core::serde_erase::json::from_value(json!({
+        json::from_value(json!({
             "kind": {"value": {"kind": "drill"}, "parameters": [process_parameter_id(1).as_str()]},
         }))
         .unwrap(),
@@ -485,6 +487,7 @@ fn switching_the_active_configuration_rebases_process_states() {
             id: configuration(key),
             scope: scope.clone(),
             name: format!("c{key}"),
+            position: None,
             parent: None,
             comment: None,
             overrides: Overrides::default(),

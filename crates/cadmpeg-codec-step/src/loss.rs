@@ -39,6 +39,9 @@ pub(crate) enum StepLossCode {
     ParseDraftGrammar,
     /// Readable DATA ends before a complete closing envelope.
     ParseEnvelopeIncomplete,
+    /// A presentation record holds a valid numeric token outside the reader's
+    /// range, and its exact source is retained.
+    ParsePresentationLiteralUnrepresentable,
     /// ZIP metadata violates the Part 21 profile without preventing root decoding.
     ContainerMemberNoncanonical,
     /// A decode stage surfaced a per-record warning.
@@ -55,6 +58,9 @@ pub(crate) enum StepLossCode {
     ImplementationLevelUnverified,
     /// Header metadata deviates from the format without preventing decoding.
     HeaderMetadataNoncanonical,
+    /// A header string attribute omits the control characters that its
+    /// escapes encode.
+    HeaderControlsOmitted,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
     /// The declared schema object identifier names a module edition that the
@@ -77,10 +83,6 @@ pub(crate) enum StepLossCode {
     DocumentAngleUnitUnresolved,
     /// A LINE parameter scale did not resolve.
     LineParameterScaleUnresolved,
-    /// A topology root was rejected with a failure message.
-    TopologyRootRejected,
-    /// A topology root does not resolve to a complete connected graph.
-    TopologyRootIncomplete,
     /// An alias topology root's name differs from the name its shared body
     /// takes, so the alias name is not kept.
     TopologyAliasRootNameDropped,
@@ -106,8 +108,6 @@ pub(crate) enum StepLossCode {
     ShellDisconnectedFaces,
     /// A NAUO has no resolved occurrence transform.
     NauoPlacementUnresolved,
-    /// A NAUO has competing resolved placement candidates.
-    NauoPlacementAmbiguous,
     /// A body has conflicting standalone `MAPPED_ITEM` placements.
     BodyConflictingMappedPlacements,
     /// A presentation annotation has several text carriers and no order.
@@ -122,8 +122,6 @@ pub(crate) enum StepLossCode {
     PmiLengthUnitUnresolved,
     /// A PMI angle measure unit scale did not resolve.
     PmiAngleUnitUnresolved,
-    /// A datum system has inconsistent precedence compartments.
-    PmiDatumSystemInvalid,
     /// A tolerance-zone constraint has no complete semantic interpretation.
     PmiZoneUnresolved,
     /// A dimensional modifier has no complete semantic value.
@@ -141,12 +139,6 @@ pub(crate) enum StepLossCode {
     SurfaceTransparencyConflict,
     /// A surface side style lists a transparency outside a rendering.
     SurfaceTransparencyMisplaced,
-    /// A context-dependent style has no matching neutral presentation context.
-    ContextDependentStyleUnresolved,
-    /// A drawing record has too few parameters and was retained opaque.
-    DrawingRecordTooFewParameters,
-    /// A drawing's position in the stored order passes the stated order width.
-    DrawingOrderUnstatable,
     /// A drawing relationship references a source-typed record without identity.
     DrawingRelationshipUntypedTarget,
     /// A drawing relationship references a source record with multiple identities.
@@ -161,16 +153,12 @@ pub(crate) enum StepLossCode {
     DraughtingAssociatedItemUntyped,
     /// A body-representation tessellation item does not bind to exactly one decoded body.
     TessellationItemBodyUnresolved,
-    /// A tessellation payload fails numeric or structural admission.
-    TessellationInvalidPayload,
     /// A tessellation item lacks an exact body-container or tessellated-representation declaration.
     TessellationItemUndeclared,
     /// A repositioned tessellation item has no valid placement.
     TessellationPlacementUnresolved,
     /// A detached tessellation item has multiple distinct repositioning placements.
     TessellationPlacementAmbiguous,
-    /// A geometric validation measure unit scale did not resolve.
-    ValidationMeasureUnitUnresolved,
     /// A geometric validation item states no quantity that a declared measure carries.
     ValidationItemUnsupported,
     /// The IR document has bodies but no exportable solids.
@@ -298,8 +286,6 @@ pub(crate) enum StepLossCode {
     PmiAllAroundComponentsUnresolved,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
-    /// Uninterpreted passthrough records were not represented.
-    PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
     /// A wire body's direct color alpha was omitted from RGB curve styling.
@@ -323,8 +309,6 @@ pub(crate) enum StepLossCode {
     HelixFitFailed,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
-    /// Source-native records were not represented.
-    SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
@@ -391,13 +375,8 @@ pub(crate) enum StepLossCode {
     EdgeEndVertexMissing,
     /// An edge was omitted because it has no vertex.
     EdgeNoVertex,
-    /// An anchor or REFERENCE expansion passed its value-node limit; the
-    /// binding or instance remains source-only.
-    ParseExpansionBounded,
     /// Product occurrence expansion stopped at its occurrence limit.
     OccurrenceExpansionOutputTruncated,
-    /// Product occurrence expansion stopped a branch at its path-depth limit.
-    OccurrenceExpansionDepthTruncated,
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
@@ -428,8 +407,6 @@ pub(crate) enum StepLossCode {
     /// A parent representation's `MAPPED_ITEM` placed an assembly occurrence
     /// that no STEP relationship associates with that item.
     OccurrencePlacementInferred,
-    /// A CSG item's attributes do not resolve; it has no feature and no body.
-    CsgItemUnresolved,
     /// A plant CSG shape lists several plant item orientations, so its items
     /// keep their own placements.
     CsgPlantOrientationAmbiguous,
@@ -455,6 +432,7 @@ impl StepLossCode {
         Self::ParsePreambleOmitted,
         Self::ParseDraftGrammar,
         Self::ParseEnvelopeIncomplete,
+        Self::ParsePresentationLiteralUnrepresentable,
         Self::ContainerMemberNoncanonical,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
@@ -463,6 +441,7 @@ impl StepLossCode {
         Self::SchemaObjectIdentifierOutOfRange,
         Self::ImplementationLevelUnverified,
         Self::HeaderMetadataNoncanonical,
+        Self::HeaderControlsOmitted,
         Self::SourceDialectUnverified,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
@@ -473,8 +452,6 @@ impl StepLossCode {
         Self::DocumentLengthUnitUnresolved,
         Self::DocumentAngleUnitUnresolved,
         Self::LineParameterScaleUnresolved,
-        Self::TopologyRootRejected,
-        Self::TopologyRootIncomplete,
         Self::TopologyAliasRootNameDropped,
         Self::OrientedShellOmitsCfsFaces,
         Self::SeamEdgePcurveUnresolved,
@@ -487,7 +464,6 @@ impl StepLossCode {
         Self::FaceMultipleOuterBounds,
         Self::ShellDisconnectedFaces,
         Self::NauoPlacementUnresolved,
-        Self::NauoPlacementAmbiguous,
         Self::BodyConflictingMappedPlacements,
         Self::PresentationAnnotationTextUnordered,
         Self::PresentationAnnotationPlacementAmbiguous,
@@ -495,7 +471,6 @@ impl StepLossCode {
         Self::DimensionalUnnamedMeasureAmbiguous,
         Self::PmiLengthUnitUnresolved,
         Self::PmiAngleUnitUnresolved,
-        Self::PmiDatumSystemInvalid,
         Self::PmiZoneUnresolved,
         Self::PmiDimensionModifierUnresolved,
         Self::PmiDimensionKindQuantityMismatch,
@@ -504,9 +479,6 @@ impl StepLossCode {
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
         Self::SurfaceTransparencyMisplaced,
-        Self::ContextDependentStyleUnresolved,
-        Self::DrawingRecordTooFewParameters,
-        Self::DrawingOrderUnstatable,
         Self::DrawingRelationshipUntypedTarget,
         Self::DrawingRelationshipTargetAmbiguous,
         Self::DrawingSheetRevisionUnresolved,
@@ -514,11 +486,9 @@ impl StepLossCode {
         Self::DraughtingSemanticDefinitionUntyped,
         Self::DraughtingAssociatedItemUntyped,
         Self::TessellationItemBodyUnresolved,
-        Self::TessellationInvalidPayload,
         Self::TessellationItemUndeclared,
         Self::TessellationPlacementUnresolved,
         Self::TessellationPlacementAmbiguous,
-        Self::ValidationMeasureUnitUnresolved,
         Self::ValidationItemUnsupported,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
@@ -581,7 +551,6 @@ impl StepLossCode {
         Self::PmiAnnotationNotWritten,
         Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
-        Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
@@ -592,7 +561,6 @@ impl StepLossCode {
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
-        Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
         Self::RegionSolidReducedToSheet,
@@ -625,9 +593,7 @@ impl StepLossCode {
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
         Self::EdgeNoVertex,
-        Self::ParseExpansionBounded,
         Self::OccurrenceExpansionOutputTruncated,
-        Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
         Self::OpenEdgeUnsplit,
         Self::TopologyFaceBoundaryUnstated,
@@ -635,7 +601,6 @@ impl StepLossCode {
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
         Self::OccurrencePlacementInferred,
-        Self::CsgItemUnresolved,
         Self::CsgPlantOrientationAmbiguous,
         Self::CsgSolidUnsynthesized,
         Self::CsgBooleanUnevaluated,
@@ -654,6 +619,9 @@ impl StepLossCode {
             Self::ParsePreambleOmitted => "parse.preamble-omitted",
             Self::ParseDraftGrammar => "parse.draft-grammar",
             Self::ParseEnvelopeIncomplete => "parse.envelope-incomplete",
+            Self::ParsePresentationLiteralUnrepresentable => {
+                "parse.presentation-literal-unrepresentable"
+            }
             Self::DecodeWarning => "decode.warning",
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
             Self::OpaqueRecordPreserved => "decode.opaque-record-preserved",
@@ -663,6 +631,7 @@ impl StepLossCode {
             }
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
+            Self::HeaderControlsOmitted => "metadata.header-controls-omitted",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
@@ -673,8 +642,6 @@ impl StepLossCode {
             Self::DocumentLengthUnitUnresolved => "geometry.document-length-unit-unresolved",
             Self::DocumentAngleUnitUnresolved => "geometry.document-angle-unit-unresolved",
             Self::LineParameterScaleUnresolved => "geometry.line-parameter-scale-unresolved",
-            Self::TopologyRootRejected => "topology.root-rejected",
-            Self::TopologyRootIncomplete => "topology.root-incomplete",
             Self::TopologyAliasRootNameDropped => "topology.alias-root-name-dropped",
             Self::OrientedShellOmitsCfsFaces => "topology.oriented-shell-omits-cfs-faces",
             Self::SeamEdgePcurveUnresolved => "topology.seam-edge-pcurve-unresolved",
@@ -689,7 +656,6 @@ impl StepLossCode {
             Self::FaceMultipleOuterBounds => "topology.face-multiple-outer-bounds",
             Self::ShellDisconnectedFaces => "topology.shell-disconnected-faces",
             Self::NauoPlacementUnresolved => "product.nauo-placement-unresolved",
-            Self::NauoPlacementAmbiguous => "product.nauo-placement-ambiguous",
             Self::BodyConflictingMappedPlacements => "product.body-conflicting-mapped-placements",
             Self::PresentationAnnotationTextUnordered => {
                 "pmi.presentation-annotation-text-unordered"
@@ -701,7 +667,6 @@ impl StepLossCode {
             Self::DimensionalUnnamedMeasureAmbiguous => "pmi.dimensional-unnamed-measure-ambiguous",
             Self::PmiLengthUnitUnresolved => "pmi.length-unit-unresolved",
             Self::PmiAngleUnitUnresolved => "pmi.angle-unit-unresolved",
-            Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::PmiZoneUnresolved => "pmi.zone-unresolved",
             Self::PmiDimensionModifierUnresolved => "pmi.dimension-modifier-unresolved",
             Self::PmiDimensionKindQuantityMismatch => "pmi.dimension-kind-quantity-mismatch",
@@ -710,11 +675,6 @@ impl StepLossCode {
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
             Self::SurfaceTransparencyMisplaced => "presentation.surface-transparency-misplaced",
-            Self::ContextDependentStyleUnresolved => {
-                "presentation.context-dependent-style-unresolved"
-            }
-            Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
-            Self::DrawingOrderUnstatable => "drawing.order-unstatable",
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
             Self::DrawingRelationshipTargetAmbiguous => "drawing.relationship-target-ambiguous",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
@@ -723,12 +683,10 @@ impl StepLossCode {
                 "drawing.draughting-semantic-definition-untyped"
             }
             Self::DraughtingAssociatedItemUntyped => "drawing.draughting-associated-item-untyped",
-            Self::TessellationInvalidPayload => "tessellation.invalid-payload",
             Self::TessellationItemBodyUnresolved => "tessellation.item-body-unresolved",
             Self::TessellationItemUndeclared => "tessellation.item-undeclared",
             Self::TessellationPlacementUnresolved => "tessellation.placement-unresolved",
             Self::TessellationPlacementAmbiguous => "tessellation.placement-ambiguous",
-            Self::ValidationMeasureUnitUnresolved => "validation.measure-unit-unresolved",
             Self::ValidationItemUnsupported => "validation.item-unsupported",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
@@ -797,7 +755,6 @@ impl StepLossCode {
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
-            Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
@@ -808,7 +765,6 @@ impl StepLossCode {
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
-            Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
@@ -843,9 +799,7 @@ impl StepLossCode {
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
             Self::EdgeNoVertex => "topology.edge-no-vertex",
-            Self::ParseExpansionBounded => "parse.expansion-bounded",
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
-            Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::OpenEdgeUnsplit => "topology.open-edge-unsplit",
             Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
@@ -853,7 +807,6 @@ impl StepLossCode {
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
             Self::OccurrencePlacementInferred => "product.occurrence-placement-inferred",
-            Self::CsgItemUnresolved => "csg.item-unresolved",
             Self::CsgPlantOrientationAmbiguous => "csg.plant-orientation-ambiguous",
             Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
             Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
@@ -871,16 +824,12 @@ impl StepLossCode {
             | Self::DocumentLengthUnitUnresolved
             | Self::DocumentAngleUnitUnresolved
             | Self::LineParameterScaleUnresolved
-            | Self::TopologyRootRejected
-            | Self::TopologyRootIncomplete
             | Self::PcurveEndpointsDiscontinuous
             | Self::PcurveLocusDiscontinuous
             | Self::NauoPlacementUnresolved
-            | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::PmiLengthUnitUnresolved
             | Self::PmiAngleUnitUnresolved
-            | Self::ValidationMeasureUnitUnresolved
             | Self::RegionNoShellList
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
@@ -915,7 +864,6 @@ impl StepLossCode {
             | Self::OccurrenceMetadataOmitted
             | Self::InstanceDefinitionSplit
             | Self::SourceAssociationOmitted
-            | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
@@ -924,7 +872,6 @@ impl StepLossCode {
             | Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
-            | Self::SourceNativeRecordOmitted
             | Self::NonManifoldEdgeSplit
             | Self::OccurrencePlacementInferred => Severity::Info,
             _ => Severity::Warning,
@@ -943,13 +890,9 @@ impl StepLossCode {
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
             | Self::PcurveGlobalFidelityUnproved
-            | Self::OccurrenceExpansionOutputTruncated
-            | Self::OccurrenceExpansionDepthTruncated => LossTaxonomy::DecodeDiagnostic,
+            | Self::OccurrenceExpansionOutputTruncated => LossTaxonomy::DecodeDiagnostic,
             Self::ParseDraftGrammar => LossTaxonomy::SourceDialectUnverified,
-            Self::OpaqueRecordPreserved
-            | Self::DrawingRecordTooFewParameters
-            | Self::DrawingOrderUnstatable
-            | Self::ParseExpansionBounded => LossTaxonomy::RecordNotTyped,
+            Self::OpaqueRecordPreserved => LossTaxonomy::RecordNotTyped,
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
@@ -964,7 +907,6 @@ impl StepLossCode {
             | Self::SurfaceSideInvalid
             | Self::SurfaceTransparencyConflict
             | Self::SurfaceTransparencyMisplaced
-            | Self::ContextDependentStyleUnresolved
             | Self::DrawingRelationshipUntypedTarget
             | Self::DraughtingSemanticDefinitionUntyped
             | Self::DraughtingAssociatedItemUntyped
@@ -1001,14 +943,11 @@ impl StepLossCode {
             | Self::LineParameterScaleUnresolved
             | Self::PmiLengthUnitUnresolved
             | Self::PmiAngleUnitUnresolved
-            | Self::ValidationMeasureUnitUnresolved
             | Self::GeometryCarrierNotWritten
             | Self::HelixFitFailed
             | Self::InstancePrototypeBodiesOmitted
             | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
-            Self::TopologyRootRejected
-            | Self::TopologyRootIncomplete
-            | Self::OccurrenceUnresolvedParent
+            Self::OccurrenceUnresolvedParent
             | Self::OccurrenceNoLocalProduct
             | Self::WireShellFreeVertices
             | Self::BodyWithoutProductRepresentation
@@ -1072,7 +1011,7 @@ impl StepLossCode {
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
             Self::CsgPlantOrientationAmbiguous => LossTaxonomy::BodyTransformNotApplied,
-            Self::CsgItemUnresolved | Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
+            Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
                 LossTaxonomy::GeometryNotTransferred
             }
             Self::CsgProfileGapClosed
@@ -1080,9 +1019,10 @@ impl StepLossCode {
             | Self::LengthUnitContradicted
             | Self::OccurrencePlacementInferred
             | Self::TorusSheetUnresolved => LossTaxonomy::DecodeDiagnostic,
-            Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
+            Self::CsgDesignUnscoped
+            | Self::ParsePresentationLiteralUnrepresentable
+            | Self::HeaderControlsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
-            | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::AssemblyOccurrenceOmittedNoParentProduct
             | Self::InstancePathUnresolved
@@ -1095,9 +1035,9 @@ impl StepLossCode {
             Self::OccurrencePlacementNotRigid | Self::BodyNonRigidTransform => {
                 LossTaxonomy::BodyTransformNotApplied
             }
-            Self::TessellationRequiresAp242
-            | Self::TessellationInvalidCardinality
-            | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
+            Self::TessellationRequiresAp242 | Self::TessellationInvalidCardinality => {
+                LossTaxonomy::TessellationOmitted
+            }
             Self::AnalyticSurfaceNormalized => LossTaxonomy::AnalyticSurfaceNormalized,
             Self::EllipticalConeReduced => LossTaxonomy::EllipticalConeReduced,
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
@@ -1108,13 +1048,10 @@ impl StepLossCode {
             | Self::AppearanceBindingTargetConflict
             | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
-            Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
-                LossTaxonomy::ParametricRecordOmitted
-            }
+            Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
             | Self::PmiAllAroundComponentsUnresolved
-            | Self::PmiDatumSystemInvalid
             | Self::PmiZoneUnresolved
             | Self::PmiDimensionModifierUnresolved
             | Self::PmiDimensionKindQuantityMismatch
@@ -1122,7 +1059,6 @@ impl StepLossCode {
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
-            Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
@@ -1144,11 +1080,18 @@ impl StepLossCode {
         .into()
     }
 
-    /// The strict floor `step.md` (Part 21 mapping) states: a repaired
-    /// noncanonical record pins Warning.
+    /// The strict floor `step.md` states for a recovery from input that
+    /// breaks the format, where the decoder keeps output.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::ParseNoncanonicalSyntax => Some(Severity::Warning),
+            Self::ParseNoncanonicalSyntax
+            | Self::ParseRecordOmitted
+            | Self::ParseEnvelopeIncomplete
+            | Self::ContainerMemberNoncanonical
+            | Self::HeaderMetadataNoncanonical
+            | Self::OrientedShellOmitsCfsFaces
+            | Self::FaceMultipleOuterBounds
+            | Self::PlacementReferenceInferred => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -1181,6 +1124,7 @@ mod tests {
                 "parse.preamble-omitted",
                 "parse.draft-grammar",
                 "parse.envelope-incomplete",
+                "parse.presentation-literal-unrepresentable",
                 "container.member-noncanonical",
                 "decode.warning",
                 "decode.byte-accounting-unclassified",
@@ -1189,6 +1133,7 @@ mod tests {
                 "metadata.schema-object-identifier-out-of-range",
                 "parse.implementation-level-unverified",
                 "parse.header-metadata-noncanonical",
+                "metadata.header-controls-omitted",
                 "source.dialect-unverified",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
@@ -1199,8 +1144,6 @@ mod tests {
                 "geometry.document-length-unit-unresolved",
                 "geometry.document-angle-unit-unresolved",
                 "geometry.line-parameter-scale-unresolved",
-                "topology.root-rejected",
-                "topology.root-incomplete",
                 "topology.alias-root-name-dropped",
                 "topology.oriented-shell-omits-cfs-faces",
                 "topology.seam-edge-pcurve-unresolved",
@@ -1213,7 +1156,6 @@ mod tests {
                 "topology.face-multiple-outer-bounds",
                 "topology.shell-disconnected-faces",
                 "product.nauo-placement-unresolved",
-                "product.nauo-placement-ambiguous",
                 "product.body-conflicting-mapped-placements",
                 "pmi.presentation-annotation-text-unordered",
                 "pmi.presentation-annotation-placement-ambiguous",
@@ -1221,7 +1163,6 @@ mod tests {
                 "pmi.dimensional-unnamed-measure-ambiguous",
                 "pmi.length-unit-unresolved",
                 "pmi.angle-unit-unresolved",
-                "pmi.datum-system-invalid",
                 "pmi.zone-unresolved",
                 "pmi.dimension-modifier-unresolved",
                 "pmi.dimension-kind-quantity-mismatch",
@@ -1230,9 +1171,6 @@ mod tests {
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
                 "presentation.surface-transparency-misplaced",
-                "presentation.context-dependent-style-unresolved",
-                "drawing.record-too-few-parameters",
-                "drawing.order-unstatable",
                 "drawing.relationship-untyped-target",
                 "drawing.relationship-target-ambiguous",
                 "drawing.sheet-revision-unresolved",
@@ -1240,11 +1178,9 @@ mod tests {
                 "drawing.draughting-semantic-definition-untyped",
                 "drawing.draughting-associated-item-untyped",
                 "tessellation.item-body-unresolved",
-                "tessellation.invalid-payload",
                 "tessellation.item-undeclared",
                 "tessellation.placement-unresolved",
                 "tessellation.placement-ambiguous",
-                "validation.measure-unit-unresolved",
                 "validation.item-unsupported",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
@@ -1307,7 +1243,6 @@ mod tests {
                 "pmi.annotation-not-written",
                 "pmi.all-around-components-unresolved",
                 "source.association-omitted",
-                "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
@@ -1318,7 +1253,6 @@ mod tests {
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
-                "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
                 "topology.region-solid-reduced-to-sheet",
@@ -1351,9 +1285,7 @@ mod tests {
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
                 "topology.edge-no-vertex",
-                "parse.expansion-bounded",
                 "occurrence.expansion-output-truncated",
-                "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
                 "topology.open-edge-unsplit",
                 "topology.face-boundary-unstated",
@@ -1361,7 +1293,6 @@ mod tests {
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",
                 "product.occurrence-placement-inferred",
-                "csg.item-unresolved",
                 "csg.plant-orientation-ambiguous",
                 "csg.solid-unsynthesized",
                 "csg.boolean-unevaluated",
@@ -1415,22 +1346,31 @@ mod tests {
         assert!(!pinned.refuses(&note, false));
     }
 
-    /// `step.md` states a strict floor for a repaired noncanonical record
-    /// and for no other code.
+    /// `step.md` states a strict floor Warning for each recovery from input
+    /// that breaks the format, and for no other code.
     #[test]
-    fn only_a_repaired_noncanonical_record_pins_a_strict_floor() {
+    fn only_recoveries_from_format_breaks_pin_a_strict_floor() {
         let pinned = Strictness {
             pinned: true,
             ..Strictness::default()
         };
+        let floored = [
+            StepLossCode::ParseNoncanonicalSyntax,
+            StepLossCode::ParseRecordOmitted,
+            StepLossCode::ParseEnvelopeIncomplete,
+            StepLossCode::ContainerMemberNoncanonical,
+            StepLossCode::HeaderMetadataNoncanonical,
+            StepLossCode::OrientedShellOmitsCfsFaces,
+            StepLossCode::FaceMultipleOuterBounds,
+            StepLossCode::PlacementReferenceInferred,
+        ];
         for code in StepLossCode::ALL {
-            let expected = match code {
-                StepLossCode::ParseNoncanonicalSyntax => Some(Severity::Warning),
-                _ => None,
-            };
+            let expected = floored.contains(code).then_some(Severity::Warning);
             assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
         }
-        assert!(pinned.refuses(&StepLossCode::ParseNoncanonicalSyntax.note("x"), false));
+        for code in floored {
+            assert!(pinned.refuses(&code.note("x"), false), "{}", code.code());
+        }
         let substituted = StepLossCode::UncertaintyLengthAmbiguous.note("x");
         assert_eq!(substituted.severity, Severity::Warning);
         assert!(!pinned.refuses(&substituted, false));

@@ -406,8 +406,9 @@ fn a_boolean_tree_has_features_and_no_body() {
 }
 
 /// Decode the Boolean results `booleans` over the block `#35`, listed through
-/// `CSG_SOLID` `#33` of `#30`, and require one `csg.item-unresolved` loss
-/// that names `cycle`, no combine, no body, and the block's feature alone.
+/// `CSG_SOLID` `#33` of `#30`, and require one `record.unreadable` give-up
+/// per cycle member that names `cycle`, no combine, no body, and the block's
+/// feature alone.
 fn assert_cycle_refused(booleans: &str, cycle: &str) {
     let decoded = decode_inline(&exchange(
         "#33",
@@ -423,12 +424,19 @@ fn assert_cycle_refused(booleans: &str, cycle: &str) {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == StepLossCode::CsgItemUnresolved.kind())
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.contains("operand cycle")
+        })
         .collect();
-    assert_eq!(cycles.len(), 1, "{cycle}: one loss");
+    assert_eq!(
+        cycles.len(),
+        cycle.matches("->").count(),
+        "{cycle}: one give-up per cycle member"
+    );
     assert!(
-        cycles[0].message.contains(cycle),
-        "{cycle}: the loss names the cycle"
+        cycles.iter().all(|loss| loss.message.contains(cycle)),
+        "{cycle}: each give-up names the cycle"
     );
     assert!(decoded.ir().geometry.bodies.is_empty(), "{cycle}: no body");
     let features = &decoded.ir().design.features;

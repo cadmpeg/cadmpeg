@@ -3,6 +3,7 @@
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::primitives::PrimitiveSolidKind;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -610,12 +611,10 @@ fn primitive_placement_composes_body_and_validator_rejects_changed_frame() {
         .iter_mut()
         .find(|f| f.name.as_deref() == Some("Box"))
         .unwrap();
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&*feature).unwrap();
-    value["definition"]["value"]["value"]["placement"] = cadmpeg_core::serde_erase::json::to_value(
-        cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity(),
-    )
-    .unwrap();
-    *feature = cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+    let mut value = json::to_value(&*feature).unwrap();
+    value["definition"]["value"]["value"]["placement"] =
+        json::to_value(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity()).unwrap();
+    *feature = json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
         .any(|f| f.message.contains("primitive placement")));
@@ -857,18 +856,58 @@ fn primitive_placement_ambiguous_support_names_remain_native_with_loss() {
 }
 
 #[test]
-fn primitive_placement_refuses_multiple_part_parents() {
+fn primitive_placement_with_multiple_part_parents_keeps_the_first_container() {
     let document = box_document("0", PLACEMENT).replace("PartDesign::Body", "App::Part")
         .replace("<Objects Count=\"2\">", "<Objects Count=\"3\"><Object type=\"App::Part\" name=\"OtherBody\"/>")
         .replace("<ObjectData Count=\"2\">", "<ObjectData Count=\"3\">")
         .replace("</ObjectData>", &format!(r#"<Object name="OtherBody"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Box"/></LinkList></Property>{PLACEMENT}</Properties></Object></ObjectData>"#));
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(&document)),
             &DecodeOptions::default(),
         )
-        .unwrap_err();
-    assert!(error.to_string().contains("multiple parent containers"));
+        .unwrap();
+    let given_up = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{given_up:?}");
+    assert!(given_up[0].starts_with("record fcstd:native:property#Body:Group given up"));
+    // The primitive's frame and its occurrence both lie in OtherBody, the
+    // first container that lists it.
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|l| l.code.local_code() == "feature.primitive-placement-unresolved"));
+    let primitive = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find_map(|f| match operation(f) {
+            FeatureOperation::Primitive { placement, .. } => *placement,
+            _ => None,
+        })
+        .expect("a resolved primitive frame");
+    let occurrence = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with("#Box:container"))
+        .expect("the primitive's occurrence");
+    let world = cadmpeg_test_support::assembly::resolved_transform(decoded.ir(), &occurrence.id)
+        .expect("a placed occurrence");
+    assert_eq!(primitive.rows()[0][3], 10.0);
+    assert_eq!(primitive.rows()[1][3], -14.0);
+    assert_eq!(primitive.rows()[2][3], 6.0);
+    assert_eq!(primitive.rows(), world.rows());
+    let findings = crate::test_support::validate_native(decoded.ir());
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]
@@ -891,15 +930,13 @@ fn primitive_placement_validator_refuses_neutral_definition_for_unknown_mode() {
             .unwrap()
     };
     let known_feature = &known.ir().model.features[box_feature(known.ir())];
-    let mut definition =
-        cadmpeg_core::serde_erase::json::to_value(known_feature).unwrap()["definition"].clone();
+    let mut definition = json::to_value(known_feature).unwrap()["definition"].clone();
     definition.as_object_mut().unwrap().remove("placement");
     let mut changed = unknown.ir().clone();
     let index = box_feature(&changed);
-    let mut value =
-        cadmpeg_core::serde_erase::json::to_value(&changed.model.features[index]).unwrap();
+    let mut value = json::to_value(&changed.model.features[index]).unwrap();
     value["definition"] = definition;
-    changed.model.features[index] = cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+    changed.model.features[index] = json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
         .any(|f| f.message.contains("primitive placement")));

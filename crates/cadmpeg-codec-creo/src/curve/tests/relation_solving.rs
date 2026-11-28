@@ -4,6 +4,7 @@ use crate::curve::{
     CurveExpressionValue, RelationEvaluationContext,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -123,7 +124,7 @@ fn relation_quantity_serialization_preserves_base_power_fields() {
     let value = crate::curve::CurveExpressionQuantity::new(3.5, [1, 2, 0, 0, 0])
         .expect("finite residual quantity");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&value).expect("quantity JSON"),
+        json::to_string(&value).expect("quantity JSON"),
         r#"{"value":3.5,"length_power":1,"mass_power":2,"time_power":0,"angle_power":0,"temperature_power":0}"#
     );
 }

@@ -10,7 +10,9 @@
 //! severity from the code, and it leaves only the per-instance message to the
 //! caller.
 
-use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+use cadmpeg_ir::report::loss::{
+    LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind,
+};
 use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("edrawings");
@@ -25,14 +27,9 @@ pub(crate) enum EdrawingsLossCode {
     /// The ZIP central directory was unreadable and members were recovered
     /// from local headers.
     ContainerDirectoryRecovered,
-    /// The model stream did not open: the package carries no model data.
-    StreamMalformed,
     /// Bytes follow the end of the compressed model stream and were not
     /// transferred.
     StreamTrailingBytes,
-    /// The inflated model stream broke a record rule: the walk stopped and the
-    /// package carries no model data.
-    ModelMalformed,
     /// The model stream decoded without any body.
     ModelNoGeometry,
     /// An object reference, slot, or id of the model stream is unusable.
@@ -47,8 +44,6 @@ pub(crate) enum EdrawingsLossCode {
     GeometryBodyReversed,
     /// Degenerate triangles were dropped from a body.
     GeometryDegenerateTriangles,
-    /// A body could not be built from its mesh.
-    GeometryBodyFailed,
     /// An instance matrix holds a non-finite value; the identity replaced it.
     StructurePlacementInvalid,
     /// Face group colours differ from their body colour; the body colour
@@ -77,9 +72,7 @@ impl EdrawingsLossCode {
     const ALL: &'static [EdrawingsLossCode] = &[
         Self::SourceDialectUnverified,
         Self::ContainerDirectoryRecovered,
-        Self::StreamMalformed,
         Self::StreamTrailingBytes,
-        Self::ModelMalformed,
         Self::ModelNoGeometry,
         Self::ModelObjectInvalid,
         Self::ModelShellInvalid,
@@ -87,7 +80,6 @@ impl EdrawingsLossCode {
         Self::GeometryOpenBody,
         Self::GeometryBodyReversed,
         Self::GeometryDegenerateTriangles,
-        Self::GeometryBodyFailed,
         Self::StructurePlacementInvalid,
         Self::AppearanceFaceColourReduced,
         Self::AppearanceOverrideDropped,
@@ -104,9 +96,7 @@ impl EdrawingsLossCode {
         match self {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::ContainerDirectoryRecovered => "container.directory-recovered",
-            Self::StreamMalformed => "stream.malformed",
             Self::StreamTrailingBytes => "stream.trailing-bytes",
-            Self::ModelMalformed => "model.malformed",
             Self::ModelNoGeometry => "model.no-geometry",
             Self::ModelObjectInvalid => "model.object-invalid",
             Self::ModelShellInvalid => "model.shell-invalid",
@@ -114,7 +104,6 @@ impl EdrawingsLossCode {
             Self::GeometryOpenBody => "geometry.open-body",
             Self::GeometryBodyReversed => "geometry.body-reversed",
             Self::GeometryDegenerateTriangles => "geometry.degenerate-triangles",
-            Self::GeometryBodyFailed => "geometry.body-failed",
             Self::StructurePlacementInvalid => "structure.placement-invalid",
             Self::AppearanceFaceColourReduced => "appearance.face-colour-reduced",
             Self::AppearanceOverrideDropped => "appearance.override-dropped",
@@ -140,7 +129,6 @@ impl EdrawingsLossCode {
             | Self::GeometryOpenBody
             | Self::GeometryBodyReversed
             | Self::GeometryDegenerateTriangles
-            | Self::GeometryBodyFailed
             | Self::StructurePlacementInvalid
             | Self::AppearanceFaceColourReduced
             | Self::AppearanceOverrideDropped
@@ -149,7 +137,6 @@ impl EdrawingsLossCode {
             | Self::StructureSubassemblyPlacementAssumed
             | Self::StructureDisplayStatesDropped
             | Self::StructureOccurrenceDropped => Severity::Warning,
-            Self::StreamMalformed | Self::ModelMalformed => Severity::Blocking,
         }
     }
 
@@ -157,12 +144,9 @@ impl EdrawingsLossCode {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerDirectoryRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::StreamMalformed
-            | Self::ModelMalformed
-            | Self::ModelNoGeometry
-            | Self::ModelShellInvalid
-            | Self::GeometryDegenerateTriangles
-            | Self::GeometryBodyFailed => LossTaxonomy::GeometryNotTransferred,
+            Self::ModelNoGeometry | Self::ModelShellInvalid | Self::GeometryDegenerateTriangles => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::ModelObjectInvalid | Self::StructureVisibilityInferred => {
                 LossTaxonomy::DecodeDiagnostic
             }
@@ -180,10 +164,21 @@ impl EdrawingsLossCode {
         }
     }
 
+    /// The strict floor `edrawings.md` states: a ZIP central directory that
+    /// the reader recovers from local headers pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ContainerDirectoryRecovered => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -210,9 +205,7 @@ mod tests {
             [
                 "source.dialect-unverified",
                 "container.directory-recovered",
-                "stream.malformed",
                 "stream.trailing-bytes",
-                "model.malformed",
                 "model.no-geometry",
                 "model.object-invalid",
                 "model.shell-invalid",
@@ -220,7 +213,6 @@ mod tests {
                 "geometry.open-body",
                 "geometry.body-reversed",
                 "geometry.degenerate-triangles",
-                "geometry.body-failed",
                 "structure.placement-invalid",
                 "appearance.face-colour-reduced",
                 "appearance.override-dropped",
@@ -246,6 +238,21 @@ mod tests {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'));
         }
+    }
+
+    /// `edrawings.md` lists the recovered central directory as the one code
+    /// with a strict floor, at Warning.
+    #[test]
+    fn strict_floors_are_the_listed_codes() {
+        use cadmpeg_ir::report::Severity;
+        let floored: Vec<_> = EdrawingsLossCode::ALL
+            .iter()
+            .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+            .collect();
+        assert_eq!(
+            floored,
+            [("container.directory-recovered", Severity::Warning)]
+        );
     }
 
     /// The note builder fixes severity from the codec-specific code.

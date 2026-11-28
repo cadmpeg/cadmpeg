@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{AdmittedTables, ConfiguredValue};
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::{
+    test_row_differences, write_test_rows, AdmittedTables, ConfiguredValue, TestRowTarget,
+};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
 };
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 const DEFINITION: &str = "/tables/0/asset/components/0/properties";
 const COLUMNS: &str = "/tables/0/asset/components/0/properties/columnData/value";
@@ -303,4 +308,63 @@ fn table_components_are_selected_by_one_name() {
     let admitted = admit(&versioned);
     assert!(admitted.tables.is_empty());
     assert_eq!(admitted.unassigned, 2);
+}
+
+#[test]
+fn a_test_row_target_preserves_opaque_entries_and_checks_every_target_column() {
+    let entry = |column: &str, value: i32| json!({"ColumnUniqueID": column, "Value": value});
+    let target_entry = |column, value, required| TestRowTarget {
+        members: Some(entry(column, value).as_object().unwrap().clone()),
+        required,
+    };
+    let target = BTreeMap::from([
+        ("A".to_owned(), target_entry("A", 4, true)),
+        ("B".to_owned(), target_entry("B", 5, true)),
+        (
+            "C".to_owned(),
+            TestRowTarget {
+                members: None,
+                required: true,
+            },
+        ),
+        ("D".to_owned(), target_entry("D", 6, false)),
+    ]);
+    let mut payload = json!({
+        "testRowData": [
+            "opaque",
+            json!({"ColumnUniqueID": "A", "Value": 1, "Other": "kept"}).to_string(),
+            entry("A", 2).to_string(),
+            entry("C", 3).to_string(),
+        ],
+    });
+    let written = write_test_rows(payload.as_object_mut().unwrap(), &target);
+    assert!(written.added && written.rewritten);
+    assert_eq!(
+        test_row_differences(payload.as_object().unwrap(), &target),
+        BTreeSet::from(["C"])
+    );
+    let cells = payload["testRowData"].as_array().unwrap();
+    assert_eq!(cells[0], "opaque");
+    let entries = cells[1..]
+        .iter()
+        .map(|cell| serde_json::from_str::<Value>(cell.as_str().unwrap()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entries,
+        [
+            json!({"ColumnUniqueID": "A", "Value": 4, "Other": "kept"}),
+            entry("A", 4),
+            entry("C", 3),
+            entry("B", 5),
+        ]
+    );
+
+    let mut malformed = json!({"testRowData": "opaque array"});
+    let written = write_test_rows(malformed.as_object_mut().unwrap(), &target);
+    assert!(!written.added && !written.rewritten);
+    assert_eq!(
+        test_row_differences(malformed.as_object().unwrap(), &target),
+        BTreeSet::from(["A", "B"])
+    );
+    assert_eq!(malformed["testRowData"], "opaque array");
 }

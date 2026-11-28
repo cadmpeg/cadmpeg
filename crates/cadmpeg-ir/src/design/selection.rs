@@ -71,7 +71,7 @@ pub trait Keyed {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "Vec<T>",
-    bound(deserialize = "T: Deserialize<'de> + Keyed, O: MemberOrder")
+    bound(deserialize = "T: ::serde::de::DeserializeOwned + Keyed, O: MemberOrder")
 )]
 pub struct Members<T, O> {
     items: Vec<T>,
@@ -145,7 +145,7 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
             && items.windows(2).any(|pair| pair[0].key() > pair[1].key())
             && !cadmpeg_core::read_session::repair(
                 cadmpeg_core::read_session::Repair::Spelling,
-                || "an unordered member list states its members out of identity-key order".into(),
+                &|| "an unordered member list states its members out of identity-key order".into(),
             )
         {
             return Err("an unordered member list states its members out of identity-key order");
@@ -678,6 +678,27 @@ pub struct Witness {
         deserialize_with = "deserialize_body"
     )]
     pub body: Option<Box<Topology>>,
+}
+
+impl Witness {
+    /// The witness of an edge as a feature's stored input state samples it:
+    /// its interior point, the carrier tangent there, and its two end points
+    /// where both are stored.
+    #[must_use]
+    pub fn edge_sample(sample: &crate::features::evaluation::HistoricalEdgeGeometry) -> Self {
+        Self {
+            point: Some(sample.interior),
+            direction: sample.tangent,
+            endpoints: sample
+                .start
+                .zip(sample.end)
+                .map(|(start, end)| [start, end]),
+            frame: None,
+            curves: Vec::new(),
+            surface: None,
+            body: None,
+        }
+    }
 }
 
 /// The part of an entity that a pick is restricted to.

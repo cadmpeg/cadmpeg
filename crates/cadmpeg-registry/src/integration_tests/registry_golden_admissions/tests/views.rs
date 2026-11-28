@@ -3,7 +3,8 @@ use super::{
     assert_rejected, inspect_view, kernel_loss, nx_13006, registry_rows, report_view, sldprt_13006,
     source_view, validate, Admission,
 };
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use std::path::Path;
 
 #[test]
@@ -22,14 +23,14 @@ fn view_local_kernel_loss_counts_include_zero_for_admitted_layers() {
     assert_rejected(
         &report_view(&sldprt, &[kernel_loss("sldprt")]),
         &registry,
-        "has 0 residual Parasolid layers but 1 typed kernel losses",
+        "has 0 residual kernel layers but 1 typed kernel losses",
     );
 
     let no_loss = report_view(&nx, &[]);
     assert_rejected(
         &no_loss,
         &registry,
-        "has 1 residual Parasolid layers but 0 typed kernel losses",
+        "has 1 residual kernel layers but 0 typed kernel losses",
     );
 
     assert_rejected(
@@ -188,7 +189,7 @@ fn real_decode_and_inspect_error_fixtures_are_not_success_views() {
         let path = golden_root.join(relative);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
-        let value: serde_json::Value = cadmpeg_core::serde_erase::json::from_slice(&bytes)
+        let value: serde_json::Value = json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
         assert_eq!(validate(&value, &registry), Ok(0), "{}", path.display());
     }

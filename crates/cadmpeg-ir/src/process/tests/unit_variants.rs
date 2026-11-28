@@ -3,12 +3,14 @@
 //! `value` has one spelling: `{"kind": name}`. The sweep finds each such enum
 //! in the process module's source and reads every one of its unit variants.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use cadmpeg_core::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use syn::{Fields, Item};
 
 use super::read_desktop;
@@ -27,7 +29,7 @@ type Reader = fn(&str) -> Result<Value, String>;
 /// Reads `text` as a `T` and writes it back.
 fn reads<T: Serialize + DeserializeOwned>(text: &str) -> Result<Value, String> {
     let read: T = read_desktop(text).map_err(|error| error.to_string())?;
-    cadmpeg_core::serde_erase::json::to_value(read).map_err(|error| error.to_string())
+    json::to_value(read).map_err(|error| error.to_string())
 }
 
 /// The reader of each adjacently tagged process enum with a unit variant, by

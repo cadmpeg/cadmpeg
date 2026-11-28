@@ -10,10 +10,11 @@
 pub(crate) mod target;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{edit_dropped, evaluation_stale, native_records_omitted};
+use cadmpeg_ir::codec::write::{edit_dropped, evaluation_stale, NativeDispositions};
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::EntityKind;
@@ -30,25 +31,23 @@ use target::Resolution;
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(&mut staged, resolution)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(report)
+fn write(
+    ctx: &DecodeContext<'_>,
+    output: &mut Vec<u8>,
+    resolution: &Resolution<'_>,
+) -> Result<WriteOutcome, CodecError> {
+    write_seekable(ctx, &mut std::io::Cursor::new(output), resolution)
 }
 
 const UNREADABLE_ENTRY: &str = "whose archive entry record does not read";
 const DUPLICATE_ENTRY: &str = "whose archive entry name an earlier entry record takes";
 const UNREAD_PAYLOAD: &str = "whose ZIP member has no archive entry record";
 const UNHELD_PAYLOAD: &str =
-    "as the payload entries of these properties, which the archive does not hold; each written \
-     property names no entry";
+    "that are properties the patch writes with the file name value emptied, because the archive \
+     does not hold the payload entry the value names";
 const DROPPED_PROPERTY: &str =
-    "whose payload entries the archive does not hold, each with the entries it names";
-const KEPT_REFERENCE: &str =
-    "as the payload entries of these properties, which are written as stored and still name \
-     them; each with the property that names it";
+    "that name payload entries the archive does not hold, and that the patch can write neither \
+     without those names nor as stored";
 const UNREADABLE_SPAN: &str =
     "whose physical ledger span does not read; the archive member order it states is not kept";
 
@@ -61,15 +60,17 @@ impl Omissions {
         self.0.entry(reason).or_default().push(id.into());
     }
 
-    fn losses(&self) -> impl Iterator<Item = LossNote> + '_ {
-        self.0.iter().filter_map(|(reason, ids)| {
-            native_records_omitted("FCStd", reason, ids.iter().cloned())
-        })
+    /// Declare each omitted record dropped, so the write wrapper charges it.
+    fn declare(&self, native: &mut NativeDispositions) {
+        for (reason, ids) in &self.0 {
+            native.drop_records("fcstd", reason, ids);
+        }
     }
 }
 
-/// Pass on a refusal §3.4 admits (a resource ceiling, destination I/O); any
-/// other failure is the caller's to degrade.
+/// Pass on a resource refusal (§2.5) and an I/O failure reading retained
+/// source data, which planning reports as `EncodeError::Backend`; any other
+/// failure is the caller's to degrade.
 fn recover(error: CodecError) -> Result<(), CodecError> {
     match error {
         CodecError::ResourceLimit(_) | CodecError::Io(_) => Err(error),
@@ -79,6 +80,7 @@ fn recover(error: CodecError) -> Result<(), CodecError> {
 
 /// The records of `arena` that read as `T`, and the ids of those that do not.
 fn read_arena<T: DeserializeOwned>(
+    ctx: &DecodeContext<'_>,
     namespace: &NativeNamespace,
     arena: &str,
 ) -> Result<(Vec<T>, Vec<String>), CodecError> {
@@ -90,7 +92,7 @@ fn read_arena<T: DeserializeOwned>(
         .map(cadmpeg_ir::native::NativeRecord::id);
     let mut read = Vec::new();
     let mut unreadable = Vec::new();
-    for (id, record) in ids.zip(namespace.arena_iter_as::<T>(arena)) {
+    for (id, record) in ids.zip(namespace.arena_iter_as_for_decode::<T>(ctx, arena)) {
         match record {
             Ok(record) => read.push(record),
             Err(error) => {
@@ -108,6 +110,7 @@ fn read_arena<T: DeserializeOwned>(
 /// from [`target::retained_baseline`], so the dialect written here is the one
 /// the retained `Document.xml` declares.
 fn write_seekable(
+    ctx: &DecodeContext<'_>,
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
@@ -115,24 +118,21 @@ fn write_seekable(
     let entries = resolution.entries();
     let mut omitted = resolution.omitted().clone();
     let (physical_ledger, unreadable_spans) =
-        read_arena::<ArchiveSpan>(namespace, "physical_ledger")?;
+        read_arena::<ArchiveSpan>(ctx, namespace, "physical_ledger")?;
     for id in unreadable_spans {
         omitted.push(UNREADABLE_SPAN, id);
     }
-    let (objects, unreadable_objects) = read_arena::<ObjectRecord>(namespace, "objects")?;
+    let (objects, unreadable_objects) = read_arena::<ObjectRecord>(ctx, namespace, "objects")?;
     let (extensions, unreadable_extensions) =
-        read_arena::<ExtensionRecord>(namespace, "extensions")?;
+        read_arena::<ExtensionRecord>(ctx, namespace, "extensions")?;
     let (properties, unreadable_properties) =
-        read_arena::<PropertyRecord>(namespace, "properties")?;
-    let written = written_document(resolution, &objects, &extensions, &properties)?;
+        read_arena::<PropertyRecord>(ctx, namespace, "properties")?;
+    let written = written_document(ctx, resolution, &objects, &extensions, &properties)?;
     for id in written.unheld {
         omitted.push(UNHELD_PAYLOAD, id);
     }
-    for line in written.omitted_properties {
-        omitted.push(DROPPED_PROPERTY, line);
-    }
-    for line in written.unresolved {
-        omitted.push(KEPT_REFERENCE, line);
+    for id in written.omitted_properties {
+        omitted.push(DROPPED_PROPERTY, id);
     }
     let mut omitted_members = resolution.omitted_members().clone();
     omitted_members.extend(written.members);
@@ -171,14 +171,15 @@ fn write_seekable(
             std::io::Error::other(format!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    let mut losses = omitted.losses().collect::<Vec<_>>();
-    losses.extend(edit_dropped(
+    let mut losses = edit_dropped(
         EntityKind::Feature,
         "FCStd",
         "holds these records of the retained Document.xml as the source stores them, without \
          their edits",
         dropped,
-    ));
+    )
+    .into_iter()
+    .collect::<Vec<_>>();
     losses.extend(evaluation_stale(
         "FCStd",
         "writes input edits of these objects, or removes payload entry names from them, beside \
@@ -200,6 +201,7 @@ fn write_seekable(
             counts: resolution.ir().census(),
         },
         losses,
+        omitted,
         notes,
     })
 }
@@ -207,6 +209,8 @@ fn write_seekable(
 struct WriteOutcome {
     census: cadmpeg_ir::report::export::EntityCensus,
     losses: Vec<LossNote>,
+    /// The retained records the archive leaves out, declared dropped.
+    omitted: Omissions,
     notes: Vec<String>,
 }
 
@@ -248,13 +252,10 @@ struct WrittenDocument {
     /// Properties written with an empty file name in place of an archive
     /// entry the output does not hold.
     unheld: BTreeSet<String>,
-    /// Properties left out of the written file, each with the entries it
-    /// names that the output does not hold.
+    /// Properties left out of the written file.
     omitted_properties: Vec<String>,
-    /// Entries the output does not hold that a property written as stored
-    /// names, each with that property.
-    unresolved: Vec<String>,
-    /// The archive members that the properties above name.
+    /// The archive members that the properties above name, which those
+    /// properties account for.
     members: HashSet<String>,
 }
 
@@ -281,7 +282,6 @@ impl WrittenDocument {
             stale,
             unheld: unheld.emptied,
             omitted_properties: unheld.omitted,
-            unresolved: unheld.named,
             members: unheld.members,
         }
     }
@@ -297,12 +297,12 @@ struct Unheld {
     expected: Vec<PropertyRecord>,
     /// Properties written with an empty file name.
     emptied: BTreeSet<String>,
-    /// Properties left out, each as `<property> names <entry>, …`.
+    /// Properties left out.
     omitted: Vec<String>,
-    /// Entries named by properties written as stored, each as
-    /// `<entry> named by <property>`.
-    named: Vec<String>,
-    /// The archive members the properties above name.
+    /// The archive members that the properties written with an empty file
+    /// name, or left out, name. A property written as stored accounts for
+    /// none: the ledger span of each member it names is omitted by its own
+    /// id.
     members: HashSet<String>,
 }
 
@@ -331,7 +331,6 @@ impl Unheld {
             expected: Vec::with_capacity(written.len()),
             emptied: BTreeSet::new(),
             omitted: Vec::new(),
-            named: Vec::new(),
             members: HashSet::new(),
         };
         for (written, original) in written.iter().zip(originals) {
@@ -342,18 +341,14 @@ impl Unheld {
             }
             let names = entries(original);
             if left_out.contains(id) {
-                split
-                    .omitted
-                    .push(format!("{id} names {}", names.join(" and ")));
+                split.omitted.push(id.clone());
             } else if as_stored.contains(id) {
-                split
-                    .named
-                    .extend(names.iter().map(|name| format!("{name} named by {id}")));
                 let mut stored = original.clone();
                 if let PropertyBody::Persisted { side_entries, .. } = &mut stored.body {
                     side_entries.retain(|name| !removed.contains(name));
                 }
                 split.expected.push(stored);
+                continue;
             } else {
                 split.emptied.insert(id.clone());
                 split.expected.push(written.clone());
@@ -383,6 +378,7 @@ impl Unheld {
 /// it is written as stored. The edits reported dropped are the records of
 /// the document the written file does not state.
 fn written_document(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     objects: &[ObjectRecord],
     extensions: &[ExtensionRecord],
@@ -404,7 +400,7 @@ fn written_document(
     let stored = if unheld.is_empty() {
         None
     } else {
-        read_back(source, resolution, false)?
+        read_back(ctx, source, resolution, false)?
     };
     let mut stored = match stored {
         Some(graph) => {
@@ -423,16 +419,16 @@ fn written_document(
     // at most once each, so four passes settle properties that do not change
     // how another reads back.
     for _ in 0..4 {
-        let patch = patch_document(source, &writable, &kept)?;
+        let patch = patch_document(ctx, source, &writable, &kept)?;
         if fall_back(&mut writable, &mut stored, &mut kept, patch.unwritten) {
             continue;
         }
         let emptied = emptied_owners(&writable, &unheld, &kept);
         let (marked, stale) = marked_objects(resolution, objects, &patch.changed_inputs, &emptied);
-        let Some(xml) = with_touches(resolution, patch.xml, &marked)? else {
+        let Some(xml) = with_touches(ctx, resolution, patch.xml, &marked)? else {
             break;
         };
-        let Some(graph) = read_back(&xml, resolution, true)? else {
+        let Some(graph) = read_back(ctx, &xml, resolution, true)? else {
             break;
         };
         let differing = differing_properties(&writable, &graph, &kept, &patch.edited, &held);
@@ -445,6 +441,7 @@ fn written_document(
             };
             let named = unheld.intersection(&kept).cloned().collect();
             let (written, left_out) = without_unresolved(
+                ctx,
                 resolution,
                 objects,
                 (&writable, &named),
@@ -468,6 +465,7 @@ fn written_document(
         fall_back(&mut writable, &mut stored, &mut kept, differing);
     }
     stored_document(
+        ctx,
         resolution,
         (objects, extensions, properties, originals),
         &held,
@@ -490,6 +488,7 @@ struct Written {
 /// the properties left out. Where that file does not read back as `holds`
 /// accepts, `written` is returned unchanged and none is left out.
 fn without_unresolved<'p>(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     objects: &[ObjectRecord],
     (properties, named): (&'p [PropertyRecord], &BTreeSet<String>),
@@ -498,7 +497,7 @@ fn without_unresolved<'p>(
     holds: impl Fn(&Graph) -> bool,
 ) -> Result<(Written, BTreeSet<String>), CodecError> {
     let Some((xml, left_out)) =
-        without_properties(&written.xml, resolution, objects, properties, named)?
+        without_properties(ctx, &written.xml, resolution, objects, properties, named)?
     else {
         return Ok((written, BTreeSet::new()));
     };
@@ -510,10 +509,10 @@ fn without_unresolved<'p>(
             .map(|property| property.owner.as_str()),
     );
     let (marked, stale) = marked_objects(resolution, objects, changed_inputs, &owners);
-    let Some(xml) = with_touches(resolution, xml, &marked)? else {
+    let Some(xml) = with_touches(ctx, resolution, xml, &marked)? else {
         return Ok((written, BTreeSet::new()));
     };
-    let Some(graph) = read_back(&xml, resolution, true)? else {
+    let Some(graph) = read_back(ctx, &xml, resolution, true)? else {
         return Ok((written, BTreeSet::new()));
     };
     let reads_out = !graph
@@ -539,6 +538,7 @@ fn without_unresolved<'p>(
 /// element `xml` does not hold as its retained text, or whose container
 /// declares no count of its kind, stays. `None` where none is removed.
 fn without_properties(
+    ctx: &DecodeContext<'_>,
     xml: &str,
     resolution: &Resolution<'_>,
     objects: &[ObjectRecord],
@@ -548,11 +548,7 @@ fn without_properties(
     if named.is_empty() {
         return Ok(None);
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
-    let parsed = match ctx.parse_xml(xml, "FreeCAD property containers") {
+    let parsed = match parse_retained(ctx, xml, "FreeCAD property containers") {
         Ok(parsed) => parsed,
         Err(error) => return recover(error).map(|()| None),
     };
@@ -667,6 +663,7 @@ fn fall_back(
 /// dropped. Where the stored `Document.xml` does not read back, the archive
 /// holds it unchanged and the report names the document.
 fn stored_document(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     expected: (
         &[ObjectRecord],
@@ -679,19 +676,19 @@ fn stored_document(
 ) -> Result<WrittenDocument, CodecError> {
     let (objects, extensions, properties, originals) = expected;
     let source = resolution.document_xml();
-    if let Some(stored) = read_back(source, resolution, false)? {
+    if let Some(stored) = read_back(ctx, source, resolution, false)? {
         let (stored_properties, unheld) = without_entries(&stored.properties, removed);
         let kept = stored_properties
             .iter()
             .filter(|property| !unheld.contains(&property.id))
             .map(|property| property.id.clone())
             .collect();
-        let patch = patch_document(source, &stored_properties, &kept)?;
+        let patch = patch_document(ctx, source, &stored_properties, &kept)?;
         let emptied = emptied_owners(&stored_properties, &unheld, &patch.unwritten);
         let (stored_marked, _) =
             marked_objects(resolution, &stored.objects, &HashSet::new(), &emptied);
-        if let Some(xml) = with_touches(resolution, patch.xml, &stored_marked)? {
-            if let Some(graph) = read_back(&xml, resolution, true)? {
+        if let Some(xml) = with_touches(ctx, resolution, patch.xml, &stored_marked)? {
+            if let Some(graph) = read_back(ctx, &xml, resolution, true)? {
                 let (marked, stale) =
                     marked_objects(resolution, objects, &HashSet::new(), &emptied);
                 let unheld = Unheld::split(
@@ -718,7 +715,6 @@ fn stored_document(
         stale: BTreeSet::new(),
         unheld: BTreeSet::new(),
         omitted_properties: Vec::new(),
-        unresolved: Vec::new(),
         members: HashSet::new(),
     })
 }
@@ -767,6 +763,7 @@ fn marked_objects(
 /// `xml` with the `Touched` marks of `marked` written, where the schema has
 /// the mark.
 fn with_touches(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     xml: String,
     marked: &[ObjectRecord],
@@ -774,7 +771,7 @@ fn with_touches(
     if resolution.vocabulary() == Vocabulary::Features {
         Ok(Some(xml))
     } else {
-        patch_object_touches(&xml, marked)
+        patch_object_touches(ctx, &xml, marked)
     }
 }
 
@@ -820,15 +817,13 @@ fn without_entries(
 /// not read. With `resolve`, each property's archive entries are resolved
 /// against the entries the output holds.
 fn read_back(
+    ctx: &DecodeContext<'_>,
     xml: &str,
     resolution: &Resolution<'_>,
     resolve: bool,
 ) -> Result<Option<Graph>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
-    let graph = crate::container::admit_document(&ctx, xml.as_bytes()).and_then(|admitted| {
+    let graph = parse_retained(ctx, xml, DOCUMENT_XML).and_then(|admitted| {
+        let admitted = cadmpeg_core::decode::tree::XmlDocument::original(admitted);
         let mut graph = crate::persistence::parse_document(&admitted, resolution.vocabulary())?;
         if !resolve {
             return Ok(graph);
@@ -845,9 +840,10 @@ fn read_back(
             );
         }
         crate::persistence::resolve_side_entries(
-            &ctx,
+            ctx,
             &mut graph.properties,
             &views,
+            &std::collections::BTreeSet::new(),
             &mut graph.losses,
         )?;
         Ok(graph)
@@ -1030,14 +1026,11 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
 }
 
 fn patch_object_touches(
+    ctx: &DecodeContext<'_>,
     source: &str,
     objects: &[ObjectRecord],
 ) -> Result<Option<String>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
-    let xml = match ctx.parse_xml(source, "FreeCAD object declarations") {
+    let xml = match parse_retained(ctx, source, "FreeCAD object declarations") {
         Ok(xml) => xml,
         Err(error) => return recover(error).map(|()| None),
     };
@@ -1090,6 +1083,7 @@ struct PatchedProperties {
 }
 
 fn patch_document(
+    ctx: &DecodeContext<'_>,
     source: &str,
     properties: &[PropertyRecord],
     kept: &BTreeSet<String>,
@@ -1111,7 +1105,7 @@ fn patch_document(
             patched.unwritten.insert(property.id.clone());
             continue;
         };
-        let serialized = match serialize_property(property) {
+        let serialized = match serialize_property(ctx, property) {
             Ok(serialized) => serialized,
             Err(error) => {
                 recover(error)?;
@@ -1141,16 +1135,37 @@ fn retained_span(source: &str, property: &PropertyRecord, cursor: usize) -> Opti
     (start >= cursor && source.get(start..end) == Some(property.xml.text())).then_some((start, end))
 }
 
-fn serialize_property(property: &PropertyRecord) -> Result<String, CodecError> {
-    validate_property_wrapper(property)?;
+const DOCUMENT_XML: &str = "FreeCAD document XML tree";
+const RETAINED_PROPERTY: &str = "FreeCAD retained property XML";
+const RETAINED_VALUE: &str = "FreeCAD retained property value XML";
+
+/// Parse XML the write holds as input of the write's session, so that every
+/// ceiling of the caller's limits refuses it with `ResourceLimit`.
+fn parse_retained<'input>(
+    ctx: &DecodeContext<'_>,
+    text: &'input str,
+    operation: &'static str,
+) -> Result<roxmltree::Document<'input>, CodecError> {
+    ctx.parse_input_xml(text, operation)
+        .map_err(|error| match error {
+            CodecError::Malformed(error) => {
+                CodecError::malformed(format_args!("invalid {operation}: {error}"))
+            }
+            error => error,
+        })
+}
+
+fn serialize_property(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<String, CodecError> {
+    validate_property_wrapper(ctx, property)?;
     if matches!(property.body, PropertyBody::Unreadable(_)) {
         return Ok(property.xml.text().to_owned());
     }
     let mut replacement = property.xml.text().to_owned();
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
+    let parsed = parse_retained(ctx, &wrapped, RETAINED_PROPERTY)?;
     let source_ranges = parsed
         .root_element()
         .first_element_child()
@@ -1170,7 +1185,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<String, CodecError> {
     }
     let mut edits = Vec::new();
     for (value, (start, end)) in property.values().iter().zip(source_ranges) {
-        let serialized = serialize_value(value)?;
+        let serialized = serialize_value(ctx, value)?;
         if serialized == value.raw_xml {
             continue;
         }
@@ -1195,11 +1210,12 @@ fn serialize_property(property: &PropertyRecord) -> Result<String, CodecError> {
     Ok(replacement)
 }
 
-fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
+fn validate_property_wrapper(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<(), CodecError> {
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
-    })?;
+    let parsed = parse_retained(ctx, &wrapped, RETAINED_PROPERTY)?;
     let element = parsed
         .root_element()
         .first_element_child()
@@ -1227,11 +1243,9 @@ fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError
     Ok(())
 }
 
-fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
+fn serialize_value(ctx: &DecodeContext<'_>, value: &ValueRecord) -> Result<String, CodecError> {
     let wrapped = format!("<Root>{}</Root>", value.raw_xml);
-    let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::malformed(format_args!("invalid retained property value XML: {error}"))
-    })?;
+    let parsed = parse_retained(ctx, &wrapped, RETAINED_VALUE)?;
     let original = parsed
         .root_element()
         .first_element_child()

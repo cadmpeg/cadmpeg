@@ -145,7 +145,7 @@ impl BodyCensusEvaluation {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum BodyCensusEvaluationWire {
     Verified {
@@ -1320,6 +1320,7 @@ fn explicit_body_selection(selection: &BodySelection) -> Option<Vec<BodyId>> {
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::GeneratedSet { .. }
+        | BodySelection::Occurrence { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => return None,

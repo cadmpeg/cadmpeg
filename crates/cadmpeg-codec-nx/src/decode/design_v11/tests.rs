@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -182,8 +183,8 @@ fn a_part_with_no_history_states_no_design_records() {
     ir.model.configurations = vec![configuration(0, "Default", true)];
     let minted = project_ir(&mut ir);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&ir.design).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&CadIr::empty().design).unwrap()
+        json::to_value(&ir.design).unwrap(),
+        json::to_value(&CadIr::empty().design).unwrap()
     );
     assert!(minted);
     assert_eq!(
@@ -278,6 +279,35 @@ fn arrangements_are_positional_and_the_active_one_is_in_force() {
         ["nx:arrangements:arrangement#1"]
     );
     assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+/// Each arrangement restates the configuration it is minted from, except
+/// its position among the part's configurations, which no design record
+/// orders; a configuration with no name states no arrangement and nothing
+/// restates it.
+#[test]
+fn each_arrangement_restates_its_configuration() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        configuration(0, "Default", true),
+        configuration(1, " ", false),
+    ];
+    ir.model.features = vec![feature("a", 0, sketch())];
+    project_ir(&mut ir);
+    let restating = ir
+        .model
+        .restated()
+        .get("nx:arrangements:configuration#0")
+        .expect("restated");
+    let by = Restater::Record("nx:arrangements:arrangement#0".to_owned());
+    assert_eq!(
+        restating.cut_by(|restater| restater == &by),
+        Some(BTreeSet::from(["ordinal"]))
+    );
+    assert_eq!(
+        ir.model.restated().get("nx:arrangements:configuration#1"),
+        None
+    );
 }
 
 #[test]
@@ -397,10 +427,7 @@ fn a_wave_face_link_is_a_linked_stored_copy() {
     };
     assert_eq!(bodies, &[body("1").id]);
     assert!(tessellations.is_empty());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(link).unwrap(),
-        serde_json::json!({})
-    );
+    assert_eq!(json::to_value(link).unwrap(), cadmpeg_core::json!({}));
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
@@ -414,4 +441,129 @@ fn a_wave_face_link_with_unresolved_bodies_keeps_its_nx_kind() {
             source_settings: BTreeMap::new(),
         }
     );
+}
+
+/// The fields a CADIR write of `ir` names for the model parameter `id`:
+/// none where it carries the parameter whole.
+fn parameter_charge(ir: &CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `parameters`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(
+        !omitted.split([' ', ',']).any(|token| token == id),
+        "{}",
+        loss.message
+    );
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// An NX expression is a user parameter of the part (§5.12) and states no
+/// value NX does not store, so its design parameter has no owner and a
+/// formula of references has no cache; the design still holds the
+/// expression table as its owner and the value its tree evaluates to, and
+/// a CADIR write names neither.
+#[test]
+fn a_write_carries_the_owner_and_value_of_an_nx_expression() {
+    use cadmpeg_ir::design::edit::{evaluate, Value};
+    use cadmpeg_ir::design::expr::{Expression, Neutral};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::parameters::ParameterValue as ModelValue;
+    use cadmpeg_test_support::EditableDecodeResult;
+
+    let mut payload =
+        crate::test_support::test_om::segment_om_record_area_with_input_store_payload();
+    payload.extend_from_slice(b"hostglobalvariables");
+    for formula in ["p101: 10", "p102: 15", "p103: p101 + p102"] {
+        let text = format!("(Number [mm]) {formula}; ");
+        payload.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("length")]);
+        payload.extend_from_slice(text.as_bytes());
+        payload.push(0);
+    }
+    let fixture = crate::test_support::test_prt::prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]);
+    let decoded = crate::NxCodec
+        .decode(
+            &mut std::io::Cursor::new(fixture),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic NX part");
+    let decoded = EditableDecodeResult::from(decoded);
+    let ir = decoded.ir();
+    let model = |name: &str| {
+        ir.model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .expect("model parameter")
+    };
+    let legacy_sum = model("p103");
+    assert!(legacy_sum.owner.is_some());
+    assert!(matches!(legacy_sum.value, Some(ModelValue::Length(value)) if value.get() == 25.0));
+    let sum = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == legacy_sum.id)
+        .expect("design parameter");
+    assert_eq!(sum.owner, None);
+    assert_eq!(sum.value, None);
+    let ParameterDefinition::Expression(Expression::Neutral(Neutral(tree))) = &sum.definition
+    else {
+        panic!("a neutral tree: {:?}", sum.definition)
+    };
+    let evaluated = evaluate(tree, &mut |reference| {
+        let cadmpeg_ir::design::dimension::RefTarget::Parameter(target) = &reference.target else {
+            return None;
+        };
+        let addend = ir
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| &parameter.id == target)?;
+        match addend.value {
+            Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value)) => {
+                Some(Value::Number {
+                    value: value.get(),
+                    quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
+                })
+            }
+            _ => None,
+        }
+    })
+    .expect("the tree evaluates");
+    assert_eq!(
+        evaluated,
+        Value::Number {
+            value: 25.0,
+            quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
+        }
+    );
+    for name in ["p101", "p102", "p103"] {
+        let charge = parameter_charge(ir, model(name).id.as_str());
+        assert!(
+            !charge
+                .iter()
+                .any(|field| field == "owner" || field == "value"),
+            "{name}: {charge:?}"
+        );
+    }
 }

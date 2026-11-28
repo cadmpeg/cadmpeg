@@ -4,7 +4,8 @@ use super::*;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };
-use crate::records::feature::scope::DesignFeatureKind;
+use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::products::ProductDefinition;
 
 fn body(slot: i64) -> BodyId {
@@ -51,14 +52,18 @@ fn topology(extra_face: bool) -> AsmHistoricalTopology {
 }
 
 fn history() -> AsmHistory {
-    let history_id = "f3d:BREP.panel.smbh:asm-history#0";
-    let states = [(64, 1, Some(0), true), (59, 0, None, false)]
-        .into_iter()
+    history_at("panel.smbh", Some(59))
+}
+
+fn history_at(source: &str, previous: Option<i64>) -> AsmHistory {
+    let history_id = format!("f3d:BREP.{source}:asm-history#0");
+    let states = std::iter::once((64, 1, previous.map(|_| 0), true))
+        .chain(previous.map(|previous| (previous, 0, None, false)))
         .map(|(state_id, node_index, next_ref, extra)| {
             (
                 AsmDeltaState {
-                    id: format!("f3d:BREP.panel.smbh:asm-delta-state#{state_id}"),
-                    parent: history_id.into(),
+                    id: format!("f3d:BREP.{source}:asm-delta-state#{state_id}"),
+                    parent: history_id.clone(),
                     byte_offset: 0,
                     state_id,
                     node_index,
@@ -77,7 +82,26 @@ fn history() -> AsmHistory {
             )
         })
         .collect();
-    crate::test_support::history::history(history_id.into(), 0, None, false, states)
+    crate::test_support::history::history(history_id, 0, None, false, states)
+}
+
+fn collect(
+    features: &[Feature],
+    scopes: &[DesignParameterScope],
+    histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
+    primary_brep: Option<&str>,
+) -> BodyHistoryTails {
+    let bound = crate::history::feature_outputs::bind_feature_outputs(
+        &mut features.to_vec(),
+        scopes,
+        &mut histories.to_vec(),
+        &[],
+        scope_histories,
+        primary_brep,
+    )
+    .unwrap();
+    super::collect(features, histories, &bound.placements, primary_brep)
 }
 
 fn scope(current: i64) -> DesignParameterScope {
@@ -120,7 +144,7 @@ fn feature(scope: &DesignParameterScope, slot: i64) -> Feature {
 }
 
 fn definition() -> ProductDefinition {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "test:model:component#panel", "kind": "part", "bodies": [body(1)],
         "bom_properties": {}, "storage": {"kind": "embedded"},
         "occurrences": [], "instance_bodies": [], "representations": []
@@ -131,9 +155,155 @@ fn definition() -> ProductDefinition {
 /// One body history tail, and the body it retains, as `collect` finds it.
 pub(crate) fn one_tail() -> (BodyHistoryTails, BodyId) {
     let scope = scope(59);
-    let found = collect(&[feature(&scope, 1)], &[scope], &[history()], None);
+    let found = collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None,
+    );
     assert_eq!(found.tails.len(), 1);
     (found, body(1))
+}
+
+/// A feature whose histories link its state to different previous states
+/// still states that state, so a body whose history ends at it retains no
+/// change after it.
+#[test]
+fn a_feature_at_the_head_state_retains_no_change_when_its_previous_state_is_unlinked() {
+    let mut scope = scope(64);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let bound_history = history_at("panel.smbh", None);
+    let binding = HashMap::from([(scope.id.clone(), bound_history.id.clone())]);
+    let conflicting_histories = [
+        bound_history.clone(),
+        history_at("other.smbh", Some(7)),
+        history_at("third.smbh", Some(59)),
+    ];
+    let found = collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &conflicting_histories,
+        &binding,
+        None,
+    );
+    assert!(found.tails.is_empty());
+    assert!(found.unread.is_empty());
+}
+
+#[test]
+fn a_stored_result_in_another_history_retains_its_unproved_tail() {
+    use cadmpeg_ir::features::selections::BodySelection;
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#1",
+        DesignFeatureKind::BaseFeature,
+        1,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(64);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut feature = feature(&scope, 1);
+    let across = BodyId::mint("f3d:brep/other.smbh/brep:entity#1").unwrap();
+    let results = DistinctMembers::try_from(vec![body(1), across.clone()]).unwrap();
+    feature.evaluation = FeatureEvaluation::new(
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: results.clone(),
+                native: scope.id.clone(),
+            },
+        }),
+        Default::default(),
+    );
+    let mut histories = [
+        history_at("panel.smbh", None),
+        history_at("other.smbh", Some(59)),
+        history_at("third.smbh", Some(7)),
+    ];
+    let bindings = HashMap::from([(scope.id.clone(), histories[0].id.clone())]);
+    let mut model = Model::default();
+    model.features.push(feature);
+    let mut owner = definition();
+    owner.bodies = results.as_slice().to_vec();
+    model.product_definitions.push(owner);
+    let bound = crate::history::feature_outputs::bind_feature_outputs(
+        &mut model.features,
+        &[scope],
+        &mut histories,
+        &[],
+        &bindings,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        model.features[0].evaluation.outputs().as_slice(),
+        results.as_slice()
+    );
+    assert!(bound.losses.is_empty());
+    let found = super::collect(&model.features, &histories, &bound.placements, None);
+    let mut losses = Vec::new();
+    append(&mut model, &found, &mut losses).unwrap();
+    assert_eq!(model.features.len(), 2);
+    assert_eq!(
+        model.features[1].evaluation.outputs().as_slice(),
+        std::slice::from_ref(&across),
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureBodyHistoryIncomplete.kind()
+    );
+    assert!(losses[0].message.contains("from an unread state to 64"));
+}
+
+#[test]
+fn a_repeated_state_id_does_not_place_the_feature_at_the_history_head() {
+    let mut scope = scope(64);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut history = history();
+    history.states_mut()[1].state_id = 64;
+    history.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(64);
+    let mut model = Model::default();
+    model.features.push(feature(&scope, 1));
+    model.product_definitions.push(definition());
+    let found = collect(
+        &model.features,
+        &[scope],
+        &[history],
+        &Default::default(),
+        None,
+    );
+    let mut losses = Vec::new();
+    append(&mut model, &found, &mut losses).unwrap();
+    assert_eq!(
+        model.features[1].evaluation.outputs().as_slice(),
+        &[body(1)]
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureBodyHistoryIncomplete.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains("from an ambiguous occurrence of state 64 to 64"));
 }
 
 #[test]
@@ -146,7 +316,7 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     foreign.product_definition = Some("test:model:component#guide".try_into().unwrap());
     foreign.evaluation.set_outputs(Default::default());
     let features = vec![before, foreign];
-    let found = collect(&features, &[scope], &[history()], None);
+    let found = collect(&features, &[scope], &[history()], &Default::default(), None);
     assert_eq!(found.tails.len(), 1);
     let definition = definition();
     let mut guide = definition.clone();
@@ -188,17 +358,29 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
 #[test]
 fn a_change_to_another_body_preserves_the_linked_history() {
     let scope = scope(59);
-    assert!(collect(&[feature(&scope, 2)], &[scope], &[history()], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 2)],
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
 fn a_feature_that_reaches_the_head_has_no_tail() {
     let scope = scope(64);
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[history()], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
@@ -210,9 +392,15 @@ fn a_geometry_unchanged_tail_preserves_the_linked_history() {
         .as_mut()
         .unwrap()
         .geometry_unchanged = true;
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[history], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
@@ -225,9 +413,15 @@ fn a_suppressed_feature_does_not_claim_the_tail() {
     suppressed.ordinal = 2;
     suppressed.suppressed = Some(true);
     assert_eq!(
-        collect(&[before, suppressed], &[old, new], &[history()], None)
-            .tails
-            .len(),
+        collect(
+            &[before, suppressed],
+            &[old, new],
+            &[history()],
+            &Default::default(),
+            None
+        )
+        .tails
+        .len(),
         1
     );
 }
@@ -259,9 +453,15 @@ fn matching_state_numbers_in_another_brep_do_not_claim_the_target() {
     let scope = scope(59);
     let mut other = history();
     other.id = "f3d:BREP.other.smbh:asm-history#0".into();
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[other], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[other],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
@@ -270,7 +470,13 @@ fn a_body_no_decoded_history_holds_gets_no_interval_and_the_unread_loss() {
     let before = feature(&scope, 1);
     let mut other = history();
     other.id = "f3d:BREP.other.smbh:asm-history#0".into();
-    let found = collect(std::slice::from_ref(&before), &[scope], &[other], None);
+    let found = collect(
+        std::slice::from_ref(&before),
+        &[scope],
+        &[other],
+        &Default::default(),
+        None,
+    );
     assert!(found.tails.is_empty());
     assert_eq!(found.unread, vec![(body(1), before.id.clone())]);
     let mut model = Model::default();
@@ -299,7 +505,13 @@ fn a_body_in_two_product_definitions_retains_an_unowned_native_operation() {
 fn assert_unresolved_owner(definitions: Vec<ProductDefinition>, gap: &str) {
     let scope = scope(59);
     let before = feature(&scope, 1);
-    let found = collect(std::slice::from_ref(&before), &[scope], &[history()], None);
+    let found = collect(
+        std::slice::from_ref(&before),
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None,
+    );
     assert_eq!(found.tails.len(), 1);
     let mut model = Model::default();
     model.features.push(before.clone());
@@ -344,7 +556,7 @@ fn assert_unproved(
     histories: &[AsmHistory],
     native: &str,
 ) {
-    let found = collect(features, scopes, histories, None);
+    let found = collect(features, scopes, histories, &Default::default(), None);
     assert_eq!(found.tails.len(), 1);
     let mut model = Model::default();
     model.features.extend_from_slice(features);

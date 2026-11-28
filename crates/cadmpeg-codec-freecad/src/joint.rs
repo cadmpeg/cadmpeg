@@ -2,7 +2,9 @@
 //! Assembly joints recovered without executing Python proxy payloads.
 
 use std::collections::{BTreeMap, HashMap};
+use std::f64::consts::{PI, TAU};
 
+use crate::loss::FreecadLossCode;
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::decode::DecodeContext;
@@ -10,12 +12,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<JointRecord>, CodecError> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
@@ -121,9 +125,23 @@ pub(crate) fn transfer(
                     | "Detach1"
                     | "Detach2"
                     | "Suppressed"
+                    | "Activated"
             )
         }) {
-            if let Some(value) = scalar_parameter(property)? {
+            let value = scalar_parameter(property);
+            let value = if property.name == "Activated" {
+                let flag = value.ok().flatten();
+                if flag.is_none() {
+                    losses.push(FreecadLossCode::FeatureJointFlagUnread.note(format!(
+                        "joint {} has an unreadable Activated flag; the property stays native",
+                        object.id()
+                    )));
+                }
+                flag
+            } else {
+                value?
+            };
+            if let Some(value) = value {
                 parameters.insert(property.name.clone(), value);
             }
         }
@@ -144,7 +162,7 @@ pub(crate) fn transfer_neutral(
     let mut occurrence_by_native = HashMap::new();
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
-            occurrence_by_native.insert(native, &occurrence.id);
+            occurrence_by_native.entry(native).or_insert(&occurrence.id);
         }
     }
     let mut output = Vec::new();
@@ -225,15 +243,14 @@ pub(crate) fn transfer_neutral(
         .map_err(CodecError::malformed)?;
         let distance = scalar("Distance");
         let distance2 = scalar("Distance2");
-        let angle = scalar("Angle")
-            .map(FiniteReal::get)
-            .or_else(|| match &record.body {
-                JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
-                    distance.map(|value| value.get().abs())
-                }
-                _ => None,
-            })
-            .map(f64::to_radians);
+        let angle = match &record.body {
+            JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
+                scalar("Angle")
+                    .or(distance)
+                    .map(|value| solved_angle(value.get()))
+            }
+            _ => scalar("Angle").map(|value| value.get().to_radians()),
+        };
         let angular_limits = enabled_limits(
             "AngleMin",
             "AngleMax",
@@ -310,12 +327,24 @@ pub(crate) fn transfer_neutral(
                 )
             }
         };
-        joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
+        joint.suppressed = parameters.suppressed() == Some(true);
         joint.native_ref = Some(record.id().to_owned());
 
         output.push(joint);
     }
     Ok(output)
+}
+
+/// The angle, in radians, that `FreeCAD`'s solver holds for an angle stored
+/// as `degrees`: the solver holds the cosine of its magnitude, so the angle
+/// is that magnitude reflected into a half turn.
+pub(crate) fn solved_angle(degrees: f64) -> f64 {
+    let turn = degrees.abs().to_radians() % TAU;
+    if turn > PI {
+        TAU - turn
+    } else {
+        turn
+    }
 }
 
 fn joint_kind(
@@ -521,7 +550,7 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
         "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
         "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
         "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
-        | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
+        | "Detach2" | "Suppressed" | "Activated" => ("App::PropertyBool", "Bool"),
         _ => return Ok(None),
     };
     let float_scalar = expected_tag == "Float" && property.type_name == "App::PropertyFloat";
@@ -569,9 +598,7 @@ fn connector(
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
     let Some(property) = sole_named_property("joint", properties, name)? else {
-        return Err(CodecError::malformed(format_args!(
-            "joint connector {name} is missing"
-        )));
+        return Ok(None);
     };
     if !matches!(
         property.type_name.as_str(),
@@ -617,6 +644,7 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
+    use cadmpeg_core::serde_erase::json;
 
     fn diagnostic_property(
         name: &str,
@@ -779,6 +807,119 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_joint_angle_outside_a_half_turn_is_its_reflection() {
+        for (stored, solved) in [(-330.0_f64, 30.0_f64), (200.0, 160.0), (-90.0, 90.0)] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Inclination"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Inclination"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Angle"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Angle" type="App::PropertyAngle"><Float value="{stored}"/></Property>
+</Properties></Object></ObjectData></Document>"#
+            );
+            let decoded = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("angle joint");
+            let [joint] = decoded.ir().model.assembly_joints.as_slice() else {
+                panic!("{:?}", decoded.ir().model.assembly_joints)
+            };
+            let cadmpeg_ir::products::JointOperands::Pair {
+                kind: PairedJointKind::Angle { angle },
+                ..
+            } = wire::field(joint, "operands")
+            else {
+                panic!("angle joint")
+            };
+            assert!(
+                (angle.expect("angle").get() - solved.to_radians()).abs() < EPS_JOINT_SCALAR,
+                "{stored}: {angle:?}"
+            );
+        }
+    }
+
+    /// The neutral joint that `document`, holding one joint `Inclination`
+    /// of family `family` with the property `property`, states.
+    fn sole_joint(family: &str, property: &str) -> cadmpeg_ir::products::AssemblyJoint {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Inclination"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Inclination"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="{family}"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+{property}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("joint");
+        assert_valid_document(decoded.ir());
+        let [joint] = decoded.ir().model.assembly_joints.as_slice() else {
+            panic!("{:?}", decoded.ir().model.assembly_joints)
+        };
+        joint.clone()
+    }
+
+    #[test]
+    fn another_familys_angle_is_its_signed_stored_value() {
+        for family in ["Fixed", "Revolute", "Cylindrical"] {
+            for stored in [-30.0_f64, 270.0] {
+                let joint = sole_joint(
+                    family,
+                    &format!(
+                        r#"<Property name="Angle" type="App::PropertyAngle"><Float value="{stored}"/></Property>"#
+                    ),
+                );
+                let angle = match wire::field(&joint, "operands") {
+                    cadmpeg_ir::products::JointOperands::Pair {
+                        kind:
+                            PairedJointKind::Fixed { angle, .. }
+                            | PairedJointKind::Revolute { angle, .. }
+                            | PairedJointKind::Cylindrical { angle, .. },
+                        ..
+                    } => angle,
+                    other => panic!("{other:?}"),
+                };
+                assert!(
+                    (angle.expect("angle").get() - stored.to_radians()).abs() < EPS_JOINT_SCALAR,
+                    "{family} {stored}: {angle:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_joint_stored_deactivated_is_suppressed() {
+        let flag = |name: &str, value: bool| {
+            format!(
+                r#"<Property name="{name}" type="App::PropertyBool"><Bool value="{value}"/></Property>"#
+            )
+        };
+        for (property, suppressed) in [
+            (flag("Activated", false), true),
+            (flag("Activated", true), false),
+            (flag("Suppressed", true), true),
+            (String::new(), false),
+        ] {
+            assert_eq!(
+                sole_joint("Revolute", &property).suppressed,
+                suppressed,
+                "{property}"
+            );
+        }
+    }
+
+    #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
         for family in [
             "Fixed",
@@ -850,7 +991,7 @@ pub(crate) mod tests {
                 cadmpeg_ir::products::JointOperands::Pair { kind: PairedJointKind::Native { name, .. }, .. } if name == family
             ));
             assert_valid_document(result.ir());
-            let wire = cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap();
+            let wire = json::to_string(result.ir()).unwrap();
             let restored = cadmpeg_ir::CadIr::from_json(&wire).unwrap();
             assert_valid_document(&restored);
         }
@@ -953,15 +1094,12 @@ pub(crate) mod tests {
         assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut wire =
-            cadmpeg_core::serde_erase::json::to_value(&result.ir().model.assembly_joints[0])
-                .expect("assembly joint wire");
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+            json::to_value(&result.ir().model.assembly_joints[0]).expect("assembly joint wire");
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "kind": "unresolved",
             "path": "external.FCStd"
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::AssemblyJoint>(wire).is_err()
-        );
+        assert!(json::from_value::<cadmpeg_ir::AssemblyJoint>(wire).is_err());
     }
 
     #[test]
@@ -1034,7 +1172,6 @@ pub(crate) mod tests {
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
             r#"<Property name="Reference1" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink file="" name="Base"/><XLink file="" name="Other"/></XLinkSubList></Property>
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
-            r#"<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
         ] {
             let property_count = properties.lines().count() + 1;
             let document = format!(
@@ -1228,8 +1365,7 @@ pub(crate) mod tests {
             );
             assert_eq!(result.ir().model.assembly_joints[0].suppressed, expected);
             let restored = cadmpeg_ir::CadIr::from_json(
-                &cadmpeg_core::serde_erase::json::to_string(result.ir())
-                    .expect("CADIR serialization"),
+                &json::to_string(result.ir()).expect("CADIR serialization"),
             )
             .expect("complete CADIR admission");
             let restored_joints = restored
