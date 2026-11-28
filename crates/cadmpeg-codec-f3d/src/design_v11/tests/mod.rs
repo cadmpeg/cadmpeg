@@ -1812,4 +1812,67 @@ fn part_number_and_description_cells_of_other_rows_override_the_scope_definition
     }
 }
 
+/// The fields a CADIR write of `ir` names for the model parameter `id`:
+/// none where it carries the parameter whole.
+fn parameter_charge(ir: &cadmpeg_ir::document::CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `parameters`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(!omitted.contains(id), "{}", loss.message);
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// The parameter of a diameter dimension states the diameter presentation
+/// its record holds, and a CADIR write carries it.
+#[test]
+fn the_parameter_of_a_diameter_dimension_states_its_display() {
+    use cadmpeg_ir::design::parameter::DimensionDisplay;
+    use cadmpeg_ir::features::parameters::{DimensionDisplay as V10Display, ParameterValue as V10};
+    use cadmpeg_ir::scalar::Length;
+    const OWNER: &str = "f3d:model:feature#sketch:20";
+    let mut legacy = parameter(
+        "d1",
+        Some(OWNER),
+        "10 mm",
+        Some(V10::Length(Length::new(10.0).unwrap())),
+        &[],
+        &[("source_kind", "Diameter Dimension-1")],
+    );
+    legacy.display = Some(V10Display::Diameter);
+    let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    let mut losses = Vec::new();
+    let projected = super::parameters::project(
+        std::slice::from_ref(&legacy),
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER]),
+        &mut losses,
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let [diameter] = projected.as_slice() else {
+        panic!("one parameter: {projected:?}")
+    };
+    assert_eq!(diameter.display, Some(DimensionDisplay::Diameter));
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.parameters = vec![legacy];
+    ir.design.parameters = projected;
+    let charge = parameter_charge(&ir, "f3d:model:parameter#d1");
+    assert!(!charge.iter().any(|field| field == "display"), "{charge:?}");
+}
+
 mod timeline_match;
