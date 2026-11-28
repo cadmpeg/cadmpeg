@@ -916,8 +916,13 @@ fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
                     cadmpeg_core::decode::View::over_retained(&payload),
                 )]);
                 let mut losses = Vec::new();
-                let result =
-                    super::resolve_side_entries(ctx, &mut graph.properties, &entries, &mut losses);
+                let result = super::resolve_side_entries(
+                    ctx,
+                    &mut graph.properties,
+                    &entries,
+                    &std::collections::BTreeSet::new(),
+                    &mut losses,
+                );
                 (result.is_ok(), losses)
             });
         assert_eq!(result, resolves, "{present}");
@@ -929,6 +934,55 @@ fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
                         .code
                     && loss.message.contains("Note.bin")
             }));
+        }
+    }
+}
+
+/// An optional side entry the archive directory does not list breaks a
+/// reference into a table read in full: its note pins Warning. An entry the
+/// decode gave up adds no note beside its give-up.
+#[test]
+fn a_missing_optional_side_entry_is_noted_once_with_a_floor() {
+    let property = r#"<Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.Shape.brp"/><X file="Note.bin"/></Property>"#;
+    let document = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+    );
+    let payload = b"brep".to_vec();
+    for given_up in [false, true] {
+        let losses = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+            let mut graph = parse(document.as_bytes(), "4", ctx).expect("exact-shape document");
+            let entries = std::collections::BTreeMap::from([(
+                "Box.Shape.brp".to_owned(),
+                cadmpeg_core::decode::View::over_retained(&payload),
+            )]);
+            let unreadable = if given_up {
+                std::collections::BTreeSet::from(["Note.bin".to_owned()])
+            } else {
+                std::collections::BTreeSet::new()
+            };
+            let mut losses = Vec::new();
+            super::resolve_side_entries(
+                ctx,
+                &mut graph.properties,
+                &entries,
+                &unreadable,
+                &mut losses,
+            )
+            .expect("an optional entry");
+            losses
+        });
+        if given_up {
+            assert!(losses.is_empty(), "{losses:?}");
+        } else {
+            assert_eq!(losses.len(), 1, "{losses:?}");
+            assert_eq!(
+                losses[0].code.local_code(),
+                "metadata.persistence-side-entry-unresolved"
+            );
+            assert_eq!(
+                losses[0].code.strict_floor(),
+                Some(cadmpeg_ir::report::Severity::Warning)
+            );
         }
     }
 }
@@ -1001,6 +1055,7 @@ fn only_a_payload_entry_drops_or_requires_its_geometry_property() {
                     ctx,
                     &mut absent.properties,
                     &present,
+                    &std::collections::BTreeSet::new(),
                     &mut Vec::new(),
                 )
                 .is_ok();

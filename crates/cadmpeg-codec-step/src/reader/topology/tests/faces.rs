@@ -134,7 +134,8 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-8"));
     assert!(non_planar.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
             && loss.message.contains("implicit face plane")
     }));
 }
@@ -222,7 +223,8 @@ fn edge_loop_without_explicit_surface_rejects_implicit_plane() {
         .iter()
         .all(|surface| surface.id.as_str() != "step:data:surface#implicit-face-26"));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
             && loss.message.contains("implicit face plane")
     }));
 }
@@ -256,8 +258,8 @@ fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
     }));
 }
 
@@ -386,7 +388,8 @@ fn implicit_face_plane_rejects_non_coplanar_poly_loop_bounds_in_any_order() {
         assert!(decoded.ir().geometry.faces.is_empty());
         assert!(decoded.ir().geometry.surfaces.is_empty());
         assert!(decoded.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::TopologyRootRejected.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains(" rejected: ")
                 && loss.message.contains("implicit face plane")
         }));
         let (stubs, unknown_ids): (BTreeSet<_>, BTreeSet<_>) = decoded
@@ -433,7 +436,8 @@ fn nearly_collinear_implicit_face_is_rejected_without_a_fabricated_plane() {
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
             && loss.message.contains("implicit face plane")
     }));
 }
@@ -739,11 +743,10 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
                 && loss.message.contains("face #10")
                 && loss.message.contains("without outer/inner classification")
         }));
-        assert!(!decoded
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
+        assert!(!decoded.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains(" rejected: ")
+        }));
         assert_eq!(decoded.ir().geometry.faces.len(), 1);
         assert_eq!(decoded.ir().geometry.loops.len(), 2);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())

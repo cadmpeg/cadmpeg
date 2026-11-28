@@ -618,11 +618,19 @@ fn empty_external_identity_does_not_fail_file_decode() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("invalid external identity must not fail file decode");
     assert_ufrx_issue(decoded.ir(), "ufrx-external-reference-0", "document_id");
-    assert!(decoded
-        .report()
-        .losses
+    let losses = &decoded.report().losses;
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
+    let given_up = losses
+        .iter()
+        .filter(|loss| loss.message.contains("inventor:ufrx:external-reference#0"))
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(
+        given_up[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     let namespace = decoded
         .ir()
         .native
@@ -916,11 +924,18 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     container.ufrx = UfrxState::Parsed(Box::new(document));
     let decoded = decode_container(&ctx, root, &container)
         .expect("rejected native record must not fail decode");
-    assert!(decoded
-        .body
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+    assert_eq!(
+        decoded
+            .body
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()
+                    || cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            )
+            .count(),
+        1
+    );
     decoded
 }
 
@@ -1027,7 +1042,9 @@ fn protein_admission_keeps_later_assets_and_rejections() {
 
 #[test]
 fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
-    let bytes = fixture_with_ufrx(b"unreadable optional table");
+    // Schema 15 with a three-entry section-version table, which §8 needs to
+    // hold at least five entries.
+    let bytes = fixture_with_ufrx(&[15, 0, 3, 0, 1, 0, 1, 0, 1, 0]);
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("bounded optional table");
@@ -1053,9 +1070,118 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
         |finding| finding.severity == cadmpeg_ir::report::Severity::Error
             && finding.message.contains("missing arenas")
     ));
-    assert!(decoded
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::unknown::part::record_unreadable_kind()
+        && loss.message.contains("ufrx")));
+}
+
+/// A schema-15 `UFRxDoc` whose section-version count passes the decoder's
+/// bound holds a form that the decoder does not read: the stream is given up
+/// as undecoded, which does not refuse a pinned decode.
+#[test]
+fn ufrx_count_above_the_decoder_bound_is_undecoded() {
+    let mut ufrx = vec![15, 0];
+    ufrx.extend_from_slice(&300_u16.to_le_bytes());
+    ufrx.extend(std::iter::repeat_n(1_u8, 600));
+    let bytes = fixture_with_ufrx(&ufrx);
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a default decode admits the stream");
+    let ufrx_losses = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
+        .filter(|loss| loss.message.contains("ufrx-stream"))
+        .collect::<Vec<_>>();
+    assert_eq!(ufrx_losses.len(), 1, "{ufrx_losses:#?}");
+    assert_eq!(
+        ufrx_losses[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        ufrx_losses[0].message.contains("decoder's bound 256"),
+        "{}",
+        ufrx_losses[0].message
+    );
+}
+
+/// A property section with an unsupported code page gives up its values.
+/// The set directory remains readable.
+#[test]
+fn property_section_in_an_unread_code_page_is_undecoded() {
+    let value = b"abc\0";
+    let section_size = 8 + 2 * 8 + 8 + 8 + 4;
+    let mut set = Vec::new();
+    set.extend_from_slice(&0xfffe_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&0x0002_0006_u32.to_le_bytes());
+    set.extend_from_slice(&[0; 16]);
+    set.extend_from_slice(&1_u32.to_le_bytes());
+    set.extend_from_slice(&[
+        0xe0, 0x85, 0x9f, 0xf2, 0xf9, 0x4f, 0x68, 0x10, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3,
+        0xd9,
+    ]);
+    set.extend_from_slice(&48_u32.to_le_bytes());
+    set.extend_from_slice(&u32::try_from(section_size).expect("fits").to_le_bytes());
+    set.extend_from_slice(&2_u32.to_le_bytes());
+    for (id, offset) in [(1_u32, 24_u32), (2, 32)] {
+        set.extend_from_slice(&id.to_le_bytes());
+        set.extend_from_slice(&offset.to_le_bytes());
+    }
+    set.extend_from_slice(&2_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&65000_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&0x001e_u16.to_le_bytes());
+    set.extend_from_slice(&0_u16.to_le_bytes());
+    set.extend_from_slice(&u32::try_from(value.len()).expect("fits").to_le_bytes());
+    set.extend_from_slice(value);
+    let mut bytes = fixture_with_ufrx(&set);
+    let entry_start = 512 + 3 * 128;
+    let name = "ZProperty";
+    bytes[entry_start..entry_start + 64].fill(0);
+    for (index, unit) in name.encode_utf16().enumerate() {
+        let offset = entry_start + index * 2;
+        bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    let name_len = u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fits");
+    bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a default decode admits the property set");
+    let set_losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("stream=\"inventor:ZProperty\""))
+        .collect::<Vec<_>>();
+    let [loss] = set_losses.as_slice() else {
+        panic!("one loss for the set's section: {set_losses:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message.starts_with("part property-section "),
+        "{loss:?}"
+    );
+    assert!(
+        loss.message
+            .contains(&format!("offset=48 length={section_size}")),
+        "{loss:?}"
+    );
+    assert!(loss.message.contains("OLE code page 65000"), "{loss:?}");
+    let sets = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace")
+        .arena_as::<crate::native::PropertySetRecord>("property_sets")
+        .expect("the readable property set");
+    let [set] = sets.as_slice() else {
+        panic!("one set is retained: {sets:#?}");
+    };
+    assert_eq!(set.path, "ZProperty");
+    assert_eq!(set.section_count, 0);
 }

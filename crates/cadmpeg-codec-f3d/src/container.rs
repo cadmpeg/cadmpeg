@@ -25,7 +25,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::StreamName;
 use std::sync::Arc;
@@ -451,8 +451,8 @@ impl<'a> ContainerScan<'a> {
     }
 
     /// Gives up the archive entry `name`, whose payload opened and then
-    /// failed to decode with `error`, as an `archive-entry` part holding
-    /// content of the classes its role holds. The source image keeps the
+    /// failed to decode with `error` for `cause`, as an `archive-entry` part
+    /// holding content of the classes its role holds. The source image keeps the
     /// entry's stored bytes, so the part keeps their digest. `None` when the
     /// scan did not open the entry: the scan gave that entry up itself.
     ///
@@ -464,6 +464,7 @@ impl<'a> ContainerScan<'a> {
         &self,
         ctx: &DecodeContext<'_>,
         name: &str,
+        cause: Cause,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
         let classes = self
@@ -471,7 +472,7 @@ impl<'a> ContainerScan<'a> {
             .iter()
             .find(|entry| entry.name == name)
             .map_or(&ArenaClass::ALL[..], |entry| held_classes(entry.role));
-        self.give_up_entry_holding(ctx, name, classes, error)
+        self.give_up_entry_holding(ctx, name, classes, cause, error)
     }
 
     /// [`Self::give_up_entry`] for a part holding content of the classes in
@@ -485,6 +486,7 @@ impl<'a> ContainerScan<'a> {
         ctx: &DecodeContext<'_>,
         name: &str,
         holds: &[ArenaClass],
+        cause: Cause,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
         if !self.has_entry(name) {
@@ -507,7 +509,7 @@ impl<'a> ContainerScan<'a> {
         if let Some(stream) = &self.stream {
             part = part.in_stream(stream.clone());
         }
-        ctx.give_up_part(part, error).map(Some)
+        ctx.give_up_part(part, cause, error).map(Some)
     }
 
     /// The stream name of the archive entry `name`: the entry path, inside
@@ -524,9 +526,9 @@ impl<'a> ContainerScan<'a> {
         StreamName::try_from(path).map_err(CodecError::malformed)
     }
 
-    /// Gives up bytes `span` of the opened archive entry `entry` as a part
-    /// of `kind` in the entry's stream, holding content of the classes in
-    /// `holds`. The inflated entry bytes are retained in no other record, so
+    /// Gives up bytes `span` of the opened archive entry `entry` for the
+    /// cause and error of `why` as a part of `kind` in the entry's stream, holding content of
+    /// the classes in `holds`. The inflated entry bytes are retained in no other record, so
     /// the part keeps them.
     ///
     /// # Errors
@@ -541,14 +543,14 @@ impl<'a> ContainerScan<'a> {
         kind: &'static str,
         span: std::ops::Range<usize>,
         holds: impl IntoIterator<Item = ArenaClass>,
-        error: CodecError,
+        (cause, error): (Cause, CodecError),
     ) -> Result<GivenUpPart, CodecError> {
         let bytes = self.entry_bytes(entry)?.get(span.clone()).ok_or_else(|| {
             CodecError::malformed(format_args!("F3D {kind} part leaves the entry {entry}"))
         })?;
         let part = Part::at("f3d", kind, u64_from_index(span.start), bytes, holds)
             .in_stream(self.entry_stream(entry)?);
-        ctx.give_up_part(part, error)
+        ctx.give_up_part(part, cause, error)
     }
 
     pub(crate) fn member_view<'b>(
@@ -908,7 +910,8 @@ fn scan_in<'a>(
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
-                let part = ctx.give_up_part(part, error)?;
+                let cause = Cause::Unreadable.of(&error);
+                let part = ctx.give_up_part(part, cause, error)?;
                 // Two directory entries can name one stored span.
                 if given_up
                     .iter()

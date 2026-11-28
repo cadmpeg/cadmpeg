@@ -40,7 +40,7 @@ use crate::design::presentation::{
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::zero_fill_to;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -779,7 +779,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
             Ok(Some(found)) => found,
             Ok(None) => continue,
             Err(error) => {
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                let cause = Cause::Unreadable.of(&error);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, cause, error)?);
                 continue;
             }
         };
@@ -808,10 +809,14 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .in_stream(stream.clone());
                 given_up.push(ctx.give_up_part(
                     part,
-                    CodecError::malformed(format_args!(
-                        "Protein record {} rejected: {}",
-                        rejected.ordinal, rejected.detail
-                    )),
+                    Cause::Undecoded,
+                    crate::design::decode::record::give_up_error(
+                        Cause::Undecoded,
+                        format_args!(
+                            "Protein record {} rejected: {}",
+                            rejected.ordinal, rejected.detail
+                        ),
+                    ),
                 )?);
             }
             let records = outcome.records;

@@ -32,9 +32,8 @@ use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_ir::physics::solver::SolverTarget;
 
-use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, GivenUpRecord};
 
-use crate::loss::UsdLossCode;
 use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
@@ -64,37 +63,39 @@ pub(super) enum JointRejection {
     /// A body relationship names a prim that is not a transferred
     /// occurrence.
     BodyNotTransferred,
+    /// A body relationship names a path that is no prim of a stage that the
+    /// decoder composed whole (spec §16.4).
+    BodyAbsent,
     /// Both body relationships are empty, so each side is the world.
     NoBody,
     /// A coupling relationship targets no joint that the decoder adds.
     CouplingUnresolved,
+    /// A coupling relationship names no prim in a fully composed stage.
+    CoupledPrimAbsent,
 }
 
 impl JointRejection {
-    pub(super) const ALL: [Self; 4] = [
-        Self::NoBody,
-        Self::BodyNotTransferred,
-        Self::FrameMalformed,
-        Self::CouplingUnresolved,
-    ];
-
     /// The cause, as the predicate of one joint.
     const fn one(self) -> &'static str {
         match self {
             Self::FrameMalformed => "has a malformed frame",
             Self::BodyNotTransferred => "names a body that is not a transferred prim",
+            Self::BodyAbsent => "names a body that is no prim of the stage",
             Self::NoBody => "names no body",
             Self::CouplingUnresolved => "couples a joint that is not a transferred joint",
+            Self::CoupledPrimAbsent => "couples a path that is no prim of the stage",
         }
     }
 
-    /// The cause, as the predicate of several joints.
-    pub(super) const fn several(self) -> &'static str {
+    /// The cause of the joint's give-up: unreadable where the joint breaks
+    /// §16.4.
+    const fn cause(self) -> Cause {
         match self {
-            Self::FrameMalformed => "have a malformed frame",
-            Self::BodyNotTransferred => "name a body that is not a transferred prim",
-            Self::NoBody => "name no body",
-            Self::CouplingUnresolved => "couple a joint that is not a transferred joint",
+            Self::BodyAbsent | Self::CoupledPrimAbsent => Cause::Unreadable,
+            Self::FrameMalformed
+            | Self::BodyNotTransferred
+            | Self::NoBody
+            | Self::CouplingUnresolved => Cause::Undecoded,
         }
     }
 }
@@ -351,23 +352,17 @@ impl super::Builder<'_, '_, '_, '_> {
             .collect()
     }
 
-    /// Leaves the joint `id` at `path` out of the document for `rejection`.
     fn reject_joint(
         &mut self,
         id: JointId,
         rejection: JointRejection,
-        path: String,
         rejected: &mut BTreeSet<JointId>,
     ) {
         self.tallies.given_up.push(GivenUpRecord::new(
             &id,
-            format_args!(
-                "{}: the joint {}",
-                UsdLossCode::JointRejected.kind(),
-                rejection.one()
-            ),
+            rejection.cause(),
+            format_args!("the joint {}", rejection.one()),
         ));
-        self.tallies.rejected_joints.push((rejection, path));
         rejected.insert(id);
     }
 
@@ -520,7 +515,11 @@ impl super::Builder<'_, '_, '_, '_> {
                     Some(body) => {
                         let occurrence = crate::ids::occurrence(body);
                         if !occurrences.contains(occurrence.as_str()) {
-                            rejection = Some(JointRejection::BodyNotTransferred);
+                            rejection = Some(if self.stage.holds_no_prim(body) {
+                                JointRejection::BodyAbsent
+                            } else {
+                                JointRejection::BodyNotTransferred
+                            });
                             break;
                         }
                         Some(JointOperand::occurrence(
@@ -540,7 +539,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .then_some(JointRejection::NoBody)
             });
             if let Some(rejection) = rejection {
-                self.reject_joint(id, rejection, path, &mut rejected);
+                self.reject_joint(id, rejection, &mut rejected);
                 continue;
             }
             // A coupling needs each joint it couples.
@@ -558,8 +557,17 @@ impl super::Builder<'_, '_, '_, '_> {
                     continue;
                 }
                 let Some(ids) = self.coupled_joints(&data.coupled) else {
-                    let rejection = JointRejection::CouplingUnresolved;
-                    self.reject_joint(id, rejection, path, &mut rejected);
+                    let rejection = if data
+                        .coupled
+                        .iter()
+                        .flatten()
+                        .any(|target| self.stage.holds_no_prim(target))
+                    {
+                        JointRejection::CoupledPrimAbsent
+                    } else {
+                        JointRejection::CouplingUnresolved
+                    };
+                    self.reject_joint(id, rejection, &mut rejected);
                     continue;
                 };
                 coupled_joints = ids;

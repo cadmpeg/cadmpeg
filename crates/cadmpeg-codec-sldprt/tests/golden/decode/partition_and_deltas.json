@@ -325,37 +325,35 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
-        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=273 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:coedge#31, sldprt:brep:loop#20]",
+        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=273 given up: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:coedge#31, sldprt:brep:loop#20]",
         "provenance": {
           "format": "sldprt",
           "offset": 273,
           "stream": "Contents/Config-0-Partition"
         },
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
-        "message": "record sldprt:brep:edge#42 stream=\"Contents/Config-0-Partition\" offset=333 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#32]",
+        "message": "record sldprt:brep:edge#42 stream=\"Contents/Config-0-Partition\" offset=333 given up: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#32]",
         "provenance": {
           "format": "sldprt",
           "offset": 333,
           "stream": "Contents/Config-0-Partition"
         },
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {

@@ -13,7 +13,7 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 
@@ -89,8 +89,6 @@ pub(crate) enum SldprtLossCode {
     ParameterAmbiguousIdentity,
     /// Semantic dimension record is unbound or retains a native subtype.
     PmiDimensionUnbound,
-    /// `PMISemanticDataDB` `MessagePack` map failed to parse into a dimension.
-    PmiSemanticRecordMalformed,
     /// A `PMISemanticDataDB` section reached its parse work cap; later
     /// candidate maps were not read.
     PmiSemanticParseCapped,
@@ -127,9 +125,6 @@ pub(crate) enum SldprtLossCode {
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
-    /// A Keywords history member has no XML text that parses, so none of its
-    /// records is read.
-    HistoryUnread,
     /// A Keywords root holds an `Application` element, which the native history
     /// keeps and no neutral record holds.
     HistoryApplicationNotTransferred,
@@ -338,13 +333,7 @@ pub(crate) enum SldprtLossCode {
     TessellationDisplayWithoutGeometry,
     /// No body record links up with the faces; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
-    /// A canonical face has no explicit body relation.
-    TopologyFaceUnclaimed,
-    /// A face names no loop and does not cover a whole closed surface, so
-    /// the face and its surface are withheld.
-    TopologyFaceWithheld,
-    /// A face's loop chain names a loop that is missing or that another face
-    /// owns; the face keeps the loops before it and is stated partial.
+    /// A face keeps the loops before a missing loop or a loop another face owns.
     TopologyLoopChainCut,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
@@ -356,19 +345,6 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN ring does not close, or a FIN forward link names no reciprocal
-    /// same-loop backward link, so its loop is withheld instead of walked on
-    /// doubt; the face keeps its other loops.
-    TopologyFinLinkUnresolved,
-    /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
-    /// admission, so no vertex is invented for them.
-    TopologyRingEdgeWithheld,
-    /// A vertex loop names no resolved vertex, so the loop is withheld; the
-    /// face keeps its other loops.
-    TopologyVertexLoopWithheld,
-    /// The ring of a loop holds an ambiguous FIN, so the loop is withheld;
-    /// the face keeps its other loops.
-    TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
     /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
@@ -701,7 +677,6 @@ impl SldprtLossCode {
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
-        Self::PmiSemanticRecordMalformed,
         Self::PmiSemanticParseCapped,
         Self::PmiSwiftAnnotationUnsupported,
         Self::PmiSwiftFeatureWalkCapped,
@@ -718,7 +693,6 @@ impl SldprtLossCode {
         Self::HistoryRollbackUnread,
         Self::HistoryStatesUnread,
         Self::HistoryRollbackMarkClassInferred,
-        Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
         Self::HistoryApplicationNestingCut,
         Self::HistoryXmlNormalised,
@@ -797,17 +771,11 @@ impl SldprtLossCode {
         Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
-        Self::TopologyFaceUnclaimed,
-        Self::TopologyFaceWithheld,
         Self::TopologyLoopChainCut,
         Self::TopologyOwnershipWithheld,
         Self::TopologyShellRoleUnstated,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
-        Self::TopologyFinLinkUnresolved,
-        Self::TopologyRingEdgeWithheld,
-        Self::TopologyVertexLoopWithheld,
-        Self::TopologyAmbiguousFinFaceWithheld,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
@@ -937,7 +905,6 @@ impl SldprtLossCode {
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
-            Self::PmiSemanticRecordMalformed => "pmi.semantic-record-malformed",
             Self::PmiSemanticParseCapped => "pmi.semantic-parse-capped",
             Self::PmiSwiftAnnotationUnsupported => "pmi.swift-annotation-unsupported",
             Self::PmiSwiftFeatureWalkCapped => "pmi.swift-feature-walk-capped",
@@ -960,7 +927,6 @@ impl SldprtLossCode {
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryStatesUnread => "history.states-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
-            Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
             Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
             Self::HistoryXmlNormalised => "history.xml-normalised",
@@ -1043,17 +1009,11 @@ impl SldprtLossCode {
             Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
-            Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyShellRoleUnstated => "topology.shell-role-unstated",
-            Self::TopologyFaceWithheld => "topology.face-withheld",
             Self::TopologyLoopChainCut => "topology.loop-chain-cut",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
-            Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
-            Self::TopologyRingEdgeWithheld => "topology.ring-edge-withheld",
-            Self::TopologyVertexLoopWithheld => "topology.vertex-loop-withheld",
-            Self::TopologyAmbiguousFinFaceWithheld => "topology.ambiguous-fin-face-withheld",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -1250,8 +1210,7 @@ impl SldprtLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream
             | Self::GeometryMeshBodyNotTransferred
-            | Self::GeometryImportedBodiesNotTransferred
-            | Self::HistoryUnread => Severity::Error,
+            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
             Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
                 Severity::Warning
             }
@@ -1273,7 +1232,6 @@ impl SldprtLossCode {
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
-            | Self::PmiSemanticRecordMalformed
             | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
@@ -1362,17 +1320,11 @@ impl SldprtLossCode {
             | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
-            | Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyShellRoleUnstated
-            | Self::TopologyFaceWithheld
             | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
-            | Self::TopologyFinLinkUnresolved
-            | Self::TopologyRingEdgeWithheld
-            | Self::TopologyVertexLoopWithheld
-            | Self::TopologyAmbiguousFinFaceWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
@@ -1548,17 +1500,11 @@ impl SldprtLossCode {
             | Self::DesignDatumPlaneAxisAngled
             | Self::DesignDatumConfigurationDropped => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
-            Self::TopologyFaceUnclaimed
-            | Self::TopologyOwnershipWithheld
+            Self::TopologyOwnershipWithheld
             | Self::TopologyShellRoleUnstated
-            | Self::TopologyFaceWithheld
             | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
-            | Self::TopologyFinLinkUnresolved
-            | Self::TopologyRingEdgeWithheld
-            | Self::TopologyVertexLoopWithheld
-            | Self::TopologyAmbiguousFinFaceWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
@@ -1604,8 +1550,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::ContainerNoncanonical
-            | Self::HistoryRollbackMarkClassInferred
-            | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
+            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryApplicationNotTransferred
             | Self::HistoryApplicationNestingCut
             | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
@@ -1627,7 +1572,6 @@ impl SldprtLossCode {
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
-            | Self::PmiSemanticRecordMalformed
             | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
@@ -1689,9 +1633,9 @@ impl SldprtLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        NamespacedLossKind::new(
             const {
-                match cadmpeg_ir::report::loss::LossNamespace::new("sldprt") {
+                match LossNamespace::new("sldprt") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }
@@ -1699,6 +1643,16 @@ impl SldprtLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
+    }
+
+    /// The severity floor strict mode applies to this code (CADIR §3.2).
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ContainerNoncanonical => Some(Severity::Warning),
+            _ => None,
+        }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -1896,7 +1850,6 @@ mod tests {
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
-                "pmi.semantic-record-malformed",
                 "pmi.semantic-parse-capped",
                 "pmi.swift-annotation-unsupported",
                 "pmi.swift-feature-walk-capped",
@@ -1913,7 +1866,6 @@ mod tests {
                 "history.rollback-unread",
                 "history.states-unread",
                 "history.rollback-mark-class-inferred",
-                "history.unread",
                 "history.application-not-transferred",
                 "history.application-nesting-cut",
                 "history.xml-normalised",
@@ -1992,17 +1944,11 @@ mod tests {
                 "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
-                "topology.face-unclaimed",
-                "topology.face-withheld",
                 "topology.loop-chain-cut",
                 "topology.ownership-withheld",
                 "topology.shell-role-unstated",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
-                "topology.fin-link-unresolved",
-                "topology.ring-edge-withheld",
-                "topology.vertex-loop-withheld",
-                "topology.ambiguous-fin-face-withheld",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
@@ -2124,6 +2070,15 @@ mod tests {
                     .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
                 "code {text} is not lowercase kebab"
             );
+        }
+    }
+
+    #[test]
+    fn the_compound_deviation_alone_pins_a_strict_floor() {
+        for code in SldprtLossCode::ALL {
+            let expected =
+                (*code == SldprtLossCode::ContainerNoncanonical).then_some(Severity::Warning);
+            assert_eq!(code.note("").code.strict_floor(), expected, "{code:?}");
         }
     }
 

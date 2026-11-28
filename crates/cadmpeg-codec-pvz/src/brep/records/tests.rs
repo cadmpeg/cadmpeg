@@ -233,11 +233,12 @@ fn loops_mark_inner_loops_and_collect_their_coedges() {
 
 #[test]
 fn inner_loop_marker_names_the_first_loop_of_its_face() {
-    for marker in [5, -1] {
-        let mut stream = plane_stream(false);
-        stream.loop_record(marker).terminator();
-        assert!(parse(stream).is_err(), "marker {marker}");
-    }
+    let mut stream = plane_stream(false);
+    stream.loop_record(5).terminator();
+    assert!(matches!(parse(stream), Err(CodecError::Malformed(_))));
+    let mut stream = plane_stream(false);
+    stream.loop_record(-1).terminator();
+    assert!(matches!(parse(stream), Err(CodecError::NotImplemented(_))));
     let mut stream = plane_stream(false);
     stream.loop_record(-2).terminator();
     stream.plane([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);

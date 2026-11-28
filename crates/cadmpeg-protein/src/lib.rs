@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
 
-use cadmpeg_container::ArchiveSnapshot;
+use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -125,6 +125,7 @@ struct Schema {
 }
 
 /// Parsed Protein schemas with inherited properties resolved once per schema.
+#[derive(Default)]
 pub struct SchemaCatalog {
     schemas: HashMap<String, Schema>,
     properties: HashMap<String, BTreeMap<String, Property>>,
@@ -159,21 +160,48 @@ impl SchemaCatalog {
         archive: &ArchiveSnapshot<'a>,
         mut open: impl FnMut(&str) -> Result<Payload, CodecError>,
     ) -> Result<Option<Self>, CodecError> {
-        let mut schemas = HashMap::new();
-        for entry in archive.entries() {
-            if !is_schema_entry(&entry.name) {
-                continue;
-            }
-            if entry.uncompressed_size > MAX_SCHEMA_BYTES {
-                return Err(schema_too_large(entry.uncompressed_size));
-            }
-            let xml = open(&entry.name)?;
-            parse_schema_document(ctx, &entry.name, xml.as_ref(), &mut schemas)?;
+        let mut catalog = Self::default();
+        for entry in archive
+            .entries()
+            .iter()
+            .filter(|entry| is_schema_entry(&entry.name))
+        {
+            ctx.run_part(|| catalog.admit_member(ctx, archive, entry, &mut open))??;
         }
-        if schemas.is_empty() {
-            return Ok(None);
+        Ok((!catalog.is_empty()).then_some(catalog))
+    }
+
+    /// Whether the catalog contains any admitted schema.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.schemas.is_empty()
+    }
+
+    /// Opens one selected schema member and admits its XML declaration.
+    pub fn read_member<'a>(
+        &mut self,
+        ctx: &DecodeContext<'a>,
+        archive: &ArchiveSnapshot<'a>,
+        entry: &EntryRecord,
+    ) -> Result<(), CodecError> {
+        self.admit_member(ctx, archive, entry, |name| {
+            archive.open(ctx, name).map(View::window)
+        })
+    }
+
+    fn admit_member<Payload: AsRef<[u8]>>(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        archive: &ArchiveSnapshot<'_>,
+        entry: &EntryRecord,
+        mut open: impl FnMut(&str) -> Result<Payload, CodecError>,
+    ) -> Result<(), CodecError> {
+        archive.validate_member(&entry.name)?;
+        if entry.uncompressed_size > MAX_SCHEMA_BYTES {
+            return Err(schema_too_large(entry.uncompressed_size));
         }
-        Ok(Some(Self::new(schemas)))
+        let xml = open(&entry.name)?;
+        parse_schema_document(ctx, &entry.name, xml.as_ref(), &mut self.schemas)
     }
 
     /// Parse schemas for source-retaining export edits.
@@ -373,7 +401,9 @@ pub fn has_schemas(protein: &[u8]) -> bool {
     })
 }
 
-fn is_schema_entry(name: &str) -> bool {
+/// Whether a member name selects a Protein schema document.
+#[must_use]
+pub fn is_schema_entry(name: &str) -> bool {
     (name.starts_with("Schemas/") || name.contains("/Schemas/")) && name.ends_with("Schema.xml")
 }
 
