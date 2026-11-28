@@ -158,26 +158,62 @@ pub(super) fn enforce_sparse_endpoint_membership(
             .len()
             .cmp(&edge_candidates[edge_ids[*right]].len())
     });
+    let mut allowed = Vec::new();
     for edge in ordered {
         let candidates = &edge_candidates[edge_ids[edge]];
         if candidates.is_empty() {
             continue;
         }
         let [left, right] = edges[edge];
-        let Some(domain_work) = domains[left].len().checked_add(if right == left {
+        let Some(support_work) = candidates.len().checked_mul(2) else {
+            continue;
+        };
+        let left_len = domains[left].len();
+        let right_len = if right == left {
             0
         } else {
             domains[right].len()
-        }) else {
-            continue;
         };
-        let Some(support_work) = candidates.len().checked_mul(2) else {
+        let Some(domain_work) = left_len.checked_add(right_len) else {
             continue;
         };
         if support_work >= domain_work {
             continue;
         }
-        let Some(work) = support_work.checked_add(domain_work) else {
+        allowed.clear();
+        allowed.extend(candidates.iter().flatten().copied());
+        allowed.sort_unstable();
+        allowed.dedup();
+        let log_steps = |len: usize| -> usize {
+            usize::try_from(usize::BITS - len.leading_zeros())
+                .unwrap_or(1)
+                .max(1)
+        };
+        let side_work = |side_len: usize| -> Option<usize> {
+            if side_len == 0 {
+                return Some(0);
+            }
+            if allowed.len() < side_len {
+                Some(
+                    allowed
+                        .len()
+                        .checked_mul(log_steps(side_len))?
+                        .min(side_len),
+                )
+            } else {
+                Some(side_len)
+            }
+        };
+        let Some(left_work) = side_work(left_len) else {
+            continue;
+        };
+        let Some(right_work) = side_work(right_len) else {
+            continue;
+        };
+        let Some(work) = support_work
+            .checked_add(left_work)
+            .and_then(|total| total.checked_add(right_work))
+        else {
             continue;
         };
         if budget.is_some_and(|budget| work > budget.remaining()) {
@@ -186,13 +222,21 @@ pub(super) fn enforce_sparse_endpoint_membership(
         if budget.is_some_and(|budget| !budget.charge_by(work)) {
             return false;
         }
-        let mut allowed = HashSet::new();
-        for point in candidates.iter().flatten().copied() {
-            allowed.insert(point);
-        }
-        domains[left].retain(|point| allowed.contains(point));
+        let narrow_side = |domain: &mut Vec<usize>, allowed: &[usize]| {
+            if allowed.len() < domain.len() {
+                let narrowed: Vec<usize> = allowed
+                    .iter()
+                    .copied()
+                    .filter(|point| domain.binary_search(point).is_ok())
+                    .collect();
+                *domain = narrowed;
+            } else {
+                domain.retain(|point| allowed.binary_search(point).is_ok());
+            }
+        };
+        narrow_side(&mut domains[left], &allowed);
         if right != left {
-            domains[right].retain(|point| allowed.contains(point));
+            narrow_side(&mut domains[right], &allowed);
         }
         if domains[left].is_empty() || domains[right].is_empty() {
             return false;

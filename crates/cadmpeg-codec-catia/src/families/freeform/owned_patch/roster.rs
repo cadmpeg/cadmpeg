@@ -84,6 +84,14 @@ pub(super) fn sheet_references(
     bytes: &[u8],
     family: Family,
 ) -> Option<(Vec<crate::wire::bytes::AllocationReference>, &[u8])> {
+    sheet_references_with_flags(bytes, family, 3)
+}
+
+pub(super) fn sheet_references_with_flags(
+    bytes: &[u8],
+    family: Family,
+    flags: u8,
+) -> Option<(Vec<crate::wire::bytes::AllocationReference>, &[u8])> {
     let (count, mut at) = match (*bytes.first()?, family) {
         (0x18, Family::A) => (usize::from(View::u16_le_at(bytes, 1)?), 3),
         (0x08, Family::A) => (usize::from(*bytes.get(1)?), 2),
@@ -98,7 +106,7 @@ pub(super) fn sheet_references(
         .collect::<Option<Vec<_>>>()?;
     Some((
         references,
-        roster_bits(View::over_retained(bytes.get(at..)?), count, 3)?,
+        roster_bits(View::over_retained(bytes.get(at..)?), count, flags)?,
     ))
 }
 

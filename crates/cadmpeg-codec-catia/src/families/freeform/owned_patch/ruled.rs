@@ -17,7 +17,7 @@ use super::super::rolling_ball_patch::fit_bezier_lanes;
 const RULED_FIT_ERROR_MM: f64 = 0.0005;
 const DEGREE: u32 = 5;
 
-pub(super) struct Ruled {
+pub(in crate::families::freeform) struct Ruled {
     guides: [SolvedCurveGeometry; 2],
     pub(super) bounds: [[f64; 2]; 2],
     origin_at_first: bool,
@@ -25,7 +25,10 @@ pub(super) struct Ruled {
 }
 
 impl Ruled {
-    pub(super) fn new(guide: &A5GuideCurve, v_limits: [f64; 2]) -> Option<Self> {
+    pub(in crate::families::freeform) fn new(
+        guide: &A5GuideCurve,
+        v_limits: [f64; 2],
+    ) -> Option<Self> {
         let knots = guide.knots();
         let bounds = [
             [*knots.first()?, *knots.last()?],
@@ -122,7 +125,7 @@ impl Ruled {
         Some(point.translated(*normal.as_raw(), self.offset))
     }
 
-    pub(super) fn fit(&self, [u, v]: [[f64; 2]; 2]) -> Option<NurbsSurface> {
+    pub(in crate::families::freeform) fn fit(&self, [u, v]: [[f64; 2]; 2]) -> Option<NurbsSurface> {
         if self.offset != 0.0 {
             let SolvedCurveGeometry::Nurbs(guide) = &self.guides[0] else {
                 return None;

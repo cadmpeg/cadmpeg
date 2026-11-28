@@ -1593,12 +1593,17 @@ fn parse_trim_record_layout_with_length_encoding(
         None
     };
 
-    // A two-strip packet stores K0 and K1 as two raw bytes before the H lane.
-    // The bytes are not a handle.  At width two they happen to occupy one
-    // handle-sized slot; at width three they do not, so sizing the lane as
-    // `(N + 1) * width` would consume one byte from the next packet.
-    let packed_two_strip_lengths =
-        kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
+    // A two-strip packet stores K0 and K1 as two raw bytes before the H lane
+    // when both strip lengths fit in a single byte and sum to `handle_count`.
+    // Larger two-strip packets use standard `parse_count` (`0xff` + u32 LE)
+    // length encoding and fall through to `TrimLengthLane::Encoded`.
+    let packed_two_strip_lengths = kind == 0x42
+        && b == 2
+        && bytes.get(b_start).is_some_and(|encoded| *encoded == 2)
+        && handle_count <= usize::from(u8::MAX) * 2
+        && bytes
+            .get(position..position + 2)
+            .is_some_and(|packed| usize::from(packed[0]) + usize::from(packed[1]) == handle_count);
     let primitive_count = b.checked_add(c)?;
     if !packed_two_strip_lengths && primitive_count > bytes.get(position..).map_or(0, <[u8]>::len) {
         return None;
@@ -2001,5 +2006,36 @@ mod trim_admission_tests {
         let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete partition");
         assert_eq!(layout.handle_count, 3);
         assert_eq!(layout.end, bytes.len());
+    }
+
+    #[test]
+    fn two_strip_trim_record_accepts_extended_parse_count_lengths_at_width_three() {
+        let first_len = 260usize;
+        let second_len = 262usize;
+        let handle_count = first_len + second_len;
+        let mut bytes = vec![0x01, 0x42, 0x02, 0xff];
+        bytes.extend_from_slice(&(u32::try_from(handle_count).expect("fits u32")).to_le_bytes());
+        bytes.push(0xff);
+        bytes.extend_from_slice(&(u32::try_from(first_len).expect("fits u32")).to_le_bytes());
+        bytes.push(0xff);
+        bytes.extend_from_slice(&(u32::try_from(second_len).expect("fits u32")).to_le_bytes());
+        for handle in 0..handle_count {
+            let h = u32::try_from(handle).expect("fits u32");
+            bytes.extend_from_slice(&[
+                u8::try_from((h >> 16) & 0xff).expect("byte"),
+                u8::try_from((h >> 8) & 0xff).expect("byte"),
+                u8::try_from(h & 0xff).expect("byte"),
+            ]);
+        }
+        let layout = parse_trim_record_layout(&bytes, 0, 3)
+            .expect("extended parse_count two-strip layout at width 3");
+        assert_eq!(layout.handle_count, handle_count);
+        assert_eq!(layout.end, bytes.len());
+        let record = super::parse_trim_record(&bytes, 0, 3)
+            .expect("extended parse_count two-strip record at width 3");
+        assert_eq!(
+            record.packet.triangles().len(),
+            (first_len - 2) + (second_len - 2)
+        );
     }
 }

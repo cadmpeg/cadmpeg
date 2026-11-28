@@ -6,7 +6,7 @@ use super::root_domains::{enforce_edge_arc_consistency, enforce_sparse_endpoint_
 use super::PointAssignmentOutcome;
 use crate::families::standard::topology::incidence_cycles;
 use crate::solve::incidence::{compact_boundary_domain_viable, deferred_boundary_cycle_matches};
-use crate::solve::matching::{distinct_domain_matching_with_budget, MatchingEdgeConstraint};
+use crate::solve::matching::distinct_domain_matching_with_budget;
 use crate::solve::missing_edge::{
     same_unordered_pair, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
     MeshFaceBoundaryDomain,
@@ -659,11 +659,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 assigned[endpoint]
                             }
                         };
-                        let mut degrees = HashMap::new();
-                        for (&key, &degree) in base_degrees {
-                            degrees.insert(key, degree);
-                        }
-                        let mut affected_faces = HashSet::new();
+                        let mut delta_degrees = HashMap::<(usize, usize), usize>::new();
+                        let mut affected_faces = Vec::new();
                         for &edge in &root_edges[root] {
                             let [left, right] = edges[edge];
                             let (Some(left), Some(right)) = (value(left), value(right)) else {
@@ -674,85 +671,107 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 if rank > 0 && face == faces[0] {
                                     continue;
                                 }
-                                affected_faces.insert(face);
+                                affected_faces.push(face);
                                 for endpoint in [left, right] {
-                                    let degree = degrees.entry((face, endpoint)).or_default();
-                                    let Some(next_degree) = degree.checked_add(1) else {
+                                    let key = (face, endpoint);
+                                    let base = base_degrees.get(&key).copied().unwrap_or(0);
+                                    let delta = delta_degrees.entry(key).or_default();
+                                    let Some(next_delta) = delta.checked_add(1) else {
                                         return Ok(false);
                                     };
-                                    *degree = next_degree;
-                                    if *degree > 2 {
+                                    *delta = next_delta;
+                                    let Some(total) = base.checked_add(next_delta) else {
+                                        return Ok(false);
+                                    };
+                                    if total > 2 {
                                         return Ok(false);
                                     }
                                 }
                             }
                         }
-                        for (&(face, point), &degree) in &degrees {
-                            if degree != 1 || !affected_faces.contains(&face) {
-                                continue;
+                        affected_faces.sort_unstable();
+                        affected_faces.dedup();
+                        for &face in &affected_faces {
+                            let mut face_points = Vec::new();
+                            for &edge in &incidence.face_edges[face] {
+                                let [left, right] = edges[edge];
+                                if let (Some(left), Some(right)) = (value(left), value(right)) {
+                                    face_points.push(left);
+                                    face_points.push(right);
+                                }
                             }
-                            if work_budget.is_some_and(|budget| {
-                                !budget.charge_by(work_units(incidence.face_edges[face].len()))
-                            }) {
-                                return Ok(false);
-                            }
-                            let supported =
-                                incidence.face_edges[face].iter().copied().any(|edge| {
-                                    let [left, right] = edges[edge];
-                                    if value(left).is_some() && value(right).is_some() {
-                                        return false;
-                                    }
-                                    let supports = |endpoint| {
-                                        value(endpoint).is_some_and(|value| value == point)
-                                            || (value(endpoint).is_none()
-                                                && domains[endpoint].contains(&point))
-                                    };
-                                    supports(left) || supports(right)
-                                });
-                            if !supported {
-                                return Ok(false);
-                            }
-                        }
-                        let boundaries_viable = incidence
-                            .boundary_domains
-                            .iter()
-                            .enumerate()
-                            .try_fold(true, |viable, (face, domain)| {
-                                if !viable {
+                            face_points.sort_unstable();
+                            face_points.dedup();
+                            for point in face_points {
+                                let key = (face, point);
+                                let degree = base_degrees.get(&key).copied().unwrap_or(0)
+                                    + delta_degrees.get(&key).copied().unwrap_or(0);
+                                if degree != 1 {
+                                    continue;
+                                }
+                                if work_budget.is_some_and(|budget| {
+                                    !budget.charge_by(work_units(incidence.face_edges[face].len()))
+                                }) {
                                     return Ok(false);
                                 }
-                                if !incidence.closed_faces[face] || !affected_faces.contains(&face)
-                                {
-                                    return Ok(true);
+                                let supported =
+                                    incidence.face_edges[face].iter().copied().any(|edge| {
+                                        let [left, right] = edges[edge];
+                                        if value(left).is_some() && value(right).is_some() {
+                                            return false;
+                                        }
+                                        let supports = |endpoint| {
+                                            value(endpoint).is_some_and(|value| value == point)
+                                                || (value(endpoint).is_none()
+                                                    && domains[endpoint].contains(&point))
+                                        };
+                                        supports(left) || supports(right)
+                                    });
+                                if !supported {
+                                    return Ok(false);
                                 }
-                                match domain {
-                                    MeshFaceBoundaryDomain::Ordered(assignments) => {
-                                        Ok(assignments.iter().any(|assignment| {
-                                            partial_ordered_assignment_viable(
-                                                assignment,
+                            }
+                        }
+                        let boundaries_viable =
+                            affected_faces
+                                .iter()
+                                .copied()
+                                .try_fold(true, |viable, face| {
+                                    if !viable {
+                                        return Ok(false);
+                                    }
+                                    if !incidence.closed_faces[face] {
+                                        return Ok(true);
+                                    }
+                                    let domain = &incidence.boundary_domains[face];
+                                    match domain {
+                                        MeshFaceBoundaryDomain::Ordered(assignments) => {
+                                            Ok(assignments.iter().any(|assignment| {
+                                                partial_ordered_assignment_viable(
+                                                    assignment,
+                                                    local_edge_by_id,
+                                                    edges,
+                                                    domains,
+                                                    assigned,
+                                                    Some((root, *point)),
+                                                    work_budget,
+                                                )
+                                            }))
+                                        }
+                                        _ => partial_compact_assignment_viable(
+                                            ctx,
+                                            PartialCompactAssignmentViableInputs {
+                                                domain,
                                                 local_edge_by_id,
                                                 edges,
-                                                domains,
+                                                global_edge_count: edge_candidates.len(),
                                                 assigned,
-                                                Some((root, *point)),
-                                                work_budget,
-                                            )
-                                        }))
+                                                candidate: (root, *point),
+                                                budget: work_budget,
+                                            },
+                                        ),
                                     }
-                                    _ => partial_compact_assignment_viable(
-                                        ctx,
-                                        PartialCompactAssignmentViableInputs {
-                                            domain,
-                                            local_edge_by_id,
-                                            edges,
-                                            global_edge_count: edge_candidates.len(),
-                                            assigned,
-                                            candidate: (root, *point),
-                                            budget: work_budget,
-                                        },
-                                    ),
-                                }
-                            })?;
+                                })?;
                         if !boundaries_viable {
                             return Ok(false);
                         }
@@ -804,6 +823,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             let mut viable_domains = Vec::new();
             let mut dead = false;
             let mut progress = false;
+            let mut next_pending = HashSet::new();
             let mut scan_truncated = false;
             let mut scan_deferred = false;
             let mut supported_unused = HashSet::new();
@@ -858,8 +878,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     propagated.push((root, *point, undo));
                     progress = true;
                     if incidence.is_some() || bounded_scan {
-                        pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
-                        break;
+                        next_pending.extend(affected_roots(root, root_edges, edges, incidence));
+                        if bounded_scan {
+                            break;
+                        }
                     }
                 } else {
                     viable_domains.push((root, values));
@@ -876,6 +898,9 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 break None;
             }
             if progress {
+                if !next_pending.is_empty() {
+                    pending_roots = Some(next_pending);
+                }
                 continue;
             }
             if scan_truncated || scan_deferred {
@@ -957,42 +982,137 @@ pub(super) fn close_coordinate_roots_with_incidence(
             let mut matching_forced = None;
             let mut unsupported_matches = HashSet::new();
             if let Some(matching) = &coverage_matching {
-                for (support, &root) in matching.iter().enumerate() {
-                    if distinct_domain_matching_with_budget(
-                        ctx,
-                        support_domains.iter().copied(),
-                        assigned.len(),
-                        matching_budget.as_ref(),
-                        Some(MatchingEdgeConstraint::Exclude(support, root)),
-                    )?
-                    .is_none()
-                    {
-                        if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
-                            break;
+                if !point_supports.is_empty() {
+                    let total_edges: usize =
+                        point_supports.iter().map(|(_, roots)| roots.len()).sum();
+                    let filter_work = point_supports
+                        .len()
+                        .checked_add(assigned.len())
+                        .and_then(|sum| sum.checked_add(total_edges));
+                    let budget_ok = filter_work.is_some_and(|work| {
+                        matching_budget
+                            .as_ref()
+                            .is_none_or(|budget| budget.charge_by(work_units(work)))
+                    });
+                    if budget_ok {
+                        // Exact Régin (1994) O(V + E) AllDifferent filtering on the
+                        // contracted residual graph of `matching`.
+                        let mut right_match = vec![None::<usize>; assigned.len()];
+                        for (support, &root) in matching.iter().enumerate() {
+                            right_match[root] = Some(support);
                         }
-                        matching_forced = Some((point_supports[support].0, root));
-                        break;
-                    }
-                }
-                if matching_forced.is_none() {
-                    'supports: for (support, (_, roots)) in point_supports.iter().enumerate() {
-                        for &root in roots {
-                            if matching[support] == root {
+                        let mut adj = vec![Vec::<usize>::new(); point_supports.len()];
+                        let mut rev_adj = vec![Vec::<usize>::new(); point_supports.len()];
+                        let mut reaches_free = vec![false; point_supports.len()];
+                        let mut bfs_queue = Vec::<usize>::new();
+                        for (support, (_, roots)) in point_supports.iter().enumerate() {
+                            let matched_root = matching[support];
+                            for &root in roots {
+                                if root == matched_root {
+                                    continue;
+                                }
+                                if let Some(other) = right_match[root] {
+                                    adj[support].push(other);
+                                    rev_adj[other].push(support);
+                                } else if !reaches_free[support] {
+                                    reaches_free[support] = true;
+                                    bfs_queue.push(support);
+                                }
+                            }
+                        }
+                        let mut bfs_head = 0usize;
+                        while bfs_head < bfs_queue.len() {
+                            let node = bfs_queue[bfs_head];
+                            bfs_head += 1;
+                            for &prev in &rev_adj[node] {
+                                if !reaches_free[prev] {
+                                    reaches_free[prev] = true;
+                                    bfs_queue.push(prev);
+                                }
+                            }
+                        }
+                        // Iterative Tarjan SCC on `adj`.
+                        let mut index_counter = 0usize;
+                        let mut indices = vec![None::<usize>; point_supports.len()];
+                        let mut lowlink = vec![0usize; point_supports.len()];
+                        let mut on_stack = vec![false; point_supports.len()];
+                        let mut tarjan_stack = Vec::<usize>::new();
+                        let mut scc_id = vec![0usize; point_supports.len()];
+                        let mut scc_sizes = Vec::<usize>::new();
+                        let mut dfs_stack = Vec::<(usize, usize)>::new();
+                        for start in 0..point_supports.len() {
+                            if indices[start].is_some() {
                                 continue;
                             }
-                            if distinct_domain_matching_with_budget(
-                                ctx,
-                                support_domains.iter().copied(),
-                                assigned.len(),
-                                matching_budget.as_ref(),
-                                Some(MatchingEdgeConstraint::Require(support, root)),
-                            )?
-                            .is_none()
-                            {
-                                if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
-                                    break 'supports;
+                            indices[start] = Some(index_counter);
+                            lowlink[start] = index_counter;
+                            index_counter += 1;
+                            on_stack[start] = true;
+                            tarjan_stack.push(start);
+                            dfs_stack.push((start, 0));
+                            while let Some((node, edge_idx)) = dfs_stack.last_mut() {
+                                let node = *node;
+                                if *edge_idx < adj[node].len() {
+                                    let next = adj[node][*edge_idx];
+                                    *edge_idx += 1;
+                                    if indices[next].is_none() {
+                                        indices[next] = Some(index_counter);
+                                        lowlink[next] = index_counter;
+                                        index_counter += 1;
+                                        on_stack[next] = true;
+                                        tarjan_stack.push(next);
+                                        dfs_stack.push((next, 0));
+                                    } else if on_stack[next] {
+                                        if let Some(next_index) = indices[next] {
+                                            if next_index < lowlink[node] {
+                                                lowlink[node] = next_index;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    dfs_stack.pop();
+                                    if let Some(&(parent, _)) = dfs_stack.last() {
+                                        if lowlink[node] < lowlink[parent] {
+                                            lowlink[parent] = lowlink[node];
+                                        }
+                                    }
+                                    if indices[node] == Some(lowlink[node]) {
+                                        let comp = scc_sizes.len();
+                                        let mut size = 0usize;
+                                        while let Some(member) = tarjan_stack.pop() {
+                                            on_stack[member] = false;
+                                            scc_id[member] = comp;
+                                            size += 1;
+                                            if member == node {
+                                                break;
+                                            }
+                                        }
+                                        scc_sizes.push(size);
+                                    }
                                 }
-                                unsupported_matches.insert((root, point_supports[support].0));
+                            }
+                        }
+                        for (support, &root) in matching.iter().enumerate() {
+                            if !reaches_free[support] && scc_sizes[scc_id[support]] == 1 {
+                                matching_forced = Some((point_supports[support].0, root));
+                                break;
+                            }
+                        }
+                        if matching_forced.is_none() {
+                            for (support, (_, roots)) in point_supports.iter().enumerate() {
+                                let matched_root = matching[support];
+                                for &root in roots {
+                                    if root == matched_root {
+                                        continue;
+                                    }
+                                    if let Some(other) = right_match[root] {
+                                        if scc_id[support] != scc_id[other] && !reaches_free[other]
+                                        {
+                                            unsupported_matches
+                                                .insert((root, point_supports[support].0));
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1301,15 +1421,130 @@ pub(super) fn close_coordinate_roots_with_incidence(
     if covered_points.len() != point_count {
         return Ok(None);
     }
+    // Prune domains globally before component decomposition whenever at least
+    // one root is non-singleton so unrelated roots do not get merged via
+    // unpruned domains or points already covered by singletons.
+    let global_prepruned = !edges.is_empty() && domains.iter().any(|domain| domain.len() > 1);
+    if global_prepruned {
+        let all_edge_ids: Vec<usize> = (0..edges.len()).collect();
+        let mut global_root_edges = vec![Vec::new(); roots.len()];
+        for (edge, [left, right]) in edges.iter().copied().enumerate() {
+            global_root_edges[left].push(edge);
+            if right != left {
+                global_root_edges[right].push(edge);
+            }
+        }
+        if !enforce_sparse_endpoint_membership(
+            &mut domains,
+            &edges,
+            &all_edge_ids,
+            edge_candidates,
+            budget,
+        ) {
+            if budget.is_some_and(WorkBudget::exhausted) {
+                exhausted.set(true);
+            }
+            return Ok(None);
+        }
+        let global_arc_budget = budget.map(|budget| budget.charging_slice(budget.remaining()));
+        if !enforce_edge_arc_consistency(
+            &mut domains,
+            &edges,
+            &all_edge_ids,
+            &global_root_edges,
+            edge_candidates,
+            global_arc_budget.as_ref(),
+        ) {
+            if global_arc_budget
+                .as_ref()
+                .is_some_and(WorkBudget::exhausted)
+            {
+                if let Some(budget) = budget {
+                    budget.exhaust();
+                }
+                exhausted.set(true);
+            }
+            return Ok(None);
+        }
+        if budget.is_some_and(WorkBudget::exhausted) {
+            exhausted.set(true);
+            return Ok(None);
+        }
+    }
+    covered_points.clear();
+    let mut singleton_covered_points = HashSet::new();
+    for domain in &domains {
+        if global_prepruned {
+            if let &[point] = domain.as_slice() {
+                singleton_covered_points.insert(point);
+            }
+        }
+        for &point in domain {
+            covered_points.insert(point);
+        }
+    }
+    if covered_points.len() != point_count {
+        return Ok(None);
+    }
     let mut dependency = UnionFind::new(roots.len());
     for [left, right] in &edges {
         dependency.union(*left, *right)?;
     }
     let mut root_by_point = HashMap::new();
+    let mut singleton_root_by_point = HashMap::new();
     for (root, domain) in domains.iter().enumerate() {
+        if incidence.is_some() {
+            if let &[point] = domain.as_slice() {
+                if let Some(previous) = singleton_root_by_point.insert(point, root) {
+                    dependency.union(previous, root)?;
+                }
+            }
+        }
         for point in domain {
+            if singleton_covered_points.contains(point) {
+                continue;
+            }
             if let Some(previous) = root_by_point.insert(*point, root) {
                 dependency.union(previous, root)?;
+            }
+        }
+    }
+    if global_prepruned {
+        if let Some((_, boundary_domains)) = incidence {
+            for domain in boundary_domains {
+                let MeshFaceBoundaryDomain::UnorderedFullCycle(cycle_edges) = domain else {
+                    continue;
+                };
+                if cycle_edges.len() < 2 {
+                    continue;
+                }
+                let mut cycle_point_owner = HashMap::<usize, usize>::new();
+                for &edge in cycle_edges {
+                    let Some(&[left, right]) = edges.get(edge) else {
+                        continue;
+                    };
+                    for root in [left, right] {
+                        for &point in &domains[root] {
+                            if let Some(previous) = cycle_point_owner.insert(point, root) {
+                                dependency.union(previous, root)?;
+                            }
+                        }
+                    }
+                }
+                let mut first_component = None;
+                for &edge in cycle_edges {
+                    let Some(&[left, _]) = edges.get(edge) else {
+                        continue;
+                    };
+                    let component = dependency.find(left)?;
+                    if let Some(first) = first_component {
+                        if component != first {
+                            return Ok(None);
+                        }
+                    } else {
+                        first_component = Some(component);
+                    }
+                }
             }
         }
     }
@@ -1364,8 +1599,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
             }
         }
         let mut component_points = HashSet::new();
-        for point in component.iter().flat_map(|root| domains[*root].iter()) {
-            component_points.insert(*point);
+        for &point in component.iter().flat_map(|root| domains[*root].iter()) {
+            if !singleton_covered_points.contains(&point) {
+                component_points.insert(point);
+            }
         }
         let Some(explicit_pair_supports) = edge_ids
             .iter()
@@ -1463,50 +1700,53 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 root_edges[right].push(edge);
             }
         }
-        if !enforce_sparse_endpoint_membership(
-            &mut local_domains,
-            &local_edges,
-            &edge_ids,
-            edge_candidates,
-            budget,
-        ) {
-            if budget.is_some_and(WorkBudget::exhausted) {
-                exhausted.set(true);
-            }
-            return Ok(None);
-        }
-        let mut arc_domains = Vec::new();
-        for domain in &local_domains {
-            let copy = domain.clone();
-            arc_domains.push(copy);
-        }
-        let arc_budget = budget.map(|budget| budget.charging_slice(budget.remaining()));
-        let arc_consistent = enforce_edge_arc_consistency(
-            &mut arc_domains,
-            &local_edges,
-            &edge_ids,
-            &root_edges,
-            edge_candidates,
-            arc_budget.as_ref(),
-        );
-        if arc_consistent {
-            if budget.is_some_and(WorkBudget::exhausted) {
-                exhausted.set(true);
+        if !global_prepruned {
+            if !enforce_sparse_endpoint_membership(
+                &mut local_domains,
+                &local_edges,
+                &edge_ids,
+                edge_candidates,
+                budget,
+            ) {
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    if let Some(shared_budget) = shared_budget {
+                        shared_budget.exhaust();
+                    }
+                    exhausted.set(true);
+                }
                 return Ok(None);
             }
-            local_domains = arc_domains;
-        } else {
-            if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
-                exhausted.set(true);
+            let mut arc_domains = Vec::new();
+            for domain in &local_domains {
+                arc_domains.push(domain.clone());
             }
-            return Ok(None);
-        }
-        let mut remaining_points = HashSet::new();
-        for &point in local_domains.iter().flatten() {
-            remaining_points.insert(point);
-        }
-        if remaining_points != component_points {
-            return Ok(None);
+            let arc_budget = budget.map(|budget| budget.charging_slice(budget.remaining()));
+            let arc_consistent = enforce_edge_arc_consistency(
+                &mut arc_domains,
+                &local_edges,
+                &edge_ids,
+                &root_edges,
+                edge_candidates,
+                arc_budget.as_ref(),
+            );
+            if arc_consistent {
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    if let Some(shared_budget) = shared_budget {
+                        shared_budget.exhaust();
+                    }
+                    exhausted.set(true);
+                    return Ok(None);
+                }
+                local_domains = arc_domains;
+            } else {
+                if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
+                    if let Some(shared_budget) = shared_budget {
+                        shared_budget.exhaust();
+                    }
+                    exhausted.set(true);
+                }
+                return Ok(None);
+            }
         }
         let mut solutions = Vec::new();
         let mut states = 0;
@@ -1735,5 +1975,65 @@ mod tests {
             }
         )
         .expect("check partial compact assignment viable"));
+    }
+
+    #[test]
+    fn coordinate_closure_decomposes_independent_components_after_global_arc_consistency() {
+        use super::{
+            close_coordinate_roots_with_incidence, CloseCoordinateRootsWithIncidenceInputs,
+        };
+        use crate::solve::mesh_quotient::quotient::MeshQuotient;
+        use cadmpeg_core::decode::WorkBudget;
+        use std::cell::Cell;
+        use std::collections::HashSet;
+        use std::sync::Arc;
+
+        // 40 independent 2-root edges sharing a broad unpruned initial domain,
+        // plus one forced singleton point that also appears in every initial domain.
+        // Global sparse-membership + arc consistency decomposes the graph into
+        // small independent components and closes within a tight budget.
+        let pairs = 40usize;
+        let point_count = pairs * 2 + 1;
+        let edge_count = pairs + 1;
+        let broad: Arc<HashSet<usize>> = Arc::new((0..point_count).collect());
+        let mut domains = vec![Arc::clone(&broad); edge_count * 2];
+        let mut edge_candidates = Vec::new();
+        for pair in 0..pairs {
+            let a = pair * 2;
+            let b = pair * 2 + 1;
+            // Pin one endpoint of each edge via a singleton domain on the first port.
+            domains[pair * 2] = Arc::new(HashSet::from([a]));
+            edge_candidates.push(vec![[a, b]]);
+        }
+        // Final edge pins the last point on both endpoints.
+        domains[pairs * 2] = Arc::new(HashSet::from([pairs * 2]));
+        domains[pairs * 2 + 1] = Arc::new(HashSet::from([pairs * 2]));
+        edge_candidates.push(vec![[pairs * 2, pairs * 2]]);
+        let mut quotient = MeshQuotient::new(domains);
+
+        let budget = WorkBudget::new(20_000);
+        let ambiguous = Cell::new(false);
+        let exhausted = Cell::new(false);
+        let assignment = crate::test_support::with_service_context(|ctx| {
+            close_coordinate_roots_with_incidence(
+                ctx,
+                CloseCoordinateRootsWithIncidenceInputs {
+                    quotient: &mut quotient,
+                    point_count,
+                    edge_candidates: &edge_candidates,
+                    incidence: None,
+                    budget: Some(&budget),
+                    component_search_budget: Some(5_000),
+                    ambiguous: &ambiguous,
+                    exhausted: &exhausted,
+                },
+            )
+        })
+        .expect("coordinate closure succeeds")
+        .expect("unique coordinate assignment");
+        assert!(!ambiguous.get());
+        assert!(!exhausted.get());
+        assert_eq!(assignment.len(), point_count);
+        assert!(budget.consumed() < 10_000);
     }
 }

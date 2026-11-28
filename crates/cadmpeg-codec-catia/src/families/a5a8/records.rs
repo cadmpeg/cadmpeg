@@ -230,14 +230,11 @@ fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<Surfa
         compact_int(tail, &mut cursor)?,
     ];
     let extra = cursor.checked_sub(layout::PARAMETERS)?;
-    if !owned && extra != 0 {
-        return None;
-    }
     let tail_len = tail.len().checked_sub(extra)?;
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
-        _ if owned && tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
+        _ if tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
     let flags: [u8; 3] = tail
@@ -277,18 +274,18 @@ fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<Surfa
     let fixed_suffix = fixed_surface_suffix(tail_len, flags, suffix, owned);
     let descriptors = if owned {
         Some(owned_surface_suffix(suffix)?)
+    } else if !fixed_suffix && tail_len >= layout::LEN {
+        owned_surface_suffix(suffix)
     } else {
         None
     };
-    (fixed_suffix || owned && tail_len >= layout::LEN && descriptors.is_some()).then_some(
-        SurfaceTail {
-            parameters,
-            descriptors,
-            continuation,
-            flags,
-            fixed_suffix,
-        },
-    )
+    (fixed_suffix || tail_len >= layout::LEN && descriptors.is_some()).then_some(SurfaceTail {
+        parameters,
+        descriptors,
+        continuation,
+        flags,
+        fixed_suffix,
+    })
 }
 
 fn fixed_surface_suffix(length: usize, flags: [u8; 3], suffix: &[u8], owned: bool) -> bool {
@@ -1440,7 +1437,10 @@ fn a5_rolling_ball_tail(
     (at == data.len()).then_some((v_end, extended_v_end))
 }
 
-fn rolling_ball_site(values: [FiniteReal; 10], owned: bool) -> Option<RollingBallSite> {
+pub(in crate::families) fn rolling_ball_site(
+    values: [FiniteReal; 10],
+    owned: bool,
+) -> Option<RollingBallSite> {
     let limit1 = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
     let limit2 = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
     let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
@@ -1801,6 +1801,36 @@ pub(in crate::families) fn a5_owned_surfaces_from_records(
     a5_surfaces_in_scope(data, records, refusal, true)
 }
 
+const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
+const IDENTITY_AFFINE_SCALE_TOLERANCE: f64 = 1.0e-12;
+
+/// Decode one `A_34` NURBS surface record (preferring standard framing and
+/// falling back to owned framing), including records whose payload spans
+/// multiple physical extents in `sources`.
+pub(in crate::families) fn a5_surface_from_record_in_sources(
+    data: &[u8],
+    sources: &[Vec<crate::wire::records::SourceExtent>],
+    record: &ConsolidatedRecord,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<FreeformSurface>, CodecError> {
+    if record.family() != ConsolidatedFamily::A || record.class() != 0x34 {
+        return Ok(None);
+    }
+    let Some(payload) = record.payload_bytes(data, sources) else {
+        return Ok(None);
+    };
+    let frame = ConsolidatedFrame {
+        pos: record.byte_offset(),
+        payload: 0,
+        end: payload.len(),
+        header_token: record.header_token(),
+    };
+    if let Some(surface) = a5_surface(&payload, frame, refusal, false)? {
+        return Ok(Some(surface));
+    }
+    a5_surface(&payload, frame, refusal, true)
+}
+
 fn a5_surfaces_in_scope(
     data: &[u8],
     records: &[ConsolidatedRecord],
@@ -1926,9 +1956,24 @@ fn a5_surface(
         v_distinct[0],
         v_distinct[v_distinct.len() - 1],
     ];
-    if !tail.fixed_suffix
-        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
-    {
+    let identity_chart = {
+        let axis_matches_knot_span = |distinct: &[f64], low: f64, high: f64| -> bool {
+            low == 0.0
+                && distinct.windows(2).any(|w| {
+                    let span = w[1] - w[0];
+                    let scale = 1.0_f64.max(w[0].abs()).max(w[1].abs());
+                    (high - span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * scale
+                })
+        };
+        let matches_knot_span = axis_matches_knot_span(&u_distinct, parameters[0], parameters[1])
+            && axis_matches_knot_span(&v_distinct, parameters[2], parameters[3]);
+        let identity_affine = (parameters[4] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
+            && parameters[5] == 0.0
+            && (parameters[6] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
+            && parameters[7] == 0.0;
+        (parameters[..4] == full_limits || matches_knot_span) && identity_affine
+    };
+    if !tail.fixed_suffix && !identity_chart {
         return Ok(None);
     }
     let control_points = grid_rows(control_points, v_count)?;
@@ -1953,9 +1998,7 @@ fn a5_surface(
             bytes: frame_bytes,
         },
     );
-    if geometry.is_some()
-        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
-    {
+    if geometry.is_some() && !identity_chart {
         refusal.push_surface_parameters_not_transferred(pos, parameters);
     }
     let extrapolation = tail.descriptors.filter(|descriptors| {
@@ -2327,13 +2370,8 @@ fn a5_int(byte: u8) -> Option<u32> {
     (byte % 4 == 1).then(|| u32::from((byte - 1) / 4))
 }
 
-fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize> {
-    if owned {
-        return usize::try_from(compact_int(bytes, at)?).ok();
-    }
-    let count = usize::try_from(a5_int(*bytes.get(*at)?)?).ok()?;
-    *at += 1;
-    Some(count)
+fn a5_distinct_count(bytes: &[u8], at: &mut usize, _owned: bool) -> Option<usize> {
+    usize::try_from(compact_int(bytes, at)?).ok()
 }
 
 fn a5_array_marker(

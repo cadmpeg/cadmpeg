@@ -25,6 +25,7 @@ fn charge_matching_work(budget: Option<&WorkBudget>) -> bool {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MatchingEdgeConstraint {
     Exclude(usize, usize),
+    #[cfg(test)]
     Require(usize, usize),
 }
 
@@ -46,7 +47,11 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
     let mut owner = ctx.alloc_filled(point_count, None, "catia_match_owners")?;
     let mut matched = ctx.alloc_filled(domains.len(), false, "catia_match_flags")?;
     let mut matched_count = 0usize;
+    #[cfg(not(test))]
+    let required_domain = None::<usize>;
+    #[cfg(test)]
     let mut required_domain = None;
+    #[cfg(test)]
     if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
         if domain >= domains.len() || point >= point_count || !domains[domain].contains(&point) {
             return Ok(None);

@@ -129,3 +129,100 @@ fn allocation_invalid_compact_headers_preserve_the_known_prefix() {
     }
     assert_eq!(journal.resolve_owned_child(0, 0), Some(&records[1]));
 }
+
+#[test]
+fn allocation_with_sources_bridges_skipped_width4_flag13_frames() {
+    let first = frame(0x27, 1);
+    // A width-4 Flag13 allocation frame (`b5 13 5b`, payload_len=0, compact 3-byte
+    // operand `0x0c 0x00 0x01 0x00` => increment 256) omitted between `first` and `second`.
+    let skipped_flag13 = [0xb5u8, 0x13, 0x5b, 0x00, 0x0c, 0x00, 0x01, 0x00];
+    let second = frame(0x25, 2);
+    let data = [
+        first.as_slice(),
+        skipped_flag13.as_slice(),
+        second.as_slice(),
+    ]
+    .concat();
+    let sources = vec![vec![crate::wire::records::SourceExtent::whole(&data)]];
+    let all_records =
+        consolidated_records_in_range_sources(&data, [std::iter::once(0..data.len())]);
+    let records = vec![
+        all_records.first().expect("first record").clone(),
+        all_records.last().expect("second record").clone(),
+    ];
+    assert!(records[1].source_range().start > records[0].source_range().end);
+
+    // Without source gap bridging, the logical gap starts a new run and breaks
+    // absolute address continuity across the gap.
+    let unbridged = AllocationJournal::new(&records);
+    assert_eq!(unbridged.absolute_address(0), Some(1));
+    assert!(unbridged.absolute_address(1).is_none());
+    assert!(unbridged.resolve_weighted_distance(1, 258).is_none());
+
+    // With source bytes, the skipped width-4 frame increment is accumulated cleanly.
+    let bridged = AllocationJournal::with_sources(&data, &sources, &records);
+    assert_eq!(bridged.absolute_address(0), Some(1));
+    assert_eq!(bridged.absolute_address(1), Some(259));
+    assert_eq!(bridged.resolve_weighted_distance(1, 258), Some(&records[0]));
+}
+
+#[test]
+fn allocation_signed_negative_header_deltas_track_backward_addresses() {
+    // Tokens: +10 (0x29), -1 (0x03), +5 (0x15), -3 (0x0b)
+    // Addresses: 10, 9, 14, 11
+    let mut data = Vec::new();
+    for (class, tok) in [(0x27u8, 0x29u8), (0x18, 0x03), (0x24, 0x15), (0x5d, 0x0b)] {
+        data.extend_from_slice(&[0xb2, 0x03, class, 0x01, tok, 0x00]);
+    }
+    let records = consolidated_records_in_range_sources(&data, [std::iter::once(0..data.len())]);
+    assert_eq!(records.len(), 4);
+    let journal = AllocationJournal::new(&records);
+    assert_eq!(journal.address(0), Some(10));
+    assert_eq!(journal.address(1), Some(9));
+    assert_eq!(journal.address(2), Some(14));
+    assert_eq!(journal.address(3), Some(11));
+    assert_eq!(journal.resolve_weighted_distance(3, 1), Some(&records[0]));
+    assert_eq!(journal.resolve_address(1, 14), Some(&records[2]));
+}
+
+#[test]
+fn consolidated_edge_vertex_references_decodes_five_and_six_token_edges() {
+    // Build one allocation scope with:
+    //   addr 1: B_5d (vertex A)
+    //   addr 2: B_5e (5-token edge: v0=back(1)->addr 1, v1=child(2)->addr 5, p0=child(0)->3, p1=child(1)->4, term=0x21)
+    //   addr 3: B_06 (param 0)
+    //   addr 4: B_06 (param 1)
+    //   addr 5: B_5d (vertex B)
+    //   addr 6: B_5e (6-token edge: curve=child(0)->7, v0=back(1)->addr 5, v1=child(3)->addr 10, p0=child(1)->8, p1=child(2)->9, term=0x21)
+    //   addr 7: B_24 (curve)
+    //   addr 8: B_06 (param 0)
+    //   addr 9: B_06 (param 1)
+    //   addr 10: B_5d (vertex C)
+    let mut data = Vec::new();
+    // addr 1: B_5d
+    data.extend_from_slice(&[0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00]);
+    // addr 2: B_5e (5 tokens: 0x05=back(1), 0x0b=child(2), 0x03=child(0), 0x07=child(1), 0x21=term)
+    data.extend_from_slice(&[0xb2, 0x03, 0x5e, 0x05, 0x05, 0x05, 0x0b, 0x03, 0x07, 0x21]);
+    // addr 3, 4: B_06
+    data.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x00]);
+    data.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x00]);
+    // addr 5: B_5d
+    data.extend_from_slice(&[0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00]);
+    // addr 6: B_5e (6 tokens: 0x03=child(0), 0x05=back(1), 0x0f=child(3), 0x07=child(1), 0x0b=child(2), 0x21=term)
+    data.extend_from_slice(&[
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x05, 0x0f, 0x07, 0x0b, 0x21,
+    ]);
+    // addr 7: B_24, addr 8..9: B_06, addr 10: B_5d
+    data.extend_from_slice(&[0xb2, 0x03, 0x24, 0x01, 0x05, 0x00]);
+    data.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x00]);
+    data.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x00]);
+    data.extend_from_slice(&[0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00]);
+
+    let sources = vec![vec![crate::wire::records::SourceExtent::whole(&data)]];
+    let records =
+        crate::wire::records::consolidated_records_in_sources(&data, &sources).expect("records");
+    let edges = super::consolidated_edge_vertex_references(&data, &sources, &records);
+    assert_eq!(edges.get(&2), Some(&[1, 5]));
+    assert_eq!(edges.get(&6), Some(&[5, 10]));
+    assert_eq!(edges.len(), 2);
+}
