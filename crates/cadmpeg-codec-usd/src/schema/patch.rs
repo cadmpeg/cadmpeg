@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The `NurbsPatch` schema (spec §14).
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use crate::schema::{index, integer, integers, reals, token, vector, vectors3, Issues};
 use crate::stage::{Prim, Resolved};
 
@@ -34,29 +36,45 @@ pub(crate) struct PatchData {
     pub(crate) trims_malformed: bool,
 }
 
-fn count(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<usize> {
-    integer(prim, name, issues).and_then(index)
+/// The count that attribute `name` states: undecoded where the prim states
+/// none, unreadable where the value is malformed or negative.
+fn count(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Result<usize, Cause> {
+    let since = issues.malformed.len();
+    let value = integer(prim, name, issues).ok_or_else(|| issues.cause_since(since))?;
+    index(value).ok_or(Cause::Unreadable)
 }
 
-/// Reads a `NurbsPatch` prim, or returns `None` when its counts and arrays
-/// disagree.
-pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Option<PatchData> {
+/// Reads a `NurbsPatch` prim, or returns why it states no surface: it is
+/// unreadable where a value is malformed or its counts and arrays disagree,
+/// and undecoded where it states no value that the surface needs.
+pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<PatchData, Cause> {
     let u_count = count(prim, "uVertexCount", issues)?;
     let v_count = count(prim, "vVertexCount", issues)?;
-    let u_order = count(prim, "uOrder", issues).filter(|order| *order >= 1 && *order <= u_count)?;
-    let v_order = count(prim, "vOrder", issues).filter(|order| *order >= 1 && *order <= v_count)?;
-    let points = vectors3(prim, "points", issues)?;
-    if points.len() != u_count.checked_mul(v_count)? {
-        return None;
+    let u_order = count(prim, "uOrder", issues)?;
+    let v_order = count(prim, "vOrder", issues)?;
+    if !(1..=u_count).contains(&u_order) || !(1..=v_count).contains(&v_order) {
+        return Err(Cause::Unreadable);
     }
-    let u_knots =
-        reals(prim, "uKnots", 1, issues).filter(|knots| knots.len() == u_count + u_order)?;
-    let v_knots =
-        reals(prim, "vKnots", 1, issues).filter(|knots| knots.len() == v_count + v_order)?;
+    let since = issues.malformed.len();
+    let points = vectors3(prim, "points", issues).ok_or_else(|| issues.cause_since(since))?;
+    if Some(points.len()) != u_count.checked_mul(v_count) {
+        return Err(Cause::Unreadable);
+    }
+    let knots = |name: &str, count: usize, order: usize, issues: &mut Issues| {
+        let since = issues.malformed.len();
+        let knots = reals(prim, name, 1, issues).ok_or_else(|| issues.cause_since(since))?;
+        if knots.len() == count + order {
+            Ok(knots)
+        } else {
+            Err(Cause::Unreadable)
+        }
+    };
+    let u_knots = knots("uKnots", u_count, u_order, issues)?;
+    let v_knots = knots("vKnots", v_count, v_order, issues)?;
     let weights = reals(prim, "pointWeights", 1, issues);
     let weights = match weights {
         Some(weights) if weights.len() == points.len() => Some(weights),
-        Some(_) => return None,
+        Some(_) => return Err(Cause::Unreadable),
         None => None,
     };
     let rows: Vec<Vec<[f64; 3]>> = (0..u_count)
@@ -72,9 +90,10 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Option<PatchData> {
     };
     let ranges = [range("uRange", issues), range("vRange", issues)];
     let (trims, trims_malformed) = trims(prim, issues);
-    Some(PatchData {
-        u_degree: u32::try_from(u_order - 1).ok()?,
-        v_degree: u32::try_from(v_order - 1).ok()?,
+    let degree = |order: usize| u32::try_from(order - 1).map_err(|_| Cause::Undecoded);
+    Ok(PatchData {
+        u_degree: degree(u_order)?,
+        v_degree: degree(v_order)?,
         u_knots,
         v_knots,
         rows,

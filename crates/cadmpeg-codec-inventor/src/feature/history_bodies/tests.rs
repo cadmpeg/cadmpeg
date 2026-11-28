@@ -599,7 +599,7 @@ fn each_given_up_body_is_charged_by_its_nest() {
     });
     let charges = notes
         .iter()
-        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .map(|note| note.message.as_str())
         .collect::<Vec<_>>();
     let [closed, bounded] = charges.as_slice() else {

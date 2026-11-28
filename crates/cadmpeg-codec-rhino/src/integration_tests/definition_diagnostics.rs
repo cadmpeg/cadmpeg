@@ -192,9 +192,13 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                     .losses
                     .iter()
                     .filter(|loss| {
-                        loss.code
-                            == crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
-                                .kind()
+                        if container_only {
+                            loss.code
+                                == crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
+                                    .kind()
+                        } else {
+                            cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                        }
                     })
                     .collect::<Vec<_>>();
                 assert_eq!(structural.len(), usize::from(malformed_tail));
@@ -249,14 +253,20 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
                 .expect("both failed definitions remain recoverable"),
         );
         for code in [
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded,
+            Some(crate::loss::RhinoLossCode::IntegrityFailure),
+            container_only
+                .then_some(crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded),
         ] {
             let actual = result
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == code.kind())
+                .filter(|loss| {
+                    code.map_or_else(
+                        || cadmpeg_ir::unknown::part::gives_up(&loss.code),
+                        |code| loss.code == code.kind(),
+                    )
+                })
                 .map(|loss| {
                     loss.provenance
                         .as_ref()

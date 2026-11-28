@@ -7,7 +7,7 @@ use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 use cadmpeg_ir::SourceProvenance;
 use std::collections::BTreeSet;
 
@@ -300,50 +300,15 @@ fn legacy_type_count(
         .unwrap_or(0)
 }
 
+/// The coverage notes of the legacy value rows. A row that forms no record
+/// is charged by [`push_unread_legacy_rows`]; `unresolved_string_array_rows`
+/// counts the type-10 array rows of an undefined continuation form.
 pub(super) fn push_legacy_value_losses(
     losses: &mut Vec<LossNote>,
     coverage: &cadmpeg_ir::report::decode::Coverage,
+    unresolved_string_array_rows: usize,
 ) {
-    let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
-    if unresolved_legacy_reals != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyRealValueUnresolved,
-            format_args!(
-                "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
-             finite scalar or dimension-complete real array."
-            ),
-        );
-    }
-    let unresolved_legacy_integers =
-        coverage_count(coverage, "unresolved_legacy_integer_value_count");
-    if unresolved_legacy_integers != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyIntegerValueUnresolved,
-            format_args!(
-                "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
-             32-bit scalar or dimension-complete integer array."
-            ),
-        );
-    }
     for type_code in [3u8, 4] {
-        let unresolved = legacy_type_count(
-            coverage,
-            "unresolved_legacy_type_",
-            type_code,
-            "_value_count",
-        );
-        if unresolved != 0 {
-            push_report_loss(
-                losses,
-                CreoLossCode::LegacyContinuationFormUndefined,
-                format_args!(
-                    "{unresolved} legacy type-{type_code} value row(s) use an undefined \
-                 continuation form."
-                ),
-            );
-        }
         let undecoded = legacy_type_count(
             coverage,
             "undecoded_legacy_type_",
@@ -360,35 +325,6 @@ pub(super) fn push_legacy_value_losses(
                 ),
             );
         }
-    }
-    for type_code in [5u8, 7, 9, 11] {
-        let unresolved = legacy_type_count(
-            coverage,
-            "unresolved_legacy_type_",
-            type_code,
-            "_value_count",
-        );
-        if unresolved != 0 {
-            push_report_loss(
-                losses,
-                CreoLossCode::LegacyUnsignedValueUnresolved,
-                format_args!(
-                    "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
-                 32-bit scalar or dimension-complete unsigned array."
-                ),
-            );
-        }
-    }
-    let unresolved_legacy_type_6 = coverage_count(coverage, "unresolved_legacy_type_6_value_count");
-    if unresolved_legacy_type_6 != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyCompactRealUnresolved,
-            format_args!(
-                "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
-             finite compact-real scalar or dimension-complete real array."
-            ),
-        );
     }
     let incomplete_legacy_object_arrays =
         coverage_count(coverage, "incomplete_legacy_object_array_count");
@@ -426,14 +362,12 @@ pub(super) fn push_legacy_value_losses(
             ),
         );
     }
-    let unresolved_legacy_strings =
-        coverage_count(coverage, "unresolved_legacy_string_value_count");
-    if unresolved_legacy_strings != 0 {
+    if unresolved_string_array_rows != 0 {
         push_report_loss(
             losses,
             CreoLossCode::LegacyStringContinuationUndefined,
             format_args!(
-                "{unresolved_legacy_strings} legacy type-10 value row(s) use an undefined \
+                "{unresolved_string_array_rows} legacy type-10 array row(s) use an undefined \
              continuation form."
             ),
         );
@@ -467,50 +401,96 @@ pub(super) fn push_legacy_value_losses(
     }
 }
 
-/// One `record.unreadable` per legacy value row that forms no record. Rows
-/// kept with a partial payload are not charged.
+/// One give-up per legacy value row that forms no record. Rows kept with a
+/// partial payload are not charged. A scalar whose text breaks the scalar
+/// grammar of its type, or an array whose read runs miscount its extents, is
+/// unreadable; a row of a form without a reading here (a continued scalar, a
+/// type-2 or type-6 array header without element rows, element text that
+/// does not read, a non-finite real word, an undefined continuation) is
+/// undecoded.
 pub(super) fn push_unread_legacy_rows(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::legacy::{RowFault, SerializedOffsetId};
+    /// How one group of legacy value types states a row that forms no
+    /// record: the type names, the text for a form without a reading, and
+    /// the scalar grammar a malformed scalar breaks, where the types state
+    /// one.
+    struct Rows<'a> {
+        types: &'a str,
+        unread: &'a str,
+        scalar: Option<&'a str>,
+    }
     fn charge(
         losses: &mut Vec<LossNote>,
-        code: CreoLossCode,
-        rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
+        rows: &Rows<'_>,
+        unresolved: impl Iterator<Item = (SerializedOffsetId, RowFault)>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let code = code.kind();
-        for row in rows {
+        for (row, fault) in unresolved {
+            let (cause, why) = match (fault, rows.scalar) {
+                (RowFault::Malformed, Some(scalar)) => (
+                    Cause::Unreadable,
+                    format!("the legacy {} scalar row is not {scalar}", rows.types),
+                ),
+                (RowFault::Miscounted, _) => (
+                    Cause::Unreadable,
+                    format!(
+                        "the legacy {} array's run counts do not sum to the product of its \
+                         extents",
+                        rows.types
+                    ),
+                ),
+                _ => (
+                    Cause::Undecoded,
+                    format!("the legacy {} {}", rows.types, rows.unread),
+                ),
+            };
+            let given_up =
+                GivenUpRecord::new(cadmpeg_ir::ids::Identity::new(row.to_string())?, cause, why);
             losses.push(
-                GivenUpRecord::new(
-                    cadmpeg_ir::ids::Identity::new(row.to_string())?,
-                    format_args!("{code}: the value row forms no record"),
-                )
-                .at(SourceProvenance::root(
-                    "creo",
-                    cadmpeg_core::decode::u64_from_index(row.offset),
-                ))
-                .loss(),
+                given_up
+                    .at(SourceProvenance::root(
+                        "creo",
+                        cadmpeg_core::decode::u64_from_index(row.offset),
+                    ))
+                    .loss(),
             );
         }
         Ok(())
     }
+    const HEXADECIMAL: &str = "one through sixteen uppercase hexadecimal digits";
     let Some(legacy) = scan.framing.layout.legacy_ascii() else {
         return Ok(());
     };
     let values = &legacy.persistence;
     charge(
         losses,
-        CreoLossCode::LegacyRealValueUnresolved,
+        &Rows {
+            types: "type-2",
+            unread: "value row does not form a complete finite scalar or dimension-complete \
+                     real array",
+            scalar: Some(HEXADECIMAL),
+        },
         values.real_values.unresolved_ids(),
     )?;
     charge(
         losses,
-        CreoLossCode::LegacyIntegerValueUnresolved,
+        &Rows {
+            types: "type-1",
+            unread: "value row does not form a complete scalar or dimension-complete integer \
+                     array",
+            scalar: Some("a signed decimal 32-bit integer"),
+        },
         values.integer_values.unresolved_ids(),
     )?;
     charge(
         losses,
-        CreoLossCode::LegacyContinuationFormUndefined,
+        &Rows {
+            types: "type-3 or type-4",
+            unread: "value row uses an undefined continuation form",
+            scalar: None,
+        },
         values
             .type_3_values
             .unresolved_ids()
@@ -518,7 +498,12 @@ pub(super) fn push_unread_legacy_rows(
     )?;
     charge(
         losses,
-        CreoLossCode::LegacyUnsignedValueUnresolved,
+        &Rows {
+            types: "type-5, type-7, type-9, or type-11",
+            unread: "value row does not form a complete scalar or dimension-complete unsigned \
+                     array",
+            scalar: Some("an unsigned decimal 32-bit integer"),
+        },
         values
             .type_5_values
             .unresolved_ids()
@@ -528,13 +513,24 @@ pub(super) fn push_unread_legacy_rows(
     )?;
     charge(
         losses,
-        CreoLossCode::LegacyCompactRealUnresolved,
+        &Rows {
+            types: "type-6",
+            unread: "value row does not form a complete finite compact-real scalar or \
+                     dimension-complete real array",
+            scalar: Some(HEXADECIMAL),
+        },
         values.type_6_values.unresolved_ids(),
     )?;
     charge(
         losses,
-        CreoLossCode::LegacyStringContinuationUndefined,
-        values.unread_string_scalar_ids(),
+        &Rows {
+            types: "type-10",
+            unread: "scalar row uses an undefined continuation form",
+            scalar: None,
+        },
+        values
+            .unread_string_scalar_ids()
+            .map(|row| (row, RowFault::Unread)),
     )
 }
 
@@ -638,6 +634,7 @@ pub(super) fn push_brep_transfer_note(
             .map(|(face, reason)| {
                 GivenUpRecord::new(
                     face,
+                    Cause::Undecoded,
                     format_args!("{code}: face admission rejected the face for {reason}"),
                 )
                 .loss()
@@ -661,6 +658,7 @@ pub(super) fn push_brep_transfer_note(
     losses.extend(diagnostics.gated_faces.iter().map(|(face, dropped)| {
         GivenUpRecord::new(
             face.clone(),
+            Cause::Undecoded,
             format_args!(
                 "{code}: the component admission gate withheld the face: {component_gate}"
             ),
@@ -1172,7 +1170,7 @@ mod tests {
             .expect("the withheld face id composes");
         let charge = losses
             .iter()
-            .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
             .expect("the withheld face is charged");
         assert_eq!(
             charge.message.split_whitespace().nth(1),

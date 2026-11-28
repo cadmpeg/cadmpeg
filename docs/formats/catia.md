@@ -2178,7 +2178,7 @@ For an FBB-bearing nested body, a complete standard edge/vertex walk selects the
 
 The delimiter high nibble identifies a consistent table-delimiter family. Geometry route selection uses the complete structural relations above and the independently bounded E5 witness from §3.3.
 
-When a route refuses records and states no model, the decode continues with the next route, and after the last route with the metadata fallback. Each refused record has one `record.unreadable`. The metadata fallback keeps the payload as one retained record and gives up no other record.
+When a route refuses records and states no model, the decode continues with the next route, and after the last route with the metadata fallback. Each refused record has one give-up (§13). The metadata fallback keeps the payload as one retained record and gives up no other record.
 
 ### 10.2 Subordinate E5 topology populations
 
@@ -2227,7 +2227,7 @@ A nested-`V5_CFV2` file without a standard FBB spine uses the object-stream `b5 
 
 ## 13. Partial decode
 
-These records are the parts of a partial decode (CADIR §3.3). The part kind names the record in a `record.unreadable` loss. The offset of a part is its offset in the file image. The offset of an `fbb-face-row` part is its offset in the logical `MainDataStream+SurfacicReps` stream (§3.4), which the loss names `catia:MainDataStream+SurfacicReps`.
+These records are the parts of a partial decode (CADIR §3.3). The part kind names the record in the loss of its give-up. The offset of a part is its offset in the file image. The offset of an `fbb-face-row` part is its offset in the logical `MainDataStream+SurfacicReps` stream (§3.4), which the loss names `catia:MainDataStream+SurfacicReps`.
 
 | Part kind | Record | Framing |
 | --- | --- | --- |
@@ -2241,5 +2241,25 @@ These records are the parts of a partial decode (CADIR §3.3). The part kind nam
 | `object-stream` | The object stream of a graph selection that passes its work bound (§6.8) | The object stream |
 
 A carrier record is a part when its knots, poles, or weights break a rule of the NURBS carrier. When a kept record holds the whole file image, the stub of a carrier part links to that record, and the part keeps only the length and digest of its frame. The `21` support records after a `zero-entity-nurbs-surface` part form no support run. The part drops the curve of each support record whose NURBS pcurve bounds a parameter range, and the construction of that curve when the record states no UV endpoints, the pcurve is periodic, or its poles share neither one `u` coordinate nor one `v` coordinate. A refused `a8` frame that a reference-closed object graph selects (§6.8) gives no surface. The face that refers to the frame takes an unknown surface, and the refusal is a note. An FBB face row is a part when its run is outside every standard population, and when the population that takes its run has a face count different from its count of face-sense bindings. The stub of an `fbb-face-row` part links to the retained payload record, which keeps the stream bytes. The part keeps only the length and digest of the row.
+
+The decoder gives up a record (CADIR §3.3) in these cases. Each give-up is one entry.
+
+| Record | Case | Cause |
+|---|---|---|
+| A NURBS carrier record | A pole is not finite, or a weight is zero or not finite. | `record.unreadable` |
+| A NURBS carrier record | The record states other lanes that the IR carrier refuses. | `record.undecoded` |
+| An `fbb-face-row` part | The row is outside every standard population's run, or its population's face count differs from its count of face-sense bindings. | `record.undecoded` |
+| The `object-stream` part (§6.8) | The selection of the object-stream graph passes its work bound and the route states no face. | `record.undecoded` |
+| A `b5 03 5f` face record | The face/loop/pcurve/edge graph does not close and the route states no face. | `record.undecoded` |
+| An E5 face record | The E5 reference graph does not close or does not parse. | `record.undecoded` |
+| A zero-entity face record | The face has no complete allocation graph or face geometry. | `record.undecoded` |
+| A standard face | The standard boundary graph is not emitted. | `record.undecoded` |
+
+A NURBS carrier record that a second route reads and refuses keeps its one
+give-up. A face give-up of an unclosed `b5 03 5f` or E5 graph states the
+unclosed graph. `topology.b5-graph-unclosed` and `topology.e5-graph-unclosed`
+record the unclosed graph only where the decoder gives up no face record.
+
+No CATIA code carries a strict floor (CADIR §3.2).
 
 ---

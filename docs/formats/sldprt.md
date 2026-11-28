@@ -24,6 +24,13 @@ right sibling identifiers, child identifier, first sector, and u64 stream size.
 The sibling trees and storage children form slash-qualified stream paths such
 as `Contents/Config-0-Partition`.
 
+The decoder reads a compound document whose last DIFAT sector links to
+FREESECT, and a stream whose chain has no ENDOFCHAIN terminator. Each such
+deviation is the loss `sldprt/container.noncanonical`. This code carries
+strict floor Warning (CADIR §3.2), so a pinned decode refuses the document. A
+stream whose chain is broken is given up as a `compound-stream` part (§1.5).
+No other SolidWorks code carries a strict floor.
+
 A directory slot whose object-type byte is zero is unallocated. Its name,
 links, color, sector, and size fields are not interpreted, even when those
 fields contain nonzero stale bytes. The slot remains in the directory index so
@@ -365,7 +372,10 @@ directory membership.
 ### 1.5 Parts
 
 Each part below has its own framing, and its end follows from that framing.
-The part kind names the part in a `record.unreadable` loss.
+The part kind names the part in its give-up loss. The loss is
+`record.unreadable` when the bytes break a rule of the format, and
+`record.undecoded` when the bytes obey the format and the decoder has no
+reading for them. A part that a resource limit stops is `record.undecoded`.
 
 | Part kind | Unit | Framing |
 | --- | --- | --- |
@@ -388,14 +398,30 @@ bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
 
+A `history-member` part is `record.unreadable` when the member holds no XML
+payload, when its bytes are not text, and when its XML is not well formed. It
+is `record.undecoded` when the XML parser stops at one of its bounds, and when
+the root element is not `Keywords`.
+
 A Parasolid site whose streams frame entity records that build no face,
-surface, point or body is given up as a `parasolid-site` part. A site that
-states a body whose faces are all lost keeps that body. A component tree
+surface, point or body is given up as an undecoded `parasolid-site` part. A site
+that states a body whose faces are all lost keeps that body. A component tree
 gives no occurrence when its XML does not parse, when it repeats a model or
 file id, when it
 names no active configuration or more than one, when its active model has no
 valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
+loss is `record.unreadable` when the tree text has no UTF-16 byte-order mark
+and is not UTF-8, when its XML is not well formed, when it repeats a model or file id, and when its
+active model has no valid identity or no definition. A valid identity is a
+decimal `id` (§11.1). The loss is `record.undecoded` when the
+document holds two different trees, when the root element is not
+`swSolidWorks`, when the tree names no active configuration or more than one,
+and when the tree passes a bound of the XML reader: more than 256 attributes
+on one element, more than 256 namespace prefixes, or more nodes than the
+reader holds. The give-up is the one loss of the tree. The loss
+`assembly.structure-not-transferred` records an assembly document that holds
+no component tree section. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
@@ -405,14 +431,18 @@ that the decoder does not read is kept with the loss
 `metadata.configuration-property-carrier-unsupported`.
 
 A record that the decoder parses and then drops is given up without a part.
-Its `record.unreadable` loss names the record by its id, and gives its stream
+Its `record.undecoded` loss names the record by its id, and gives its stream
 and offset where the decoder holds them. Such records are a B-rep face that
 names no loop and does not cover a whole closed surface, a B-rep loop whose
 ring or vertex does not decode, a B-rep edge that the topology walk
-withholds, a component instance that has a valid identity and no placement, no
-defined model, or a model that contains the instance, a PMI dimension map that
-does not parse, and a feature-input sketch whose face projects no edge to a
-sketch entity. A record of an alternate configuration is named by its id with the
+withholds, a component instance that has a valid identity and no proper
+rigid placement or no model, a PMI
+dimension map that does not parse, a feature-input sketch whose face
+projects no edge to a sketch entity, and a sketch entity whose edge projects
+to no entity and no profile. The loss text tells why the decoder dropped the
+record. A component instance that names a model the component tree does not
+define, a model that contains the instance, or a model with no valid
+identity is given up with the loss `record.unreadable`. A record of an alternate configuration is named by its id with the
 `@<site>` suffix of that configuration.
 
 A record that the decoder drops only because it needs a given-up record is
@@ -2690,11 +2720,9 @@ record fields determine the framing. Complete analytic carriers, bounded-curve r
 
 The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
-A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
-A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
-A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
+A vertex loop decodes to a vertex boundary on its vertex-use. A framed FACE record with no decoded loop gives up with `record.undecoded` (§1.5). A vertex loop whose vertex-use does not resolve and a loop whose FIN is ambiguous each give up with the same code. Their FACE keeps its other loops in the partial form.
 The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. One loss note gives the count for each kind.
-A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut`.
+A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut` when the cut has no separate loop give-up.
 A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with all its faces withheld stays in its REGION as a partial shell. A SHELL whose stated faces fall into pieces that share no edge is stated as one shell per piece. A retained shell keeps its role when the stored face chains establish it. Unresolved shell roles keep the REGION shell-chain order. Where the region holds both proven and unresolved roles, `topology.shell-role-unstated` records the proven roles.
 Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body and one region, with one shell per piece of faces that share edges (`topology.body-hierarchy-derived`). A derived region of more than one shell leaves its shells unclassified, since no node says which bounds the outside. The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where merged streams or sites derive bodies whose kinds come from different sources, one note names each source. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
@@ -3665,7 +3693,7 @@ The `id` values of `swModel` and `swReference` elements are decimal numbers, dis
 
 The placement is relative to the assembly model that contains the `swReference`. The world placement of an occurrence is the product of the placements on its path from the root model.
 
-An instance with a valid, unrepeated identity is given up by its occurrence id when it names no model, when its model is not defined, when its `swTransform` is not a proper rigid motion, or when its model contains the instance. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
+An instance with a valid, unrepeated identity is given up by its occurrence id. The loss is `record.undecoded` when it names no model or when its `swTransform` is not a proper rigid motion. The loss is `record.unreadable` when its model is not defined, when its model contains the instance, or when its model has no valid identity. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
 
 ### 11.3 Mate lists
 

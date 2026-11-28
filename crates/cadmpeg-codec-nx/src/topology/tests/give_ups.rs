@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::record_undecoded_kind;
 
 use super::{Graph, Node, NodeKind};
 use crate::test_support::test_bytes::{put_f64, put_ref, record};
@@ -19,7 +19,7 @@ use crate::test_support::test_streams::{
 use crate::NxCodec;
 
 /// `stream` with its prologue's schema token blanked, so a pinned decode
-/// refuses it only for a give-up.
+/// judges it by its give-ups alone.
 fn schemaless(mut stream: Vec<u8>) -> Vec<u8> {
     let schema = stream
         .windows(4)
@@ -46,8 +46,8 @@ fn node_at(stream: &[u8], kind: NodeKind, xmt: u32) -> (usize, usize) {
 }
 
 fn is_part_charge(loss: &LossNote, (offset, length): (usize, usize)) -> bool {
-    loss.code == record_unreadable_kind()
-        && loss.severity == Severity::Error
+    loss.code == record_undecoded_kind()
+        && loss.severity == Severity::Warning
         && loss
             .message
             .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
@@ -115,12 +115,8 @@ fn a_vertex_whose_point_does_not_resolve_is_given_up_with_the_records_that_need_
     );
     assert_eq!(marked(charge), ["nx:s0:face#4"], "{charge:#?}");
 
-    match decode_with(&stream, true) {
-        Err(DecodeFailure::StrictRejected { rejection }) => {
-            assert!(is_part_charge(rejection.loss(), vertex), "{rejection:#?}");
-        }
-        other => panic!("a pinned decode refuses the give-up: {other:?}"),
-    }
+    let pinned = decode_with(&stream, true).expect("a pinned decode accepts the give-up");
+    part_charge(&pinned.report().losses, vertex);
 }
 
 #[test]
@@ -275,7 +271,7 @@ fn a_withheld_body_with_no_record_is_named_by_no_charge() {
     assert!(
         losses
             .iter()
-            .filter(|loss| loss.code == record_unreadable_kind())
+            .filter(|loss| loss.code == record_undecoded_kind())
             .all(|loss| !has_id(
                 loss.message
                     .split(|c: char| c.is_whitespace() || matches!(c, '[' | ']' | ',')),
@@ -310,12 +306,8 @@ fn the_loops_of_a_face_whose_loop_chain_does_not_resolve_are_given_up_with_their
     );
     assert_eq!(marked(charge), ["nx:s0:face#4"], "{charge:#?}");
 
-    match decode_with(&stream, true) {
-        Err(DecodeFailure::StrictRejected { rejection }) => {
-            assert!(is_part_charge(rejection.loss(), loop_), "{rejection:#?}");
-        }
-        other => panic!("a pinned decode refuses the give-up: {other:?}"),
-    }
+    let pinned = decode_with(&stream, true).expect("a pinned decode accepts the give-up");
+    part_charge(&pinned.report().losses, loop_);
 }
 
 #[test]
@@ -362,7 +354,7 @@ fn a_vertex_whose_point_the_primary_framing_refuses_is_dropped_with_the_point() 
     assert_eq!(
         losses
             .iter()
-            .filter(|loss| loss.code == record_unreadable_kind())
+            .filter(|loss| loss.code == record_undecoded_kind())
             .filter(|loss| loss.message.contains("nx:s0:vertex#10"))
             .count(),
         1,
@@ -379,7 +371,7 @@ fn a_vertex_whose_point_the_primary_framing_refuses_is_dropped_with_the_point() 
 fn part_spans(losses: &[LossNote], kind: &str) -> Vec<(usize, usize)> {
     losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| loss.code == record_undecoded_kind())
         .filter(|loss| {
             loss.message
                 .starts_with(&format!("part {kind} stream=\"nx:parasolid#0:"))
