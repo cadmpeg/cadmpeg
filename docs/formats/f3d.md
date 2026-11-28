@@ -2482,7 +2482,7 @@ connector belongs to the innermost occurrence in that path.
 The extended version-three tail adds a nonnull reference immediately after
 the first tail reference and uses `S = 0`. Its target has type GUID
 `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, version 1. Its span is
-`190 + (R + K + 13) * W + 128 * M + 4 * E`. The native alignment retains
+`190 + (R + K + 13 + A) * W + 128 * M + 4 * E + (W - 1) * C`. The native alignment retains
 this additional reference and its marker offset as `additional_tail_reference`.
 The plain-reference tail, from the feature ordinal through its final zero
 bytes, has the fixed fields in
@@ -2500,7 +2500,7 @@ Two zero bytes follow the angle-owner reference. An additional nonnull
 reference follows the first tail reference. This tail uses separator length
 `S = 0`. One zero byte separates its two boolean bytes from its last
 reference. Version 5 uses eleven-byte plain local references. Its span is
-`377 + (R + K + 12) * 11 + 128 * M + 4 * E`. The four explicit owner references
+`377 + (R + K + 12 + A) * 11 + 128 * M + 4 * E + 10 * C`. The four explicit owner references
 select angle, Z, X, and Y lanes.
 An additional-owner run follows the four explicit alignment references.
 It stores two zero bytes, a u32 count `K`, and `K` nonnull plain local
@@ -2523,7 +2523,7 @@ reference, six zero bytes, an identity byte, and its explicit matrix when
 the identity byte is zero. The second connector follows the first connector
 frame directly. Four zero bytes follow the second connector frame. No zero
 bytes follow the angle-owner reference. The tail stores u8 `1` before its
-two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12) * 11 + 128 * M + 4 * E`.
+two boolean bytes, and no zero byte follows them. Its span is `222 + (R + K + 12 + A) * 11 + 128 * M + 4 * E + 10 * C`.
 
 The span formulas count the eight code units of the stored family name
 `Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`

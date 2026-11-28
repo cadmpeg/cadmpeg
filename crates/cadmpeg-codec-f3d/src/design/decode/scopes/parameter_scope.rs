@@ -2195,7 +2195,8 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             // reference too (a joint whose second connector is its component's
             // origin); no fixed length describes it.
             let named_tail = named_tail
-                || (label_units == 0
+                || (kind == "Assemble"
+                    && label_units == 0
                     && !fixed_tail
                     && tail_length <= 590
                     && plain_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {

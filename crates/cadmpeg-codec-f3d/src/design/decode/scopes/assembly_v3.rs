@@ -394,6 +394,15 @@ pub(crate) fn parse(
             offset,
         });
     }
+    // The associated references name the scope itself and the record that
+    // carries the second connector's frame, in that order.
+    if tail_link_count.value != 0
+        && (tail_link_references.len() != 2
+            || tail_link_references[0].value != scope.record_index
+            || tail_link_references[1].value != frames[1].reference_record_index)
+    {
+        return None;
+    }
     let tail_links = (tail_link_count.value != 0).then_some(DesignAssemblyOwnerRun {
         count: tail_link_count,
         references: tail_link_references,

@@ -26,4 +26,40 @@ fn an_assemble_scope_with_associated_tail_references_projects_its_joint() {
         .as_array()
         .expect("joint connectors");
     assert_eq!(connectors.len(), 2, "{connectors:#?}");
+
+    // The associated references name the scope and its second connector's
+    // construction.
+    let native = crate::test_support::native_test::f3d_native(result.ir());
+    let mut joints = native.design_parameter_scopes.iter().filter_map(|scope| {
+        scope.assembly_alignment().and_then(|alignment| {
+            alignment
+                .tail_links
+                .as_ref()
+                .map(|run| (scope, alignment, run))
+        })
+    });
+    let (scope, alignment, links) = joints.next().expect("a scope with associated references");
+    assert!(joints.next().is_none());
+    let operand_frames = alignment.operand_frames().expect("operand frames");
+    let targets = links
+        .references
+        .iter()
+        .map(|reference| reference.value)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets,
+        [scope.record_index, operand_frames[1].reference_record_index]
+    );
+
+    // The version-6 joint record's motion is not read; the joint takes the
+    // fixed fallback and the report says so.
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind()),
+        "{:#?}",
+        result.report().losses
+    );
 }
