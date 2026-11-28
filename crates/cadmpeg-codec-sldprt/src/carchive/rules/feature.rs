@@ -3319,15 +3319,16 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
         r.p = k;
         items.push(r.ptr(None)?);
     }
+    let tail_word = r.pu32(r.p + cut_tail::WORD)?;
     r.skip(cut_tail::LEN);
     Ok(V::map([
         ("n", n),
         ("bodies", V::from(bodies)),
         ("items", V::from(items)),
+        ("tail_word", V::from(tail_word)),
     ]))
 }
 
-/// `moCutListSortOptions_c`.
 /// Whether the bytes at the reader's position are a cut-list folder's tail.
 fn at_cut_list_tail(r: &Reader<'_>) -> bool {
     let at = |offset| r.p + offset;
@@ -3348,6 +3349,7 @@ fn at_cut_list_tail(r: &Reader<'_>) -> bool {
         )
 }
 
+/// `moCutListSortOptions_c`.
 pub(crate) fn cutlistsort(reader: &mut Reader<'_>) -> Res<V> {
     let first = reader.u32()?;
     let second = reader.u16()?;

@@ -1243,6 +1243,14 @@ In the first form, reverse byte `0` gives the right-handed turn about the stored
 
 **Need.** Save one profile cut patterned circularly 4 times over 90°, once with equal spacing and once with the instance spacing, each with the pattern direction reversed and not reversed. Compare the angle parameter's name and value, the byte after the axis tail, and the angles of the copies in the stored solid.
 
+### EV-40. The word of a cut-list folder tail
+
+**Question.** What does the u32 at offset 8 of a cut-list folder's tail select?
+
+**Known.** A `moCutListFolder_c` ends its items with a 43-byte tail (`sldprt.md` §2.4): u32 `1`, i32 `-1`, a u32 word, 23 zero bytes, u32 `1`, u32 `1`. The word takes the values `2` and `3`. Every other byte of the tail is the same for both values. The decoder stores the word with the folder.
+
+**Need.** Save a weldment part with two structural members of different profiles. Save it again after each change of one cut-list control: automatic update, automatic sort, and the folder's item grouping. Compare the word at offset 8 of each folder tail.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
