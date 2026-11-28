@@ -7,6 +7,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 /// Floor of the adaptive geometry work admitted for one decoded model.
+// resource-cap: MAX_ADAPTIVE_GEOMETRY_WORK = 4
 pub(super) const MAX_ADAPTIVE_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Floor of the geometry evaluation work admitted while completing
@@ -16,10 +17,12 @@ pub(super) const MAX_ADAPTIVE_GEOMETRY_WORK: usize = 8_000_000;
 /// independent prevents a large but valid completion set from exhausting the
 /// carrier and topology-certification budget, while retaining a hard bound on
 /// the completion phase itself.
+// resource-cap: MAX_PCURVE_COMPLETION_GEOMETRY_WORK = 4
 pub(super) const MAX_PCURVE_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Floor of the geometry evaluation work admitted while validating serialized
 /// EXT11 support-UV lanes for one decoded model.
+// resource-cap: MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK = 4
 pub(super) const MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Geometry work each selected Parasolid record adds to a model-wide budget.

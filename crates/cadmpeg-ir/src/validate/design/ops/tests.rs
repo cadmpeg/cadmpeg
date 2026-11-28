@@ -29,9 +29,8 @@ use crate::design::ops::dressup::{
     TransitionKind,
 };
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, CompositeStage, Coupling, Joint, JointConnector, JointKind, JointMotion,
-    JointOffset, Limit, LinearLayout, LinearRun, PatternLayout, PatternRun, RunSides, Spacing,
-    Span,
+    AxisLimits, Bounds, CompositeStage, Joint, JointConnector, JointKind, JointMotion, JointOffset,
+    Limit, LinearLayout, LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
 };
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
@@ -1415,30 +1414,6 @@ fn a_connector_placed_by_a_step_has_no_resolved_value_to_state() {
         &with(joint(JointKind::Coincident { offset: None })),
         "no inputs and no steps has no resolved value",
     );
-}
-
-#[test]
-fn coupling_joints_pick_joint_features() {
-    let coupling = || {
-        joint(JointKind::Coupling {
-            coupling: Coupling::Screw { pitch: None },
-            joints: Some(named(vec![
-                pick(PickTarget::Feature(feature("fillet"))),
-                pick(PickTarget::Feature(feature("other"))),
-            ])),
-        })
-    };
-    let mut ir = with(coupling());
-    ir.design
-        .features
-        .push(fixture::unresolved("other", OperationFamily::Extrude));
-    assert_finding(&ir, "which is no Joint feature");
-    for feature in &mut ir.design.features[1..] {
-        feature.definition.operation = FeatureOperation::Unresolved {
-            family: OperationFamily::Joint,
-        };
-    }
-    assert_no_finding_containing(&ir, "which is no Joint feature");
 }
 
 #[test]

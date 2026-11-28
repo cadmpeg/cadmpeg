@@ -18,15 +18,15 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::TestEncode;
-use crate::test_support::smbh_blocks_test::{generated_curve_block, generated_pcurve_block};
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::native_fixture::TestEncode;
+use crate::test_support::smbh_blocks_fixture::{generated_curve_block, generated_pcurve_block};
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_deformable_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
     synthetic_geometry_with_null_support_spring_smbh,
     synthetic_geometry_with_procedural_curve_smbh, synthetic_geometry_with_spring_smbh,
     synthetic_geometry_with_surface_offset_smbh,
 };
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::smbh_pcurves_fixture::{
     assert_pcurve_close, assert_pcurve_geometry_close,
     synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh,
     synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh,
@@ -39,8 +39,8 @@ use crate::test_support::smbh_pcurves_test::{
     with_pcurve_discriminator, with_plane_pcurve_offset_vertices, with_ref_pcurve_companion_name,
     with_ref_pcurve_companion_reversed,
 };
-use crate::test_support::tokens_test::renamed_generated_subtype;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::tokens_fixture::renamed_generated_subtype;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

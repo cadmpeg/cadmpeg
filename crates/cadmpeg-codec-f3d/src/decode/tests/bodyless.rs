@@ -113,8 +113,8 @@ fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
 
 #[test]
 fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
-    let wire = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
-    let archive = crate::test_support::zip_test::f3d_with_smbh(&wire);
+    let wire = crate::test_support::smbh_geometry_fixture::synthetic_wire_body_smbh();
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh(&wire);
     let decoded = cadmpeg_ir::codec::Codec::decode(
         &crate::F3dCodec,
         &mut std::io::Cursor::new(archive),
@@ -221,6 +221,9 @@ fn mesh_only_carriers() -> crate::decode::DesignCarriers {
         declared_bodies: 0,
         sketch_entities: 0,
         reference_images: 0,
+        design_records: 0,
+        design_decoded: true,
+        xref_unparsed: false,
     }
 }
 
@@ -489,7 +492,8 @@ fn a_bodyless_design_reports_its_body_history_tails() {
     let feature = cadmpeg_ir::features::FeatureId::mint("test:model:feature#1").unwrap();
     let mut design = crate::decode::design_intent::DesignNative::default();
     design.history_body_consumers.tails.unread = vec![(body.clone(), feature.clone())];
-    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    let bytes =
+        crate::test_support::assembly_fixture::f3d_without_brep("assembly", "root.f3d", &[]);
     crate::test_support::with_decode_context(|ctx| {
         let scan =
             crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
@@ -519,7 +523,8 @@ fn bodyless_finalization_retains_the_body_history_tails() {
     let (tails, body) = crate::history::body_history_tail::tests::one_tail();
     let mut design = crate::decode::design_intent::DesignNative::default();
     design.history_body_consumers.tails = tails;
-    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    let bytes =
+        crate::test_support::assembly_fixture::f3d_without_brep("assembly", "root.f3d", &[]);
     crate::test_support::with_decode_context(|ctx| {
         let scan =
             crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
@@ -572,4 +577,160 @@ fn bodyless_finalization_retains_the_body_history_tails() {
             .expect("incomplete body history loss");
         assert!(loss.message.contains(&body.to_string()));
     });
+}
+
+/// Carriers of a decoded Design whose model-body maps are explicitly empty and
+/// that stores no BREP, mesh, body, sketch, reference image, or Design record.
+fn blank_design_carriers() -> crate::decode::DesignCarriers {
+    crate::decode::DesignCarriers {
+        paramesh_entries: 0,
+        model_body_maps_explicitly_empty: true,
+        ..mesh_only_carriers()
+    }
+}
+
+#[test]
+fn a_decoded_design_that_declares_nothing_is_an_empty_design() {
+    let report = classify(&blank_design_carriers(), false);
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(!has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::TopologyNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::MissingGeometryStream));
+    assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+    assert_eq!(report.losses.len(), 1);
+}
+
+#[test]
+fn design_records_without_a_geometry_carrier_name_the_unread_records() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            design_records: 3,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::DesignRecordsUntransferred.kind())
+        .unwrap();
+    assert!(loss.message.contains("3 carrier(s)"));
+    assert_eq!(loss.severity, Severity::Error);
+}
+
+#[test]
+fn an_undecoded_design_is_not_claimed_empty() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            design_decoded: false,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+#[test]
+fn a_design_without_explicit_empty_maps_is_not_claimed_empty() {
+    for brep_entries in [0, 1] {
+        let report = classify(
+            &crate::decode::DesignCarriers {
+                brep_entries,
+                model_body_maps_explicitly_empty: false,
+                ..blank_design_carriers()
+            },
+            false,
+        );
+        assert!(!report.transfer.geometry_transferred());
+        assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+        assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+    }
+}
+
+#[test]
+fn a_brep_entry_that_selected_no_body_is_not_claimed_empty_without_maps() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            model_body_maps_explicitly_empty: false,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+}
+
+#[test]
+fn design_records_under_empty_model_maps_are_reported_unread_not_empty() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            design_records: 2,
+            ..empty_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+}
+
+#[test]
+fn an_unparsed_xref_table_does_not_make_an_empty_design() {
+    for carriers in [blank_design_carriers(), empty_design_carriers()] {
+        let report = classify(
+            &crate::decode::DesignCarriers {
+                xref_unparsed: true,
+                ..carriers
+            },
+            false,
+        );
+        assert!(!report.transfer.geometry_transferred());
+        assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+        assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    }
+}
+
+/// A decoded mesh body is classified before any Design record counts: the mesh
+/// is the geometry carrier and the records loss does not apply.
+#[test]
+fn a_decoded_mesh_body_precedes_the_records_loss() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            decoded_meshes: 1,
+            design_records: 4,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::MeshVertexPrecisionReduced));
+    assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+/// The mesh-only rule needs a Design asset with no BREP entry; an unselected
+/// BREP entry sends the untransferred mesh container to the records rule.
+#[test]
+fn an_unselected_brep_entry_leaves_the_mesh_only_rule_for_the_records_rule() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            paramesh_entries: 1,
+            brep_entries: 1,
+            design_records: 2,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(has_code(&report, F3dLossCode::DesignRecordsUntransferred));
 }

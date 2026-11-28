@@ -25,7 +25,7 @@ use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTa
 use crate::surface::{
     OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
 };
-use crate::vecmath::{cross, normalize};
+use crate::vecmath::normalize;
 
 use crate::feature::definitions::FeatureVariableTable;
 use crate::feature::definitions::{
@@ -1656,7 +1656,12 @@ fn section_frame_derives_normal_from_rotated_axes() {
     let v_axis = [0.0, 0.0, -1.0];
     let frame = FeatureSectionTransform::new(1, None, [1.0, 2.0, 3.0], u_axis, v_axis, 0)
         .expect("orthonormal frame");
-    assert_eq!(frame.normal(), cross(u_axis, v_axis));
+    assert_eq!(
+        frame.normal(),
+        <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(u_axis).cross(cadmpeg_ir::math::Vector3::from(v_axis))
+        )
+    );
     assert_eq!(frame.normal(), [diagonal, diagonal, 0.0]);
 }
 

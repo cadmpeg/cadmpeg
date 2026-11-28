@@ -1058,6 +1058,7 @@ fn expanded_sections(
     sections: &[ScannedSection<'_>],
     losses: &mut Vec<SectionExpansionLoss>,
 ) -> Result<Vec<ExpandedSection>, CodecError> {
+    // resource-cap: MAX_EXPANDED_SECTION = 2
     const MAX_EXPANDED_SECTION: usize = 256 * 1024 * 1024;
     let mut expanded_sections = Vec::new();
     for section in sections {

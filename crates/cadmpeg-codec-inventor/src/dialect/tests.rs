@@ -13,10 +13,11 @@ use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::registry_ids::FORMAT;
 use super::{
     dialect_loss, join, kernel_dialect_loss, layers, DialectRecovery, InventorDialect,
     DECLARED_CFB_MAJOR_VERSION, DECLARED_META_STREAM_MARKER, DECLARED_META_STREAM_VERSION,
-    DECLARED_RSE_DB_SCHEMA, FORMAT,
+    DECLARED_RSE_DB_SCHEMA,
 };
 use crate::database::RseSchema;
 use crate::loss::InventorLossCode;
@@ -438,7 +439,7 @@ fn inspect_and_decode_do_not_invent_a_kernel_layer_without_kernel_evidence() {
         .expect("Inventor reports its dialect layers");
     assert!(layers
         .iter()
-        .all(|matched| matched.format() != cadmpeg_asm::dialect::FORMAT));
+        .all(|matched| matched.format() != cadmpeg_asm::dialect::registry_ids::FORMAT));
     assert!(decoded
         .report()
         .losses
@@ -469,14 +470,15 @@ fn dialect_layers_without_kernel_evidence_hold_only_the_primary() {
 
 #[test]
 fn kernel_recovery_message_matches_asm_text() {
-    let matched = DialectMatch::residual(cadmpeg_asm::dialect::ACIS_TEXT_ACIS).with_declared(
-        [(
-            cadmpeg_core::nonblank_literal!("save_format_major"),
-            "999".to_owned(),
-        )]
-        .into_iter()
-        .collect(),
-    );
+    let matched = DialectMatch::residual(cadmpeg_asm::dialect::registry_ids::ACIS_TEXT_ACIS)
+        .with_declared(
+            [(
+                cadmpeg_core::nonblank_literal!("save_format_major"),
+                "999".to_owned(),
+            )]
+            .into_iter()
+            .collect(),
+        );
     let note = kernel_dialect_loss(&matched).expect("residual kernel note");
     assert_eq!(
         note.message,

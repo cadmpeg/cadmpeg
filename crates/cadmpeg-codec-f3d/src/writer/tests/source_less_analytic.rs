@@ -22,9 +22,9 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::configuration_table::{project, set_active_row};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut, update_f3d_native};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::{f3d_with_configuration, f3d_with_smbh};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use configuration_root::{assert_active_row_written, write_and_decode};

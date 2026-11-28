@@ -19,19 +19,19 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, TestEncode};
-use crate::test_support::smbh_blends_test::synthetic_rb_blend_spl_sur_smbh;
-use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut, TestEncode};
+use crate::test_support::smbh_blends_fixture::synthetic_rb_blend_spl_sur_smbh;
+use crate::test_support::smbh_geometry_fixture::{synthetic_geometry_smbh, synthetic_mixed_smbh};
+use crate::test_support::smbh_pcurves_fixture::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     expected_revision_surface_tail_discontinuities,
     expected_revision_surface_tail_parameterization, synthetic_cacheless_cyl_spl_sur_smbh,
     synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
     synthetic_versioned_cyl_spl_sur_with_tail_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
@@ -401,7 +401,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.0, 3.0])
     );
-    crate::test_support::smbh_pcurves_test::assert_pcurve_geometry_close(
+    crate::test_support::smbh_pcurves_fixture::assert_pcurve_geometry_close(
         &round_trip.ir().geometry.pcurves[0].geometry,
         &PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1765,7 +1765,7 @@ fn subset_state(
 
 #[test]
 fn generated_source_less_subset_curve_restates_its_stored_subset_int_cur() {
-    use crate::test_support::smbh_curves_test::synthetic_geometry_with_subset_curve_smbh;
+    use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_subset_curve_smbh;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh());
     let decoded = F3dCodec

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
-//! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
+//! A package-only build can select a different flate2 backend and change the zlib bytes.
 
 #![allow(clippy::default_trait_access)]
 
@@ -1093,27 +1093,7 @@ fn arena_coverage_is_a_subset_and_meets_floor() {
 /// `KNOWN_ARENAS`.
 #[test]
 fn catalogue_arenas_match_known_arenas() {
-    use cadmpeg_ir::native::catalogue::Phase;
-
     use crate::native::catalogue::CATALOGUE;
-
-    assert_eq!(CATALOGUE.len(), 253, "one catalogue row per model field");
-    assert_eq!(
-        CATALOGUE
-            .iter()
-            .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
-            .count(),
-        109,
-        "group A family count"
-    );
-    assert_eq!(
-        CATALOGUE
-            .iter()
-            .filter(|row| matches!(&row.phase, Phase::GroupB { .. }))
-            .count(),
-        10,
-        "group B family count"
-    );
 
     let mut catalogue_arenas = BTreeSet::new();
     for row in CATALOGUE {

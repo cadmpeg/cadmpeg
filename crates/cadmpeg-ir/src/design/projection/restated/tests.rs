@@ -266,6 +266,32 @@ fn a_projected_entity_names_what_it_does_not_state() {
     );
 }
 
+/// A design entity states the center record of the model entity only where
+/// the design point of that record is its center.
+#[test]
+fn a_projected_entity_states_its_center_record_through_its_center_point() {
+    let mut ir = sketch_fixture();
+    let line = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap();
+    line.center_ref = Some("test:native#end".to_owned());
+    assert_eq!(cuts(&ir)[LINE], fields(["center_ref"]));
+    let end_point = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == END)
+        .unwrap();
+    end_point.roles.push(EntityRole {
+        of: entity_id(LINE),
+        role: DefiningRole::Center,
+    });
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+}
+
 /// A design sketch on another frame names its placement.
 #[test]
 fn a_projected_sketch_on_another_frame_names_its_placement() {
@@ -632,6 +658,26 @@ fn a_parameter_name_is_carried_by_its_stored_source_name() {
         vec![design_parameter("constraint:3", "Depth")],
     ));
     assert_eq!(renamed[&id], fields(["name", "properties"]));
+}
+
+#[test]
+fn an_unnamed_source_parameter_does_not_charge_its_generated_name() {
+    let mut model = model_parameter("constraint:3", 0);
+    model.name = "Constraint3".to_owned();
+    model.properties.insert(
+        NonBlankString::new("generated_name".to_owned()).unwrap(),
+        "1".to_owned(),
+    );
+    let id = model.id.as_str().to_owned();
+    let mut design = design_parameter("constraint:3", "Width");
+    design.name = None;
+    let carried = cuts(&parameter_ir(vec![model.clone()], vec![design.clone()]));
+    assert!(!carried
+        .get(&id)
+        .is_some_and(|fields| fields.contains("name")));
+    design.name = NonBlankString::new("Width".to_owned());
+    let renamed = cuts(&parameter_ir(vec![model], vec![design]));
+    assert!(renamed[&id].contains("name"));
 }
 
 /// A design parameter owned by a feature the design lists under a component

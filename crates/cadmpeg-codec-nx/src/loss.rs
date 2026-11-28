@@ -19,43 +19,14 @@
 //! have no honest common default.
 
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNote},
     Severity,
 };
 
-macro_rules! loss_codes {
-    ($( $(#[$meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident), )*) => {
-        /// Stable NX transfer-loss identifier.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub(crate) enum NxLossCode {
-            $( $(#[$meta])* $variant, )*
-        }
-
-        impl NxLossCode {
-            /// Every code in declaration order.
-            #[cfg(test)]
-            const ALL: &'static [Self] = &[$(Self::$variant),*];
-
-            /// Stable loss code string.
-            #[must_use]
-            pub(crate) const fn code(self) -> &'static str {
-                match self { $(Self::$variant => $code),* }
-            }
-
-            /// Loss severity.
-            #[must_use]
-            const fn severity(self) -> Severity {
-                match self { $(Self::$variant => Severity::$severity),* }
-            }
-
-            const fn shared_taxonomy(self) -> LossTaxonomy {
-                match self { $(Self::$variant => LossTaxonomy::$taxonomy),* }
-            }
-        }
-    };
-}
-
-loss_codes! {
+cadmpeg_ir::loss_codes! {
+    /// Stable NX transfer-loss identifier.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub(crate) enum NxLossCode {
     /// A JT display graph failed native admission.
     DisplayJtGraphRejected => ("container.display-jt-graph-rejected", Blocking, DecodeDiagnostic),
     /// A roll-forward table failed native admission.
@@ -170,6 +141,14 @@ loss_codes! {
     /// A Display-JT polygon mesh did not resolve to a tessellation and was
     /// skipped.
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
+    /// A sketch record has no design record.
+    SketchDesignUnprojected => ("sketch.design-unprojected", Warning, ParametricRecordOmitted),
+    /// An arrangement stores no name or a blank name, and a design
+    /// arrangement requires a name.
+    ArrangementUnnamed => ("configuration.arrangement-unnamed", Warning, ParametricRecordOmitted),
+    /// An expression stores a blank name, and a design parameter requires a
+    /// name.
+    ParameterUnnamed => ("expression.parameter-unnamed", Warning, ParametricRecordOmitted),
     /// A BODY stores a `res_linear` that states no linear precision
     /// (`parasolid.md` §4).
     BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
@@ -178,6 +157,12 @@ loss_codes! {
     /// The feature recognisers compare evaluated geometry at a floor coarser
     /// than the document tolerances.
     FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
+    /// A current entity is a member of the result GROUPs of several
+    /// features, and its name is the merge of their generated names.
+    NameMergedFromGroups => ("history.name-merged-from-groups", Warning, FeatureHistoryRetained),
+    /// A stored Parasolid state is no design evaluation.
+    StoredStateUnread => ("history.stored-state-unread", Warning, FeatureHistoryRetained),
+    }
 }
 
 impl NxLossCode {
@@ -279,9 +264,14 @@ mod tests {
                 "native.record-identity-bounded",
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
+                "sketch.design-unprojected",
+                "configuration.arrangement-unnamed",
+                "expression.parameter-unnamed",
                 "body.resolution-invalid",
                 "body.resolution-unread",
                 "feature.recognition-tolerance-floor",
+                "history.name-merged-from-groups",
+                "history.stored-state-unread",
             ]
         );
     }

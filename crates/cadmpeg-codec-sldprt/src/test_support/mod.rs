@@ -545,6 +545,7 @@ pub(crate) fn make_retained_record_unavailable(fidelity: &mut SourceFidelity, id
 
 pub(crate) mod allocation;
 pub(crate) mod appearance;
+pub(crate) mod cadir;
 pub(crate) mod carchive;
 pub(crate) mod container;
 pub(crate) mod history;

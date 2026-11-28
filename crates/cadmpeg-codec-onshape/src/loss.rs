@@ -2,6 +2,7 @@
 //! Onshape transfer loss vocabulary.
 use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
 
+cadmpeg_ir::loss_codes! {
 #[derive(Clone, Copy)]
 pub(super) enum OnshapeLossCode {
     HistoryNotSupported,
@@ -38,6 +39,7 @@ pub(super) enum OnshapeLossCode {
     MateFrameUnresolved,
     MateWorkLimited,
     MateDiagnosticsAggregated,
+}
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {

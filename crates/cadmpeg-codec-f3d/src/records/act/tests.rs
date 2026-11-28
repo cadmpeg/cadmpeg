@@ -5,7 +5,7 @@ use crate::records::act::{
     ActRegistryFlag, ActTableReference,
 };
 use crate::records::identity::Located;
-use crate::test_support::native_test::reject_changed_id;
+use crate::test_support::native_fixture::reject_changed_id;
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 

@@ -382,7 +382,12 @@ fn home(
                 Home::Native
             }
         }
-        "Shape" if !stateless && source.stored.contains(&(payload.owner, "BaseFeature")) => {
+        "Shape"
+            if !stateless
+                && source
+                    .properties
+                    .contains_key(&(payload.owner, "BaseFeature")) =>
+        {
             Home::State { body, member }
         }
         "AddSubShape" | "AddShape" | "SubShape"

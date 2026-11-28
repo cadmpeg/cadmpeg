@@ -2,8 +2,9 @@
 //! The registry is the oracle for the pinned ids, so the test reads it rather
 //! than a second copy of the list.
 
+use super::registry_ids::FORMAT;
 use super::{
-    FcstdDialect, DECLARED_FILE_VERSION, DECLARED_PROGRAM_VERSION, DECLARED_SCHEMA_VERSION, FORMAT,
+    FcstdDialect, DECLARED_FILE_VERSION, DECLARED_PROGRAM_VERSION, DECLARED_SCHEMA_VERSION,
 };
 use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;

@@ -24,6 +24,7 @@ const SPAN_SAMPLES: usize = 16;
 /// Samples that compare two edge curves.
 const SEAM_SAMPLES: usize = 8;
 /// The most trim curves of one patch.
+// resource-cap: MAX_TRIM_CURVES = 2
 const MAX_TRIM_CURVES: usize = 4096;
 
 type Uv = [f64; 2];

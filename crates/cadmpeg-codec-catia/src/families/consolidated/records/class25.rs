@@ -51,8 +51,11 @@ pub(crate) enum Class25Accuracy {
     },
 }
 
+// resource-cap: MAX_SAMPLE_PAIRS = 2
 const MAX_SAMPLE_PAIRS: usize = 32;
+// resource-cap: MAX_B_SAMPLE_PAIRS = 1
 const MAX_B_SAMPLE_PAIRS: usize = 12;
+// resource-cap: MAX_A_PAYLOAD_BYTES = 2
 const MAX_A_PAYLOAD_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

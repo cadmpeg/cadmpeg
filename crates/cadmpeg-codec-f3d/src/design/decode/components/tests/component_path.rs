@@ -196,13 +196,13 @@ fn unread_paths_of(records: &[Vec<u8>]) -> usize {
         bulk.extend_from_slice(record);
     }
     let entities = index.iter().map(|(entity, _)| *entity).collect::<Vec<_>>();
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(PATH_TYPE, "", 0, "CommonData", &entities)],
         &index,
     );
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(DESIGN_BULK, stored).unwrap();
     zip.write_all(&bulk).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
@@ -221,7 +221,7 @@ fn unread_paths_of(records: &[Vec<u8>]) -> usize {
         name: None,
         name_offset: None,
     };
-    let streams = crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let streams = crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         super::super::decode_local_components(scan, std::slice::from_ref(&space)).unwrap()
     });
     streams

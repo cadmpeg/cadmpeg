@@ -8,18 +8,31 @@ use flate2::Compression;
 /// Inflated block size of a frame.
 pub(crate) const BLOCK_SIZE: u32 = 0x40000;
 
-/// A framed stream whose zlib stream inflates to `block` bytes.
+/// A framed stream whose zlib blocks each inflate to `block` bytes: as many
+/// blocks as `payload` needs, and at least one.
 pub(crate) fn framed_with(payload: &[u8], block: u32, declared: u64) -> Vec<u8> {
-    let mut inflated = payload.to_vec();
-    inflated.resize(usize::try_from(block).unwrap(), 0);
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&inflated).unwrap();
-    let compressed = encoder.finish().unwrap();
+    let size = usize::try_from(block).unwrap();
+    let blocks: Vec<Vec<u8>> = if payload.is_empty() {
+        vec![Vec::new()]
+    } else {
+        payload.chunks(size).map(<[u8]>::to_vec).collect()
+    };
+    let compressed: Vec<Vec<u8>> = blocks
+        .into_iter()
+        .map(|mut inflated| {
+            inflated.resize(size, 0);
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&inflated).unwrap();
+            encoder.finish().unwrap()
+        })
+        .collect();
     let mut stream = 0x3de3_de00_u32.to_le_bytes().to_vec();
     stream.extend_from_slice(&block.to_le_bytes());
     stream.extend_from_slice(&declared.to_le_bytes());
-    stream.extend_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
-    stream.extend_from_slice(&compressed);
+    for zlib in &compressed {
+        stream.extend_from_slice(&u32::try_from(zlib.len()).unwrap().to_le_bytes());
+        stream.extend_from_slice(zlib);
+    }
     stream
 }
 

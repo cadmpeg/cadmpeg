@@ -601,3 +601,71 @@ fn suppressed_instances_of_symmetric_directions_keep_the_neutral_numbering() {
         assert_eq!(pattern["omitted_instances"], omitted, "{pattern}");
     }
 }
+
+#[test]
+fn a_zero_distance_second_direction_charges_its_coincident_instances() {
+    // Direction two stores count 3 at distance 0: its instances repeat the
+    // direction-one copies in place, and a linear pattern has no field for
+    // them.
+    let files: [(&[u8], &str, u64, f64); 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/strip_cut.f3d"),
+            "R-Pattern1",
+            6,
+            3.0,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/compute_adjust.f3d"),
+            "Groove pattern",
+            5,
+            2.0,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/compute_optimized.f3d"),
+            "Groove pattern",
+            5,
+            2.0,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/compute_identical.f3d"),
+            "Groove pattern",
+            5,
+            2.0,
+        ),
+    ];
+    for (bytes, name, count, spacing) in files {
+        let result = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode the corpus file");
+        let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
+        let constructions: Vec<_> = ir["native"]["f3d"]["design_parameter_scopes"]
+            .as_array()
+            .expect("scopes")
+            .iter()
+            .map(|scope| &scope["rectangular_pattern_construction"])
+            .filter(|construction| !construction.is_null())
+            .collect();
+        let [construction] = constructions.as_slice() else {
+            panic!("one rectangular pattern construction: {constructions:?}");
+        };
+        assert_eq!(construction["u_count"], count);
+        assert_eq!(construction["v_count"], 3);
+        assert_eq!(construction["v_extent"], 0.0);
+        let pattern = &definition(&ir, name)["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        assert_eq!(pattern["count"], count);
+        assert!((pattern["spacing"].as_f64().expect("spacing") - spacing).abs() < 1e-9);
+        assert!(pattern["second"].is_null(), "{pattern}");
+        let placement =
+            crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.kind();
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == placement),
+            "{:?}",
+            result.report().losses
+        );
+    }
+}

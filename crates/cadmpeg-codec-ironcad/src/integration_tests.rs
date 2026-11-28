@@ -522,7 +522,10 @@ fn public_access_damage_is_one_give_up_with_its_pinned_floor() {
         let result = assert_one_unreadable_give_up(bytes, PUBLIC_ACCESS);
         let mut remaining = losses(&result);
         remaining.retain(|(code, _)| *code != record_unreadable_kind().to_string());
-        assert_eq!(remaining, losses(&intact));
+        assert_eq!(
+            without_trailing(remaining),
+            without_trailing(losses(&intact))
+        );
     }
     let mut container_options = DecodeOptions {
         depth: cadmpeg_core::decode::DecodeDepth::Container,
@@ -542,8 +545,25 @@ fn public_access_damage_is_one_give_up_with_its_pinned_floor() {
     assert!(loss.message.contains(PUBLIC_ACCESS));
 }
 
+/// `entries` without the charges for bytes after a frame, which the synthetic
+/// scenes hold in every stream that is longer than its frame.
+fn without_trailing(mut entries: Vec<(String, String)>) -> Vec<(String, String)> {
+    let trailing = IronCadLossCode::FrameTrailingBytes
+        .note("")
+        .code
+        .to_string();
+    entries.retain(|(code, _)| *code != trailing);
+    entries
+}
+
 fn public_access_limit_charge(result: &DecodeResult) -> &cadmpeg_ir::report::loss::LossNote {
-    let entries = &result.report().losses;
+    let trailing = IronCadLossCode::FrameTrailingBytes.note("").code;
+    let entries: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code != trailing)
+        .collect();
     let [units, limit] = entries.as_slice() else {
         panic!("one unit note and one Public Access charge: {entries:?}");
     };
@@ -710,7 +730,7 @@ fn parasolid_records_rewrite_into_framed_neutral_transmits() {
         let snapshot = crate::container::open(&ctx, root).unwrap();
         let entry = snapshot.stream(crate::container::BREP_DATA).unwrap();
         let stream = snapshot.open(&ctx, entry).unwrap();
-        let payload = crate::frame::payload(&ctx, stream).unwrap();
+        let payload = crate::frame::payload(&ctx, stream).unwrap().payload;
         let records = crate::tree::read(payload).unwrap().records;
         for record in records
             .iter()

@@ -371,8 +371,8 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         )]),
     };
 
-    let archive = crate::test_support::zip_test::synthetic_f3d(false);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let archive = crate::test_support::zip_fixture::synthetic_f3d(false);
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         with_test_ctx(|ctx| {
             super::super::mesh_import::bind_features(
                 ctx,
@@ -1402,7 +1402,7 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
     const DATA: &[u8] = b"PNG texture";
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(ENTRY, stored).unwrap();
     zip.write_all(DATA).unwrap();
     let archive = zip.finish().unwrap().into_inner();
@@ -1419,7 +1419,7 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
         .unwrap();
     let asset = cadmpeg_ir::assets::AssetId::mint("synthetic:test:id#asset:texture").unwrap();
     let ceiling = u64::try_from(DATA.len()).unwrap();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         for (limit, admitted) in [(ceiling, true), (ceiling - 1, false)] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();

@@ -3,9 +3,10 @@
 //! than a second copy of the list. The witnesses are the registry's own: each
 //! row cites a golden fixture, and the matrix below scans those bytes.
 
+use super::registry_ids::FORMAT;
 use super::{
     classify, dialect_loss, matched, DECLARED_BUILD_DATE, DECLARED_HOT_FIX, DECLARED_RELEASE,
-    DECLARED_SERVICE_PACK, DECLARED_VERSION, FORMAT,
+    DECLARED_SERVICE_PACK, DECLARED_VERSION,
 };
 use crate::container;
 use crate::test_support::test_container::{outer_body_catpart, summary_preview_segment};

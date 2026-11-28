@@ -41,6 +41,7 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// document holds, so every such field is read back. A document holds a
 /// native record at its fifth level, and the decode wrapper gives up a record
 /// that passes the document's 128 levels (§2.5).
+// resource-cap: MAX_NATIVE_NESTING_DEPTH = 1
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.

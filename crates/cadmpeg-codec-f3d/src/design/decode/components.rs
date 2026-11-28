@@ -701,6 +701,7 @@ pub(crate) fn superseded_occurrences_loss(
 }
 
 /// Most attributes an attributed occurrence frame can carry.
+// resource-cap: MAX_OCCURRENCE_ATTRIBUTES = 2
 const MAX_OCCURRENCE_ATTRIBUTES: u32 = 16;
 /// Read stored local occurrence attributes and its occurrence key.
 #[cfg(test)]
@@ -2444,7 +2445,7 @@ mod tests {
         let occurrence = exact_component_occurrence(&frame, 0, "f3d:Design/BulkStream.dat")
             .expect("separated matrix occurrence");
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube");
-        crate::test_support::native_test::f3d_native_mut(&mut ir)
+        crate::test_support::native_fixture::f3d_native_mut(&mut ir)
             .design_component_occurrences
             .push(occurrence);
         let findings = crate::test_support::with_decode_context(|ctx| {
