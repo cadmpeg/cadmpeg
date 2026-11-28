@@ -63,7 +63,6 @@ fn body_transform_reference_refuses_32_bit_wrap() {
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
         },
-        1.0,
     )
     .expect("an unaddressable reference names no transform record");
     assert!(bytes.is_empty());

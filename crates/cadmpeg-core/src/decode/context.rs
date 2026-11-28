@@ -176,6 +176,18 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
+    /// Charges `bytes` that the session reads from memory as input, as a
+    /// writer reads its retained source: under `max_input_bytes`, and
+    /// raising the input-proportional allowances as a read root does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::ResourceLimit`] where the input ceiling refuses
+    /// the charge or a refusal already fused the session.
+    pub fn charge_input(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.budget.charge_input(bytes, operation)
+    }
+
     /// Charges bytes that decoded output keeps for the rest of the session.
     ///
     /// This is the one retained-bytes chokepoint: native record text, arena
@@ -260,6 +272,19 @@ impl<'a> DecodeContext<'a> {
     /// Charges admitted entities.
     pub fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_entities(count, operation)
+    }
+
+    /// Admits the bytes and records of one optional output together.
+    ///
+    /// If either limit refuses, neither counter advances and the session
+    /// remains usable. A refusal already in force is returned unchanged.
+    pub fn admit_optional(
+        &self,
+        bytes: u64,
+        entities: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.budget.admit_optional(bytes, entities, operation)
     }
 
     /// Charges entities newly present since `admitted`, then advances `admitted`.

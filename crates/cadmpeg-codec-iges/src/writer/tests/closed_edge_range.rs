@@ -76,7 +76,8 @@ fn square_path(periodic: bool, last: Point3) -> CurveGeometry {
 }
 
 fn refusal(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> String {
-    match edge_span(ir, edge, geometry) {
+    test_ctx!(ctx);
+    match edge_span(&ctx, ir, edge, geometry) {
         Err(CodecError::NotImplemented(message)) => message,
         _ => panic!("expected a not-implemented refusal"),
     }
@@ -84,9 +85,10 @@ fn refusal(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> String {
 
 #[test]
 fn closed_circle_edge_without_range_spans_one_revolution() {
+    test_ctx!(ctx);
     let ir = vertices_at(&[Point3::new(10.0, 0.0, 0.0)]);
     let edge = closed_edge("circle", "circle", "v0");
-    let span = edge_span(&ir, &edge, &circle()).expect("a closed circle edge has a span");
+    let span = edge_span(&ctx, &ir, &edge, &circle()).expect("a closed circle edge has a span");
     assert_eq!(span.range.get(), [0.0, TAU]);
     assert_eq!(span.start, Point3::new(10.0, 0.0, 0.0));
     assert_eq!(span.end, span.start);
@@ -94,6 +96,7 @@ fn closed_circle_edge_without_range_spans_one_revolution() {
 
 #[test]
 fn closed_ellipse_edge_without_range_spans_one_revolution() {
+    test_ctx!(ctx);
     let ir = vertices_at(&[Point3::new(0.0, 0.0, 6.0)]);
     let edge = closed_edge("ellipse", "ellipse", "v0");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
@@ -106,23 +109,25 @@ fn closed_ellipse_edge_without_range_spans_one_revolution() {
         )
         .expect("ellipse"),
     ));
-    let span = edge_span(&ir, &edge, &geometry).expect("a closed ellipse edge has a span");
+    let span = edge_span(&ctx, &ir, &edge, &geometry).expect("a closed ellipse edge has a span");
     assert_eq!(span.range.get(), [0.0, TAU]);
 }
 
 #[test]
 fn closed_periodic_nurbs_edge_without_range_spans_its_knot_domain() {
+    test_ctx!(ctx);
     let ir = vertices_at(&[Point3::new(0.0, 0.0, 0.0)]);
     let edge = closed_edge("loop", "loop", "v0");
-    let span = edge_span(&ir, &edge, &square_loop(true)).expect("a periodic loop has a span");
+    let span = edge_span(&ctx, &ir, &edge, &square_loop(true)).expect("a periodic loop has a span");
     assert_eq!(span.range.get(), [0.0, 4.0]);
 }
 
 #[test]
 fn closed_clamped_nurbs_edge_without_range_spans_its_knot_domain() {
+    test_ctx!(ctx);
     let ir = vertices_at(&[Point3::new(0.0, 0.0, 0.0)]);
     let edge = closed_edge("loop", "loop", "v0");
-    let span = edge_span(&ir, &edge, &square_loop(false)).expect("a clamped loop has a span");
+    let span = edge_span(&ctx, &ir, &edge, &square_loop(false)).expect("a clamped loop has a span");
     assert_eq!(span.range.get(), [0.0, 4.0]);
 }
 

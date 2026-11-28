@@ -236,7 +236,6 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let losses = &result.report().losses;
-    let code = IgesLossCode::ParameterDataQuarantined.kind();
     for sequence in [1, 3] {
         assert_eq!(
             crate::test_support::given_up_part_bytes(&result, ("parameter-data", sequence)).len(),
@@ -244,8 +243,14 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
         );
     }
     assert!(result.ir().geometry.points.is_empty());
-    assert_eq!(losses.len(), 4, "{losses:#?}");
-    assert_eq!(losses.iter().filter(|loss| loss.code == code).count(), 2);
+    assert_eq!(losses.len(), 2, "{losses:#?}");
+    assert_eq!(
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
+        2
+    );
     crate::test_support::assert_gives_up(
         result.report(),
         &[("parameter-data", 1), ("parameter-data", 3)],

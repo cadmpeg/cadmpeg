@@ -9,6 +9,7 @@ use super::same_range;
 use super::{edge_span, flatten_curve, solved_curve, TopologyIndex};
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
 use crate::loss::IgesLossCode;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::pcurve_uv;
@@ -46,10 +47,11 @@ const RATIONAL_PIECE_SPLITS: u32 = 8;
 /// `admit` names are restated. Fails naming a face that no restated domain
 /// holds. The seam cuts name where a loop of a face passes the end of the
 /// turn that holds the face.
-pub(super) fn rational_analytic_supports(
-    ir: &CadIr,
+pub(super) fn rational_analytic_supports<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
     admit: impl Fn(&str) -> bool,
-) -> Result<(Cow<'_, CadIr>, Vec<LossNote>, SeamCuts), Unwritten> {
+) -> Result<(Cow<'ir, CadIr>, Vec<LossNote>, SeamCuts), Unwritten> {
     let forms = ir
         .geometry
         .surfaces
@@ -65,7 +67,7 @@ pub(super) fn rational_analytic_supports(
     if forms.is_empty() {
         return Ok((Cow::Borrowed(ir), Vec::new(), SeamCuts::default()));
     }
-    let ends = pcurve_ends(ir)?;
+    let ends = pcurve_ends(ctx, ir)?;
     let index = TopologyIndex::new(ir);
     let mut surfaces = Vec::new();
     let mut pcurves = BTreeMap::new();
@@ -74,7 +76,7 @@ pub(super) fn rational_analytic_supports(
     let mut splits = Vec::new();
     let mut jumps = Vec::new();
     for (surface, form) in forms {
-        let Some(restated) = restated_support(&ends, &index, surface, &form) else {
+        let Some(restated) = restated_support(ctx, &ends, &index, surface, &form) else {
             continue;
         };
         let restated = restated?;
@@ -238,7 +240,10 @@ fn model_space_boundaries(ir: &mut CadIr, faces: &[ModelSpaceFace]) -> Vec<LossN
 }
 
 /// The finite start and end points of each bounded parameter curve.
-fn pcurve_ends(ir: &CadIr) -> Result<BTreeMap<&str, [Point2; 2]>, CodecError> {
+fn pcurve_ends<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<BTreeMap<&'ir str, [Point2; 2]>, CodecError> {
     let mut ends = BTreeMap::new();
     for pcurve in &ir.geometry.pcurves {
         let Some(range) = pcurve.parameter_range() else {
@@ -247,7 +252,7 @@ fn pcurve_ends(ir: &CadIr) -> Result<BTreeMap<&str, [Point2; 2]>, CodecError> {
         let [start, end] = range.get();
         let at = |parameter| {
             finite_or_refusal(pcurve_uv(
-                EvaluationAdmission::Standard,
+                EvaluationAdmission::Write(ctx),
                 &pcurve.geometry,
                 parameter,
             ))
@@ -915,6 +920,7 @@ fn whole_slope(delta: Point2) -> Option<Slope> {
 /// the most of them. An error names the first face that this window does not
 /// hold.
 fn restated_support(
+    ctx: &DecodeContext<'_>,
     ends: &BTreeMap<&str, [Point2; 2]>,
     index: &TopologyIndex<'_>,
     surface: &str,
@@ -994,7 +1000,7 @@ fn restated_support(
             }
             Err(reason) => {
                 if !circular {
-                    for height in edge_heights(index, face, form)? {
+                    for height in edge_heights(ctx, index, face, form)? {
                         heights.include(height);
                     }
                 }
@@ -1503,7 +1509,12 @@ fn same_ends(first: [Point2; 2], second: [Point2; 2]) -> bool {
 
 /// The heights along the axis of the control points of the exact rational
 /// forms of the edge curves of `face`, which bound the heights of the face.
-fn edge_heights(index: &TopologyIndex<'_>, face: &Face, form: &Revolved) -> Option<Vec<f64>> {
+fn edge_heights(
+    ctx: &DecodeContext<'_>,
+    index: &TopologyIndex<'_>,
+    face: &Face,
+    form: &Revolved,
+) -> Option<Vec<f64>> {
     let mut heights = Vec::new();
     for loop_id in face.loops.stated() {
         let loop_ = index.loops.get(loop_id.as_str()).copied()?;
@@ -1512,7 +1523,7 @@ fn edge_heights(index: &TopologyIndex<'_>, face: &Face, form: &Revolved) -> Opti
             let edge = index.edges.get(coedge.edge.as_str()).copied()?;
             let curve = index.curves.get(edge.curve()?.as_str()).copied()?;
             let geometry = flatten_curve(solved_curve(curve).ok()?).ok()?;
-            let span = edge_span(index, edge, &geometry).ok()?;
+            let span = edge_span(ctx, index, edge, &geometry).ok()?;
             let nurbs = nurbs_form(&geometry, span.range)?;
             heights.extend(nurbs.control_points().into_iter().map(|point| {
                 let point = point.get();

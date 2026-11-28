@@ -99,7 +99,15 @@ pub(crate) struct Prim<'l> {
 pub(crate) struct Tally {
     pub(crate) unselected_variants: usize,
     pub(crate) undefined_overs: BTreeSet<String>,
+    /// Reference and payload targets that their layer stack, read in full,
+    /// does not hold.
     pub(crate) missing_targets: BTreeSet<String>,
+    /// Arc targets that the read specifications do not hold, where an
+    /// unread sublayer, variant, or ancestor arc can hold them.
+    pub(crate) unresolved_targets: BTreeSet<String>,
+    /// The `class` prims and the prims with `active = false`, which the
+    /// traversal leaves out with their descendants.
+    pub(crate) excluded: BTreeSet<String>,
     pub(crate) cycles: BTreeSet<String>,
     pub(crate) instance_overrides: BTreeSet<String>,
     pub(crate) sublayers: Vec<String>,
@@ -112,6 +120,9 @@ pub(crate) struct Stage<'l> {
     pub(crate) roots: Vec<usize>,
     pub(crate) tally: Tally,
     by_path: BTreeMap<String, usize>,
+    /// The composition opened every layer and resolved every arc and
+    /// variant, so the prims are every prim of the stage.
+    whole: bool,
 }
 
 impl<'l> Stage<'l> {
@@ -120,6 +131,28 @@ impl<'l> Stage<'l> {
         self.by_path
             .get(path)
             .and_then(|index| self.prims.get(*index))
+    }
+
+    /// Whether the stage has no prim at `path`: the composition is whole,
+    /// and the traversal left out no ancestor of `path`, nor `path` itself.
+    pub(crate) fn holds_no_prim(&self, path: &str) -> bool {
+        if !self.whole || self.find(path).is_some() {
+            return false;
+        }
+        let tally = &self.tally;
+        let mut current = path;
+        loop {
+            if tally.excluded.contains(current)
+                || tally.undefined_overs.contains(current)
+                || tally.instance_overrides.contains(current)
+            {
+                return false;
+            }
+            match current.rsplit_once('/') {
+                Some((parent, _)) if !parent.is_empty() => current = parent,
+                _ => return true,
+            }
+        }
     }
 
     /// The prim that holds the property at stage path `path`, and the
@@ -522,6 +555,27 @@ struct Composer<'c, 'a, 'l, 'p> {
     tally: Tally,
 }
 
+/// The kind of a composition arc to a prim of a layer stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArcKind {
+    /// An inherit or a specialize: a target with no prim adds no opinions.
+    Class,
+    /// A reference or a payload: the target is a prim (§8.2).
+    Reference,
+}
+
+/// Whether prim specification `spec` holds a variant set or an arc, which
+/// can add descendants that no specification of the layer holds.
+fn composes_more(spec: &PrimSpec) -> bool {
+    !spec.body.variant_sets.is_empty()
+        || ["references", "payload"]
+            .into_iter()
+            .any(|key| !references(&spec.metadata, key).is_empty())
+        || ["inherits", "specializes"]
+            .into_iter()
+            .any(|key| !class_paths(&spec.metadata, key).is_empty())
+}
+
 /// A layer path in the namespace of a layer stack.
 type StackPath = (usize, String);
 
@@ -620,6 +674,12 @@ pub(crate) fn compose<'l>(
         }
     }
     let tally = composer.tally;
+    let whole = layers.stacks_are_whole()
+        && tally.missing_targets.is_empty()
+        && tally.unresolved_targets.is_empty()
+        && tally.unselected_variants == 0
+        && tally.cycles.is_empty()
+        && composer.prims.iter().all(|prim| prim.external.is_empty());
     let by_path = composer
         .prims
         .iter()
@@ -631,6 +691,7 @@ pub(crate) fn compose<'l>(
         roots,
         tally,
         by_path,
+        whole,
     })
 }
 
@@ -718,7 +779,10 @@ impl<'l> Composer<'_, '_, 'l, '_> {
                 self.tally.undefined_overs.insert(path.to_owned());
                 return Ok(None);
             }
-            Some(Specifier::Class) => return Ok(None),
+            Some(Specifier::Class) => {
+                self.tally.excluded.insert(path.to_owned());
+                return Ok(None);
+            }
             Some(_) => {}
         }
         let mut prim = Prim {
@@ -732,6 +796,7 @@ impl<'l> Composer<'_, '_, 'l, '_> {
             in_instance,
         };
         if prim.metadata_bool("active") == Some(false) {
+            self.tally.excluded.insert(path.to_owned());
             return Ok(None);
         }
         self.ctx.charge_entities(1, "usd_stage_prim")?;
@@ -890,6 +955,7 @@ impl<'l> Composer<'_, '_, 'l, '_> {
                     layer_stack,
                     &resolve_relative(&anchor, &target),
                     keeps_outside,
+                    ArcKind::Class,
                 ),
                 stage_path,
                 chosen,
@@ -933,7 +999,7 @@ impl<'l> Composer<'_, '_, 'l, '_> {
                         continue;
                     }
                     self.arc_site(
-                        (target_stack, &target, false),
+                        (target_stack, &target, false, ArcKind::Reference),
                         stage_path,
                         chosen,
                         stack,
@@ -946,7 +1012,12 @@ impl<'l> Composer<'_, '_, 'l, '_> {
                     continue;
                 };
                 self.arc_site(
-                    (layer_stack, &resolve_relative(&anchor, target), false),
+                    (
+                        layer_stack,
+                        &resolve_relative(&anchor, target),
+                        false,
+                        ArcKind::Reference,
+                    ),
                     stage_path,
                     chosen,
                     stack,
@@ -961,6 +1032,7 @@ impl<'l> Composer<'_, '_, 'l, '_> {
                     layer_stack,
                     &resolve_relative(&anchor, &target),
                     keeps_outside,
+                    ArcKind::Class,
                 ),
                 stage_path,
                 chosen,
@@ -976,7 +1048,7 @@ impl<'l> Composer<'_, '_, 'l, '_> {
     /// stack as arc sites of the stage prim at `stage_path`.
     fn arc_site(
         &mut self,
-        (target_stack, target, keeps_outside): (usize, &str, bool),
+        (target_stack, target, keeps_outside, arc): (usize, &str, bool, ArcKind),
         stage_path: &str,
         chosen: &BTreeMap<String, String>,
         stack: &mut Vec<StackPath>,
@@ -1003,7 +1075,11 @@ impl<'l> Composer<'_, '_, 'l, '_> {
             })
             .collect();
         if specs.is_empty() {
-            self.tally.missing_targets.insert(target.to_owned());
+            if !self.holds_no_spec(target_stack, target) {
+                self.tally.unresolved_targets.insert(target.to_owned());
+            } else if arc == ArcKind::Reference {
+                self.tally.missing_targets.insert(target.to_owned());
+            }
             return Ok(());
         }
         stack.push((target_stack, target.to_owned()));
@@ -1028,6 +1104,34 @@ impl<'l> Composer<'_, '_, 'l, '_> {
         }
         stack.pop();
         Ok(())
+    }
+
+    /// Whether layer stack `target_stack` has no prim at `target`, where its
+    /// specifications hold none: every sublayer of the stack opened, and no
+    /// ancestor specification of `target` holds a variant set or an arc
+    /// that can add it.
+    fn holds_no_spec(&mut self, target_stack: usize, target: &str) -> bool {
+        if !self.layers.stack_is_whole(target_stack) {
+            return false;
+        }
+        let stack = self.stack(target_stack);
+        let mut ancestor = target;
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            if parent.is_empty() {
+                break;
+            }
+            ancestor = parent;
+            let extended = stack.iter().any(|layer| {
+                self.specs
+                    .get(*layer)
+                    .and_then(|specs| specs.get(ancestor))
+                    .is_some_and(|spec| composes_more(spec))
+            });
+            if extended {
+                return false;
+            }
+        }
+        true
     }
 
     /// The references and payloads of a composed prim to layers that did

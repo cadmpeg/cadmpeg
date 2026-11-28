@@ -307,49 +307,79 @@ fn intersection_chart_rejects_unresolved_support_relation() {
 }
 
 #[test]
-fn intersection_rejection_report_includes_support_and_identity_counts() {
-    for duplicate in [false, true] {
-        let mut stream = two_support_charted_intersection_curve_stream();
-        let construction = stream
-            .windows(4)
-            .position(|window| window == [0, 38, 0, 12])
-            .unwrap();
-        let (total, categories) = if duplicate {
-            let payload = stream[construction + 2..construction + 31].to_vec();
-            stream.extend_from_slice(crate::topology::TYPE_38_SCHEMA_HEADER);
-            stream.extend_from_slice(&payload);
-            (2, "2 duplicate identity")
-        } else {
-            put_ref(&mut stream, construction + 19, 998);
-            (1, "1 missing support")
-        };
-        let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |_| {},
-            |ctx| {
-                let decoded =
-                    crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-                        .unwrap();
-                let note = decoded
-                    .body
-                    .losses
-                    .iter()
-                    .find(|loss| loss.code.local_code() == "intersection.records-opaque")
+fn intersection_rejection_report_counts_kept_constructions_by_cause() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let construction = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .unwrap();
+    put_ref(&mut stream, construction + 19, 998);
+    let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let decoded =
+                crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
                     .unwrap();
-                assert!(note
-                    .message
-                    .starts_with(&format!("{total} surface-intersection record(s)")));
-                assert!(note.message.contains(categories));
-                assert!(note.message.ends_with("0 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch."));
-                assert!(note.message.contains(if duplicate {
-                    "0 missing support"
-                } else {
-                    "0 duplicate identity"
-                }));
-            },
-        );
-    }
+            let note = decoded
+                .body
+                .losses
+                .iter()
+                .find(|loss| loss.code.local_code() == "intersection.records-opaque")
+                .unwrap();
+            assert!(note.message.starts_with("1 surface-intersection record(s)"));
+            assert!(note.message.ends_with(
+                "Rejections: 1 missing support, 0 missing chart, 0 missing start term, \
+                 0 missing end term, 0 endpoint mismatch."
+            ));
+        },
+    );
+}
+
+#[test]
+fn intersection_records_that_share_an_identity_are_each_given_up() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let construction = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .unwrap();
+    let payload = stream[construction + 2..construction + 31].to_vec();
+    let declared = stream.len();
+    stream.extend_from_slice(crate::topology::TYPE_38_SCHEMA_HEADER);
+    stream.extend_from_slice(&payload);
+    let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let decoded =
+                crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .unwrap();
+            let losses = &decoded.body.losses;
+            assert!(losses
+                .iter()
+                .all(|loss| loss.code.local_code() != "intersection.records-opaque"));
+            let parts = losses
+                .iter()
+                .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+                .filter(|loss| {
+                    loss.message
+                        .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                        && loss.message.contains("intersection.identity-duplicated")
+                        && loss.message.contains("INTERSECTION 12")
+                })
+                .collect::<Vec<_>>();
+            for offset in [construction, declared] {
+                assert!(
+                    parts.iter().any(|loss| loss
+                        .message
+                        .contains(&format!("\" offset={offset} length="))),
+                    "the copy at {offset} is given up: {losses:#?}"
+                );
+            }
+        },
+    );
 }
 
 #[test]
@@ -360,6 +390,7 @@ fn intersection_rejects_duplicate_xmt_states_atomically() {
         sense: true,
         references: [6, 7, 20, 21, 22, 23].map(cadmpeg_parasolid::xmt::XmtTarget::from_wire),
         pos,
+        end: pos + 8,
     };
     let scan = crate::test_support::with_decode_context(|_ctx| {
         super::scan_with_auxiliaries(
@@ -378,8 +409,8 @@ fn intersection_rejects_duplicate_xmt_states_atomically() {
     assert!(scan.source_constructions.is_empty());
     assert!(scan.constructions.is_empty());
     assert!(scan.curves.is_empty());
-    assert_eq!(scan.rejected.duplicate_identity, 2);
-    assert_eq!(scan.rejected.total(), 2);
+    assert_eq!(scan.duplicates.len(), 2);
+    assert_eq!(scan.rejected.total(), 0);
 }
 
 #[test]
@@ -958,4 +989,45 @@ fn a_record_that_ends_before_its_node_end_is_not_read_at_that_node() {
             super::term_use_records_from(&bytes, super::ChartPointLayout::Xyz3, starts).is_empty()
         );
     });
+}
+
+#[test]
+fn an_intersection_record_that_names_no_surface_is_given_up() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let construction = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .unwrap();
+    put_ref(&mut stream, construction + 19, 1);
+    put_ref(&mut stream, construction + 21, 1);
+    let graph = crate::topology::Graph::parse(&stream);
+    let node = graph
+        .get(crate::framing::node_kind::NodeKind::Intersection, 12)
+        .expect("the record stays a framed INTERSECTION");
+    assert_eq!(node.pos(), construction);
+    let length = node.end() - node.pos();
+    let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let decoded =
+                crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .unwrap();
+            let losses = &decoded.body.losses;
+            assert!(
+                losses.iter().any(|loss| loss.code
+                    == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                    && loss
+                        .message
+                        .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                    && loss
+                        .message
+                        .contains(&format!("\" offset={construction} length={length} record="))
+                    && loss.message.contains("intersection.record-unresolved")
+                    && loss.message.contains("INTERSECTION 12")),
+                "{losses:#?}"
+            );
+        },
+    );
 }
