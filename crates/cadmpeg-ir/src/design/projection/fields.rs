@@ -142,6 +142,8 @@ pub enum ParameterField {
     Scope,
     /// `owner`
     Owner,
+    /// `position`
+    Position,
     /// `name`
     Name,
     /// `kind`
@@ -172,6 +174,7 @@ design_fields! {
     ParameterField of DesignParameter {
         scope => Scope,
         owner => Owner,
+        position => Position,
         name => Name,
         kind => Kind,
         unit => Unit,

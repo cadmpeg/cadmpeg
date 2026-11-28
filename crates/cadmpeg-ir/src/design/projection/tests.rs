@@ -449,6 +449,7 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
 fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
         ParameterField::Owner => &[ModelParameterField::Owner],
+        ParameterField::Position => &[ModelParameterField::Ordinal],
         ParameterField::Name => &[ModelParameterField::Name],
         ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
         ParameterField::Definition => &[

@@ -300,8 +300,11 @@ fn design_v11_findings(
         ir,
         &features,
         &sketches,
-        &data.pm_dc_parameters,
-        &data.pm_dc_units,
+        crate::design_v11::ParameterRecords {
+            parameters: &data.pm_dc_parameters,
+            units: &data.pm_dc_units,
+            tables: &data.pm_dc_parameter_tables,
+        },
     )?;
     findings.extend(crate::design_v11::validate_states(ir, &ctx.policy().limits));
     Ok(findings)

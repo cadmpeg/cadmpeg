@@ -83,6 +83,7 @@ fn parameter(
         id: parameter_id(key),
         scope: root(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -365,6 +366,26 @@ fn an_illegal_name_is_renamed() {
     assert!(renamed
         .message
         .contains("`wall thickness` -> `wall_thickness`"));
+}
+
+/// The parameters of one owner take their names in the order of their
+/// stated positions.
+#[test]
+fn parameters_are_named_in_the_order_of_their_positions() {
+    let mut ir = scoped_cube();
+    for (key, position, millimetres) in [("a", 1, 3.0), ("b", 0, 4.0)] {
+        let mut parameter = parameter(
+            key,
+            "x y",
+            neutral(number(millimetres, Some(UnitSymbol::Mm))),
+            Some(millimetres),
+        );
+        parameter.position = Some(position);
+        ir.design.parameters.push(parameter);
+    }
+    let (_, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "x_y", "4 mm", 4.0);
+    assert_length(&decoded_ir, "x_y_2", "3 mm", 3.0);
 }
 
 #[test]

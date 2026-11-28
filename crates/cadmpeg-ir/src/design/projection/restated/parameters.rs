@@ -62,20 +62,37 @@ pub(super) fn parameter_cuts<'ir>(
         .filter(|model| compared(model.id.as_str()))
         .filter_map(|model| Some((model, *design.get(model.id.as_str())?)))
         .collect::<Vec<_>>();
-    let cells = ir
-        .design
-        .spreadsheets
-        .iter()
-        .filter(|sheet| written.contains(sheet.id.as_str()))
-        .flat_map(|sheet| {
-            sheet
-                .cells()
-                .iter()
-                .enumerate()
-                .map(move |(at, cell)| (cell.parameter.as_str(), (sheet.id.as_str(), at)))
+    let mut places = design
+        .values()
+        .filter(|parameter| written.contains(parameter.id.as_str()))
+        .filter_map(|parameter| {
+            Some((
+                parameter.id.as_str(),
+                Place {
+                    list: List::Owner(&parameter.scope, parameter.owner.as_ref()),
+                    index: usize::try_from(parameter.position?).ok()?,
+                },
+            ))
         })
         .collect::<HashMap<_, _>>();
-    let misplaced = misplaced(&ir.model.parameters, &cells);
+    places.extend(
+        ir.design
+            .spreadsheets
+            .iter()
+            .filter(|sheet| written.contains(sheet.id.as_str()))
+            .flat_map(|sheet| {
+                sheet.cells().iter().enumerate().map(move |(index, cell)| {
+                    (
+                        cell.parameter.as_str(),
+                        Place {
+                            list: List::Sheet(sheet.id.as_str()),
+                            index,
+                        },
+                    )
+                })
+            }),
+    );
+    let misplaced = misplaced(&ir.model.parameters, &places);
     let tables = user_tables(ir);
     let measured = measured(ir, written);
     let evaluated = if pairs.iter().any(|(model, design)| {
@@ -133,6 +150,18 @@ pub(super) fn parameter_cuts<'ir>(
             (id, parameter_cut(model, design, &held))
         })
         .collect()
+}
+
+#[derive(Clone, Copy)]
+struct Place<'ir> {
+    list: List<'ir>,
+    index: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum List<'ir> {
+    Sheet(&'ir str),
+    Owner(&'ir ProductDefinitionId, Option<&'ir ParameterOwner>),
 }
 
 /// What the design holds of a model parameter besides its design parameter.
@@ -235,14 +264,14 @@ fn design_display(display: ModelDisplay) -> DimensionDisplay {
 }
 
 /// The parameters of `models` whose position by `ordinal` among the
-/// parameters of their definition and owner the design does not hold. Only
-/// a spreadsheet orders design parameters (§2.2): `cells` holds the sheet
-/// and the position among its cells of each cell parameter. A group of one
-/// parameter holds its position; a larger group holds it where each member
-/// is a cell, and its order by `ordinal` is its order by cell.
+/// parameters of their definition and owner the design does not hold.
+/// `places` holds the place of each design parameter the design orders. A
+/// group of one parameter holds its position; a larger group holds it where
+/// every member has a distinct place in the same list and its order by
+/// `ordinal` is its order in that list.
 fn misplaced<'ir>(
     models: &'ir [ModelParameter],
-    cells: &HashMap<&str, (&str, usize)>,
+    places: &HashMap<&str, Place<'_>>,
 ) -> HashSet<&'ir str> {
     let mut groups = BTreeMap::<_, Vec<&ModelParameter>>::new();
     for model in models {
@@ -259,20 +288,29 @@ fn misplaced<'ir>(
     for members in groups.into_values().filter(|members| members.len() > 1) {
         let Some(placed) = members
             .iter()
-            .map(|model| Some((*model, *cells.get(model.id.as_str())?)))
+            .map(|model| Some((*model, *places.get(model.id.as_str())?)))
             .collect::<Option<Vec<_>>>()
+            .filter(|placed| {
+                placed
+                    .iter()
+                    .all(|(_, place)| place.list == placed[0].1.list)
+            })
         else {
             misplaced.extend(members.iter().map(|model| model.id.as_str()));
             continue;
         };
         let mut in_design = placed
             .iter()
-            .map(|(model, at)| (*at, model.id.as_str()))
+            .map(|(model, place)| (place.index, model.id.as_str()))
             .collect::<Vec<_>>();
         in_design.sort_unstable();
+        if in_design.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            misplaced.extend(members.iter().map(|model| model.id.as_str()));
+            continue;
+        }
         let mut by_ordinal = placed
             .iter()
-            .map(|(model, at)| (model.ordinal, *at, model.id.as_str()))
+            .map(|(model, place)| (model.ordinal, place.index, model.id.as_str()))
             .collect::<Vec<_>>();
         by_ordinal.sort_unstable();
         for ((_, _, at_ordinal), (_, at_design)) in by_ordinal.iter().zip(&in_design) {
