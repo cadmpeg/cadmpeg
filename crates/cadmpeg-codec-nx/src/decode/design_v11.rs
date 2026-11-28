@@ -61,7 +61,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     for feature in &history {
         features.push(Feature {
             id: feature.id.clone(),
-            name: None,
+            name: feature.name.clone(),
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation: operation(feature)?,
@@ -111,6 +111,7 @@ pub(super) const RESTATEMENT: Restatement = Restatement {
 #[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
+        FeatureField::Name => &[ModelFeatureField::Name],
         FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
         FeatureField::Definition => &[
             ModelFeatureField::Definition,
@@ -118,10 +119,7 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
             ModelFeatureField::SourceTag,
         ],
         FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
-        FeatureField::Name
-        | FeatureField::Placement
-        | FeatureField::Component
-        | FeatureField::DrivenBy => &[],
+        FeatureField::Placement | FeatureField::Component | FeatureField::DrivenBy => &[],
     }
 }
 
