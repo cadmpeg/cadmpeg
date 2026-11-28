@@ -687,14 +687,7 @@ fn coherent_e5_record_count(data: &[u8]) -> usize {
             search = end;
             continue;
         }
-        let mut relative = None;
-        for (offset, window) in data[search..].windows(E5_MARKER.len()).enumerate() {
-            if window == E5_MARKER {
-                relative = Some(offset);
-                break;
-            }
-        }
-        let Some(relative) = relative else {
+        let Some(relative) = memchr::memmem::find(&data[search..], E5_MARKER) else {
             break;
         };
         let start = search + relative;
@@ -721,9 +714,7 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
             search = end;
             continue;
         }
-        let relative = data[search..]
-            .windows(E5_MARKER.len())
-            .position(|bytes| bytes == E5_MARKER)?;
+        let relative = memchr::memmem::find(&data[search..], E5_MARKER)?;
         let start = search + relative;
         let Some(end) = e5_frame_end(data, start) else {
             search = start + 1;
@@ -1556,9 +1547,14 @@ fn parse_outer_container_declarations(
         return inventory;
     }
 
-    for start in 0..data.len() - 64 {
+    for prefix_pos in memchr::memmem::find_iter(data, PREFIX) {
+        let Some(start) = prefix_pos.checked_sub(16) else {
+            continue;
+        };
+        if start + 64 >= data.len() {
+            break;
+        }
         if data.get(start + 8..start + 12) != Some(HEADER)
-            || data.get(start + 16..start + 24) != Some(PREFIX)
             || data.get(start + 32..start + 36) != Some(CLASS_BLOCK)
         {
             continue;
@@ -1760,6 +1756,17 @@ fn identify_fbb_variant(
     brep: &[u8],
     census: &Census,
 ) -> Result<Variant, CodecError> {
+    if census.fbb_runs > 1 {
+        let layouts = crate::families::standard::fbb::fbb_population_layouts(brep);
+        if !layouts.is_empty() {
+            if layouts.iter().any(|layout| {
+                layout.edge_table_form == crate::families::standard::fbb::EdgeTableForm::Standard
+            }) {
+                return Ok(Variant::StandardNested);
+            }
+            return Ok(Variant::FbbOnly);
+        }
+    }
     if crate::families::standard::fbb::standard_edge_count(ctx, brep)?.is_some() {
         return Ok(Variant::StandardNested);
     }

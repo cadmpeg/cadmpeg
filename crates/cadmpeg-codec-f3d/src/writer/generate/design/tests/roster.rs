@@ -534,6 +534,94 @@ fn the_home_camera_fits_the_body_box() {
     }
 }
 
+/// The three components of the vector at `at` in `record`.
+fn vector_at(record: &[u8], at: usize) -> [f64; 3] {
+    [0, 1, 2].map(|axis| f64_at(record, at + 8 * axis))
+}
+
+/// The largest difference between a stored and an expected direction component.
+const EPS_DIRECTION: f64 = 1e-9;
+
+fn assert_vector(found: [f64; 3], expected: [f64; 3]) {
+    for axis in 0..3 {
+        assert!(
+            (found[axis] - expected[axis]).abs() < EPS_DIRECTION,
+            "{found:?} {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn the_written_up_axis_reads_back_with_every_stored_direction_matching_it() {
+    use crate::layout::base_feature_asset_settings as settings;
+    use crate::layout::base_feature_camera as camera;
+    use cadmpeg_ir::up_axis::UpAxis;
+    let sqrt3 = 3f64.sqrt();
+    for (stated, read, front, up, home_normal, top, right) in [
+        (
+            None,
+            UpAxis::Z,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, -1.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+        ),
+        (
+            Some(UpAxis::Z),
+            UpAxis::Z,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, -1.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+        ),
+        (
+            Some(UpAxis::Y),
+            UpAxis::Y,
+            [0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ),
+    ] {
+        let mut ir = scoped_cube();
+        ir.up_axis = stated;
+        let (_, decoded, bytes) = write_bytes(&ir);
+        assert_eq!(decoded.up_axis, Some(read));
+        let design = segment(&bytes, "FusionDesignSegmentType1");
+        let settings_record = design.record(0);
+        assert_vector(vector_at(settings_record, settings::FRONT_A), front);
+        assert_vector(vector_at(settings_record, settings::UP_A), up);
+        assert_vector(vector_at(settings_record, settings::FRONT_B), front);
+        assert_vector(vector_at(settings_record, settings::UP_B), up);
+        // The named views: TOP, FRONT, RIGHT, HOME (cameras 164, 166, 168, 170).
+        let view = |index: u64| design.record(index);
+        assert_vector(vector_at(view(166), camera::TARGET), front);
+        assert_vector(vector_at(view(166), camera::UP), up);
+        assert_vector(vector_at(view(164), camera::TARGET), top);
+        assert_vector(vector_at(view(168), camera::UP), right);
+        let home = view(170);
+        assert_vector(vector_at(home, camera::UP), up);
+        let (eye, target) = (
+            vector_at(home, camera::EYE),
+            vector_at(home, camera::TARGET),
+        );
+        assert_vector(target, [0.5; 3]);
+        let extents = [
+            f64_at(home, camera::EXTENT_0),
+            f64_at(home, camera::EXTENT_1),
+        ];
+        let distance = 2.5 * extents[0].max(extents[1]);
+        let offset = [0, 1, 2].map(|axis| eye[axis] - target[axis]);
+        assert_vector(offset, home_normal.map(|value| value * distance / sqrt3));
+        // The settings view blocks repeat the HOME camera.
+        assert_vector(vector_at(settings_record, 126), up);
+        assert_vector(vector_at(settings_record, 222), up);
+    }
+}
+
 #[test]
 fn the_body_maps_name_the_history_stream() {
     let (design, archive) = design();

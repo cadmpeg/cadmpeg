@@ -152,6 +152,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -187,6 +188,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -222,6 +224,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 2,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -257,6 +260,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 3,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -292,6 +296,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 4,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -327,6 +332,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 5,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -362,6 +368,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DimensionalRelations"
           },
+          "position": 6,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -397,6 +404,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#OpticalRelation"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -432,6 +440,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#SplineWeightRelation"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {

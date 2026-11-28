@@ -87,6 +87,7 @@ pub(super) struct Scope<'a> {
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
     /// The surfaces of the current geometry.
     pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    pub(super) linear: f64,
     /// The document's angular tolerance.
     pub(super) angular: f64,
 }
@@ -111,6 +112,7 @@ pub(super) fn project(
             supports: &supports,
             outside_profile: scope.outside_profile,
             surfaces: scope.surfaces,
+            linear: scope.linear,
         },
     )?;
     let stated = sketches
@@ -124,6 +126,7 @@ pub(super) fn project(
         entries,
         sketches: &stated,
         entities: &sketches.entities,
+        outside_profile: scope.outside_profile,
     };
     let datums = datum::project(&mut timeline.features, &context, lanes, scope.angular);
     let extrudes = extrude::project(&mut timeline.features, &context);
@@ -300,8 +303,9 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
     if !sketches.ambiguous.is_empty() {
         notes.push(SldprtLossCode::DesignSketchLocusAmbiguous.note(format!(
             "{} points of sketch curves hold two or more point entities that the curve \
-             records name alike; no point entity holds the role there, and a relation on \
-             such a point names a point minted there: {}",
+             record names alike: a center the record names by its position alone, or a \
+             point record that two point entities hold; no point entity holds the role \
+             there, and a relation on such a point names a point minted there: {}",
             sketches.ambiguous.len(),
             listed(sketches.ambiguous.iter().cloned()),
         )));
@@ -310,7 +314,7 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
         notes.push(
             SldprtLossCode::DesignSketchRelationSinglePoint.note(format!(
                 "{} sketch relations name one point entity for both operands of a coincidence; \
-             the point states the coincidence, and the relations are not restated: {}",
+             the point states the coincidence, and the design holds no relation record for them: {}",
                 single_point.len(),
                 listed(single_point.into_iter()),
             )),

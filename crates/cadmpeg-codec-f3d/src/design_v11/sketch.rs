@@ -11,12 +11,14 @@
 //! no such point lies there, when its record names no curve record; a loss
 //! names each point of a curve where two such point entities tie. A relation
 //! on such a point of a curve names that point entity, else a point entity
-//! minted there. A dimension that binds no parameter of its scope states the value
+//! minted there. The stored sketch origin point is the operand
+//! `Frame(Origin)` and no entity (§6.1). A native relation states each
+//! operand its record holds. A dimension that binds no parameter of its scope states the value
 //! that its parameter record stores, and a reference dimension binds a
 //! `Driven` parameter minted for it. An entity with no curve states its
 //! native kind; a loss names each.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
@@ -31,7 +33,7 @@ use cadmpeg_ir::design::ops::sketch::{
     EntityDefinition, EntityForm, Operand, Planar, Sketch, SketchConstraint, SketchEntity,
     SketchPlane, SketchRelation, SketchSolve, Spatial, SpatialSketch,
 };
-use cadmpeg_ir::design::options::NativeOptions;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::projection::sketch::{
     self as relation, native_entity_kind, native_relation, planar_curve, stored_frame,
@@ -39,7 +41,7 @@ use cadmpeg_ir::design::projection::sketch::{
 };
 use cadmpeg_ir::design::projection::spatial_sketch;
 use cadmpeg_ir::design::refs::Member;
-use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
+use cadmpeg_ir::design::selection::{Anchor, Picks, PrincipalEntity, Selection};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{
@@ -48,7 +50,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::{IdentityKeyTail, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{
-    SketchGeometryDefinition as Geometry, SketchId, SketchLocus, SpatialSketchId,
+    SketchEntityId, SketchGeometryDefinition as Geometry, SketchId, SketchLocus,
+    SketchNativeOperand, SpatialSketchId,
 };
 
 use super::timeline;
@@ -307,26 +310,32 @@ pub(super) struct Scope<'a> {
 }
 
 /// The curve records that each point record names as curves it stands on,
-/// read from the reverse incidence each point record stores.
+/// read from the reverse incidence each point record stores, and the point
+/// records that store a sketch origin.
 #[derive(Default)]
 pub(super) struct Incidence {
     curves: HashMap<String, Vec<String>>,
+    origins: HashSet<String>,
+    flags: HashMap<String, NonBlankString>,
 }
 
 impl Incidence {
-    /// The incidence of the point records `points` (identity and the record
-    /// indexes of its incident curves) over the curve records `curves`
-    /// (identity and record index).
+    /// The incidence of the point records `points` (identity, the record
+    /// indexes of its incident curves, and whether it stores the sketch
+    /// origin) over the curve records `curves` (identity and record index).
     pub(super) fn new<'r>(
         curves: impl IntoIterator<Item = (&'r str, u32)>,
-        points: impl IntoIterator<Item = (&'r str, &'r [u32])>,
+        points: impl IntoIterator<Item = (&'r str, &'r [u32], bool)>,
     ) -> Self {
         let curve_ids = curves
             .into_iter()
             .filter_map(|(id, index)| Some(((crate::ids::native_stream(id)?, index), id)))
             .collect::<HashMap<_, _>>();
         let mut out = Self::default();
-        for (point, incident) in points {
+        for (point, incident, origin) in points {
+            if origin {
+                out.origins.insert(point.to_owned());
+            }
             let Some(stream) = crate::ids::native_stream(point) else {
                 continue;
             };
@@ -342,6 +351,45 @@ impl Incidence {
         out
     }
 
+    pub(super) fn from_records(
+        curves: &[crate::records::sketch_geometry::SketchCurveIdentity],
+        points: &[crate::records::sketch_geometry::SketchPoint],
+    ) -> Self {
+        let mut incidence = Self::new(
+            curves
+                .iter()
+                .map(|curve| (curve.id.as_str(), curve.record_index)),
+            points.iter().map(|point| {
+                (
+                    point.id.as_str(),
+                    point.companion().incident_curves,
+                    point.flags()[5] != 0,
+                )
+            }),
+        );
+        incidence.flags = points
+            .iter()
+            .filter_map(|point| {
+                let flags = point.flags();
+                let stored = &flags[..point.stored_flags().len()];
+                let flags = cadmpeg_ir::native::bytes::NativeBytes::from(stored).to_string();
+                Some((point.id.clone(), NonBlankString::new(flags)?))
+            })
+            .collect();
+        incidence
+    }
+
+    fn point_options(&self, native_ref: Option<&str>) -> NativeOptions {
+        let mut options = NativeOptions::new();
+        if let Some(flags) = native_ref.and_then(|id| self.flags.get(id)) {
+            options.insert(
+                cadmpeg_ir::codec_name!("f3d:point_flags"),
+                NativeOption::Text(Dimension::Literal(flags.clone())),
+            );
+        }
+        options
+    }
+
     /// The standing of `point` as a point of `curve`: first where the
     /// point's record names the curve's record, second where it names no
     /// curve record, and none where it names other curve records only.
@@ -350,8 +398,11 @@ impl Incidence {
         curve: &cadmpeg_ir::sketches::SketchEntity,
         point: &cadmpeg_ir::sketches::SketchEntity,
     ) -> Option<u8> {
-        let point = point.native_ref.as_deref()?;
-        match self.curves.get(point) {
+        match point
+            .native_ref
+            .as_deref()
+            .and_then(|point| self.curves.get(point))
+        {
             None => Some(1),
             Some(curves) => curve
                 .native_ref
@@ -359,6 +410,15 @@ impl Incidence {
                 .is_some_and(|curve| curves.contains(curve))
                 .then_some(0),
         }
+    }
+
+    /// Whether `point` is the stored sketch origin point (§6.1).
+    fn origin(&self, point: &cadmpeg_ir::sketches::SketchEntity) -> bool {
+        matches!(point.geometry.definition(), Geometry::Point { .. })
+            && point
+                .native_ref
+                .as_ref()
+                .is_some_and(|point| self.origins.contains(point))
     }
 }
 
@@ -401,12 +461,17 @@ pub(super) fn project(
             } => (None, source().and_then(spatial_sketch).cloned()),
             _ => (None, None),
         };
+        let anchor = if scope.unordered.contains(&feature.id) {
+            Anchor::Current
+        } else {
+            Anchor::Input
+        };
         if let Some(record) = space
             .filter(|id| !spatial.contains(id))
             .and_then(|id| model.spatial_sketches.iter().find(|record| record.id == id))
         {
             spatial.insert(record.id.clone());
-            restate_spatial(&feature.id, record, scope, out, losses);
+            restate_spatial(&feature.id, record, scope, &anchor, out, losses);
             feature.definition.operation = FeatureOperation::SpatialSketch(record.id.clone());
             continue;
         }
@@ -417,23 +482,20 @@ pub(super) fn project(
             continue;
         };
         restated.insert(record.id.clone());
-        let anchor = if scope.unordered.contains(&feature.id) {
-            Anchor::Current
-        } else {
-            Anchor::Input
-        };
         restate(&feature.id, record, scope, anchor, out, losses)?;
         feature.definition.operation = FeatureOperation::Sketch(record.id.clone());
     }
     Ok(())
 }
 
-/// Restate the spatial sketch `record` as the sketch of `owner`. A dimension
-/// binds the design parameter of the scope that has its id and quantity.
+/// Restate the spatial sketch `record` as the sketch of `owner`, a selection
+/// of its records anchored at `anchor`. A dimension binds the design
+/// parameter of the scope that has its id and quantity.
 fn restate_spatial(
     owner: &FeatureId,
     record: &cadmpeg_ir::sketches::SpatialSketch,
     scope: &Scope<'_>,
+    anchor: &Anchor,
     out: &mut Sketches,
     losses: &mut Vec<LossNote>,
 ) {
@@ -442,6 +504,7 @@ fn restate_spatial(
         owner,
         record,
         scope.model,
+        anchor,
         |parameter, quantity| {
             scope.parameters.iter().any(|candidate| {
                 &candidate.id == parameter && candidate.kind == ValueKind::Quantity(quantity)
@@ -464,12 +527,18 @@ fn restate_spatial(
         )));
     }
     out.spatial.push(restated.sketch);
-    out.spatial_entities.extend(restated.entities);
+    out.spatial_entities
+        .extend(restated.entities.into_iter().map(|mut entity| {
+            entity
+                .native_options
+                .extend(scope.incidence.point_options(entity.native_ref.as_deref()));
+            entity
+        }));
     out.spatial_constraints.extend(restated.constraints);
 }
 
 /// Restate `record` as the sketch of the feature `owner`, its plane an
-/// unread input anchored at `anchor`.
+/// unread input and a selection of its records anchored at `anchor`.
 fn restate(
     owner: &FeatureId,
     record: &cadmpeg_ir::sketches::Sketch,
@@ -484,9 +553,19 @@ fn restate(
         .iter()
         .filter(|entity| entity.sketch == record.id)
         .collect::<Vec<_>>();
+    let origins = entities
+        .iter()
+        .filter(|entity| scope.incidence.origin(entity))
+        .map(|entity| entity.id().clone())
+        .collect::<HashSet<_>>();
+    let placed = entities
+        .iter()
+        .copied()
+        .filter(|entity| !origins.contains(entity.id()))
+        .collect::<Vec<_>>();
     let stored = StoredPoints::new(
         scope.ctx,
-        &entities,
+        &placed,
         |curve, _, point| scope.incidence.standing(curve, point),
         |a, b| (a[0] - b[0]).hypot(a[1] - b[1]) <= scope.linear,
     )?;
@@ -500,7 +579,7 @@ fn restate(
                 .join(", ")
         )));
     }
-    for entity in &entities {
+    for entity in &placed {
         let definition = match planar_curve(&entity.geometry) {
             Some(form) => EntityDefinition::Free(form),
             None => {
@@ -525,7 +604,7 @@ fn restate(
             construction: entity.construction.then_some(true),
             centerline: None,
             native: None,
-            native_options: NativeOptions::new(),
+            native_options: scope.incidence.point_options(entity.native_ref.as_deref()),
             source_settings: NativeOptions::new(),
             native_ref: entity.native_ref.clone(),
         });
@@ -547,10 +626,11 @@ fn restate(
     let points = Points {
         entities: &entities,
         loci: &loci,
+        origins: &origins,
     };
     for constraint in constraints {
         let kind = constraint.definition.kind();
-        let (relation, unbound) = relation_of(constraint, owner, scope, &points, out);
+        let (relation, unbound) = relation_of(constraint, owner, scope, &points, &anchor, out);
         if let SketchRelation::Coincident {
             a: Operand::Entity(a),
             b: Operand::Entity(b),
@@ -558,7 +638,7 @@ fn restate(
         {
             if a == b {
                 losses.push(F3dLossCode::DesignSketchRelationSinglePoint.note(format!(
-                    "sketch relation {} names the point entity {a} for both operands; the point states the coincidence, and the relation is not restated",
+                    "sketch relation {} names the point entity {a} for both operands; the point states the coincidence, and the design holds no relation record for it",
                     constraint.id
                 )));
                 continue;
@@ -631,12 +711,14 @@ fn restate(
 /// design parameter, else of the value its parameter record stores. A
 /// reference dimension whose parameter is no design parameter of the scope
 /// binds a `Driven` parameter minted for it, with the value its parameter
-/// record stores; one that cannot states no value.
+/// record stores; one that cannot states no value. A native relation states
+/// an operand that names no entity in a selection anchored at `at`.
 fn relation_of(
     constraint: &cadmpeg_ir::sketches::SketchConstraint,
     owner: &FeatureId,
     scope: &Scope<'_>,
     points: &Points<'_>,
+    at: &Anchor,
     out: &mut Sketches,
 ) -> (SketchRelation<Planar>, bool) {
     let model = scope.model;
@@ -646,7 +728,7 @@ fn relation_of(
         return (relation, false);
     }
     if !relation::is_dimension(kind) {
-        return (native_relation(&codec, kind, Vec::new(), points), false);
+        return (native_relation(&codec, kind, Vec::new(), points, at), false);
     }
     let Some((parameter, quantity)) = relation::dimension_parameter(kind, |_, parameter| {
         scope
@@ -659,7 +741,7 @@ fn relation_of(
             })
             .or_else(|| stored_quantity(&model.parameters, parameter))
     }) else {
-        return (native_relation(&codec, kind, Vec::new(), points), true);
+        return (native_relation(&codec, kind, Vec::new(), points, at), true);
     };
     let reference = constraint.driving == Some(false);
     let bound = scope.parameters.iter().any(|candidate| {
@@ -685,6 +767,7 @@ fn relation_of(
                     .filter_map(|value| value.scalar(quantity))
                     .collect(),
                 points,
+                at,
             )
         });
     (relation, !bound)
@@ -735,20 +818,44 @@ fn mint(
     true
 }
 
-/// The entities of one sketch and the points its relations name at a
-/// curve's start, end, or center.
+/// The entities of one sketch, the points its relations name at a curve's
+/// start, end, or center, and its stored origin points.
 struct Points<'a> {
     entities: &'a [&'a cadmpeg_ir::sketches::SketchEntity],
     loci: &'a LocusPoints,
+    origins: &'a HashSet<SketchEntityId>,
 }
 
 impl Loci for Points<'_> {
     fn operand(&self, locus: &SketchLocus) -> Option<Operand<Planar>> {
         match locus {
-            SketchLocus::Entity(id) => Some(Operand::Entity(id.clone())),
+            SketchLocus::Entity(id) => Some(self.entity(id)),
             SketchLocus::Start(_) | SketchLocus::End(_) | SketchLocus::Center(_) => {
-                self.loci.operand(locus)
+                match self.loci.operand(locus)? {
+                    Operand::Entity(id) => Some(self.entity(&id)),
+                    operand => Some(operand),
+                }
             }
+        }
+    }
+
+    fn record(&self, operand: &SketchNativeOperand) -> Option<Operand<Planar>> {
+        let native = operand.native_ref.as_deref()?;
+        let mut named = self
+            .entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(native));
+        match (named.next(), named.next()) {
+            (Some(entity), None) => Some(self.entity(entity.id())),
+            _ => None,
+        }
+    }
+
+    fn entity(&self, id: &SketchEntityId) -> Operand<Planar> {
+        if self.origins.contains(id) {
+            Operand::Frame(PrincipalEntity::Origin)
+        } else {
+            Operand::Entity(id.clone())
         }
     }
 

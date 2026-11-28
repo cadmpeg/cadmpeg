@@ -50,6 +50,19 @@ impl std::fmt::Display for PlacementIssue {
 }
 
 fn placement_matrix_value(property: &PropertyRecord) -> Result<FiniteFrame, PlacementIssue> {
+    let values = FiniteVector::from(placement_value_components(property)?);
+    placement_components_admitted(values).ok_or(PlacementIssue::Rotation)
+}
+
+/// The components `px, py, pz, qx, qy, qz, qw` a placement property stores,
+/// with an axis and angle as its quaternion.
+pub(crate) fn placement_values(property: &PropertyRecord) -> Option<[FiniteReal; 7]> {
+    placement_value_components(property).ok()
+}
+
+fn placement_value_components(
+    property: &PropertyRecord,
+) -> Result<[FiniteReal; 7], PlacementIssue> {
     if property.type_name != "App::PropertyPlacement" {
         return Err(PlacementIssue::RuntimeType);
     }
@@ -95,8 +108,7 @@ fn placement_matrix_value(property: &PropertyRecord) -> Result<FiniteFrame, Plac
     };
     let [px, py, pz] = position;
     let [q0, q1, q2, q3] = quaternion;
-    let values = FiniteVector::from([px, py, pz, q0, q1, q2, q3]);
-    placement_components_admitted(values).ok_or(PlacementIssue::Rotation)
+    Ok([px, py, pz, q0, q1, q2, q3])
 }
 
 pub(crate) fn placement_matrix_unreported(property: &PropertyRecord) -> Option<FiniteFrame> {

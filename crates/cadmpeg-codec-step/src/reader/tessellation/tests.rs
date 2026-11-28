@@ -1008,7 +1008,7 @@ fn non_finite_tessellation_coordinates_omit_dependents_and_retain_source() {
     let result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert!(result.ir().model.tessellations.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
             && loss.message.contains("finite binary64 range")
     }));
     let retained = result

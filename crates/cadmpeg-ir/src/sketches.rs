@@ -440,6 +440,10 @@ pub struct SketchEntity {
     pub sketch: SketchId,
     /// Whether the entity is construction geometry.
     pub construction: bool,
+    /// Whether the decoder read [`Self::construction`] from a stored record.
+    /// The model holds it in memory only.
+    #[serde(skip)]
+    construction_read: bool,
     /// Source-native geometry record represented by this entity.
     #[serde(
         default,
@@ -456,6 +460,13 @@ pub struct SketchEntity {
     pub geometry_ref: Option<String>,
     /// Source-native endpoint records in stored entity direction.
     pub endpoint_refs: Vec<String>,
+    /// Source-native centre point record of an arc or a circle.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_center_ref"
+    )]
+    pub center_ref: Option<String>,
     /// Solved two-dimensional geometry.
     pub geometry: SketchGeometry,
 }
@@ -467,9 +478,11 @@ impl SketchEntity {
             id,
             sketch,
             construction: false,
+            construction_read: false,
             native_ref: None,
             geometry_ref: None,
             endpoint_refs: Vec::new(),
+            center_ref: None,
             geometry,
         }
     }
@@ -484,6 +497,25 @@ impl SketchEntity {
     pub fn with_construction(mut self, construction: bool) -> Self {
         self.construction = construction;
         self
+    }
+
+    /// Set the construction flag a stored record of the source states.
+    #[must_use]
+    pub fn with_read_construction(mut self, construction: bool) -> Self {
+        self.read_construction(construction);
+        self
+    }
+
+    /// Set the construction flag a stored record of the source states.
+    pub fn read_construction(&mut self, construction: bool) {
+        self.construction = construction;
+        self.construction_read = true;
+    }
+
+    /// Whether the decoder read the construction flag from a stored record.
+    #[must_use]
+    pub fn construction_read(&self) -> bool {
+        self.construction_read
     }
 
     /// Set the source-native geometry record.
@@ -504,6 +536,13 @@ impl SketchEntity {
     #[must_use]
     pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
         self.endpoint_refs = endpoint_refs;
+        self
+    }
+
+    /// Set the source-native centre point record.
+    #[must_use]
+    pub fn with_center_ref(mut self, center_ref: Option<String>) -> Self {
+        self.center_ref = center_ref;
         self
     }
 }
@@ -3950,6 +3989,7 @@ cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configur
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_geometry_ref, String, "geometry_ref");
+cadmpeg_core::named_optional_field!(deserialize_center_ref, String, "center_ref");
 cadmpeg_core::named_optional_field!(deserialize_bounds, [Angle; 2], "bounds");
 cadmpeg_core::named_optional_field!(
     deserialize_sketch_geometry_definition_bounds<R>,

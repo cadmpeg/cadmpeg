@@ -1368,10 +1368,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "spreadsheet"
-              }
+              "kind": "spreadsheet",
+              "value": "fcstd:design:spreadsheet#Dimensions"
             }
           },
           "id": "fcstd:design:feature#Dimensions",
@@ -1410,17 +1408,11 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
-                  {
-                    "kind": "text",
-                    "value": "'width"
-                  }
-                ]
+                "measures": [],
+                "refs": [],
+                "text": "\"width\""
               }
             }
           },
@@ -1428,7 +1420,6 @@
           "kind": {
             "kind": "text"
           },
-          "name": "A1",
           "native_options": {},
           "native_ref": "fcstd:native:property#Dimensions:cells",
           "owner": {
@@ -1446,17 +1437,11 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
-                  {
-                    "kind": "text",
-                    "value": "=30 mm"
-                  }
-                ]
+                "measures": [],
+                "refs": [],
+                "text": "30[mm]"
               }
             }
           },
@@ -1513,6 +1498,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 8,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1549,6 +1535,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1592,6 +1579,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1628,6 +1616,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -2555,7 +2544,25 @@
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": []
+      "spreadsheets": [
+        {
+          "cells": [
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Dimensions:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Dimensions:cell:B1"
+            }
+          ],
+          "column_widths": [],
+          "id": "fcstd:design:spreadsheet#Dimensions",
+          "merged_ranges": [],
+          "native_ref": "fcstd:native:object#Dimensions",
+          "row_heights": []
+        }
+      ]
     },
     "fragment": false,
     "geometry": {

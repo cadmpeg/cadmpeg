@@ -84,6 +84,7 @@ fn a_spatial_sketch_states_its_curves_and_relations_and_names_the_rest() {
         &owner,
         &model.spatial_sketches[0],
         &model,
+        &crate::design::selection::Anchor::Input,
         |parameter, quantity| {
             parameter.as_str() == "test:model:parameter#length" && quantity == Quantity::LENGTH
         },
@@ -181,6 +182,7 @@ fn a_native_spatial_relation_keeps_its_operands_and_state() {
         &FeatureId::mint("test:model:feature#path").unwrap(),
         &model.spatial_sketches[0],
         &model,
+        &crate::design::selection::Anchor::Current,
         |_, _| false,
     );
     let bend = out
@@ -192,20 +194,45 @@ fn a_native_spatial_relation_keeps_its_operands_and_state() {
         panic!("a native relation: {:?}", bend.relation);
     };
     assert_eq!(kind.as_str(), "test:Bend");
-    assert!(
-        matches!(&operands[..], [Operand::Entity(l), Operand::Model(unread)]
-        if l.as_str() == "test:model:spatial-sketch-entity#l"
-            && matches!(unread.picks, crate::design::selection::Picks::Unread))
+    let [Operand::Entity(l), Operand::Model(elsewhere)] = &operands[..] else {
+        panic!("an entity and a model operand: {operands:?}");
+    };
+    assert_eq!(l.as_str(), "test:model:spatial-sketch-entity#l");
+    assert_eq!(elsewhere.at, crate::design::selection::Anchor::Current);
+    let crate::design::selection::Picks::Named(picks) = &elsewhere.picks else {
+        panic!("a named pick: {elsewhere:?}");
+    };
+    let [pick] = picks.as_slice() else {
+        panic!("one pick: {picks:?}");
+    };
+    assert_eq!(
+        pick.target,
+        crate::design::selection::PickTarget::Native { within: None }
     );
+    assert_eq!(
+        pick.native.as_ref().map(|name| &name.value),
+        Some(&crate::design::names::NativeNameValue::Text(
+            cadmpeg_core::text::NonBlankString::new("record:elsewhere").unwrap()
+        ))
+    );
+    let text = |value: &str| {
+        crate::design::options::NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new(value).unwrap(),
+        ))
+    };
     assert_eq!(
         bend.native_options
             .iter()
             .map(|(name, value)| (name.as_str(), value.clone()))
             .collect::<Vec<_>>(),
-        [(
-            "test:native_state",
-            crate::design::options::NativeOption::Integer(Dimension::Literal(3))
-        )]
+        [
+            (
+                "test:native_state",
+                crate::design::options::NativeOption::Integer(Dimension::Literal(3))
+            ),
+            ("test:operand.0.kind", text("test:curve")),
+            ("test:operand.1.kind", text("test:curve")),
+        ]
     );
     assert!(out
         .native_relations

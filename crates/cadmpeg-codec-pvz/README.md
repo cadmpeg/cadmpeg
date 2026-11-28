@@ -18,8 +18,8 @@ form, into product definitions and the expanded occurrence tree, and reads each
 `.ol` member a definition names into one body. The body holds the neutral
 B-rep of the member's exact-geometry stream, and the member's tessellations and
 appearances. Lengths are converted from metres to millimetres. A member whose
-exact stream does not decode keeps its tessellation and reports the loss
-`pvz/geometry.exact-undecoded`. Every other record the model does not carry is
+exact stream does not decode keeps its tessellation, and the decoder gives the
+stream up with a `record.unreadable` or `record.undecoded` loss. Every other record the model does not carry is
 named by a `pvz/*` loss.
 
 ## Install

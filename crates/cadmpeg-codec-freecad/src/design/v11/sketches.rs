@@ -30,7 +30,7 @@ use cadmpeg_ir::design::ops::sketch::{
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::projection::sketch::{
-    native_entity_kind, planar_curve, stored_frame, LocusPoints, StoredPoints,
+    native_entity_kind, native_operands, planar_curve, stored_frame, LocusPoints, StoredPoints,
 };
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::selection::{
@@ -380,7 +380,7 @@ fn sketch(
                 .constraints
                 .get(&constraint.id)
                 .unwrap_or(&UNSTORED);
-            let stated = relation(&view, stored);
+            let stated = relation(&view, stored, &unlinked);
             if stated.native {
                 let cause =
                     if stored.code.and_then(quantity).is_some() && stored.parameter.is_none() {
@@ -390,12 +390,6 @@ fn sketch(
                     };
                 losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
                     "sketch constraint {} {cause}; it states its native kind",
-                    constraint.id
-                )));
-            }
-            for (geo, position) in &stated.unresolved {
-                losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
-                    "sketch constraint {} names GeoId {geo} at PointPos {position}, which is no geometry of its sketch; its relation leaves that operand out",
                     constraint.id
                 )));
             }
@@ -470,7 +464,7 @@ fn sketch(
     }
     let object = record.native_ref.as_deref();
     let mut source_settings = NativeOptions::new();
-    let placed = plane(
+    let mut placed = plane(
         scope,
         targets,
         &feature.id,
@@ -478,6 +472,18 @@ fn sketch(
         &mut source_settings,
         losses,
     );
+    if placed.inputs.is_empty() && placed.after.is_empty() && placed.resolved.is_none() {
+        placed.inputs.push(ConstructionInput {
+            role: None,
+            reference: Some(InputReference::Picks(Selection {
+                at: unlinked,
+                picks: Picks::Unread,
+                native: None,
+            })),
+            value: None,
+            reversed: None,
+        });
+    }
     out.sketches.push(Sketch {
         id: record.id.clone(),
         owner: feature.id.clone(),
@@ -621,7 +627,6 @@ fn alignment_relation(
         bound: false,
         unplaced: false,
         angle_at_point: None,
-        unresolved: Vec::new(),
     }
 }
 
@@ -745,9 +750,6 @@ struct Stated {
     unplaced: bool,
     /// The angle a pointwise tangency stores.
     angle_at_point: Option<Angle>,
-    /// The `(GeoId, PointPos)` of each operand that names no geometry of
-    /// the sketch, which the relation leaves out.
-    unresolved: Vec<(i64, i64)>,
 }
 
 /// The quantity of the value of a constraint of type `code`.
@@ -761,15 +763,7 @@ fn quantity(code: i64) -> Option<Quantity> {
 }
 
 /// The relation that states the stored constraint `stored` (§6.1).
-fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
-    let unresolved = stored
-        .operands
-        .iter()
-        .filter_map(|operand| match operand.target {
-            OperandTarget::Unresolved(geo) => Some((geo, operand.position)),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+fn relation(view: &View<'_>, stored: &StoredConstraint, at: &Anchor) -> Stated {
     let value = stored
         .code
         .and_then(quantity)
@@ -796,7 +790,6 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
             bound: value.is_some(),
             unplaced: false,
             angle_at_point,
-            unresolved,
         };
     }
     let kind = stored
@@ -810,21 +803,43 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
         }
         None => {}
     }
+    let operands = stored
+        .operands
+        .iter()
+        .map(|operand| cadmpeg_ir::SketchNativeOperand {
+            native_kind: cadmpeg_core::nonblank_literal!("geometry"),
+            field: None,
+            object_index: None,
+            native_ref: match operand.target {
+                OperandTarget::Unresolved(geo) => {
+                    Some(format!("GeoId {geo}, PointPos {}", operand.position))
+                }
+                _ => None,
+            },
+        })
+        .collect::<Vec<_>>();
+    let projected = native_operands(
+        &cadmpeg_core::nonblank_literal!("fcstd"),
+        &operands,
+        at,
+        |operand| {
+            let index = operands
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, operand))?;
+            let stored = &stored.operands[index];
+            view.operand(stored).or_else(|| curve_of(stored))
+        },
+    );
     Stated {
         relation: SketchRelation::Native {
             kind: cadmpeg_core::nonblank_literal!("fcstd:{}", kind),
-            operands: stored
-                .operands
-                .iter()
-                .filter_map(|operand| view.operand(operand).or_else(|| curve_of(operand)))
-                .collect(),
+            operands: projected,
             values,
         },
         native: !matches!(stored.code, Some(0 | 16 | 20 | 21)),
         bound: value.is_some(),
         unplaced: stored.operands.iter().any(|operand| view.unplaced(operand)),
         angle_at_point: None,
-        unresolved,
     }
 }
 
@@ -1206,8 +1221,8 @@ fn native_source(
         let name = scope
             .objects
             .iter()
-            .find(|record| record.id() == object)?
-            .name();
+            .find(|record| record.id() == object)
+            .map_or(object, |record| record.name());
         let subelements = subelements
             .iter()
             .filter(|sub| !sub.is_empty())

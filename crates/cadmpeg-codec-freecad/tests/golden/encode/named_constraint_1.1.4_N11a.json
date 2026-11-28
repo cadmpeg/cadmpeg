@@ -93,7 +93,7 @@
         "design.spatial_sketch_constraints": 0,
         "design.spatial_sketch_entities": 0,
         "design.spatial_sketches": 0,
-        "design.spreadsheets": 0,
+        "design.spreadsheets": 1,
         "drawings": 0,
         "edges": 12,
         "faces": 6,

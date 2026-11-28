@@ -2,17 +2,21 @@
 //! The sketches a timeline feature owns besides a placed planar sketch: a
 //! block definition, a spatial sketch, a sketch read from the records of one
 //! configuration's lane, a reference dimension whose parameter the tree
-//! does not list, and a relation on a curve locus the sketch does not store
-//! (§5.2, §6.1).
+//! does not list, a relation on a curve locus the sketch does not store, a
+//! curve point two point entities hold alike, the center record a circle
+//! names, the operands of a native relation, and a coincidence of one point
+//! entity with itself (§5.2, §6.1).
 
 use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_ir::design::container::{Container, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
-use cadmpeg_ir::design::ops::sketch::{SketchPlane, SketchRelation};
+use cadmpeg_ir::design::names::NativeNameValue;
+use cadmpeg_ir::design::ops::sketch::{Operand, Planar, SketchPlane, SketchRelation};
 use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::selection::{Anchor, PickTarget, Picks};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -337,6 +341,188 @@ fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
             |note| note.code == SldprtLossCode::DesignSketchLocusUnplaced.kind()
                 && note.message.contains(ON)
         ),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn two_points_at_the_center_of_a_circle_leave_the_center_to_a_minted_point_with_a_loss() {
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    for key in ["center0", "center1"] {
+        entities.as_array_mut().unwrap().push(
+            cadmpeg_core::json!({"id": format!("sldprt:model:sketch-entity#test:{key}"),
+                "sketch": SKETCH, "construction": false,
+                "native_ref": format!("native:{key}"), "endpoint_refs": [],
+                "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+        );
+    }
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    let roleless = |key: &str| {
+        ir.design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id.as_str().ends_with(key))
+            .unwrap()
+            .roles
+            .is_empty()
+    };
+    assert!(roleless(":center0") && roleless(":center1"));
+    assert!(
+        losses.iter().any(
+            |note| note.code == SldprtLossCode::DesignSketchLocusAmbiguous.kind()
+                && note.message.contains("test:hole")
+                && note.message.contains("test:center0")
+                && note.message.contains("test:center1")
+        ),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_circle_that_names_its_center_record_gives_the_center_to_that_point() {
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    let list = entities.as_array_mut().unwrap();
+    for key in ["center0", "center1"] {
+        list.push(
+            cadmpeg_core::json!({"id": format!("sldprt:model:sketch-entity#test:{key}"),
+                "sketch": SKETCH, "construction": false,
+                "native_ref": format!("native:{key}"), "endpoint_refs": [],
+                "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+        );
+    }
+    let hole = list
+        .iter_mut()
+        .find(|entity| entity["id"] == "sldprt:model:sketch-entity#test:hole")
+        .unwrap();
+    hole["center_ref"] = cadmpeg_core::json!("native:center1");
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    let roles = |key: &str| {
+        ir.design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id.as_str().ends_with(key))
+            .unwrap()
+            .roles
+            .clone()
+    };
+    assert!(roles(":center0").is_empty());
+    assert_eq!(
+        roles(":center1"),
+        vec![cadmpeg_ir::design::ops::sketch::EntityRole {
+            of: cadmpeg_ir::sketches::SketchEntityId::mint("sldprt:model:sketch-entity#test:hole")
+                .unwrap(),
+            role: cadmpeg_ir::design::ops::sketch::DefiningRole::Center,
+        }]
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|note| note.code != SldprtLossCode::DesignSketchLocusAmbiguous.kind()),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_native_relation_states_each_operand_of_its_record() {
+    const NATIVE: &str = "sldprt:model:sketch-constraint#test:native";
+    let (mut ir, native) = sketch_and_extrude();
+    let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
+    constraints
+        .as_array_mut()
+        .unwrap()
+        .push(cadmpeg_core::json!({"id": NATIVE, "sketch": SKETCH,
+            "definition": {"kind": "native", "native_kind": "sldprt:sketch-relation:9",
+                "native_properties": {}, "entities": ["sldprt:model:sketch-entity#test:a"],
+                "operands": [
+                    {"native_kind": "sldprt:relation-operand:point", "object_index": 0,
+                        "native_ref": "native:a"},
+                    {"native_kind": "sldprt:relation-operand:point:unresolved",
+                        "object_index": 7, "native_ref": "native:gone"},
+                    {"native_kind": "sldprt:relation-operand:unknown:unresolved",
+                        "object_index": 2}]}}));
+    ir.model.sketch_constraints = json::from_value(constraints).unwrap();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    let relation = &ir
+        .design
+        .sketch_constraints
+        .iter()
+        .find(|constraint| constraint.id.as_str() == NATIVE)
+        .unwrap_or_else(|| panic!("{losses:#?}"))
+        .relation;
+    let SketchRelation::Native { operands, .. } = relation else {
+        panic!("a native relation: {relation:#?}");
+    };
+    let picked = |operand: &Operand<Planar>| {
+        let Operand::Model(selection) = operand else {
+            return None;
+        };
+        assert_eq!(selection.at, Anchor::Input);
+        let Picks::Named(picks) = &selection.picks else {
+            return None;
+        };
+        let [pick] = picks.as_slice() else {
+            return None;
+        };
+        assert_eq!(pick.target, PickTarget::Native { within: None });
+        pick.native.as_ref().map(|name| name.value.clone())
+    };
+    let [a, gone, unknown] = operands.as_slice() else {
+        panic!("three operands: {operands:#?}");
+    };
+    assert_eq!(
+        a,
+        &Operand::Entity(
+            cadmpeg_ir::sketches::SketchEntityId::mint("sldprt:model:sketch-entity#test:a")
+                .unwrap()
+        )
+    );
+    assert_eq!(
+        picked(gone),
+        Some(NativeNameValue::Text(
+            cadmpeg_core::text::NonBlankString::new("native:gone").unwrap()
+        ))
+    );
+    assert_eq!(picked(unknown), Some(NativeNameValue::Integers(vec![2])));
+}
+
+#[test]
+fn a_coincidence_of_two_ends_one_point_holds_is_charged_and_not_restated() {
+    const SAME: &str = "sldprt:model:sketch-constraint#test:0";
+    let (mut ir, native) = sketch_and_extrude();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    assert!(ir
+        .design
+        .sketch_constraints
+        .iter()
+        .all(|constraint| constraint.id.as_str() != SAME));
+    assert!(
+        losses.iter().any(|note| note.code
+            == SldprtLossCode::DesignSketchRelationSinglePoint.kind()
+            && note.message.contains(SAME)),
         "{losses:#?}"
     );
 }

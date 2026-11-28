@@ -8,7 +8,6 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -335,21 +334,14 @@ impl QuarantinedDirectoryRecord {
         self.bytes.len() / crate::card::CARD_WIDTH
     }
 
-    pub(crate) fn loss_note(&self) -> LossNote {
-        let message = format!("IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
-        self.sequence,
-        self.defect,
-        self.cards());
-        let tag = format!("directory_entry:D{}", self.sequence);
-        let code = IgesLossCode::DirectoryRecordQuarantined;
-
-        code.note(message).with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                cadmpeg_ir::stream_name!("iges"),
-                self.source_offset,
-            )
-            .with_tag(tag),
+    /// The error text of the record's give-up.
+    pub(crate) fn defect_message(&self) -> String {
+        format!(
+            "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are \
+             retained and no typed field was interpreted",
+            self.sequence,
+            self.defect,
+            self.cards()
         )
     }
 }

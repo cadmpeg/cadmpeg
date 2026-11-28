@@ -9,17 +9,20 @@ use super::{
 };
 use crate::design::construction::ScalarDimension;
 use crate::design::dimension::Dimension;
+use crate::design::names::{NativeName, NativeNameValue};
 use crate::design::ops::sketch::{
     DefiningRole, DistanceAxis, EntityDefinition, EntityRole, Operand, Planar, PlanarCurve,
     SketchRelation,
 };
+use crate::design::options::{BlankText, NativeOption};
+use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::Quantity;
 use crate::features::parameters::ParameterValue as StoredValue;
 use crate::features::ParameterId;
 use crate::scalar::{Angle, Length};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Kind, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SketchLocus, SketchPlacement,
+    SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 
 fn geometry(value: serde_json::Value) -> SketchGeometry {
@@ -111,7 +114,8 @@ fn a_stored_frame_takes_its_axes_from_the_normal_and_u_axis() {
     assert_eq!(stored_frame(placement(json!({"kind": "unresolved"}))), None);
 }
 
-/// Two points: `a` at u = 20 and `b` at u = 5.
+/// Two points: `a` at u = 20 and `b` at u = 5, of the records `record:a`
+/// and `record:b`.
 struct Points;
 
 impl Loci for Points {
@@ -132,6 +136,13 @@ impl Loci for Points {
             }
             _ => None,
         }
+    }
+
+    fn record(&self, operand: &SketchNativeOperand) -> Option<Operand<Planar>> {
+        let key = operand.native_ref.as_deref()?.strip_prefix("record:")?;
+        SketchEntityId::mint(format!("test:model:sketch-entity#{key}"))
+            .ok()
+            .map(Operand::Entity)
     }
 }
 
@@ -183,6 +194,7 @@ fn a_native_relation_and_entity_are_named_in_the_codec_namespace() {
         &distance,
         Vec::new(),
         &Points,
+        &Anchor::Input,
     )
     else {
         panic!("a native relation");
@@ -220,6 +232,7 @@ fn a_native_relation_that_names_a_parameter_is_a_dimension_of_its_quantity() {
         &native,
         value.scalar(quantity).into_iter().collect(),
         &Points,
+        &Anchor::Input,
     ) else {
         panic!("a native relation");
     };
@@ -252,6 +265,10 @@ fn a_native_relation_states_its_state_flags_and_properties_as_native_options() {
     assert_eq!(
         options,
         [
+            (
+                "test:blank".to_owned(),
+                NativeOption::Blank(BlankText::new(" ".to_owned()).unwrap()),
+            ),
             ("test:native_flags".to_owned(), text(&u64::MAX.to_string())),
             (
                 "test:native_state".to_owned(),
@@ -265,6 +282,90 @@ fn a_native_relation_states_its_state_flags_and_properties_as_native_options() {
         &kind(json!({"kind": "horizontal", "entity": "test:model:sketch-entity#l"}))
     )
     .is_empty());
+}
+
+#[test]
+fn a_native_relation_keeps_each_operand_it_read_in_order_and_what_it_read_of_each() {
+    let native = kind(json!({"kind": "native", "native_kind": "test:Span",
+        "native_properties": {},
+        "entities": ["test:model:sketch-entity#a", "test:model:sketch-entity#b"],
+        "operands": [
+            {"native_kind": "point", "field": {"name": "member"}, "object_index": 4,
+                "native_ref": "record:a"},
+            {"native_kind": "point", "field": {"name": "member"}, "object_index": 4,
+                "native_ref": "record:a"},
+            {"native_kind": "curve", "field": {"name": "return", "role": 2},
+                "object_index": 9, "native_ref": "other:gone"},
+            {"native_kind": "record", "object_index": 11},
+            {"native_kind": "null_locus", "field": {"name": "locus", "role": 1}}]}));
+    let SketchRelation::Native { operands, .. } = native_relation(
+        &cadmpeg_core::nonblank_literal!("test"),
+        &native,
+        Vec::new(),
+        &Points,
+        &Anchor::Input,
+    ) else {
+        panic!("a native relation");
+    };
+    let entity = |key: &str| {
+        Operand::Entity(SketchEntityId::mint(format!("test:model:sketch-entity#{key}")).unwrap())
+    };
+    let picked = |value: NativeNameValue| {
+        Operand::Model(Box::new(Selection {
+            at: Anchor::Input,
+            picks: Picks::Named(
+                Members::new(vec![Picked {
+                    target: PickTarget::Native { within: None },
+                    context: None,
+                    native: Some(NativeName {
+                        codec: crate::codec_id!("test"),
+                        value,
+                    }),
+                    domain: None,
+                    witness: None,
+                    resolved: None,
+                }])
+                .unwrap(),
+            ),
+            native: None,
+        }))
+    };
+    let text = |value: &str| {
+        NativeNameValue::Text(cadmpeg_core::text::NonBlankString::new(value).unwrap())
+    };
+    assert_eq!(
+        operands,
+        vec![
+            entity("a"),
+            entity("a"),
+            picked(text("other:gone")),
+            picked(NativeNameValue::Integers(vec![11])),
+            picked(text("null_locus")),
+            entity("b"),
+        ]
+    );
+    let options = native_options(&cadmpeg_core::nonblank_literal!("test"), &native);
+    let option = |name: &str| {
+        options
+            .iter()
+            .find(|(key, _)| key.as_str() == name)
+            .map(|(_, value)| value.clone())
+    };
+    let text_option = |value: &str| {
+        Some(NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new(value).unwrap(),
+        )))
+    };
+    let integer = |value: i64| Some(NativeOption::Integer(Dimension::Literal(value)));
+    assert_eq!(option("test:operand.0.kind"), text_option("point"));
+    assert_eq!(option("test:operand.0.field"), text_option("member"));
+    assert_eq!(option("test:operand.0.role"), None);
+    assert_eq!(option("test:operand.0.index"), integer(4));
+    assert_eq!(option("test:operand.2.field"), text_option("return"));
+    assert_eq!(option("test:operand.2.role"), integer(2));
+    assert_eq!(option("test:operand.3.field"), None);
+    assert_eq!(option("test:operand.4.role"), integer(1));
+    assert_eq!(option("test:operand.4.index"), None);
 }
 
 fn kind_without_parameter() -> Kind {

@@ -553,23 +553,49 @@ fn rejects_point_alias_for_geom_point() {
 }
 
 #[test]
-fn rejects_incomplete_present_sketch_placement() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+fn an_unreadable_sketch_placement_leaves_the_frame_unresolved_and_keeps_the_curves() {
+    for placement in [
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1"/><PropertyPlacement Px="2"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyString"><String value="0"/></Property>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
-<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>
-</Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("incomplete placement");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
+<Geometry type="Part::GeomPoint"><GeomPoint X="1.25" Y="-2.5" Z="3.75"/></Geometry>
+</GeometryList></Property>
+{placement}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("a sketch with an unreadable placement");
+        let ir = result.ir();
+        assert_eq!(
+            ir.model.sketches[0].placement,
+            cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            "{placement}"
+        );
+        assert_eq!(ir.model.sketch_entities.len(), 1, "{placement}");
+        let given_up = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .starts_with("record fcstd:native:property#Sketch:Placement given up")
+            })
+            .count();
+        assert_eq!(given_up, 1, "{placement}: {:?}", result.report().losses);
+        assert_valid_document(ir);
+    }
 }
 
 #[test]

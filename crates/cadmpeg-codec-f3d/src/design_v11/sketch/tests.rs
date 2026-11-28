@@ -2,7 +2,7 @@
 //! Tests of the planar and spatial sketches of a Fusion design.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::InputReference;
@@ -11,6 +11,7 @@ use cadmpeg_ir::design::container::{Container, OrderedKind, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::NativeNameValue;
 use cadmpeg_ir::design::ops::sketch::{
     DefiningRole, DistanceAxis, EntityDefinition, EntityForm, EntityRole, Operand, RadialMeasure,
     SketchPlane, SketchRelation,
@@ -319,6 +320,7 @@ fn a_sketch_states_its_entities_and_binds_its_dimensions_to_parameters_of_its_sc
     let mut losses = Vec::new();
     let parameters = super::super::parameters::project(
         &model.parameters,
+        &HashMap::new(),
         &definitions,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -463,6 +465,7 @@ fn in_scope(model: &Model, keys: &[&str]) -> Vec<cadmpeg_ir::design::parameter::
     let definitions = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
     super::super::parameters::project(
         &model.parameters,
+        &HashMap::new(),
         &definitions,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -803,7 +806,8 @@ fn stored_points_model(incident: [&[u32]; 2]) -> (Model, super::Incidence) {
         points
             .iter()
             .map(String::as_str)
-            .zip([incident[0], incident[1], &[]]),
+            .zip([incident[0], incident[1], &[]])
+            .map(|(point, incident)| (point, incident, false)),
     );
     (model, incidence)
 }
@@ -958,6 +962,207 @@ fn two_points_that_name_no_curve_at_a_center_leave_it_to_a_minted_point_with_a_l
     );
 }
 
+/// A native relation's operand of `kind` in `field` at `index` that names
+/// the record `native`.
+fn native_operand(
+    kind: &str,
+    field: &str,
+    index: Option<u32>,
+    native: Option<String>,
+) -> serde_json::Value {
+    let mut operand = cadmpeg_core::json!({"native_kind": kind, "field": {"name": field}});
+    if let Some(index) = index {
+        operand["object_index"] = cadmpeg_core::json!(index);
+    }
+    if let Some(native) = native {
+        operand["native_ref"] = cadmpeg_core::json!(native);
+    }
+    operand
+}
+
+#[test]
+fn the_stored_sketch_origin_is_the_frame_origin_and_no_entity() {
+    let (model, _) = stored_points_model([&[10, 11], &[10, 11]]);
+    let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
+    let list = constraints.as_array_mut().unwrap();
+    list.push(cadmpeg_core::json!({
+        "id": constraint("on_origin"), "sketch": SKETCH,
+        "definition": {"kind": "coincident", "entities": [entity("p1"), entity("stray")]}}));
+    list.push(cadmpeg_core::json!({
+        "id": constraint("from_origin"), "sketch": SKETCH,
+        "definition": {"kind": "horizontal_distance",
+            "first": {"kind": "entity", "value": entity("stray")},
+            "second": {"kind": "entity", "value": entity("p1")},
+            "parameter": parameter_id("width")}}));
+    list.push(cadmpeg_core::json!({
+    "id": constraint("native"), "sketch": SKETCH,
+    "definition": {"kind": "native", "native_kind": "Bind",
+        "native_properties": {}, "entities": [], "operands": [
+        native_operand("point", "member", Some(3), Some(format!("{STREAM}:sketch-point#3"))),
+        native_operand("point", "member", Some(2), Some(format!("{STREAM}:sketch-point#2"))),
+    ]}}));
+    list.push(cadmpeg_core::json!({
+        "id": constraint("horizontal_pair"), "sketch": SKETCH,
+        "definition": {"kind": "same_coordinate", "relation": {
+            "axis": "v",
+            "first": {"kind": "entity", "value": entity("stray")},
+            "second": {"kind": "entity", "value": entity("p1")}}}}));
+    list.push(cadmpeg_core::json!({
+        "id": constraint("vertical_pair"), "sketch": SKETCH,
+        "definition": {"kind": "same_coordinate", "relation": {
+            "axis": "u",
+            "first": {"kind": "entity", "value": entity("p0")},
+            "second": {"kind": "entity", "value": entity("stray")}}}}));
+    let mut model = model;
+    model.sketch_constraints = json::from_value(constraints).unwrap();
+    let curves = [10, 11].map(|index| (format!("{STREAM}:sketch-curve#{index}"), index));
+    let points = [1, 2, 3].map(|index| format!("{STREAM}:sketch-point#{index}"));
+    let incidence = super::Incidence::new(
+        curves.iter().map(|(id, index)| (id.as_str(), *index)),
+        points
+            .iter()
+            .map(String::as_str)
+            .zip([
+                (&[10, 11][..], false),
+                (&[10, 11][..], false),
+                (&[][..], true),
+            ])
+            .map(|(point, (incident, origin))| (point, incident, origin)),
+    );
+    let (out, _) = restated(&model, &incidence);
+    assert!(
+        out.entities
+            .iter()
+            .all(|candidate| candidate.id.as_str() != entity("stray")),
+        "{:#?}",
+        out.entities
+    );
+    let relation = |key: &str| {
+        &out.constraints
+            .iter()
+            .find(|candidate| candidate.id.as_str() == constraint(key))
+            .unwrap()
+            .relation
+    };
+    let origin = Operand::Frame(cadmpeg_ir::design::selection::PrincipalEntity::Origin);
+    let p1 = Operand::Entity(cadmpeg_ir::sketches::SketchEntityId::mint(entity("p1")).unwrap());
+    assert!(
+        matches!(relation("on_origin"), SketchRelation::Coincident { a, b } if *a == p1 && *b == origin),
+        "{:#?}",
+        relation("on_origin")
+    );
+    assert!(
+        matches!(relation("from_origin"), SketchRelation::Distance { a, b, along: Some(DistanceAxis::Horizontal), .. }
+            if *a == origin && *b == p1),
+        "{:#?}",
+        relation("from_origin")
+    );
+    assert!(matches!(
+        relation("horizontal_pair"),
+        SketchRelation::Horizontal { a, b: Some(b) } if *a == origin && *b == p1
+    ));
+    assert!(matches!(
+        relation("vertical_pair"),
+        SketchRelation::Vertical { a: Operand::Entity(a), b: Some(b) }
+            if a.as_str() == entity("p0") && *b == origin
+    ));
+    assert!(
+        matches!(relation("native"), SketchRelation::Native { operands, .. } if *operands == [origin, p1]),
+        "{:#?}",
+        relation("native")
+    );
+}
+
+#[test]
+fn a_native_relation_states_each_operand_its_record_holds() {
+    let mut model = model();
+    let mut entities = json::to_value(&model.sketch_entities).unwrap();
+    entities.as_array_mut().unwrap()[1]["native_ref"] =
+        cadmpeg_core::json!(format!("{STREAM}:sketch-point#2"));
+    model.sketch_entities = json::from_value(entities).unwrap();
+    let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
+    constraints.as_array_mut().unwrap().push(cadmpeg_core::json!({
+        "id": constraint("native"), "sketch": SKETCH,
+        "definition": {"kind": "native", "native_kind": "Bind", "native_properties": {},
+            "entities": [entity("p1"), entity("line")], "operands": [
+            native_operand("point", "member", Some(2), Some(format!("{STREAM}:sketch-point#2"))),
+            native_operand("point", "member", Some(2), Some(format!("{STREAM}:sketch-point#2"))),
+            native_operand("curve", "auxiliary", Some(40), Some(format!("{STREAM}:sketch-curve#40"))),
+            native_operand("record", "return", Some(41), None),
+            native_operand("null_locus", "return", None, None),
+        ]}}));
+    model.sketch_constraints = json::from_value(constraints).unwrap();
+    let (out, _) = restated(&model, &NO_INCIDENCE);
+    let native = out
+        .constraints
+        .iter()
+        .find(|candidate| candidate.id.as_str() == constraint("native"))
+        .unwrap();
+    let SketchRelation::Native { operands, .. } = &native.relation else {
+        panic!("a native relation: {:#?}", native.relation);
+    };
+    let entity_operand = |key: &str| {
+        Operand::Entity(cadmpeg_ir::sketches::SketchEntityId::mint(entity(key)).unwrap())
+    };
+    let picked = |operand: &Operand<cadmpeg_ir::design::ops::sketch::Planar>| {
+        let Operand::Model(selection) = operand else {
+            return None;
+        };
+        assert_eq!(selection.at, Anchor::Input);
+        let cadmpeg_ir::design::selection::Picks::Named(picks) = &selection.picks else {
+            return None;
+        };
+        let [pick] = picks.as_slice() else {
+            return None;
+        };
+        assert_eq!(
+            pick.target,
+            cadmpeg_ir::design::selection::PickTarget::Native { within: None }
+        );
+        pick.native.as_ref().map(|name| name.value.clone())
+    };
+    let text = |value: String| {
+        Some(NativeNameValue::Text(
+            cadmpeg_core::text::NonBlankString::new(value).unwrap(),
+        ))
+    };
+    assert_eq!(operands.len(), 6, "{operands:#?}");
+    assert_eq!(operands[0], entity_operand("p1"));
+    assert_eq!(operands[1], entity_operand("p1"));
+    assert_eq!(
+        picked(&operands[2]),
+        text(format!("{STREAM}:sketch-curve#40"))
+    );
+    assert_eq!(
+        picked(&operands[3]),
+        Some(NativeNameValue::Integers(vec![41]))
+    );
+    assert_eq!(picked(&operands[4]), text("null_locus".to_owned()));
+    assert_eq!(operands[5], entity_operand("line"));
+    let option = |name: &str| {
+        native
+            .native_options
+            .iter()
+            .find(|(key, _)| key.as_str() == format!("f3d:{name}"))
+            .map(|(_, value)| value.clone())
+    };
+    let text_option = |value: &str| {
+        Some(cadmpeg_ir::design::options::NativeOption::Text(
+            Dimension::Literal(cadmpeg_core::text::NonBlankString::new(value).unwrap()),
+        ))
+    };
+    assert_eq!(option("operand.2.kind"), text_option("curve"));
+    assert_eq!(option("operand.2.field"), text_option("auxiliary"));
+    assert_eq!(
+        option("operand.3.index"),
+        Some(cadmpeg_ir::design::options::NativeOption::Integer(
+            Dimension::Literal(41)
+        ))
+    );
+    assert_eq!(option("operand.4.field"), text_option("return"));
+    assert_eq!(option("operand.4.index"), None);
+}
+
 #[test]
 fn a_document_with_no_timeline_item_and_no_sketch_holds_its_construction_features() {
     let mut model = model();
@@ -979,4 +1184,70 @@ fn a_document_with_no_timeline_item_and_no_sketch_holds_its_construction_feature
     let listing = BTreeSet::from([String::new()]);
     let listed = super::outside(&model, &BTreeSet::new(), &listing, &mut Vec::new()).unwrap();
     assert!(listed.is_empty(), "{listed:#?}");
+}
+
+#[test]
+fn a_curvature_relation_names_both_curves() {
+    let (mut model, incidence) = stored_points_model([&[], &[]]);
+    model.sketch_constraints = json::from_value(cadmpeg_core::json!([{
+        "id": constraint("curvature"), "sketch": SKETCH,
+        "definition": {"kind": "curvature", "first": entity("arc"), "second": entity("circle")}
+    }]))
+    .unwrap();
+    let (out, _) = restated(&model, &incidence);
+    let [relation] = out.constraints.as_slice() else {
+        panic!("expected one curvature relation");
+    };
+    assert!(matches!(
+        &relation.relation,
+        SketchRelation::Curvature { a: Operand::Entity(a), b: Operand::Entity(b), contact: None }
+            if a.as_str() == entity("arc") && b.as_str() == entity("circle")
+    ));
+}
+
+#[test]
+fn the_design_point_keeps_the_stored_flag_lanes() {
+    use crate::records::sketch_geometry::SketchPoint;
+
+    let (model, _) = stored_points_model([&[], &[]]);
+    let point: SketchPoint = json::from_value(cadmpeg_core::json!({
+        "id": format!("{STREAM}:sketch-point#2"), "record_index": 2,
+        "owner_reference": 20, "class_tag": "000",
+        "byte_offset": 0, "coordinate_offset": 1,
+        "record_form": {"kind": "version11", "padded_paired_reference": false},
+        "flags": "0100000100000000",
+        "persistent_id": 4, "paired_reference": 4,
+        "coordinates": {"u": 30.0, "v": 0.0}, "depth": 0.0,
+        "closure": {"selector": 0, "state": 0}, "companion": {"incident_curves": []}
+    }))
+    .unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model = model;
+    crate::test_support::with_decode_context(|ctx| {
+        ir.native
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+            .set_arena(ctx, "sketch_points", &[point])
+            .unwrap();
+        super::super::project(
+            ctx,
+            &mut ir,
+            cadmpeg_core::decode::DecodeDepth::Design,
+            &mut Vec::new(),
+        )
+        .unwrap();
+    });
+    let point = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|point| point.id.as_str() == entity("p1"))
+        .unwrap();
+    assert_eq!(
+        point
+            .native_options
+            .get(&cadmpeg_ir::codec_name!("f3d:point_flags")),
+        Some(&cadmpeg_ir::design::options::NativeOption::Text(
+            Dimension::Literal(cadmpeg_core::nonblank_literal!("0100000100000000"))
+        ))
+    );
 }

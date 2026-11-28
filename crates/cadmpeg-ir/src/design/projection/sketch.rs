@@ -1,27 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The forms of decoded sketch records that a planar sketch (§6.1 of the
 //! CADIR v11 specification) states as they are: its curves, its frame, and
-//! the relations and dimensions of the decoded vocabulary.
+//! the relations and dimensions of the decoded vocabulary. The comparison of
+//! a projected entity with its decoded record reads the same curve.
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
 
 use crate::design::construction::{FrameValue, ScalarDimension};
 use crate::design::dimension::Dimension;
-use crate::design::names::CodecName;
+use crate::design::names::{CodecName, NativeName, NativeNameValue};
 use crate::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, EntityDefinition, EntityRole, Operand, Planar,
-    PlanarCurve, RadialMeasure, SketchEntity, SketchRelation,
+    PlanarCurve, RadialMeasure, SketchEntity, SketchRelation, SketchSpace,
 };
-use crate::design::options::{NativeOption, NativeOptions};
+use crate::design::options::{BlankText, NativeOption, NativeOptions};
+use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::Quantity;
 use crate::features::parameters::ParameterValue as StoredValue;
 use crate::features::ParameterId;
+use crate::geometry::pcurve::PcurveNurbsPoles;
 use crate::math::portable::Portable;
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{
-    SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
+    SketchConstraintDefinitionInput as Kind, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 
@@ -103,7 +106,9 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
             }
         }
         SketchGeometryDefinition::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        _ => return None,
+        SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => return None,
     })
 }
 
@@ -131,6 +136,87 @@ pub trait Loci {
 
     /// The position of the point that `locus` names.
     fn position(&self, locus: &SketchLocus) -> Option<[f64; 2]>;
+
+    /// The operand of the one entity whose record a native relation's
+    /// `operand` names.
+    fn record(&self, operand: &SketchNativeOperand) -> Option<Operand<Planar>>;
+
+    /// The operand of the entity `id`.
+    fn entity(&self, id: &SketchEntityId) -> Operand<Planar> {
+        Operand::Entity(id.clone())
+    }
+}
+
+/// The operands of a native relation, one for each operand of `operands`
+/// that the decoder read, in their stored order. An operand whose record
+/// `record` names is that operand. Another is a `Model` operand anchored at
+/// `at` whose one pick has a `Native` target (§5.8 Picks), and carries the
+/// record the operand names, else its object index, else its native kind,
+/// as its native name. The pick names no `within`: the relation's own sketch
+/// holds it, and no sketch depend-orders before itself (§5.3).
+pub fn native_operands<S: SketchSpace>(
+    codec: &NonBlankString,
+    operands: &[SketchNativeOperand],
+    at: &Anchor,
+    record: impl Fn(&SketchNativeOperand) -> Option<Operand<S>>,
+) -> Vec<Operand<S>> {
+    let codec = cadmpeg_core::text::CodecId::new(codec.as_str());
+    operands
+        .iter()
+        .map(|operand| {
+            record(operand).unwrap_or_else(|| {
+                let native = operand.native_ref.clone().and_then(NonBlankString::new);
+                let value = match (native, operand.object_index) {
+                    (Some(native), _) => NativeNameValue::Text(native),
+                    (None, Some(index)) => NativeNameValue::Integers(vec![i64::from(index)]),
+                    (None, None) => NativeNameValue::Text(operand.native_kind.clone()),
+                };
+                let pick = codec.clone().map(|codec| Picked {
+                    target: PickTarget::Native { within: None },
+                    context: None,
+                    native: Some(NativeName { codec, value }),
+                    domain: None,
+                    witness: None,
+                    resolved: None,
+                });
+                Operand::Model(Box::new(Selection {
+                    at: at.clone(),
+                    picks: pick
+                        .and_then(|pick| Members::new(vec![pick]).ok())
+                        .map_or(Picks::Unread, Picks::Named),
+                    native: None,
+                }))
+            })
+        })
+        .collect()
+}
+
+/// Insert into `options` what the decoder read of each operand of
+/// `operands` beside its record: `<codec>:operand.<i>.kind`, its native
+/// kind; `<codec>:operand.<i>.field` and `<codec>:operand.<i>.role`, the
+/// field that holds it and that field's role code; and
+/// `<codec>:operand.<i>.index`, its object index.
+pub(crate) fn operand_options(
+    codec: &NonBlankString,
+    operands: &[SketchNativeOperand],
+    options: &mut NativeOptions,
+) {
+    for (position, operand) in operands.iter().enumerate() {
+        let key = |name: &str| native_name(codec, &format!("operand.{position}.{name}"));
+        let text = |value: &NonBlankString| NativeOption::Text(Dimension::Literal(value.clone()));
+        let integer = |value: u32| NativeOption::Integer(Dimension::Literal(i64::from(value)));
+        let mut entries = vec![("kind", text(&operand.native_kind))];
+        if let Some(field) = &operand.field {
+            entries.push(("field", text(&field.name)));
+            entries.extend(field.role.map(|role| ("role", integer(role))));
+        }
+        entries.extend(operand.object_index.map(|index| ("index", integer(index))));
+        for (name, value) in entries {
+            if let Some(key) = key(name) {
+                options.insert(key, value);
+            }
+        }
+    }
 }
 
 /// The value of a dimension: the design parameter it binds, or the value
@@ -252,6 +338,7 @@ pub fn driven_parameter(
         id: parameter.clone(),
         scope: scope.clone(),
         owner: Some(ParameterOwner::Feature(owner.clone())),
+        position: None,
         name,
         kind: crate::design::units::ValueKind::Quantity(quantity),
         unit: None,
@@ -273,7 +360,7 @@ pub fn driven_parameter(
 /// The geometric relation that `kind` states, where its operands are
 /// entities or points that `loci` states.
 pub fn geometric(kind: &Kind, loci: &impl Loci) -> Option<SketchRelation<Planar>> {
-    let entity = |id: &SketchEntityId| Operand::Entity(id.clone());
+    let entity = |id: &SketchEntityId| loci.entity(id);
     Some(match kind {
         Kind::Coincident { entities } if entities.len() == 2 => SketchRelation::Coincident {
             a: entity(&entities[0]),
@@ -315,6 +402,19 @@ pub fn geometric(kind: &Kind, loci: &impl Loci) -> Option<SketchRelation<Planar>
             b: entity(second),
             contact: None,
         },
+        Kind::Curvature { first, second } => SketchRelation::Curvature {
+            a: entity(first),
+            b: entity(second),
+            contact: None,
+        },
+        Kind::SameCoordinate { relation } => {
+            let a = loci.operand(relation.first())?;
+            let b = Some(loci.operand(relation.second())?);
+            match relation.axis() {
+                SketchCoordinateAxis::U => SketchRelation::Vertical { a, b },
+                SketchCoordinateAxis::V => SketchRelation::Horizontal { a, b },
+            }
+        }
         Kind::Horizontal { entity: id } => SketchRelation::Horizontal {
             a: entity(id),
             b: None,
@@ -398,8 +498,8 @@ pub fn dimension(
             value: value.length()?,
         },
         Kind::Distance { entities, .. } if entities.len() == 2 => SketchRelation::Distance {
-            a: Operand::Entity(entities[0].clone()),
-            b: Operand::Entity(entities[1].clone()),
+            a: loci.entity(&entities[0]),
+            b: loci.entity(&entities[1]),
             along: Some(DistanceAxis::Aligned),
             doubled: None,
             value: value.length()?,
@@ -421,10 +521,7 @@ pub fn dimension(
             value: value.length()?,
         },
         Kind::Angle { first, second, .. } => SketchRelation::Angle {
-            between: AngleOperands::Between([
-                Operand::Entity(first.clone()),
-                Operand::Entity(second.clone()),
-            ]),
+            between: AngleOperands::Between([loci.entity(first), loci.entity(second)]),
             sector: None,
             value: value.angle()?,
         },
@@ -500,25 +597,48 @@ pub fn is_dimension(kind: &Kind) -> bool {
 /// The relation that states `kind` in its decoder's vocabulary, named
 /// `<codec>:<native class>` for a native relation and `<codec>:<decoded
 /// kind>` otherwise, on the operands `kind` names and with `values`. A
-/// point that `loci` states is its operand, and the curve it lies on
-/// otherwise.
+/// native relation that holds the operands the decoder read states them by
+/// [`native_operands`] anchored at `at`, then each entity it names that no such
+/// operand states. A point that `loci` states is its operand, and the curve
+/// it lies on otherwise.
 #[must_use]
 pub fn native_relation(
     codec: &NonBlankString,
     kind: &Kind,
     values: Vec<ScalarDimension>,
     loci: &impl Loci,
+    at: &Anchor,
 ) -> SketchRelation<Planar> {
     let name = match kind {
         Kind::Native { native_kind, .. } => qualified(codec, native_kind.as_str()),
         _ => qualified(codec, relation_name(kind)),
     };
+    if let Kind::Native {
+        operands: read,
+        entities,
+        ..
+    } = kind
+    {
+        if !read.is_empty() {
+            let mut operands = native_operands(codec, read, at, |operand| loci.record(operand));
+            for operand in entities.iter().map(|id| loci.entity(id)) {
+                if !operands.contains(&operand) {
+                    operands.push(operand);
+                }
+            }
+            return SketchRelation::Native {
+                kind: name,
+                operands,
+                values,
+            };
+        }
+    }
     let mut operands = Vec::new();
     for operand in named(kind).into_iter().map(|named| match named {
-        Named::Entity(id) => Operand::Entity(id.clone()),
+        Named::Entity(id) => loci.entity(id),
         Named::Locus(locus) => loci
             .operand(locus)
-            .unwrap_or_else(|| Operand::Entity(locus_entity(locus).clone())),
+            .unwrap_or_else(|| loci.entity(locus_entity(locus))),
     }) {
         if !operands.contains(&operand) {
             operands.push(operand);
@@ -534,7 +654,8 @@ pub fn native_relation(
 /// The native options of the relation that states `kind` by its native
 /// kind: the state, the flags, and the properties a native relation stores,
 /// as `<codec>:native_state`, `<codec>:native_flags`, and
-/// `<codec>:<property>`.
+/// `<codec>:<property>`, a blank property as a blank text, and what the
+/// decoder read of its operands ([`operand_options`]).
 #[must_use]
 pub fn native_options(codec: &NonBlankString, kind: &Kind) -> NativeOptions {
     let mut options = NativeOptions::new();
@@ -542,18 +663,22 @@ pub fn native_options(codec: &NonBlankString, kind: &Kind) -> NativeOptions {
         native_state,
         native_flags,
         native_properties,
+        operands,
         ..
     } = kind
     else {
         return options;
     };
     for (name, value) in native_properties {
-        if let (Some(name), Some(value)) =
-            (native_name(codec, name), NonBlankString::new(value.clone()))
-        {
-            options.insert(name, NativeOption::Text(Dimension::Literal(value)));
+        let value = match NonBlankString::new(value.clone()) {
+            Some(text) => Some(NativeOption::Text(Dimension::Literal(text))),
+            None => BlankText::new(value.clone()).map(NativeOption::Blank),
+        };
+        if let (Some(name), Some(value)) = (native_name(codec, name), value) {
+            options.insert(name, value);
         }
     }
+    operand_options(codec, operands, &mut options);
     for (name, value) in [
         ("native_state", native_state),
         ("native_flags", native_flags),
@@ -629,7 +754,10 @@ fn relation_name(kind: &Kind) -> &'static str {
         Kind::TextFrame { .. } => "text_frame",
         Kind::TextPath { .. } => "text_path",
         Kind::CoincidentLoci { .. } => "coincident_loci",
-        Kind::SameCoordinate { .. } => "same_coordinate",
+        Kind::SameCoordinate { relation } => match relation.axis() {
+            SketchCoordinateAxis::U => "vertical",
+            SketchCoordinateAxis::V => "horizontal",
+        },
         Kind::PointOnObject { .. } => "point_on_object",
         Kind::Midpoint { .. } => "midpoint",
         Kind::PointCoordinateValues { .. } => "point_coordinate_values",
@@ -694,6 +822,12 @@ fn named(kind: &Kind) -> Vec<Named<'_>> {
         | Kind::Coincident { entities }
         | Kind::Distance { entities, .. } => entities.iter().map(Named::Entity).collect(),
         Kind::CoincidentLoci { loci } => loci.iter().map(Named::Locus).collect(),
+        Kind::SameCoordinate { relation } => {
+            vec![
+                Named::Locus(relation.first()),
+                Named::Locus(relation.second()),
+            ]
+        }
         Kind::PointOnObject { point, entity } | Kind::Midpoint { point, entity } => {
             vec![Named::Locus(point), Named::Entity(entity)]
         }
@@ -1210,6 +1344,61 @@ fn closed_form_position(geometry: &SketchGeometry, locus: &SketchLocus) -> Optio
                 vertex,
                 rotated(axis_angle.get(), [y * y / (4.0 * focal_length.get()), y]),
             )
+        }
+        _ => None,
+    }
+}
+
+/// The start and end of a line, circular arc, elliptical arc, or clamped
+/// open spline in sketch coordinates.
+#[must_use]
+pub fn curve_ends(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
+        SketchGeometryDefinition::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let at = |angle: f64| {
+                let (sin, cos) = angle.portable_sin_cos();
+                [center.u + radius.get() * cos, center.v + radius.get() * sin]
+            };
+            Some([at(start_angle.get()), at(end_angle.get())])
+        }
+        SketchGeometryDefinition::Ellipse {
+            center,
+            major_angle,
+            radii,
+            bounds: Some(bounds),
+        } => {
+            let (major_sin, major_cos) = major_angle.get().portable_sin_cos();
+            Some(bounds.map(|angle| {
+                let (sin, cos) = angle.get().portable_sin_cos();
+                let along = radii.major().get() * cos;
+                let across = radii.minor().get() * sin;
+                [
+                    center.u + along * major_cos - across * major_sin,
+                    center.v + along * major_sin + across * major_cos,
+                ]
+            }))
+        }
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            let knots = curve.knots().as_slice();
+            let degree = usize::try_from(curve.degree()).ok()?;
+            if knots.first() != knots.get(degree)
+                || knots.last() != knots.get(knots.len().checked_sub(degree.checked_add(1)?)?)
+            {
+                return None;
+            }
+            let [start, end] = match curve.pole_rows() {
+                PcurveNurbsPoles::Polynomial { points } => [points.first()?, points.last()?],
+                PcurveNurbsPoles::Rational { points } => {
+                    [&points.first()?.point, &points.last()?.point]
+                }
+            };
+            Some([[start.u, start.v], [end.u, end.v]])
         }
         _ => None,
     }

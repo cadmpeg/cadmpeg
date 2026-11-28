@@ -356,6 +356,34 @@ fn a_dimension_parameter_is_owned_by_its_sketch() {
             .unwrap_or_else(|| panic!("{name}: {:#?}", decoded.model.parameters));
         assert_eq!(parameter.owner.as_ref(), Some(&sketch.id), "{name}");
     }
+    let hole = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Hole")
+        .expect("Hole");
+    assert_eq!(
+        hole.display,
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter)
+    );
+    let design_hole = decoded
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == hole.id)
+        .expect("Hole in the design");
+    assert_eq!(design_hole.display, None);
+    assert!(decoded.design.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            &constraint.relation,
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter),
+                ..
+            } if parameter == &hole.id
+        )
+    }));
+    assert_cadir_carries_parameter_field(&decoded, hole.id.as_str(), "display");
     let tilt = decoded
         .model
         .parameters
@@ -1024,6 +1052,38 @@ fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
             .cloned(),
         Some(literal())
     );
+    assert_cadir_carries_parameter_field(&decoded, gap.id.as_str(), "value");
+}
+
+fn assert_cadir_carries_parameter_field(decoded: &CadIr, id: &str, field: &str) {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let export = CadirEncoder
+        .plan(EncodeInput::new(decoded, None))
+        .expect("CADIR write plan");
+    for loss in &export.report().losses {
+        if loss.code.local_code() != "arena.omitted"
+            || !loss.message.contains("model arena `parameters`")
+        {
+            continue;
+        }
+        let (omitted, partial) = loss
+            .message
+            .split_once(" stated in part: ")
+            .unwrap_or((loss.message.as_str(), ""));
+        assert!(
+            !omitted.split([' ', ',']).any(|token| token == id),
+            "{}",
+            loss.message
+        );
+        if let Some((_, fields)) = partial.split_once(&format!("{id} (")) {
+            let (fields, _) = fields.split_once(')').expect("field list");
+            assert!(
+                !fields.split(", ").any(|found| found == field),
+                "{id}: {fields}"
+            );
+        }
+    }
 }
 
 #[test]

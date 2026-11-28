@@ -14,6 +14,7 @@ use crate::document::{
 };
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
+use crate::up_axis::UpAxis;
 
 pub mod digest;
 pub mod finite_json;
@@ -114,6 +115,21 @@ pub(crate) fn measured_content_digest(
         .map_err(DigestError::from)
         .and_then(|()| finish_digest(buffered));
     (digest, measured)
+}
+
+/// Measures every record and outside value of `ir` past a bound of §2.5 in a
+/// single unlimited-depth pass without computing a SHA-256 digest.
+pub(crate) fn measure_document_bounds(
+    ir: &CadIr,
+) -> Result<crate::bounds::Measured, CanonicalJsonError> {
+    let mut measure = crate::bounds::Measure::new(std::io::sink());
+    let admission = finite_json::admission::CanonicalAdmission::unlimited();
+    let written = finite_json::write_serde_json_erased(admission, &mut measure, &|serializer| {
+        ir.serialize_pretty_erased(serializer, admission)
+    });
+    let measured = measure.finish();
+    written?;
+    Ok(measured)
 }
 
 /// The canonical JSON of `ir`, with each record it holds past a bound of
@@ -267,6 +283,7 @@ pub fn document_local_sha256_without_carried(
         source: source.cloned(),
         units: CanonicalUnitsWire::default(),
         tolerances: &ir.tolerances,
+        up_axis: ir.up_axis,
         geometry: ir.geometry.sorted(),
         model: ir.model.sorted(),
         design: ir.design.sorted(),
@@ -366,6 +383,8 @@ struct NormalizedDocument<'a, 'input> {
     source: Option<SourceMeta>,
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    up_axis: Option<UpAxis>,
     geometry: SortedTopology<'a>,
     model: SortedModel<'a>,
     design: SortedDesign<'a>,
@@ -560,10 +579,23 @@ struct PrettyRecords<'a, 'input> {
 
 impl Serialize for PrettyRecords<'_, '_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.records.iter().map(|record| DigestNativeRecord {
-            ctx: self.ctx,
-            record,
-        }))
+        if self
+            .records
+            .windows(2)
+            .all(|pair| pair[0].id() <= pair[1].id())
+        {
+            serializer.collect_seq(self.records.iter().map(|record| DigestNativeRecord {
+                ctx: self.ctx,
+                record,
+            }))
+        } else {
+            let mut sorted: Vec<&NativeRecord> = self.records.iter().collect();
+            sorted.sort_by(|left, right| left.id().cmp(right.id()));
+            serializer.collect_seq(sorted.into_iter().map(|record| DigestNativeRecord {
+                ctx: self.ctx,
+                record,
+            }))
+        }
     }
 }
 

@@ -1457,6 +1457,49 @@ fn an_offset_component_an_expression_binds_binds_its_step() {
 }
 
 #[test]
+fn an_out_of_range_pitch_expression_reports_the_rejected_rotation() {
+    let document = BODY_SKETCH
+        .replace(r#"<Properties Count="7">"#, r#"<Properties Count="8">"#)
+        .replace(
+            r#"Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+            r#"Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1">
+   <Expression path=".AttachmentOffset.Rotation.Pitch" expression="120"/>
+  </ExpressionEngine></Property>"#,
+        );
+    let ir = decode(&document);
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    let parameter = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str() == "AttachmentOffset.Rotation.Pitch")
+        })
+        .unwrap();
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(parameter.id.as_str())
+                && finding
+                    .message
+                    .contains("FreeCAD rejects a pitch outside [-90, 90] degrees")
+                && finding.message.contains("2.094")
+        }),
+        "{:?}",
+        report.findings
+    );
+    let in_range = decode(&document.replace("expression=\"120\"", "expression=\"45\""));
+    let report = cadmpeg_ir::validate::validate_neutral(&in_range, Vec::new()).unwrap();
+    assert!(!report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("FreeCAD rejects a pitch")));
+}
+
+#[test]
 fn an_offset_axis_an_expression_binds_stays_its_stored_value() {
     let document = BODY_SKETCH
         .replace(r#"<Properties Count="7">"#, r#"<Properties Count="8">"#)
@@ -1576,18 +1619,46 @@ fn a_named_internal_alignment_is_stated_once() {
 }
 
 #[test]
-fn an_operand_that_names_no_geometry_is_charged() {
-    // Type 16 (Snell's law) has no typed relation and is stated natively
-    // without a charge; GeoId 9 names no geometry of the sketch.
+fn a_native_relation_keeps_an_unresolved_operand_in_order() {
     let document = BODY_SKETCH
         .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
         .replace(
             "</ConstraintList>",
             r#"<Constrain Name="" Type="16" First="0" FirstPos="2" Second="9" SecondPos="1" Third="1" ThirdPos="0" Value="1.5"/></ConstraintList>"#,
         );
-    assert!(charges(
+    assert!(!charges(
         &document,
         crate::loss::FreecadLossCode::DesignSketchRelationNative,
         "fcstd:design:sketch-constraint#Sketch:8 names GeoId 9 at PointPos 1"
     ));
+    let ir = decode(&document);
+    let relation = relations(&ir).into_iter().find(|relation| matches!(relation, SketchRelation::Native { kind, .. } if kind.as_str() == "fcstd:snells_law")).unwrap();
+    let SketchRelation::Native { operands, .. } = relation else {
+        unreachable!()
+    };
+    assert_eq!(operands.len(), 3);
+    assert!(matches!(&operands[0], Operand::Entity(_)));
+    assert!(
+        matches!(&operands[1], Operand::Model(selection) if matches!(&selection.picks, Picks::Named(picks) if matches!(&picks.as_slice()[0].native.as_ref().unwrap().value, NativeNameValue::Text(name) if name.as_str() == "GeoId 9, PointPos 1")))
+    );
+    assert!(matches!(&operands[2], Operand::Entity(_)));
+}
+
+#[test]
+fn a_missing_support_object_keeps_its_stored_name() {
+    let document = BODY_SKETCH.replace(
+        r#"<Link obj="XY_Plane" sub=""/>"#,
+        r#"<Link obj="Missing" sub="Face1"/>"#,
+    );
+    let ir = decode(&document);
+    let SketchPlane::Placed(plane) = &ir.design.sketches[0].plane else {
+        panic!()
+    };
+    let reference = plane.inputs[0].reference.as_ref().unwrap();
+    let cadmpeg_ir::design::construction::InputReference::Picks(selection) = reference else {
+        panic!()
+    };
+    assert!(
+        matches!(&selection.picks, Picks::Named(picks) if matches!(&picks.as_slice()[0].native.as_ref().unwrap().value, NativeNameValue::Text(name) if name.as_str() == "Missing.Face1"))
+    );
 }

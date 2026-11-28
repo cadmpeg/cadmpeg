@@ -248,9 +248,6 @@ fn an_inserting_paste_records_its_copies_as_its_result_bodies() {
         .evaluation
         .set_outputs(DistinctMembers::try_from(copies.clone()).unwrap());
     let scopes = std::slice::from_ref(&scope);
-    assert!(super::has_projection_bound_base_feature_outputs(
-        &feature, scopes
-    ));
     assert_eq!(
         super::base_feature_result_bodies(&feature, scopes),
         Some(copies.as_slice())
@@ -268,17 +265,11 @@ fn an_inserting_paste_records_its_copies_as_its_result_bodies() {
         super::base_feature_result_bodies(&stored, scopes),
         Some(&copies[..1])
     );
-    assert!(!super::has_projection_bound_base_feature_outputs(
-        &stored, scopes
-    ));
     let other = crate::records::feature::scope::DesignParameterScope::empty(
         &scope.id,
         crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies,
         10,
     );
     let others = std::slice::from_ref(&other);
-    assert!(!super::has_projection_bound_base_feature_outputs(
-        &feature, others
-    ));
     assert_eq!(super::base_feature_result_bodies(&feature, others), None);
 }

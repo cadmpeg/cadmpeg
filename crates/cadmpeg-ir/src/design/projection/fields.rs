@@ -11,6 +11,7 @@ use crate::design::units::ValueKind;
 use crate::features::parameters::DesignParameter as ModelParameter;
 use crate::features::serialization::FeatureWriteWire;
 use crate::ids::ProductDefinitionId;
+use crate::sketches::{Sketch as ModelSketch, SketchConstraint as ModelSketchConstraint};
 
 /// A field of a record, named by its wire key.
 pub trait Field: Copy + Ord + 'static {
@@ -141,6 +142,8 @@ pub enum ParameterField {
     Scope,
     /// `owner`
     Owner,
+    /// `position`
+    Position,
     /// `name`
     Name,
     /// `kind`
@@ -171,6 +174,7 @@ design_fields! {
     ParameterField of DesignParameter {
         scope => Scope,
         owner => Owner,
+        position => Position,
         name => Name,
         kind => Kind,
         unit => Unit,
@@ -274,6 +278,110 @@ model_fields! {
         dependencies => Dependencies,
         properties => Properties,
         pmi => Pmi,
+        native_ref => NativeRef,
+    }
+}
+
+/// A field of a model sketch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelSketchField {
+    /// `name`
+    Name,
+    /// `configuration`
+    Configuration,
+    /// `visible`
+    Visible,
+    /// `placement`
+    Placement,
+    /// `profiles`
+    Profiles,
+    /// `native_ref`
+    NativeRef,
+}
+
+model_fields! {
+    ModelSketchField of ModelSketch {
+        name => Name,
+        configuration => Configuration,
+        visible => Visible,
+        placement => Placement,
+        profiles => Profiles,
+        native_ref => NativeRef,
+    }
+}
+
+/// A field of a model sketch entity. The type keeps its identity private,
+/// so the serialization test checks these keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelSketchEntityField {
+    /// `sketch`
+    Sketch,
+    /// `construction`
+    Construction,
+    /// `native_ref`
+    NativeRef,
+    /// `geometry_ref`
+    GeometryRef,
+    /// `endpoint_refs`
+    EndpointRefs,
+    /// `center_ref`
+    CenterRef,
+    /// `geometry`
+    Geometry,
+}
+
+field_keys!(ModelSketchEntityField {
+    sketch => Sketch,
+    construction => Construction,
+    native_ref => NativeRef,
+    geometry_ref => GeometryRef,
+    endpoint_refs => EndpointRefs,
+    center_ref => CenterRef,
+    geometry => Geometry,
+});
+
+/// A field of a model sketch constraint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelSketchConstraintField {
+    /// `sketch`
+    Sketch,
+    /// `definition`
+    Definition,
+    /// `name`
+    Name,
+    /// `driving`
+    Driving,
+    /// `active`
+    Active,
+    /// `virtual_space`
+    VirtualSpace,
+    /// `visible`
+    Visible,
+    /// `orientation`
+    Orientation,
+    /// `label_distance`
+    LabelDistance,
+    /// `label_position`
+    LabelPosition,
+    /// `metadata`
+    Metadata,
+    /// `native_ref`
+    NativeRef,
+}
+
+model_fields! {
+    ModelSketchConstraintField of ModelSketchConstraint {
+        sketch => Sketch,
+        definition => Definition,
+        name => Name,
+        driving => Driving,
+        active => Active,
+        virtual_space => VirtualSpace,
+        visible => Visible,
+        orientation => Orientation,
+        label_distance => LabelDistance,
+        label_position => LabelPosition,
+        metadata => Metadata,
         native_ref => NativeRef,
     }
 }

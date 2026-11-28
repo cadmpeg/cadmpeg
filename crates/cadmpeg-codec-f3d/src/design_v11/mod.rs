@@ -30,7 +30,7 @@
 //! parameters and configuration rows of a referenced design without a scope
 //! of its own belong to no scope here, and a loss names each of them.
 
-mod configurations;
+pub(crate) mod configurations;
 mod datum;
 mod operation;
 pub(crate) mod parameters;
@@ -48,8 +48,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::features::FeatureId;
@@ -198,7 +200,7 @@ pub(crate) fn project(
             .iter()
             .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone())),
     );
-    let scoped_parameters;
+    let mut scoped_parameters;
     let scoped_configurations;
     {
         let features = scopes
@@ -206,8 +208,13 @@ pub(crate) fn project(
             .flat_map(|(_, projected)| &projected.features)
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
+        let places = match ir.native.namespace("f3d") {
+            Some(namespace) => parameters::owner_places(ctx, namespace)?,
+            None => HashMap::new(),
+        };
         scoped_parameters = parameters::project(
             &ir.model.parameters,
+            &places,
             &definitions,
             &hosted_prefixes,
             &features,
@@ -231,14 +238,7 @@ pub(crate) fn project(
         ctx,
         "sketch_points",
     )?;
-    let incidence = sketch::Incidence::new(
-        curves
-            .iter()
-            .map(|curve| (curve.id.as_str(), curve.record_index)),
-        points
-            .iter()
-            .map(|point| (point.id.as_str(), point.companion().incident_curves)),
-    );
+    let incidence = sketch::Incidence::from_records(&curves, &points);
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let mut sketches = sketch::Sketches::default();
     let owners = ir
@@ -359,6 +359,24 @@ pub(crate) fn project(
     ir.design
         .spatial_sketch_constraints
         .extend(sketches.spatial_constraints);
+    let diameter_parameters = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match &constraint.relation {
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+                ..
+            } => Some(parameter),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    for parameter in &mut scoped_parameters {
+        if diameter_parameters.contains(&parameter.id) {
+            parameter.display = None;
+        }
+    }
     ir.design.parameters.extend(scoped_parameters);
     ir.design.parameters.extend(sketches.parameters);
     ir.design

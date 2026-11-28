@@ -40,20 +40,6 @@ fn owned_coverage_record_preserves_declared_key() {
     assert_eq!(coverage.get("decoded_entities"), Some(&3));
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn current_decode_report_schema_requires_its_format_identity() {
-    let schema = json::to_value(schemars::schema_for!(crate::report::decode::DecodeReport))
-        .expect("decode report schema serializes");
-    let required = schema["required"]
-        .as_array()
-        .expect("decode report schema has required fields");
-    assert!(
-        required.iter().any(|field| field == "identity"),
-        "{schema:#}"
-    );
-}
-
 #[test]
 fn transfer_record_keeps_the_nested_outcome_wire_shape() {
     let record = TransferRecord {

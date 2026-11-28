@@ -1006,10 +1006,7 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             )
             .unwrap();
             assert!(decoded.scopes.is_empty());
-            assert_eq!(
-                crate::test_support::loss_codes(&decoded.losses),
-                [crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.kind()]
-            );
+            assert!(decoded.losses.is_empty(), "{:?}", decoded.losses);
             // §3.3: the record header through the paired header is the frame
             // the decoder gives up as a part.
             let [part] = decoded.given_up.as_slice() else {
@@ -1026,6 +1023,10 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
                 )),
                 "{}",
                 part.loss().message
+            );
+            assert_eq!(
+                part.loss().code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
             );
         });
     }

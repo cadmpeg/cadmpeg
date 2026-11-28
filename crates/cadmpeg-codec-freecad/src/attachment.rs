@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::native::{
     sole_named_property, AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord,
@@ -124,6 +125,7 @@ impl serde::Serialize for MapModeIndex {
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<AttachmentRecord>, CodecError> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
@@ -147,12 +149,18 @@ pub(crate) fn transfer(
             (Some(_), Some(_)) => continue,
             (support, legacy_support) => support.or(legacy_support),
         };
-        let placement = placement_matrix(sole_named_property("attachment", owned, "Placement")?)?;
-        let offset = placement_matrix(sole_named_property(
-            "attachment",
-            owned,
-            "AttachmentOffset",
-        )?)?;
+        let placement = sole_named_property("attachment", owned, "Placement")?
+            .and_then(crate::placement::placement_matrix_unreported);
+        let offset = match sole_named_property("attachment", owned, "AttachmentOffset")? {
+            Some(property) => match crate::placement::placement_matrix(property) {
+                Ok(offset) => offset,
+                Err(error) => {
+                    crate::product::give_up(losses, property, error, None)?;
+                    None
+                }
+            },
+            None => None,
+        };
         if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
             continue;
         }
@@ -180,15 +188,6 @@ pub(crate) fn effective_frame(
         (None, Some(offset)) => offset,
         (None, None) => IDENTITY,
     }
-}
-
-fn placement_matrix(
-    property: Option<&PropertyRecord>,
-) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
-    let Some(property) = property else {
-        return Ok(None);
-    };
-    crate::placement::placement_matrix(property)
 }
 
 fn support_links(property: &PropertyRecord) -> Result<Vec<Option<LinkTarget>>, CodecError> {

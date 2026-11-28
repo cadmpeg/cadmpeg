@@ -8,7 +8,7 @@
 //! measure with a kernel and stores it at its own precision (§5.13).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::f64::consts::TAU;
+use std::f64::consts::{FRAC_PI_2, TAU};
 
 pub(super) mod constructions;
 mod placements;
@@ -117,10 +117,26 @@ fn check_parameter(
         return;
     }
     if !agree(index, &evaluated, &cached, rotation) {
+        let rejected_pitch = matches!(
+            evaluated,
+            Value::Number { value, quantity: Quantity::ANGLE } if value.abs() > FRAC_PI_2
+        ) && parameter
+            .name
+            .as_ref()
+            .is_some_and(|name| name.as_str() == "AttachmentOffset.Rotation.Pitch")
+            && parameter.native_ref.as_deref().is_some_and(|native| {
+                native.starts_with("fcstd:native:property#")
+                    && native.ends_with(":AttachmentOffset")
+            });
+        let reason = if rejected_pitch {
+            "; FreeCAD rejects a pitch outside [-90, 90] degrees"
+        } else {
+            ""
+        };
         super::warning(
             findings,
             id,
-            crate::rule!("design.parameter-cached-value-disagrees-expression-value", "parameter's cached value {cached:?} disagrees with its expression's value {evaluated:?}"),
+            crate::rule!("design.parameter-cached-value-disagrees-expression-value", "parameter's cached value {cached:?} disagrees with its expression's value {evaluated:?}{reason}"),
         );
     }
 }

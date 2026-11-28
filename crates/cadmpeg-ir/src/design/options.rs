@@ -54,10 +54,56 @@ pub enum NativeOption {
     Angle(Dimension<Angle>),
     /// A text.
     Text(Dimension<NonBlankString>),
+    /// A text the source stores with white space only, or empty.
+    Blank(BlankText),
     /// A selection with no order.
     Selection(SetSelection),
     /// A selection that keeps source order.
     OrderedSelection(OrderedSelection),
+}
+
+/// A text of white space only, the empty text included.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct BlankText(String);
+
+impl BlankText {
+    /// `text`, where it holds white space only.
+    #[must_use]
+    pub fn new(text: String) -> Option<Self> {
+        text.chars().all(char::is_whitespace).then_some(Self(text))
+    }
+
+    /// The text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for BlankText {
+    type Error = &'static str;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        Self::new(text).ok_or("a blank text holds a character other than white space")
+    }
+}
+
+impl From<BlankText> for String {
+    fn from(text: BlankText) -> Self {
+        text.0
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for BlankText {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "BlankText".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({ "type": "string", "pattern": "^\\s*$" })
+    }
 }
 
 /// The turning sense of a helix, a thread, or a tool about its axis
