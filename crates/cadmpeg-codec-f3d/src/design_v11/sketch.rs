@@ -638,7 +638,7 @@ fn restate(
         {
             if a == b {
                 losses.push(F3dLossCode::DesignSketchRelationSinglePoint.note(format!(
-                    "sketch relation {} names the point entity {a} for both operands; the point states the coincidence, and the relation is not restated",
+                    "sketch relation {} names the point entity {a} for both operands; the point states the coincidence, and the design holds no relation record for it",
                     constraint.id
                 )));
                 continue;

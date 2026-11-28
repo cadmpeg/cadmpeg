@@ -34,6 +34,7 @@
             "name": "p8_CircularPattern_pattern_Circular_Dir_offset_angle",
             "native_options": {},
             "native_ref": "nx:om-entry-0:expression#173",
+            "position": 0,
             "scope": "nx:document:product-definition#root",
             "source_settings": {},
             "unit": [
@@ -590,6 +591,7 @@
               "definition": "derived",
               "kind": "derived",
               "native_ref": "derived",
+              "position": "derived",
               "unit": "derived",
               "value": "derived"
             },
