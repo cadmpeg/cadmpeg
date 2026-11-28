@@ -32,3 +32,4 @@ pub(crate) mod sketch_owners;
 pub(crate) mod surface_trim;
 pub(crate) mod text;
 pub(crate) mod units;
+pub(crate) mod up_axis;

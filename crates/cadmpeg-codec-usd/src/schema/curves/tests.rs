@@ -3,7 +3,7 @@
 use super::{basis_curves, nurbs_curves, CurveData};
 use crate::schema::tests::with_layer;
 
-fn curves(prim_type: &str, body: &str) -> super::Curves {
+fn curves(prim_type: &str, body: &str) -> super::Batch {
     let text = format!("#usda 1.0\ndef {prim_type} \"C\"\n{{\n{body}\n}}\n");
     with_layer(&text, |stage, issues| {
         let prim = &stage.prims[0];
@@ -171,7 +171,7 @@ fn invalid_counts_are_rejected_per_curve() {
         "int[] curveVertexCounts = [5, 4]\npoint3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0), (4, 0, 0), (0, 1, 0), (1, 1, 0), (2, 1, 0), (3, 1, 0)]",
     );
     assert_eq!(read.curves.len(), 1);
-    assert_eq!(read.rejected, 1);
+    assert_eq!((read.broken, read.unread), (1, 0));
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn nurbs_curves_split_their_flat_arrays() {
         "NurbsCurves",
         "int[] curveVertexCounts = [3, 2]\nint[] order = [3, 2]\ndouble[] knots = [0, 0, 0, 1, 1, 1, 0, 0, 2, 2]\ndouble2[] ranges = [(0, 1), (0, 1)]\ndouble[] pointWeights = [1, 0.7071067811865476, 1, 1, 1]\npoint3f[] points = [(1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 0), (2, 0, 0)]",
     );
-    assert_eq!(read.rejected, 0);
+    assert_eq!((read.broken, read.unread), (0, 0));
     let arc = &read.curves[0];
     assert_eq!(arc.range, None);
     let half = std::f64::consts::FRAC_1_SQRT_2;

@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exhaustive transfer from an ASM graph into neutral and native IR arenas.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScratchContext};
 use cadmpeg_core::text::CodecId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::attributes::SourceAttribute;
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use super::annotations::AnnotationRecord;
+use super::records::BodyNativeKey;
 use super::stats::Stats;
 use super::{AsmBrep, UnboundedFace};
 
@@ -43,6 +45,30 @@ pub struct AsmTransferRemainder {
     pub withheld: Vec<super::given_up::WithheldRecord>,
 }
 
+/// Neutral geometry and source links available to an inspecting codec.
+pub struct InspectionGeometry {
+    /// The graph's neutral geometry.
+    pub geometry: Topology,
+    /// The graph's typed source attributes.
+    pub attributes: Vec<SourceAttribute>,
+    /// Native keys of the graph's bodies.
+    pub body_keys: Vec<BodyNativeKey>,
+}
+
+/// Moves an inspection graph into neutral geometry without native arenas.
+pub fn transfer_inspection(
+    ctx: &ScratchContext<'_>,
+    mut brep: AsmBrep,
+) -> Result<InspectionGeometry, CodecError> {
+    let mut geometry = Topology::default();
+    transfer_geometry(ctx, &mut geometry, &mut brep)?;
+    Ok(InspectionGeometry {
+        geometry,
+        attributes: brep.attributes,
+        body_keys: brep.body_native_keys,
+    })
+}
+
 /// Moves one complete ASM graph into the IR and serializes every ASM-native arena.
 ///
 /// The exhaustive [`AsmBrep`] destructure makes a newly added decoder field a
@@ -51,7 +77,7 @@ pub fn transfer_into_ir<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir mut CadIr,
     native_format: CodecId,
-    brep: AsmBrep,
+    mut brep: AsmBrep,
 ) -> Result<(&'ir NativeNamespace, AsmTransferRemainder), CodecError> {
     if ir
         .native
@@ -70,21 +96,22 @@ pub fn transfer_into_ir<'ir>(
         )));
     }
 
+    transfer_geometry(ctx, &mut ir.geometry, &mut brep)?;
     let AsmBrep {
-        bodies,
-        regions,
-        shells,
-        faces,
-        loops,
-        mut coedges,
-        mut edges,
-        vertices,
-        points,
-        surfaces,
-        mut curves,
-        pcurves,
-        procedural_surfaces,
-        procedural_curves,
+        bodies: _,
+        regions: _,
+        shells: _,
+        faces: _,
+        loops: _,
+        coedges: _,
+        edges: _,
+        vertices: _,
+        points: _,
+        surfaces: _,
+        curves: _,
+        pcurves: _,
+        procedural_surfaces: _,
+        procedural_curves: _,
         edge_continuities,
         edge_ownerships,
         vertex_ownerships,
@@ -105,50 +132,6 @@ pub fn transfer_into_ir<'ir>(
         chain_order: _,
         withheld,
     } = brep;
-    super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
-
-    let entity_count = [
-        bodies.len(),
-        regions.len(),
-        shells.len(),
-        faces.len(),
-        loops.len(),
-        coedges.len(),
-        edges.len(),
-        vertices.len(),
-        points.len(),
-        surfaces.len(),
-        curves.len(),
-        pcurves.len(),
-        procedural_surfaces.len(),
-        procedural_curves.len(),
-        attributes.len(),
-    ]
-    .into_iter()
-    .try_fold(0_u64, |total, count| {
-        total
-            .checked_add(cadmpeg_core::decode::u64_from_index(count))
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("ASM entity count overflows u64"))
-    })?;
-    ctx.charge_entities(entity_count, "admit ASM entities")?;
-    ir.geometry.bodies.extend(bodies);
-    ir.geometry.regions.extend(regions);
-    ir.geometry.shells.extend(shells);
-    ir.geometry.faces.extend(faces);
-    ir.geometry.loops.extend(loops);
-    ir.geometry.coedges.extend(coedges);
-    ir.geometry.edges.extend(edges);
-    ir.geometry.vertices.extend(vertices);
-    ir.geometry.points.extend(points);
-    ir.geometry.surfaces.extend(surfaces);
-    ir.geometry.curves.extend(curves);
-    ir.geometry.pcurves.extend(pcurves);
-    ir.geometry
-        .add_procedural_surfaces(procedural_surfaces)?
-        .map_err(CodecError::malformed)?;
-    ir.geometry
-        .add_procedural_curves(procedural_curves)?
-        .map_err(CodecError::malformed)?;
     ir.model.attributes.extend(attributes);
 
     let namespace = ir.native.namespace_mut(native_format);
@@ -179,6 +162,71 @@ pub fn transfer_into_ir<'ir>(
             withheld,
         },
     ))
+}
+
+fn transfer_geometry(
+    ctx: &DecodeContext<'_>,
+    geometry: &mut Topology,
+    brep: &mut AsmBrep,
+) -> Result<(), CodecError> {
+    fn move_arena<T>(to: &mut Vec<T>, from: &mut Vec<T>) {
+        let records = std::mem::take(from);
+        if to.is_empty() {
+            *to = records;
+        } else {
+            to.extend(records);
+        }
+    }
+
+    super::subsets::localize_subsets(
+        &mut brep.curves,
+        &mut brep.edges,
+        &mut brep.coedges,
+        &brep.procedural_curves,
+    )?;
+    let entity_count = [
+        brep.bodies.len(),
+        brep.regions.len(),
+        brep.shells.len(),
+        brep.faces.len(),
+        brep.loops.len(),
+        brep.coedges.len(),
+        brep.edges.len(),
+        brep.vertices.len(),
+        brep.points.len(),
+        brep.surfaces.len(),
+        brep.curves.len(),
+        brep.pcurves.len(),
+        brep.procedural_surfaces.len(),
+        brep.procedural_curves.len(),
+        brep.attributes.len(),
+    ]
+    .into_iter()
+    .try_fold(0_u64, |total, count| {
+        total
+            .checked_add(u64_from_index(count))
+            .ok_or_else(|| CodecError::malformed("ASM entity count overflows u64"))
+    })?;
+    ctx.charge_entities(entity_count, "admit ASM entities")?;
+    move_arena(&mut geometry.bodies, &mut brep.bodies);
+    move_arena(&mut geometry.regions, &mut brep.regions);
+    move_arena(&mut geometry.shells, &mut brep.shells);
+    move_arena(&mut geometry.faces, &mut brep.faces);
+    move_arena(&mut geometry.loops, &mut brep.loops);
+    move_arena(&mut geometry.coedges, &mut brep.coedges);
+    move_arena(&mut geometry.edges, &mut brep.edges);
+    move_arena(&mut geometry.vertices, &mut brep.vertices);
+    move_arena(&mut geometry.points, &mut brep.points);
+    move_arena(&mut geometry.surfaces, &mut brep.surfaces);
+    move_arena(&mut geometry.curves, &mut brep.curves);
+    move_arena(&mut geometry.pcurves, &mut brep.pcurves);
+    geometry
+        .add_procedural_surfaces(std::mem::take(&mut brep.procedural_surfaces))?
+        .map_err(CodecError::malformed)?;
+    geometry
+        .add_procedural_curves(std::mem::take(&mut brep.procedural_curves))?
+        .map_err(CodecError::malformed)?;
+    Ok(())
 }
 
 #[cfg(test)]

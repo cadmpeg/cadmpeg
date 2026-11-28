@@ -65,6 +65,14 @@ fn cuts(ir: &CadIr) -> BTreeMap<String, BTreeSet<String>> {
                 .iter()
                 .map(|constraint| constraint.id.as_str()),
         )
+        .chain(ir.design.features.iter().map(|feature| feature.id.as_str()))
+        .chain(
+            ir.design
+                .containers
+                .iter()
+                .map(|container| container.id().as_str()),
+        )
+        .chain(ir.design.spreadsheets.iter().map(|sheet| sheet.id.as_str()))
         .collect::<HashSet<_>>();
     same_id_cuts(ir, &written)
         .into_iter()
@@ -534,6 +542,8 @@ fn a_parameter_definition_is_carried_by_its_owner_feature_component() {
     let mut ir = parameter_ir(vec![model], vec![design]);
     ir.design.features.push(feature(Some(COMPONENT)));
     assert_eq!(cuts(&ir)[&id], fields([]));
+    let written = HashSet::from([id.as_str()]);
+    assert!(same_id_cuts(&ir, &written)[id.as_str()].contains("product_definition"));
     ir.design.features[0] = feature(None);
     assert_eq!(cuts(&ir)[&id], fields(["product_definition"]));
 }
@@ -577,7 +587,175 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
         )
         .unwrap(),
     );
+    let written = listed
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect();
+    assert!(
+        same_id_cuts(&listed, &written)[parameter_id("sheet:cell:B1").as_str()].contains("ordinal")
+    );
     let listed = cuts(&listed);
     assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
     assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
+}
+
+#[test]
+fn a_container_carries_the_model_owner_when_written() {
+    use crate::design::container::{Container, UnorderedKind};
+    use crate::design::ids::ContainerId;
+
+    let owner = FeatureId::mint("test:model:feature#node").unwrap();
+    let container = ContainerId::mint("test:design:container#group").unwrap();
+    let mut model = model_parameter("width", 0);
+    model.owner = Some(owner.clone());
+    let mut design = design_parameter("width", "width");
+    design.owner = Some(ParameterOwner::Container(container.clone()));
+    let mut ir = parameter_ir(vec![model], vec![design]);
+    ir.model.restated.record(
+        owner.as_str(),
+        super::Restater::Record(container.as_str().to_owned()),
+        [],
+    );
+    ir.design.containers.push(Container::Unordered {
+        id: container,
+        kind: UnorderedKind::Group,
+        members: BTreeSet::new(),
+    });
+    let id = parameter_id("width");
+    assert_eq!(cuts(&ir)[id.as_str()], fields([]));
+    assert!(same_id_cuts(&ir, &HashSet::from([id.as_str()]))[id.as_str()].contains("owner"));
+}
+
+/// A model feature `key` of the operation `operation`.
+fn model_feature(
+    key: &str,
+    operation: crate::features::FeatureOperation,
+) -> crate::features::Feature {
+    crate::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("test:design:feature#{key}")).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            crate::features::FeatureDefinition::Operation(operation),
+        ),
+        native_ref: None,
+    }
+}
+
+/// A design parameter with no owner is a user parameter of its scope
+/// (§5.12): it carries a model owner that is an equations node no design
+/// record states, and names an owner that is another feature.
+#[test]
+fn a_user_parameter_carries_its_equations_table_owner() {
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    let cut = |operation| {
+        let table = model_feature("table", operation);
+        let mut model = model_parameter("width", 0);
+        model.owner = Some(table.id.clone());
+        let mut ir = parameter_ir(vec![model], vec![design_parameter("width", "width")]);
+        ir.model.features.push(table);
+        cuts(&ir)[parameter_id("width").as_str()].clone()
+    };
+    assert_eq!(
+        cut(crate::features::FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            children: TreeChildren::default(),
+        }),
+        fields([])
+    );
+    assert_eq!(
+        cut(crate::features::FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::FeatureFolder,
+            children: TreeChildren::default(),
+        }),
+        fields(["owner"])
+    );
+}
+
+/// A design parameter with no cache carries the model value its neutral
+/// definition evaluates to, through the parameters it references that have
+/// none either, and names another value.
+#[test]
+fn an_uncached_parameter_carries_the_value_its_definition_evaluates_to() {
+    use crate::design::dimension::{ParameterRef, RefTarget};
+    use crate::design::expr::{parse, Expression, Neutral};
+    let neutral = |text: &str, refs: &[&str]| {
+        let refs = refs
+            .iter()
+            .map(|key| ParameterRef {
+                target: RefTarget::Parameter(parameter_id(key)),
+                through: None,
+            })
+            .collect::<Vec<_>>();
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(
+            parse(text, &refs, &[]).unwrap(),
+        )))
+    };
+    let charged_value = |depth: &str, write_width: bool| {
+        let mut width = design_parameter("width", "width");
+        width.definition = neutral("1[cm]", &[]);
+        width.value = None;
+        let mut design = design_parameter("depth", "depth");
+        design.definition = neutral(depth, &["width"]);
+        design.value = None;
+        let ir = parameter_ir(vec![model_parameter("depth", 0)], vec![design, width]);
+        let depth = parameter_id("depth");
+        let width = parameter_id("width");
+        let mut written = HashSet::from([depth.as_str()]);
+        if write_width {
+            written.insert(width.as_str());
+        }
+        same_id_cuts(&ir, &written)[depth.as_str()].contains("value")
+    };
+    assert!(!charged_value("$0 + 2[mm]", true));
+    assert!(charged_value("$0 + 3[mm]", true));
+    assert!(charged_value("$0 + 2[mm]", false));
+}
+
+/// A parameter that a radial dimension binds states no display where the
+/// dimension measures the model display (D7): it carries that display, and
+/// names one the dimension does not measure.
+#[test]
+fn a_parameter_carries_the_display_its_radial_dimension_measures() {
+    use crate::design::ops::sketch::RadialMeasure;
+    use crate::features::parameters::DimensionDisplay as ModelDisplay;
+    let charged_display = |measure, write_constraint| {
+        let mut model = model_parameter("diameter", 0);
+        model.display = Some(ModelDisplay::Diameter);
+        let mut ir = parameter_ir(vec![model], vec![design_parameter("diameter", "diameter")]);
+        ir.design
+            .sketch_constraints
+            .push(SketchConstraint::<Planar> {
+                id: SketchConstraintId::mint(CONSTRAINT).unwrap(),
+                sketch: sketch_id(),
+                relation: SketchRelation::Radial {
+                    of: entity_id(LINE),
+                    measure,
+                    value: Dimension::Parameter(parameter_id("diameter")),
+                },
+                name: None,
+                active: None,
+                native_options: NativeOptions::new(),
+                source_settings: NativeOptions::new(),
+                native_ref: None,
+            });
+        let parameter = parameter_id("diameter");
+        let mut written = HashSet::from([parameter.as_str()]);
+        if write_constraint {
+            written.insert(CONSTRAINT);
+        }
+        same_id_cuts(&ir, &written)[parameter.as_str()].contains("display")
+    };
+    assert!(!charged_display(RadialMeasure::Diameter, true));
+    assert!(charged_display(RadialMeasure::Radius, true));
+    assert!(charged_display(RadialMeasure::Diameter, false));
 }

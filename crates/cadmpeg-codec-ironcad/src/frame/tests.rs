@@ -10,7 +10,7 @@ fn read(stream: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(stream, &arena, &policy).unwrap();
-    payload(&ctx, root).map(|view| view.window().to_vec())
+    payload(&ctx, root).map(|frame| frame.payload.window().to_vec())
 }
 
 #[test]
@@ -84,8 +84,13 @@ fn a_frame_with_fewer_blocks_than_its_payload_needs_is_rejected() {
 }
 
 #[test]
-fn bytes_after_the_last_block_are_rejected() {
+fn bytes_after_the_last_block_are_counted_and_the_payload_is_kept() {
     let mut stream = framed(b"abc");
     stream.extend_from_slice(&[0; 4]);
-    assert!(read(&stream).is_err());
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    let frame = payload(&ctx, root).unwrap();
+    assert_eq!(frame.payload.window(), b"abc");
+    assert_eq!(frame.trailing, 4);
 }

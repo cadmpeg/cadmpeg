@@ -643,7 +643,7 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
     assert!(
         decoded.report().losses.iter().all(|loss| loss.code
             != F3dLossCode::XrefPlacementUndecoded.kind()
-            && loss.code != F3dLossCode::XrefTableUndecoded.kind()),
+            && !crate::test_support::xref_table_given_up(loss)),
         "{:?}",
         decoded.report().losses
     );

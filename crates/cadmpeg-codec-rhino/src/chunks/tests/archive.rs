@@ -643,25 +643,28 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .expect("required invariant")[1]
         .links
         .is_empty());
-    let failure = result
+    let failures = result
         .report()
         .losses
         .iter()
-        .find(|loss| loss.severity == Severity::Error)
-        .expect("mesh failure loss");
+        .filter(|loss| {
+            loss.message
+                .contains("4ed7d4e4-e947-11d3-bfe5-0010830122f0")
+        })
+        .collect::<Vec<_>>();
+    let [failure] = failures.as_slice() else {
+        panic!("one loss of the mesh record: {failures:?}");
+    };
     assert_eq!(
         failure.code,
-        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
-    assert!(failure.message.contains(
-        "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
-    ));
+    assert!(failure
+        .message
+        .contains("of class 4ed7d4e4-e947-11d3-bfe5-0010830122f0: mesh failed: "));
     let provenance = failure.provenance.as_ref().expect("failure provenance");
     assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
-    assert!(provenance
-        .tag
-        .as_deref()
-        .is_some_and(|tag| tag.starts_with("OBJECT_RECORD/class=4ed7d4e4")));
+    assert_eq!(provenance.tag.as_deref(), Some("object-record"));
 
     let mut optional_crc = mesh_payload(3, 5, false, false);
     let vertex_buffer = 1 + 8 + 64 + 16 + 64 + 4 + 5 + 4 + 8;
@@ -717,10 +720,10 @@ fn strict_decode_refuses_an_undecodable_framed_object_record() {
         .any(|token| token == "rhino:object:record#000000"));
 }
 
-/// A framed object record the decoder gives up also charges
-/// `record.unreadable` naming its retained source record: a pinned decode
-/// refuses with that charge in its report, and a default decode admits the
-/// document and reports both the codec's loss and the charge.
+/// A framed object record the decoder gives up charges `record.unreadable`
+/// naming its retained source record: a pinned decode refuses with that
+/// charge in its report, and a default decode admits the document and reports
+/// the charge as the one loss of the record.
 #[test]
 fn a_given_up_framed_object_record_is_charged_as_unreadable() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
@@ -749,12 +752,20 @@ fn a_given_up_framed_object_record_is_charged_as_unreadable() {
 
     let result = decode(&bytes);
     assert_eq!(result.ir().geometry.points.len(), 1);
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()));
     assert!(charged(&result.report().losses));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss
+                .message
+                .contains("4ed7d4e4-e947-11d3-bfe5-0010830122f0"))
+            .count(),
+        1,
+        "{:?}",
+        result.report().losses
+    );
 }
 
 #[test]

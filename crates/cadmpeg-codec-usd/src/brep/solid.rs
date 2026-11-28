@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use super::{
     Brep, Catalog, EdgeRecord, FaceRecord, Form, LoopRecord, NurbsCurveRecord, NurbsSurfaceRecord,
     OrientedEdgeRecord, ShellRecord, SolidRecord, DEFAULT_TOLERANCE,
@@ -31,8 +33,40 @@ pub(crate) const FALLBACK_KEY: &str = "brepArray";
 /// `loop:vertexIndex` of a loop that has edgeuses.
 pub(crate) const NO_VERTEX: u32 = u32::MAX;
 
-/// Why a prim's arrays do not describe a B-rep.
+/// Why B-rep records have no packed arrays.
 pub(crate) type Refusal = String;
+
+/// Why a prim's arrays do not decode into B-reps, with the cause of the
+/// give-up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Fault {
+    pub(crate) cause: Cause,
+    pub(crate) reason: String,
+}
+
+impl Fault {
+    /// The arrays break a rule of §17.
+    fn broken(reason: impl Into<String>) -> Self {
+        Self {
+            cause: Cause::Unreadable,
+            reason: reason.into(),
+        }
+    }
+
+    /// The arrays state a form that the decoder has no reading for.
+    fn unread(reason: impl Into<String>) -> Self {
+        Self {
+            cause: Cause::Undecoded,
+            reason: reason.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for Fault {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.reason)
+    }
+}
 
 /// The faceuses of one shell: each face with whether the use is its `same`
 /// side.
@@ -63,27 +97,31 @@ impl<const N: usize> Curves<N> {
     }
 
     /// Curve `index` of the packed arrays, with its offsets precomputed.
-    fn unpack(&self, name: &str) -> Result<Vec<NurbsCurveRecord<N>>, Refusal> {
+    fn unpack(&self, name: &str) -> Result<Vec<NurbsCurveRecord<N>>, Fault> {
         if self.order.len() != self.vertex_count.len() {
-            return Err(format!("{name}: order and vertexCount differ in length"));
+            return Err(Fault::broken(format!(
+                "{name}: order and vertexCount differ in length"
+            )));
         }
         let total: usize = self.vertex_count.iter().map(|value| as_index(*value)).sum();
         if self.control_vertices.len() != total || self.weights.len() != total {
-            return Err(format!(
+            return Err(Fault::broken(format!(
                 "{name}: control vertices or weights do not match vertexCount"
-            ));
+            )));
         }
         let mut out = Vec::with_capacity(self.vertex_count.len());
         let (mut point, mut knot) = (0, 0);
         for (vertices, order) in self.vertex_count.iter().zip(&self.order) {
             let (vertices, order) = (as_index(*vertices), as_index(*order));
             if order == 0 || order > vertices {
-                return Err(format!("{name}: an order is 0 or above its vertex count"));
+                return Err(Fault::broken(format!(
+                    "{name}: an order is 0 or above its vertex count"
+                )));
             }
             let knots = self
                 .knots
                 .get(knot..knot + vertices + order)
-                .ok_or_else(|| format!("{name}: the knots end early"))?;
+                .ok_or_else(|| Fault::broken(format!("{name}: the knots end early")))?;
             out.push(NurbsCurveRecord {
                 order,
                 points: self.control_vertices[point..point + vertices].to_vec(),
@@ -95,7 +133,9 @@ impl<const N: usize> Curves<N> {
             knot += vertices + order;
         }
         if knot != self.knots.len() {
-            return Err(format!("{name}: the knots do not match the curves"));
+            return Err(Fault::broken(format!(
+                "{name}: the knots do not match the curves"
+            )));
         }
         Ok(out)
     }
@@ -422,7 +462,7 @@ impl Packed {
 }
 
 /// The NURBS surfaces of the packed arrays, one for each face.
-fn unpack_surfaces(surfaces: &Surfaces) -> Result<Vec<NurbsSurfaceRecord>, Refusal> {
+fn unpack_surfaces(surfaces: &Surfaces) -> Result<Vec<NurbsSurfaceRecord>, Fault> {
     let n = surfaces.u_vertex_count.len();
     if [
         &surfaces.v_vertex_count,
@@ -432,7 +472,7 @@ fn unpack_surfaces(surfaces: &Surfaces) -> Result<Vec<NurbsSurfaceRecord>, Refus
     .iter()
     .any(|values| values.len() != n)
     {
-        return Err("the surface count arrays differ in length".to_owned());
+        return Err(Fault::broken("the surface count arrays differ in length"));
     }
     let mut out = Vec::with_capacity(n);
     let (mut point, mut u_knot, mut v_knot) = (0, 0, 0);
@@ -446,11 +486,13 @@ fn unpack_surfaces(surfaces: &Surfaces) -> Result<Vec<NurbsSurfaceRecord>, Refus
             as_index(surfaces.v_order[index]),
         );
         if u_order == 0 || v_order == 0 || u_order > u_count || v_order > v_count {
-            return Err("a surface order is 0 or above its vertex count".to_owned());
+            return Err(Fault::broken(
+                "a surface order is 0 or above its vertex count",
+            ));
         }
         let points = u_count
             .checked_mul(v_count)
-            .ok_or("a surface vertex count overflows")?;
+            .ok_or_else(|| Fault::unread("a surface vertex count overflows"))?;
         let range = point..point + points;
         out.push(NurbsSurfaceRecord {
             u_order,
@@ -462,22 +504,22 @@ fn unpack_surfaces(surfaces: &Surfaces) -> Result<Vec<NurbsSurfaceRecord>, Refus
             points: surfaces
                 .control_vertices
                 .get(range.clone())
-                .ok_or("the surface control vertices end early")?
+                .ok_or_else(|| Fault::broken("the surface control vertices end early"))?
                 .to_vec(),
             weights: surfaces
                 .weights
                 .get(range)
-                .ok_or("the surface weights end early")?
+                .ok_or_else(|| Fault::broken("the surface weights end early"))?
                 .to_vec(),
             u_knots: surfaces
                 .u_knots
                 .get(u_knot..u_knot + u_count + u_order)
-                .ok_or("the surface U knots end early")?
+                .ok_or_else(|| Fault::broken("the surface U knots end early"))?
                 .to_vec(),
             v_knots: surfaces
                 .v_knots
                 .get(v_knot..v_knot + v_count + v_order)
-                .ok_or("the surface V knots end early")?
+                .ok_or_else(|| Fault::broken("the surface V knots end early"))?
                 .to_vec(),
         });
         point += points;
@@ -489,31 +531,34 @@ fn unpack_surfaces(surfaces: &Surfaces) -> Result<Vec<NurbsSurfaceRecord>, Refus
         || u_knot != surfaces.u_knots.len()
         || v_knot != surfaces.v_knots.len()
     {
-        return Err("the surface arrays do not match the surface counts".to_owned());
+        return Err(Fault::broken(
+            "the surface arrays do not match the surface counts",
+        ));
     }
     Ok(out)
 }
 
 /// Reads the arrays of a `BrepArray` prim.
-pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refusal> {
-    let indices = |issues: &mut Issues, name: &str| -> Result<Vec<u32>, Refusal> {
+pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Fault> {
+    let indices = |issues: &mut Issues, name: &str| -> Result<Vec<u32>, Fault> {
         integers(prim, name, issues)
             .unwrap_or_default()
             .into_iter()
             .map(|value| {
-                u32::try_from(value).map_err(|_| format!("{name}: an index is not a uint"))
+                u32::try_from(value)
+                    .map_err(|_| Fault::broken(format!("{name}: an index is not a uint")))
             })
             .collect()
     };
     let flags =
-        |issues: &mut Issues, name: &str, yes: &str, no: &str| -> Result<Vec<bool>, Refusal> {
+        |issues: &mut Issues, name: &str, yes: &str, no: &str| -> Result<Vec<bool>, Fault> {
             tokens(prim, name, issues)
                 .unwrap_or_default()
                 .into_iter()
                 .map(|token| match token.as_str() {
                     value if value == yes => Ok(true),
                     value if value == no => Ok(false),
-                    _ => Err(format!("{name}: unknown token `{token}`")),
+                    _ => Err(Fault::broken(format!("{name}: unknown token `{token}`"))),
                 })
                 .collect()
         };
@@ -524,14 +569,14 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
             .map(|pair| [pair[0], pair[1]])
             .collect()
     };
-    let only = |issues: &mut Issues, name: &str, token: &str| -> Result<usize, Refusal> {
+    let only = |issues: &mut Issues, name: &str, token: &str| -> Result<usize, Fault> {
         let values = tokens(prim, name, issues).unwrap_or_default();
         if let Some(other) = values.iter().find(|value| *value != token) {
-            return Err(format!("{name}: unsupported type `{other}`"));
+            return Err(Fault::unread(format!("{name}: unsupported type `{other}`")));
         }
         Ok(values.len())
     };
-    let curves3 = |issues: &mut Issues, instance: &str| -> Result<Curves<3>, Refusal> {
+    let curves3 = |issues: &mut Issues, instance: &str| -> Result<Curves<3>, Fault> {
         let name = |field: &str| format!("brep:{instance}:curve3d:nurb:{field}");
         Ok(Curves {
             control_vertices: vectors3(prim, &name("controlVertices"), issues).unwrap_or_default(),
@@ -541,16 +586,14 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
             weights: reals(prim, &name("weights"), 1, issues).unwrap_or_default(),
         })
     };
-    let index_pairs = |issues: &mut Issues, name: &str| -> Result<Vec<[u32; 2]>, Refusal> {
+    let index_pairs = |issues: &mut Issues, name: &str| -> Result<Vec<[u32; 2]>, Fault> {
+        let index = |value: i128| {
+            u32::try_from(value).map_err(|_| Fault::broken(format!("{name}: an index is negative")))
+        };
         integer_tuples(prim, name, 2, issues)
             .unwrap_or_default()
             .chunks_exact(2)
-            .map(|pair| {
-                Ok([
-                    u32::try_from(pair[0]).map_err(|_| format!("{name}: an index is negative"))?,
-                    u32::try_from(pair[1]).map_err(|_| format!("{name}: an index is negative"))?,
-                ])
-            })
+            .map(|pair| Ok([index(pair[0])?, index(pair[1])?]))
             .collect()
     };
     let schemas = prim.api_schemas();
@@ -564,9 +607,11 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
         .map(|token| match token.as_str() {
             POINT_TYPE => Ok(true),
             "none" => Ok(false),
-            _ => Err(format!("shell:pointType: unsupported type `{token}`")),
+            _ => Err(Fault::unread(format!(
+                "shell:pointType: unsupported type `{token}`"
+            ))),
         })
-        .collect::<Result<Vec<bool>, Refusal>>()?;
+        .collect::<Result<Vec<bool>, Fault>>()?;
     let trim_curves = if schemas.contains(TRIM_CURVE_API) {
         let name = |field: &str| format!("brep:curveUv:nurb:{field}");
         Some(Curves {
@@ -625,15 +670,34 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Result<Packed, Refus
     if packed.edge_curves.len() != edge_curve_count
         || packed.edge_vertices.len() != edge_curve_count
     {
-        return Err("the edge arrays differ in length".to_owned());
+        return Err(Fault::broken("the edge arrays differ in length"));
     }
     if packed.face_loop_count.len() != face_count {
-        return Err("the face arrays differ in length".to_owned());
+        return Err(Fault::broken("the face arrays differ in length"));
     }
     if packed.vertices.len() != vertex_count {
-        return Err("the vertex arrays differ in length".to_owned());
+        return Err(Fault::broken("the vertex arrays differ in length"));
     }
     Ok(packed)
+}
+
+/// Whether the NURBS geometry of `brep` breaks §17.3: a weight that is not
+/// positive, or a knot vector that decreases.
+pub(crate) fn breaks_rules(brep: &Brep) -> bool {
+    let weights_break = |weights: &[f64]| !weights.iter().all(|weight| *weight > 0.0);
+    let knots_break = |knots: &[f64]| knots.windows(2).any(|pair| pair[1] < pair[0]);
+    brep.nurbs_curves
+        .iter()
+        .any(|curve| weights_break(&curve.weights) || knots_break(&curve.knots))
+        || brep
+            .nurbs_pcurves
+            .iter()
+            .any(|curve| weights_break(&curve.weights) || knots_break(&curve.knots))
+        || brep.nurbs_surfaces.iter().any(|surface| {
+            weights_break(&surface.weights)
+                || knots_break(&surface.u_knots)
+                || knots_break(&surface.v_knots)
+        })
 }
 
 /// The B-reps of one prim and what they hold that records do not.
@@ -660,22 +724,24 @@ fn ranges(counts: &[u32]) -> Vec<std::ops::Range<usize>> {
         .collect()
 }
 
-fn check_total(counts: &[u32], len: usize, name: &str) -> Result<(), Refusal> {
+fn check_total(counts: &[u32], len: usize, name: &str) -> Result<(), Fault> {
     let total: usize = counts.iter().map(|value| as_index(*value)).sum();
     if total == len {
         Ok(())
     } else {
-        Err(format!(
+        Err(Fault::broken(format!(
             "{name} does not match the length of its partner arrays"
-        ))
+        )))
     }
 }
 
 /// Decodes the B-reps of `packed`.
-pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
+pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Fault> {
     let breps = packed.region_count.len();
     if packed.intersect_tol.len() != breps && !packed.intersect_tol.is_empty() {
-        return Err("brep:intersectTol3d does not have one value for each B-rep".to_owned());
+        return Err(Fault::broken(
+            "brep:intersectTol3d does not have one value for each B-rep",
+        ));
     }
     check_total(
         &packed.region_count,
@@ -683,7 +749,9 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         "brep:regionCount",
     )?;
     if packed.region_solid.len() != packed.region_shell_count.len() {
-        return Err("region:type does not have one token for each region".to_owned());
+        return Err(Fault::broken(
+            "region:type does not have one token for each region",
+        ));
     }
     check_total(
         &packed.region_shell_count,
@@ -696,7 +764,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         "shell:faceuseCount",
     )?;
     if packed.faceuse_same.len() != packed.faceuse_face.len() {
-        return Err("the faceuse arrays differ in length".to_owned());
+        return Err(Fault::broken("the faceuse arrays differ in length"));
     }
     check_total(
         &packed.face_loop_count,
@@ -709,17 +777,23 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         "loop:edgeuseCount",
     )?;
     if packed.loop_vertex.len() != packed.loop_edgeuse_count.len() {
-        return Err("loop:vertexIndex does not have one index for each loop".to_owned());
+        return Err(Fault::broken(
+            "loop:vertexIndex does not have one index for each loop",
+        ));
     }
     if packed.edgeuse_same.len() != packed.edgeuse_edge.len() {
-        return Err("the edgeuse arrays differ in length".to_owned());
+        return Err(Fault::broken("the edgeuse arrays differ in length"));
     }
     if packed.edge_range.len() != 2 * packed.edge_vertices.len() {
-        return Err("edge:range does not have two values for each edge".to_owned());
+        return Err(Fault::broken(
+            "edge:range does not have two values for each edge",
+        ));
     }
     let surfaces = unpack_surfaces(&packed.surfaces)?;
     if surfaces.len() != packed.face_loop_count.len() {
-        return Err("BrepSurfaceNurbAPI does not have one surface for each face".to_owned());
+        return Err(Fault::broken(
+            "BrepSurfaceNurbAPI does not have one surface for each face",
+        ));
     }
     let curves = packed.edge_curves.unpack("BrepCurve3dNurbAPI:edge3dNurb")?;
     let trims = match &packed.trim_curves {
@@ -748,7 +822,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                 for faceuse in faceuses[shell].clone() {
                     let face = as_index(packed.faceuse_face[faceuse]);
                     if face >= surfaces.len() {
-                        return Err("faceuse:faceIndex names no face".to_owned());
+                        return Err(Fault::broken("faceuse:faceIndex names no face"));
                     }
                     sides
                         .entry(face)
@@ -771,15 +845,23 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         let mut same_sense: BTreeMap<usize, bool> = BTreeMap::new();
         for (face, uses) in &sides {
             let [(first, first_same), (second, second_same)] = uses.as_slice() else {
-                return Err(format!("face {face} does not have two faceuses"));
+                return Err(Fault::broken(format!(
+                    "face {face} does not have two faceuses"
+                )));
             };
             if first_same == second_same {
-                return Err(format!("both faceuses of face {face} have one orientation"));
+                return Err(Fault::broken(format!(
+                    "both faceuses of face {face} have one orientation"
+                )));
             }
             let (first_solid, second_solid) =
                 (packed.region_solid[*first], packed.region_solid[*second]);
             let sense = match (first_solid, second_solid) {
-                (true, true) => return Err(format!("face {face} bounds two solid regions")),
+                (true, true) => {
+                    return Err(Fault::unread(format!(
+                        "face {face} bounds two solid regions"
+                    )))
+                }
                 (false, true) => *first_same,
                 (true, false) => *second_same,
                 (false, false) => *first_same,
@@ -789,12 +871,12 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
         }
         let mut vertex_map: BTreeMap<usize, usize> = BTreeMap::new();
         let mut edge_map: BTreeMap<usize, usize> = BTreeMap::new();
-        let mut vertex = |brep: &mut Brep, index: u32| -> Result<usize, Refusal> {
+        let mut vertex = |brep: &mut Brep, index: u32| -> Result<usize, Fault> {
             let index = as_index(index);
             let position = *packed
                 .vertices
                 .get(index)
-                .ok_or("an index names no vertex")?;
+                .ok_or_else(|| Fault::broken("an index names no vertex"))?;
             Ok(*vertex_map.entry(index).or_insert_with(|| {
                 brep.vertices.push(position);
                 brep.vertices.len() - 1
@@ -814,12 +896,15 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                     let [start, end] = *packed
                         .edge_vertices
                         .get(edge)
-                        .ok_or("edgeuse:edgeIndex names no edge")?;
+                        .ok_or_else(|| Fault::broken("edgeuse:edgeIndex names no edge"))?;
                     let record_edge = match edge_map.get(&edge) {
                         Some(index) => *index,
                         None => {
                             let (start, end) = (vertex(&mut brep, start)?, vertex(&mut brep, end)?);
-                            let curve = curves.get(edge).ok_or("an edge has no curve")?.clone();
+                            let curve = curves
+                                .get(edge)
+                                .ok_or_else(|| Fault::broken("an edge has no curve"))?
+                                .clone();
                             brep.nurbs_curves.push(curve);
                             brep.edges.push(EdgeRecord {
                                 vertices: [start, end],
