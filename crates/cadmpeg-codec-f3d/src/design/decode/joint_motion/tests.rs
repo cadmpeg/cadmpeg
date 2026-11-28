@@ -13,7 +13,7 @@ fn decode_stream(
     scopes: &HashMap<u32, bool>,
 ) -> Vec<super::DesignJointMotion> {
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
-    super::decode_stream(bytes, stream, &records, scopes, &AsBuiltJoints::default())
+    super::decode_stream(bytes, stream, &records, scopes, &AsBuiltJoints::default()).0
 }
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
@@ -116,7 +116,7 @@ fn as_built_motion_binds_the_registered_joint_after_occurrence_parents() {
     let scopes = HashMap::from([(11, true)]);
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let read = |as_built: &AsBuiltJoints<'_>| {
-        super::decode_stream(&bytes, "Design/BulkStream.dat", &records, &scopes, as_built)
+        super::decode_stream(&bytes, "Design/BulkStream.dat", &records, &scopes, as_built).0
     };
     let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
     assert_eq!(motion.joint_record_index, 10);
@@ -440,4 +440,124 @@ fn zero_lane_match_in_a_partner_record_is_not_a_freedom() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&0f64.to_le_bytes());
     assert!(codes(&bytes, &HashMap::from([(11, true)])).is_empty());
+}
+
+#[test]
+fn only_an_aligned_scope_of_the_stream_without_a_motion_takes_its_kinds_motion() {
+    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayload,
+    };
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope = |stream: &str, record_index: u32, aligned: bool| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            DesignFeatureKind::Assemble,
+            record_index,
+        );
+        if aligned {
+            scope
+                .try_edit(|draft| {
+                    draft.payload = DesignScopePayload::Assemble(Some(
+                        DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap(),
+                    ));
+                })
+                .unwrap();
+        }
+        scope
+    };
+    let scopes = [
+        scope(stream, 3, true),
+        scope(stream, 5, true),
+        scope(stream, 7, false),
+        scope("f3d:Design/Other.dat", 9, true),
+    ];
+    let motion = super::DesignJointMotion {
+        id: format!("{stream}:design-joint-motion#0"),
+        joint_record_index: 4,
+        joint_byte_offset: 0,
+        motion_record_index: 6,
+        motion_byte_offset: 0,
+        freedoms: Vec::new(),
+        entry_words: Vec::new(),
+        limits: None,
+    };
+    assert_eq!(
+        super::scopes_without_motion(&scopes, stream, &[motion]),
+        [scopes[0].id.as_str()]
+    );
+}
+
+#[test]
+fn a_record_of_freedom_entries_that_binds_no_joint_or_scope_is_unbound() {
+    let mut bytes = Vec::new();
+    motion(&mut bytes, *b"395", 21, 11, &[2]);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let unbound = |scopes: &HashMap<u32, bool>| {
+        super::decode_stream(
+            &bytes,
+            "Design/BulkStream.dat",
+            &records,
+            scopes,
+            &AsBuiltJoints::default(),
+        )
+        .1
+    };
+    assert_eq!(unbound(&HashMap::new()), [21]);
+    assert!(unbound(&HashMap::from([(11, true)])).is_empty());
+}
+
+#[test]
+fn the_assumed_motion_loss_names_the_scopes_that_project_a_joint() {
+    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayload,
+    };
+    use cadmpeg_ir::products::JointId;
+    use cadmpeg_ir::products::{AssemblyJoint, JointConnector, JointOperand};
+    use cadmpeg_ir::transform::Transform;
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope = |record_index: u32| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            DesignFeatureKind::Assemble,
+            record_index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.payload = DesignScopePayload::Assemble(Some(
+                    DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap(),
+                ));
+            })
+            .unwrap();
+        scope
+    };
+    let scopes = [scope(3), scope(5)];
+    let projected = |scope: &DesignParameterScope| {
+        let mut joint = AssemblyJoint::grounded(
+            JointId::mint("f3d:model:joint#a").unwrap(),
+            JointConnector {
+                operand: JointOperand::root("origin", Vec::new()),
+                frame: Transform::identity(),
+                detached: false,
+            },
+            None,
+        );
+        joint.native_ref = Some(scope.id.clone());
+        joint
+    };
+    let unbound = [super::UnboundMotion {
+        stream: stream.to_owned(),
+        record_index: 21,
+    }];
+    let loss = super::assumed_motion_loss(&scopes, &[], &unbound, &[projected(&scopes[1])])
+        .expect("a projected scope without a motion is charged");
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::AssemblyJointMotionAssumedRigid.kind()
+    );
+    assert!(loss
+        .message
+        .ends_with(&format!(": {}; {stream}#21", scopes[1].id)));
+    assert!(super::assumed_motion_loss(&scopes, &[], &unbound, &[]).is_none());
 }

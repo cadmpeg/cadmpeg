@@ -663,3 +663,24 @@ fn a_design_record_takes_no_field_path_from_the_model_record_it_restates() {
         "{findings:?}"
     );
 }
+
+/// A design scope has the id of its product definition, and the CADIR wire
+/// carries both: a field path at that id names a field of either record.
+#[test]
+fn a_field_path_at_a_definition_id_names_a_field_of_the_definition_or_its_scope() {
+    let (ir, _) = design_with_process_state();
+    let definition = "test:design:definition#part";
+    let mut annotations = crate::AnnotationBuilder::new();
+    for field in ["active_arrangements", "kind", "not_a_serialized_field"] {
+        annotations.derived(definition, field).unwrap();
+    }
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(
+        matches!(findings.as_slice(), [finding]
+            if finding.severity == crate::report::Severity::Warning
+                && finding.entity.as_deref() == Some(definition)
+                && finding.rule.as_str() == "annotations_native.exactness-field-path-does-not-resolve"
+                && finding.message.contains("`not_a_serialized_field`")),
+        "{findings:?}"
+    );
+}

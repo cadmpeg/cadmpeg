@@ -4,7 +4,8 @@
 use super::{
     design_identity_text, direct_counted_records, external_geometry_metadata,
     external_link_indices, sketch_attributes, sketch_carrier, sketch_geometry, sketch_nurbs,
-    validate_external_geo_prefix, validate_sketch_carrier, EXTERNAL_GEO_AXIS_COUNT,
+    v11::sketches::StoredExternal, validate_external_geo_prefix, validate_sketch_carrier,
+    EXTERNAL_GEOMETRY_MISSING_FLAG, EXTERNAL_GEO_AXIS_COUNT,
 };
 use crate::native::{ObjectRecord, PropertyRecord};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
@@ -16,6 +17,7 @@ use std::collections::BTreeSet;
 
 pub(super) struct CachedSketchGeometry {
     pub(super) entities: Vec<SketchEntity>,
+    pub(super) externals: Vec<(SketchEntityId, StoredExternal)>,
     pub(super) matched_references: BTreeSet<usize>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -28,6 +30,7 @@ pub(super) fn project(
     references: Option<&PropertyRecord>,
 ) -> Result<CachedSketchGeometry, CodecError> {
     let mut entities = Vec::new();
+    let mut externals = Vec::new();
     let mut matched_references = BTreeSet::new();
     let mut losses = Vec::new();
     if external_geometry.type_name != "Part::PropertyGeometryList" {
@@ -68,8 +71,9 @@ pub(super) fn project(
         .skip(EXTERNAL_GEO_AXIS_COUNT)
         .enumerate()
     {
-        let (cache_reference, persisted_index, missing) =
+        let (cache_reference, persisted_index, flags) =
             external_geometry_metadata(node, external_index + 3)?;
+        let missing = flags.is_some_and(|flags| flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0);
         let reference_index = match persisted_index {
             Some(index) => references
                 .and_then(|property| property.links().get(index))
@@ -112,35 +116,42 @@ pub(super) fn project(
             Some(nurbs) => nurbs,
             None => sketch_geometry(&native_kind, &attributes)?,
         };
+        let link = reference_index
+            .and_then(|index| references.and_then(|property| property.links().get(index)))
+            .and_then(Option::as_ref);
+        let entity_id = SketchEntityId::mint(design_identity_text(
+            "sketch-entity",
+            object,
+            format_args!(":external:{external_index}"),
+        ))
+        .map_err(CodecError::malformed)?;
+        externals.push((
+            entity_id.clone(),
+            StoredExternal {
+                flags: Some(flags.unwrap_or_default()),
+                link: link.and_then(|link| {
+                    Some((link.object()?.to_owned(), link.subelements().to_vec()))
+                }),
+            },
+        ));
         entities.push(
-            SketchEntity::new(
-                SketchEntityId::mint(design_identity_text(
-                    "sketch-entity",
-                    object,
-                    format_args!(":external:{external_index}"),
-                ))
-                .map_err(CodecError::malformed)?,
-                id.clone(),
-                geometry,
-            )
-            .with_construction(true)
-            .with_native_ref(Some(external_geometry.id.clone()))
-            .with_geometry_ref(
-                references
-                    .filter(|_| reference_index.is_some())
-                    .map(|property| property.id.clone()),
-            )
-            .with_endpoint_refs(
-                reference_index
-                    .and_then(|index| references.and_then(|property| property.links().get(index)))
-                    .and_then(Option::as_ref)
-                    .map(|reference| reference.subelements().to_vec())
-                    .unwrap_or_default(),
-            ),
+            SketchEntity::new(entity_id, id.clone(), geometry)
+                .with_construction(true)
+                .with_native_ref(Some(external_geometry.id.clone()))
+                .with_geometry_ref(
+                    references
+                        .filter(|_| reference_index.is_some())
+                        .map(|property| property.id.clone()),
+                )
+                .with_endpoint_refs(
+                    link.map(|reference| reference.subelements().to_vec())
+                        .unwrap_or_default(),
+                ),
         );
     }
     Ok(CachedSketchGeometry {
         entities,
+        externals,
         matched_references,
         losses,
     })

@@ -326,6 +326,35 @@ fn decode_uses_the_active_configuration_source_site() {
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
+    let unplaced = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::SldprtLossCode::DesignConfigurationStateUnplaced.kind()
+        })
+        .expect("a note names the unplaced bodies");
+    let [scope] = result.ir().design.scopes.as_slice() else {
+        panic!("one scope: {:#?}", result.ir().design.scopes);
+    };
+    assert_eq!(
+        scope.unproduced.len(),
+        result.ir().geometry.bodies.len(),
+        "{scope:#?}"
+    );
+    for body in &result.ir().geometry.bodies {
+        assert!(scope.unproduced.contains(&body.id));
+    }
+    assert!(
+        result
+            .ir()
+            .geometry
+            .bodies
+            .iter()
+            .any(|body| unplaced.message.contains(body.id.as_str())),
+        "{}",
+        unplaced.message
+    );
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")

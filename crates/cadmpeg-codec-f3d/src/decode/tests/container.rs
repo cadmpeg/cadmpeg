@@ -530,6 +530,47 @@ fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
     }
 }
 
+/// A Design stream whose only records are a parameter scope of a native
+/// feature name, an owned parameter, its owner and its companion, under
+/// explicitly empty model-body maps, is an empty design.
+#[test]
+fn a_parameter_only_design_stream_decodes_as_an_empty_design() {
+    let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
+    let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps_and_parameters(
+        &snapshot,
+        &[],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    assert_eq!(native.design_parameter_scopes.len(), 1);
+    assert_eq!(native.design_parameters.len(), 1);
+    assert_eq!(native.design_parameter_owners.len(), 1);
+    assert_eq!(native.design_parameter_companions.len(), 1);
+    assert!(native.design_feature_timelines.is_empty());
+    assert_eq!(native.geometry_record_count(), 0);
+    let codes: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.clone())
+        .collect();
+    assert!(
+        codes.contains(&F3dLossCode::EmptyDesign.kind()),
+        "{codes:?}"
+    );
+    for absent in [
+        F3dLossCode::GeometryNotTransferred.kind(),
+        F3dLossCode::TopologyNotTransferred.kind(),
+        F3dLossCode::DesignRecordsUntransferred.kind(),
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    ] {
+        assert!(!codes.contains(&absent), "{absent:?}: {codes:?}");
+    }
+    assert!(decoded.report().geometry_transferred());
+}
+
 fn source_image_marks(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<ArenaClass> {
     let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded.clone());
     let fidelity = decoded.source_fidelity();

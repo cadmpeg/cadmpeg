@@ -23,7 +23,7 @@ import tomllib
 PYTHON_ONLY = {
     'check-codec-facade.py', 'check-deny-census.py', 'check-dialect-support.py',
     'check-dialects.py', 'check-doc-anchors.py', 'check-fuzz-seeds.py',
-    'check-golden-coverage-floors.py', 'check-resource-caps.py',
+    'check-resource-caps.py',
     'check-source-policy.py', 'check-rust-policy.py', 'census-panic-calls.py', 'dialect_support_data.py',
     'render-format-support.py',
 }
@@ -37,7 +37,7 @@ STATIC_ONLY = {
     'AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'LEGAL.md', 'LICENSE',
     'LICENSE-docs', 'README.md', 'SECURITY.md', '.gitignore',
     'docs/codec-facade.toml', 'docs/evaluations.toml',
-    'docs/golden-coverage-floors.toml', 'corpus/README.md', 'corpus/manifest.example.toml',
+    'corpus/README.md', 'corpus/manifest.example.toml',
     '.github/PULL_REQUEST_TEMPLATE.md', '.github/dependabot.yml',
 }
 

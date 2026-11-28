@@ -29,6 +29,7 @@ pub(crate) mod archive_session;
 pub(crate) mod canvas;
 pub(crate) mod configuration_table;
 pub(crate) mod origin_types;
+pub(crate) mod parameter_machinery;
 pub(crate) mod procedural_support;
 pub(crate) mod reverse_normal;
 pub(crate) mod sketch_relations;

@@ -1140,7 +1140,7 @@ fn fill_history(
     Ok(())
 }
 
-fn archive_subtypes(
+pub(super) fn archive_subtypes(
     archive: &super::HistoricalRecordArchive,
     version: Option<u32>,
 ) -> cadmpeg_asm::nurbs::toks::SubtypeTable {
@@ -1151,7 +1151,7 @@ fn archive_subtypes(
 }
 
 /// Materialize the sorted full record table from a hashed slot-to-revision map.
-fn materialize_hashed_table(
+pub(super) fn materialize_hashed_table(
     versions: &super::binding::FastMap<i64, i64>,
     archive: &super::HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {
