@@ -1955,7 +1955,7 @@ pub fn decode_par_int_cur_isoline(
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes. Token-space
 /// counterpart of [`decode_par_int_cur_isoline`].
-pub(super) fn par_int_cur_isoline(
+pub(crate) fn par_int_cur_isoline(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &[Token],
     reference_context: Option<&SubtypeTable>,
@@ -1964,9 +1964,20 @@ pub(super) fn par_int_cur_isoline(
         crate::nurbs::toks::find_owned_subtype_marker(scope, &["par_int_cur", "parcur"])?;
     let mut cur = Cur::at(scope, start + 2);
     (cur.take_long()? > 0).then_some(())?;
-    (cur.take_enum()? == 2).then_some(())?;
-    cur.take_range_value()?;
-    cur.take_range_value()?;
+    match cur.take_enum()? {
+        1 => {
+            cur.take_long()?;
+            cur.take_long()?;
+            cur.take_f64()?;
+            cur.take_f64()?;
+            cur.take_f64()?;
+        }
+        2 => {
+            cur.take_range_value()?;
+            cur.take_range_value()?;
+        }
+        _ => return None,
+    }
     cur.take_enum()?;
     let supports = [
         propagate_resource!(optional_rolling_ball_surface(

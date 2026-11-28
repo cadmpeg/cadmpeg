@@ -1410,6 +1410,98 @@
           "geometry": {
             "kind": "solved",
             "value": {
+              "degree": 3,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": -10.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 8.552284749830793,
+                    "y": -8.552284749830793,
+                    "z": 6.666666666666666
+                  },
+                  {
+                    "x": 7.104569499661585,
+                    "y": -7.104569499661587,
+                    "z": 13.333333333333336
+                  },
+                  {
+                    "x": 5.656854249492378,
+                    "y": -5.6568542494923815,
+                    "z": 20.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "alibre:brep:entity#125"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 3,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 10.0,
+                    "y": 10.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 9.333333333333334,
+                    "y": 6.666666666666668,
+                    "z": 6.666666666666666
+                  },
+                  {
+                    "x": 8.666666666666668,
+                    "y": 3.333333333333333,
+                    "z": 13.333333333333336
+                  },
+                  {
+                    "x": 8.0,
+                    "y": 0.0,
+                    "z": 20.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "alibre:brep:entity#127"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
               "direction": {
                 "x": 0.0,
                 "y": 1.0,
@@ -1424,6 +1516,98 @@
             }
           },
           "id": "alibre:brep:entity#133"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 3,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": -10.0,
+                    "y": 10.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -8.552284749830793,
+                    "y": 8.552284749830793,
+                    "z": 6.666666666666666
+                  },
+                  {
+                    "x": -7.1045694996615865,
+                    "y": 7.1045694996615865,
+                    "z": 13.333333333333336
+                  },
+                  {
+                    "x": -5.65685424949238,
+                    "y": 5.65685424949238,
+                    "z": 20.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "alibre:brep:entity#145"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 3,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": -10.0,
+                    "y": -10.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -8.552284749830793,
+                    "y": -8.552284749830793,
+                    "z": 6.666666666666666
+                  },
+                  {
+                    "x": -7.104569499661587,
+                    "y": -7.1045694996615865,
+                    "z": 13.333333333333336
+                  },
+                  {
+                    "x": -5.6568542494923815,
+                    "y": -5.65685424949238,
+                    "z": 20.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "alibre:brep:entity#148"
         },
         {
           "geometry": {
@@ -1542,6 +1726,7 @@
       "edges": [
         {
           "carrier": {
+            "curve": "alibre:brep:entity#145",
             "param_range": [
               0.0,
               1.0
@@ -1555,6 +1740,7 @@
         },
         {
           "carrier": {
+            "curve": "alibre:brep:entity#148",
             "param_range": [
               0.0,
               1.0
@@ -1666,6 +1852,7 @@
         },
         {
           "carrier": {
+            "curve": "alibre:brep:entity#125",
             "param_range": [
               0.0,
               1.0
@@ -1679,6 +1866,7 @@
         },
         {
           "carrier": {
+            "curve": "alibre:brep:entity#127",
             "param_range": [
               0.0,
               1.0
@@ -1936,6 +2124,9 @@
       "procedural_surfaces": [
         {
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0004941761660728137
+            },
             "kind": "unknown",
             "record": "alibre:brep:spline#20"
           },
@@ -1944,6 +2135,9 @@
         },
         {
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.002493735575215311
+            },
             "kind": "unknown",
             "record": "alibre:brep:spline#31"
           },
@@ -1952,6 +2146,9 @@
         },
         {
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0024937355752144104
+            },
             "kind": "unknown",
             "record": "alibre:brep:spline#53"
           },
@@ -1960,6 +2157,9 @@
         },
         {
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0024937355752159556
+            },
             "kind": "unknown",
             "record": "alibre:brep:spline#91"
           },
@@ -5840,22 +6040,6 @@
         "transform_hints": [],
         "unknowns": [
           {
-            "id": "alibre:brep:intcurve#125",
-            "links": []
-          },
-          {
-            "id": "alibre:brep:intcurve#127",
-            "links": []
-          },
-          {
-            "id": "alibre:brep:intcurve#145",
-            "links": []
-          },
-          {
-            "id": "alibre:brep:intcurve#148",
-            "links": []
-          },
-          {
             "id": "alibre:brep:spline#20",
             "links": []
           },
@@ -5941,7 +6125,7 @@
   },
   "report": {
     "coverage": {
-      "unknown_records": 8,
+      "unknown_records": 4,
       "unknown_surface_faces": 0
     },
     "identity": {
@@ -6545,6 +6729,16 @@
           "stream": "alibre:SAB_DATA",
           "tag": "point"
         },
+        "alibre:brep:entity#125": {
+          "offset": 16618,
+          "stream": "alibre:SAB_DATA",
+          "tag": "intcurve-curve"
+        },
+        "alibre:brep:entity#127": {
+          "offset": 16971,
+          "stream": "alibre:SAB_DATA",
+          "tag": "intcurve-curve"
+        },
         "alibre:brep:entity#13": {
           "offset": 1332,
           "stream": "alibre:SAB_DATA",
@@ -6569,6 +6763,16 @@
           "offset": 1447,
           "stream": "alibre:SAB_DATA",
           "tag": "coedge"
+        },
+        "alibre:brep:entity#145": {
+          "offset": 18547,
+          "stream": "alibre:SAB_DATA",
+          "tag": "intcurve-curve"
+        },
+        "alibre:brep:entity#148": {
+          "offset": 18938,
+          "stream": "alibre:SAB_DATA",
+          "tag": "intcurve-curve"
         },
         "alibre:brep:entity#18": {
           "offset": 1693,
@@ -6880,26 +7084,6 @@
           "stream": "alibre:SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:brep:intcurve#125": {
-          "offset": 16618,
-          "stream": "alibre:SAB_DATA",
-          "tag": "intcurve-curve"
-        },
-        "alibre:brep:intcurve#127": {
-          "offset": 16971,
-          "stream": "alibre:SAB_DATA",
-          "tag": "intcurve-curve"
-        },
-        "alibre:brep:intcurve#145": {
-          "offset": 18547,
-          "stream": "alibre:SAB_DATA",
-          "tag": "intcurve-curve"
-        },
-        "alibre:brep:intcurve#148": {
-          "offset": 18938,
-          "stream": "alibre:SAB_DATA",
-          "tag": "intcurve-curve"
-        },
         "alibre:brep:procedural_surface#20": {
           "offset": 1899,
           "stream": "alibre:SAB_DATA",
@@ -6943,54 +7127,10 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "bbd5cc2bc041774974ca37c0e6ef0c47dc39ce83519a075443e50494287cdc19",
+    "content_digest": "a2b9d13f82da8862b2e5998cc03c06658bb7e9b684a98143c4ddc489f6bcdfc3",
     "decode_digest": "fd43d82345eca4cb065d5390bd60c7d3569f6428dedb0baa639986feebfc3f46",
     "file_digests": {},
     "retained_records": {
-      "alibre:brep:intcurve#125": {
-        "bytes": {
-          "data": "Dg1pbnRjdXJ2ZSUhAAAADQUlHQAAAAz/////BP////8E/////wz/////Cw8NC3BhcmN1ciUiAAAABA4AAAAVAQAAAAQDAAAABAIAAAAGAAAAAAAAAAAGAAAAAAAA8D8GXKAnRstXMD8VAAAAAA0FJREAAAALDw0FJRsAAAAEAQAAABALCwsLDQUlFAAAAA0FJRcAAAAEAQAAABUAAAAABAIAAAAGAAAAAAAAAAAEAQAAAAYAAAAAAADwPwQBAAAABgAAAAAAAAAABgAAAAAAAAAABgAAAAAAAAAABgAAAAAAAPA/DQtudWxsYnMlIwAAAAYAAAAAAADwvwYAAAAAAADwvwsLBAAAAAAEAAAAAAQAAAAABgAAAAAAAPC/FQIAAAALChALCxE=",
-          "kind": "inline"
-        },
-        "offset": 16618,
-        "stream": "alibre:SAB_DATA",
-        "untyped": [
-          "model"
-        ]
-      },
-      "alibre:brep:intcurve#127": {
-        "bytes": {
-          "data": "DgUlIQAAAA0FJR0AAAAM/////wT/////BP////8M/////wsPDQUlIgAAAAQPAAAAFQEAAAAEAwAAAAQCAAAABgAAAAAAAAAABgAAAAAAAPA/BgGlJ0bLVzA/FQAAAAANBSURAAAACw8NBSUbAAAABAYAAAAQCwsLCw0FJRQAAAANBSUXAAAABAEAAAAVAAAAAAQCAAAABgAAAAAAAAAABAEAAAAGAAAAAAAA8D8EAQAAAAYAAAAAAADwPwYAAAAAAAAAAAYAAAAAAADwPwYAAAAAAADwPw0FJSMAAAAGAAAAAAAA8L8GAAAAAAAA8L8LCwQAAAAABAAAAAAEAAAAAAYAAAAAAADwvxUCAAAACwoQCwsR",
-          "kind": "inline"
-        },
-        "offset": 16971,
-        "stream": "alibre:SAB_DATA",
-        "untyped": [
-          "model"
-        ]
-      },
-      "alibre:brep:intcurve#145": {
-        "bytes": {
-          "data": "DgUlIQAAAA0FJR0AAAAM/////wT/////BP////8M/////wsPDQUlIgAAAAQSAAAAFQEAAAAEAwAAAAQCAAAABgAAAAAAAAAABgAAAAAAAPA/BgGlJ0bLVzA/FQAAAAANBSURAAAACw8NBSUbAAAABAYAAAAQCwsLCw0FJRQAAAANBSUXAAAABAEAAAAVAAAAAAQCAAAABgAAAAAAAAAABAEAAAAGAAAAAAAA8D8EAQAAAAYAAAAAAAAAAAYAAAAAAAAAAAYAAAAAAAAAAAYAAAAAAADwPw0FJSMAAAAGAAAAAAAA8L8GAAAAAAAA8L8LCwQAAAAABAAAAAAEAAAAAAYAAAAAAADwvxUCAAAACwoQCwsR",
-          "kind": "inline"
-        },
-        "offset": 18547,
-        "stream": "alibre:SAB_DATA",
-        "untyped": [
-          "model"
-        ]
-      },
-      "alibre:brep:intcurve#148": {
-        "bytes": {
-          "data": "DgUlIQAAAA0FJR0AAAAM/////wT/////BP////8M/////wsPDQUlIgAAAAQTAAAAFQEAAAAEAwAAAAQCAAAABgAAAAAAAAAABgAAAAAAAPA/Bt6ZJ0bLVzA/FQAAAAANBSURAAAACw8NBSUbAAAABAMAAAAQCwsLCw0FJRQAAAANBSUXAAAABAEAAAAVAAAAAAQCAAAABgAAAAAAAAAABAEAAAAGAAAAAAAA8D8EAQAAAAYAAAAAAAAAAAYAAAAAAAAAAAYAAAAAAAAAAAYAAAAAAADwPw0FJSMAAAAGAAAAAAAA8L8GAAAAAAAA8L8LCwQAAAAABAAAAAAEAAAAAAYAAAAAAADwvxUCAAAACwoQCwsR",
-          "kind": "inline"
-        },
-        "offset": 18938,
-        "stream": "alibre:SAB_DATA",
-        "untyped": [
-          "model"
-        ]
-      },
       "alibre:brep:spline#20": {
         "bytes": {
           "data": "DgtzcGxpbmUlEQAAAA0FJQ0AAAAM/////wT/////BP////8M/////wsPDQxza2luc3VyJRIAAAAEAAAAAAsKCwQCAAAABgAAAAAAAPC/BgAAAAAAAPC/BgAAAAAAAPC/BgAAAAAAAPC/BgAAAAAAAAAADQ1zdHJhaWdodCUTAAAAEwAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAABQAAAAAAAAAAAAAAAAAAPC/AAAAAAAAAAAGAAAAAAAA8D8KBgAAAAAAAAAACgYAAAAAAAAAQBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANEW51bGxfc3VyZmFjZSUUAAAABgAAAAAAAAAABwhudWxsX2xhdw0QbnVsbF9wY3VydmUlFQAAAAYAAAAAAADwvwYAAAAAAADwvwYAAAAAAADwvwYAAAAAAADwvwYAAAAAAADwPw0MZWxsaXBzZSUWAAAAEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQBQAAAAAAAAAgAAAAAAAAACAAAAAAAAA8L8UmpmZmZmZ6T8AAAAAAAAAAAAAAAAAAAAABgAAAAAAAPA/CgYAAAAAAAAAgAoGGi1EVPsh6T8UAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQUlFAAAAAYAAAAAAAAAAAcIbnVsbF9sYXcNBSUVAAAABAAAAAAVAAAAAA0JbnVicyUXAAAABAMAAAAEAwAAABUAAAAAFQAAAAAVAAAAABUAAAAABAMAAAAEAgAAAAYAAAAAAAAAAAQDAAAABgAAAAAAAOA/BAIAAAAGAAAAAAAA8D8EAwAAAAYAAAAAAAAAAAQDAAAABgAAAAAAAPA/BAMAAAAGAAAAAAAA8D8GAAAAAAAA8D8GAAAAAAAAAAAGAAAAAAAA8D8GVlVVVVVV5T8GAAAAAAAAAAAGAAAAAAAA8D8GVVVVVVVV1T8GAAAAAAAAAAAGAAAAAAAA8D8GVVVVVVVV1b8GAAAAAAAAAAAGAAAAAAAA8D8GVlVVVVVV5b8GAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAA8L8GAAAAAAAAAAAG3t3d3d3d7T8GVlVVVVVV5T8GVVVVVVVV5T8G3t3d3d3d7T8Gd3MnSN412j8GVVVVVVVV5T8GpsMdVQKl7T8G3ZpcAZeCwz8GVVVVVVVV5T8GxJhjGSbK7D8GG/2T2TvR1r8GVVVVVVVV5T8GuB/ccTso7D8GiLCx/WJ3478GVVVVVVVV5T8GAyFVGwhe6z8GBCFVGwhe678GVVVVVVVV5T8GvLu7u7u76z8GVVVVVVVV1T8GVlVVVVVV9T8GvLu7u7u76z8GfnhIyyOCwz8GVlVVVVVV9T8GTIc7qgRK6z8GoKeLP+Urnb8GVlVVVVVV9T8GiDHHMkyU6T8G4qTSXSJN2L8GVlVVVVVV9T8Gbz+443ZQ6D8GuwsOpnCZ4b8GVlVVVVVV9T8GBUKqNhC85j8GB0KqNhC85r8GVlVVVVVV9T8GmpmZmZmZ6T8GAAAAAAAAAAAGAAAAAAAAAEAGmpmZmZmZ6T8G2Ot78+nOur8GAAAAAAAAAEAG8kpZ/wbv6D8GwYQ/UZDNyr8GAAAAAAAAAEAGTMoqTHJe5j8GqEwR4gjJ2b8GAAAAAAAAAEAGJ1+UVbJ45D8G2s3UnPx2378GAAAAAAAAAEAGCGP/URga4j8GC2P/URga4r8GAAAAAAAAAEAGlAudYLjoCT8EAAAAAAQAAAAABAAAAAAEAAAAAAQAAAAABAAAAAAQCwsLCxE=",

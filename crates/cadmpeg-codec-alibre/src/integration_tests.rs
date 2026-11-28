@@ -10,6 +10,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_core::dialect::Admission;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_measure::report::BodyMeasures;
@@ -37,6 +38,11 @@ const CONE_OUTER_RADIUS: f64 = 15.0;
 const CONE_HEIGHT: f64 = 10.0;
 const LOFT_HALF_WIDTH: f64 = 10.0;
 const LOFT_HEIGHT: f64 = 20.0;
+/// The volume of the loft in cubic millimetres, as the STEP twin's faces
+/// enclose it.
+const LOFT_TWIN_VOLUME: f64 = 5834.039;
+/// Relative agreement of the decoded loft with its STEP twin.
+const LOFT_RELATIVE_TOLERANCE: f64 = 1.0e-3;
 
 const BOX: &[u8] = include_bytes!("../../../corpus/alibre/box.AD_PRT");
 const BOX_HOLE: &[u8] = include_bytes!("../../../corpus/alibre/box_hole.AD_PRT");
@@ -408,6 +414,81 @@ fn the_loft_is_the_solid_its_step_twin_is() {
     };
     assert_eq!(planes(part.ir()), 2);
     assert_eq!(planes(twin.ir()), 2);
+}
+
+#[test]
+fn every_loft_edge_has_a_three_dimensional_carrier() {
+    let result = decode(LOFT);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.edges.len(), 12);
+    assert_eq!(geometry.curves.len(), 12);
+    let nurbs = geometry
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry.solved(),
+                Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_))
+            )
+        })
+        .count();
+    assert_eq!(nurbs, 4);
+}
+
+#[test]
+fn a_loft_measures_the_volume_of_its_step_twin() {
+    let body = measured_body(decode(LOFT).ir());
+    assert_eq!(kind_count(&body, SurfaceKind::Plane), 2);
+    assert_eq!(kind_count(&body, SurfaceKind::Procedural), 4);
+    let measured = body
+        .volume()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("volume is measured");
+    let value = measured.value().value.get();
+    assert!(
+        (value - LOFT_TWIN_VOLUME).abs() <= LOFT_RELATIVE_TOLERANCE * LOFT_TWIN_VOLUME,
+        "volume {value}"
+    );
+    assert_box(
+        &body,
+        [-LOFT_HALF_WIDTH, -LOFT_HALF_WIDTH, 0.0],
+        [LOFT_HALF_WIDTH, LOFT_HALF_WIDTH, LOFT_HEIGHT],
+    );
+}
+
+#[test]
+fn a_loft_exports_a_closed_step_shell_with_every_face() {
+    let policy = DecodePolicy::default();
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(LOFT, &arena, &policy).unwrap();
+    let decoded = AlibreCodec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
+    ctx.finish_session().unwrap();
+    let (ir, _, fidelity) = decoded.unwrap().into_parts();
+    let plan = cadmpeg_codec_step::StepCodec::default()
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
+        .unwrap();
+    let mut step = Vec::new();
+    plan.write_to(&mut step).unwrap();
+    let reread = cadmpeg_codec_step::StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .unwrap();
+    let body = measured_body(reread.ir());
+    assert_eq!(*body.faces(), 6);
+    assert_eq!(kind_count(&body, SurfaceKind::Nurbs), 4);
+    let [shell] = body.shells().as_slice() else {
+        panic!("one shell");
+    };
+    assert!(*shell.closed());
+    assert_box(
+        &body,
+        [-LOFT_HALF_WIDTH, -LOFT_HALF_WIDTH, 0.0],
+        [LOFT_HALF_WIDTH, LOFT_HALF_WIDTH, LOFT_HEIGHT],
+    );
 }
 
 /// Overwrites the ACIS magic of the `SAB_DATA` stream in place.
