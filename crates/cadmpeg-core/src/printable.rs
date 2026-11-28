@@ -89,7 +89,6 @@ impl<'de> serde::Deserialize<'de> for PrintableString<String> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::PrintableString;
 

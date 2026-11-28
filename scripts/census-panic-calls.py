@@ -1,32 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Census of a call spelling in non-test crate source.
-
-``--check`` fails on any production ``.expect(``, ``.unwrap(``, ``panic!`` or
-``unreachable!``. A ``panic!`` or ``unreachable!`` inside a ``const``
-initializer is a compile-time refusal of a source literal, not a runtime panic
-route, and is not counted; neither is a crate listed in ``TEST_ONLY_CRATES``,
-each with the reason it is outside the check.
-
-With no argument the census is ``.expect(`` and ``.unwrap(``. ``--pattern`` takes
-any Python regular expression and censuses that spelling over the same scope and
-the same walk, so a clamp census and a panic census can never come from two
-different scopes.
-
-The rule is this file, not prose. Test source is found by parsing, never by a
-basename: the walk starts at every crate root (``src/lib.rs``, ``src/main.rs``
-and ``src/bin/*.rs``), follows every file module the source declares -- including
-one declared inside an inline ``mod`` block, whose directory the block names --
-and marks a module test source when its own declaration carries ``#[cfg(test)]``,
-when an enclosing inline ``mod`` block does, or when the module that declares it
-is already test source. Inside a file that the walk kept, every ``#[cfg(test)]``
-or bare ``#[test]`` item is masked by attribute parsing and brace matching. An ``include!`` target
-is followed the same way as a module. Comments and string literals are masked before counting, so a call
-spelled inside one does not count.
-
-Prints the raw line count over the whole scope, the same count after the
-exclusions, and the per-file buckets of bare ``.unwrap()``.
-"""
+"""Check runtime panic macros outside test code."""
 
 from __future__ import annotations
 
@@ -38,14 +12,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = Path(__file__).with_name("check-source-policy.py")
-SPEC = importlib.util.spec_from_file_location("source_policy", SCRIPT)
+SPEC = importlib.util.spec_from_file_location("panic_source_policy", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise SystemExit(f"cannot load {SCRIPT}")
 SOURCE_POLICY = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = SOURCE_POLICY
 SPEC.loader.exec_module(SOURCE_POLICY)
 
-PANIC_CALL = re.compile(r"\.\s*(?:expect|unwrap)\s*\(")
 PANIC_MACRO = re.compile(r"(?<![\w:])(?:panic|unreachable)\s*!")
 CONST_ITEM = re.compile(r"(?<![\w:])const\s+(?:[A-Za-z_]\w*|_)\s*:")
 CONST_BLOCK = re.compile(r"(?<![\w:])const\s*\{")
@@ -61,8 +34,6 @@ TEST_ONLY_CRATES = {
         "build links it; its `panic!` is the failing test's own assertion"
     ),
 }
-EXPECT_CALL = re.compile(r"\.\s*expect\s*\(")
-BARE_UNWRAP = re.compile(r"\.\s*unwrap\s*\(\s*\)")
 INCLUDE = re.compile(r'include!\s*\(\s*"([^"]+)"\s*\)')
 
 
@@ -160,67 +131,6 @@ def production_files() -> tuple[set[Path], set[Path]]:
     return kept, gated - kept
 
 
-def matching_lines(code: str, pattern: re.Pattern[str]) -> int:
-    """Count distinct starting lines, including calls split across lines."""
-    return len({code.count("\n", 0, match.start()) for match in pattern.finditer(code)})
-
-
-def list_sites(relative: str, source: str, code: str, pattern: re.Pattern[str]) -> None:
-    """Print each site's location and source, retaining its message expression."""
-    for match in pattern.finditer(code):
-        end = match.end()
-        if code[end - 1:end] == "(":
-            depth = 1
-            while end < len(code) and depth:
-                if code[end] == "(":
-                    depth += 1
-                elif code[end] == ")":
-                    depth -= 1
-                end += 1
-        line = code.count("\n", 0, match.start()) + 1
-        spelling = " ".join(source[match.start():end].splitlines())
-        print(f"{relative}:{line}\t{spelling}")
-
-
-@SOURCE_POLICY.analysis_session
-def census_pattern(pattern: re.Pattern[str], label: str, listing: bool = False) -> int:
-    """Print the census of one spelling over the crate source scope."""
-    kept, gated = production_files()
-    raw_sites = 0
-    non_test_sites = 0
-    unreached = 0
-    buckets: dict[str, int] = {}
-    files_in_scope = 0
-    for path in scope():
-        files_in_scope += 1
-        source = path.read_text(encoding="utf-8")
-        raw_sites += len(pattern.findall(source))
-        resolved = path.resolve()
-        if resolved not in kept:
-            if resolved not in gated:
-                unreached += 1
-            else:
-                continue
-        code, _ = SOURCE_POLICY.production_source(source)
-        relative = path.relative_to(ROOT).as_posix()
-        found = len(pattern.findall(code))
-        if found:
-            non_test_sites += found
-            buckets[relative] = found
-            if listing:
-                list_sites(relative, source, code, pattern)
-    print(f"census: {label} in crate source")
-    print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
-    print(f"files the module walk keeps as non-test: {len(kept)}")
-    print(f"files the walk reaches only through a #[cfg(test)] mod: {len(gated)}")
-    print(f"files in scope the walk never reaches: {unreached}")
-    print(f"raw matching sites over the whole scope: {raw_sites}")
-    print(f"non-test matching sites: {non_test_sites}")
-    for relative, count in sorted(buckets.items()):
-        print(f"  {relative} {count}")
-    return 0
-
-
 def matching_brace(code: str, opening: int) -> int | None:
     """The offset one past the ``}`` that closes the ``{`` at ``opening``."""
     depth = 0
@@ -315,91 +225,33 @@ def test_only_reason(relative: str) -> str | None:
 
 
 @SOURCE_POLICY.analysis_session
-def census_panic_calls(listing: bool = False, check: bool = False) -> int:
-    """Print the ``.expect(`` and ``.unwrap(`` census."""
+def check_panic_macros() -> int:
     kept, gated = production_files()
-    raw_lines = 0
-    non_test_lines = 0
-    expect_lines = 0
-    unreached = 0
-    unwrap_buckets: dict[str, int] = {}
-    macro_buckets: dict[str, int] = {}
-    files_in_scope = 0
-    remaining_calls = 0
+    findings = []
     for path in scope():
-        files_in_scope += 1
-        source = path.read_text(encoding="utf-8")
-        raw_lines += matching_lines(source, PANIC_CALL)
         resolved = path.resolve()
-        if resolved not in kept:
-            if resolved not in gated:
-                unreached += 1
-            else:
-                continue
-        code, _ = SOURCE_POLICY.production_source(source)
+        if resolved not in kept and resolved in gated:
+            continue
         relative = path.relative_to(ROOT).as_posix()
-        non_test_lines += matching_lines(code, PANIC_CALL)
-        expect_lines += matching_lines(code, EXPECT_CALL)
-        bare = len(BARE_UNWRAP.findall(code))
-        if bare:
-            unwrap_buckets[relative] = bare
-        if listing:
-            list_sites(relative, source, code, PANIC_CALL)
-        macro_sites = panic_macro_sites(code)
-        if macro_sites:
-            macro_buckets[relative] = len(macro_sites)
-        if test_only_reason(relative) is None:
-            remaining_calls += len(PANIC_CALL.findall(code)) + len(macro_sites)
-    print("census: .expect( and .unwrap( in crate source")
-    print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
-    print(f"files the module walk keeps as non-test: {len(kept)}")
-    print(f"files the walk reaches only through a #[cfg(test)] mod: {len(gated)}")
-    print(f"files in scope the walk never reaches: {unreached}")
-    print(f"raw matching lines over the whole scope: {raw_lines}")
-    print(f"non-test matching lines: {non_test_lines}")
-    print(f"non-test lines calling .expect(: {expect_lines}")
-    print(f"non-test bare .unwrap() calls: {sum(unwrap_buckets.values())}")
-    for relative, count in sorted(unwrap_buckets.items()):
-        print(f"  {relative} {count}")
-    print(f"non-test runtime panic!/unreachable! sites: {sum(macro_buckets.values())}")
-    for relative, count in sorted(macro_buckets.items()):
-        print(f"  {relative} {count}")
-    if check:
-        for crate, reason in sorted(TEST_ONLY_CRATES.items()):
-            print(f"check excludes {crate}: {reason}")
-        print(f"remaining production panic calls: {remaining_calls}")
-    return int(check and remaining_calls != 0)
+        if test_only_reason(relative) is not None:
+            continue
+        code, _ = SOURCE_POLICY.production_source(path.read_text(encoding="utf-8"))
+        for offset in panic_macro_sites(code):
+            line = code.count("\n", 0, offset) + 1
+            findings.append(f"{relative}:{line}: runtime panic macro")
+    for finding in findings:
+        print(finding)
+    if not findings:
+        print("panic macros: ok")
+    return int(bool(findings))
 
 
 def main() -> int:
-    """Print the census and return its status."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--pattern",
-        help="census this regular expression instead of .expect( and .unwrap(",
-    )
-    parser.add_argument(
-        "--label",
-        help="the spelling the census names in its first line; defaults to --pattern",
-    )
-    parser.add_argument(
-        "--list", action="store_true",
-        help="print every counted file:line and call, including its message expression",
-    )
-    parser.add_argument(
-        "--check", action="store_true",
-        help="fail on production expect/unwrap calls and runtime panic!/unreachable! sites, "
-             "except the declared test-only crates",
-    )
-    arguments = parser.parse_args()
-    if arguments.check and arguments.pattern is not None:
-        parser.error("--check applies to the panic census, not an arbitrary pattern")
-    if arguments.pattern is None:
-        return census_panic_calls(arguments.list, arguments.check)
-    return census_pattern(
-        re.compile(arguments.pattern), arguments.label or arguments.pattern, arguments.list
-    )
+    parser.add_argument("--check", action="store_true", help="check production panic macros")
+    parser.parse_args()
+    return check_panic_macros()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

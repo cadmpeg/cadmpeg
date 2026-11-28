@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! The `cadmpeg` command-line interface.
 //!
 //! Convert native CAD files between formats, inspect their contents, and

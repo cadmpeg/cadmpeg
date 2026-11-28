@@ -1,5 +1,7 @@
 //! Release-mode scaling benchmark for the STEP pipeline.
 
+#![allow(clippy::expect_used)]
+
 use std::fmt::Write as _;
 use std::hint::black_box;
 use std::io::Cursor;

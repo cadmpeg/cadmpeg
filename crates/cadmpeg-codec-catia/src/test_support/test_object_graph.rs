@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-graph, entity-table, catalog, and value-block CATPart builders.
 
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_bytes::be32;
 use crate::test_support::test_container::{outer_container_catpart, standard_catpart};
 

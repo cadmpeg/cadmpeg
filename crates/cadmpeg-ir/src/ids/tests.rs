@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
 use cadmpeg_core::serde_erase::json;

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration partition identity and coherence tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
 use crate::decode::assign_configuration_bodies;

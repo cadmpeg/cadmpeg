@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::{inferred_history_losses, operand_brep_history_state_pair};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};

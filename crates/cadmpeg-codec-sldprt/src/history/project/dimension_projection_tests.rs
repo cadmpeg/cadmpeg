@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Dimension and cosmetic thread feature projection tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::parameters::format_native_scalar;
 use crate::history::project::modify::project_chamfer;

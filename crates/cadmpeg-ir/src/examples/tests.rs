@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::{directed_subd_sum, unit_cube};
 use crate::document::CadIr;

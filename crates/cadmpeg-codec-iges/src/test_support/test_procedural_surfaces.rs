@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Procedural-surface byte fixtures for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_global, OwnedTestEntity,

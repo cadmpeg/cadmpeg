@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Deltas stream wrappers around the shared Parasolid BODY witnesses.
 
-#![allow(clippy::unwrap_used)]
-
 pub(crate) fn stream(bytes: Vec<u8>) -> crate::parasolid::Stream {
     crate::parasolid::Stream {
         file_offset: 0,

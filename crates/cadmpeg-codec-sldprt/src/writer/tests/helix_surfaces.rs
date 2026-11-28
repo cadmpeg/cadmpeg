@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_ir::features::extents::AngularTermination;
 use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
 use cadmpeg_ir::features::operation_settings::BooleanOp;

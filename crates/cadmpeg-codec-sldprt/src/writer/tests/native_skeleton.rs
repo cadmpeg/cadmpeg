@@ -2,8 +2,6 @@
 //! The native skeleton of a generated part: its identifiers beside the
 //! history summary, and the input that keeps it off.
 
-#![allow(clippy::unwrap_used)]
-
 use std::fmt::Write as _;
 use std::io::Cursor;
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::feature::definitions::placement_instruction_rows;
 use crate::feature::definitions::positional_saved_section;

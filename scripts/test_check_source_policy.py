@@ -1481,6 +1481,17 @@ class LintSuppressions(TempSourceCase):
 )]
 """
 
+    def test_test_support_allow_is_narrow(self) -> None:
+        path = "crates/cadmpeg-test-support/src/lib.rs"
+        allowed = "#![allow(clippy::expect_used, clippy::unwrap_used)]\n"
+        self.write(path, allowed)
+        self.assertEqual(self.findings("lint_suppression"), [])
+        for text in [allowed + allowed, allowed.replace("unwrap_used", "panic"),
+                     allowed.replace("#!", "#")]:
+            with self.subTest(text=text):
+                self.write(path, text)
+                self.assertEqual(len(self.findings("lint_suppression")), 1)
+
     def test_only_the_generated_registry_module_may_expect_dead_code(self) -> None:
         path = "crates/cadmpeg-codec-nx/src/dialect/registry_ids.rs"
         self.write(path, "#![expect(dead_code)]\nconst UNUSED: () = ();\n")

@@ -2,7 +2,6 @@
 //! Shared synthetic byte-fixture builders for the crate's `#[cfg(test)]` suites.
 //!
 //! Helpers hand-build `.f3d` ZIP archives and ASM stream payloads.
-#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset and coincident reference-plane frame projection tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::bind::order_features_for_regeneration;
 use crate::history::project::bind_offset_plane_references;

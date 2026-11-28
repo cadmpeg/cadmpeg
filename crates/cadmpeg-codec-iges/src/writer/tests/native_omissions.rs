@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The semantic writer lists every native record it leaves out by id (§3.4,
 //! Rule W3).
-#![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
 use std::io::Cursor;

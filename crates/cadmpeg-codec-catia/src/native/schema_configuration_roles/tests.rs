@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use super::bind;
 use crate::native::CatiaNative;
 use crate::test_support::test_formula::standard_catpart_with_schema_field_roles;

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native catalogue load and store tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;

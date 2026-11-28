@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history reference, projection, and write-prepare tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::records::Configuration;
 use crate::records::Feature;

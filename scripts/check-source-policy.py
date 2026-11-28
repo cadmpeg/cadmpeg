@@ -610,11 +610,12 @@ CONVERSION_EXPECTATION = {
 
 
 def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
-    """Keep lint suppressions in tests and the one checked conversion module."""
+    """Keep lint suppressions in tests and designated modules."""
     findings = []
     tokens, pairs, parents = evaluation_tokens(code)
     words = [token[0] for token in tokens]
     admitted_conversion = False
+    admitted_test_support = False
     admitted_registry = False
     for index, word in enumerate(words):
         if word != "#":
@@ -646,6 +647,14 @@ def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
         if not suppressions:
             continue
         allowed = False
+        if (relative_path(path) == "crates/cadmpeg-test-support/src/lib.rs"
+                and not admitted_test_support and inner and index not in parents
+                and words[opening + 1:end] == [
+                    "allow", "(", "clippy", "::", "expect_used", ",",
+                    "clippy", "::", "unwrap_used", ")",
+                ]):
+            allowed = True
+            admitted_test_support = True
         if (relative_path(path) in GENERATED_DIALECT_PATHS
                 and not admitted_registry and inner and index not in parents
                 and words[opening + 1:end] == ["expect", "(", "dead_code", ")"]):
@@ -669,7 +678,7 @@ def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
         if not allowed:
             findings.append(Finding(
                 "lint_suppression", relative_path(path), code.count("\n", 0, tokens[index].start()) + 1,
-                "Fix the lint instead of suppressing it; only tests, core conversions, and generated dialect IDs have exceptions.",
+                "Fix the lint instead of suppressing it; tests and designated module exceptions are exempt.",
             ))
     return findings
 

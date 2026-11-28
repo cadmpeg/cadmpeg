@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Cursor;

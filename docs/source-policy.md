@@ -130,12 +130,13 @@ exact value or reject the invalid constant.
 `lint_suppression` rejects production `#[allow(...)]` and `#[expect(...)]`,
 including inner attributes and conditional suppressions active in production.
 Suppressions under `cfg_attr(test, ...)` or a flat `all(..., test, ...)`
-predicate apply only to tests and are exempt. Fix the code covered
-by the lint. Test modules and test files retain their suppressions. The one
-exception is the module-level expectation in `cadmpeg-core/src/convert.rs` for
+predicate apply only to tests and are exempt. Fix the code covered by the lint.
+The module-level expectation in `cadmpeg-core/src/convert.rs` covers
 `as_conversions`, `cast_possible_truncation`, `cast_precision_loss` and
 `cast_sign_loss`. It has a nonempty reason and appears once. Function-level
 expectations, nested module expectations and additional lints are rejected.
+The root of `cadmpeg-test-support` allows `expect_used` and `unwrap_used` for
+its test helpers.
 Generated dialect ID modules each permit one module-level `expect(dead_code)`.
 
 ## Integer limits

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Treatment candidate behavior over historical topology.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::treatment_candidates::{
     treatment_edge_candidates, treatment_radius_candidates,

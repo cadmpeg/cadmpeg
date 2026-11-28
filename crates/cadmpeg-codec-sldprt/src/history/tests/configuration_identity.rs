@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Keywords configuration partition-identity resolution tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::records::Configuration;
 use crate::test_support::container::make_block;

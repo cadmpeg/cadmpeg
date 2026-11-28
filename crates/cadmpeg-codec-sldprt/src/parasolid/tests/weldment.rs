@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier-bounded auxiliary XT stream extraction.
-#![allow(clippy::unwrap_used)]
 
 use crate::container;
 use crate::parasolid::ExtractedStream;

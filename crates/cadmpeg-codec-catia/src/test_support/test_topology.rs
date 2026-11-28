@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic standard-family topology streams for fixture CATParts.
 
-#![allow(clippy::unwrap_used)]
 use crate::test_support::test_bytes::{be_f32, le_f32};
 
 pub(crate) fn standard_quad_topology_stream() -> Vec<u8> {

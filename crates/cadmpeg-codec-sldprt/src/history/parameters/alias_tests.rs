@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter alias, equation, and configuration-index tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::configuration::configuration_lane_assignments;
 use crate::history::parameters::expression_identifiers;

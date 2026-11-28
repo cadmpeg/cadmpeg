@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::test_support::wire;
 use cadmpeg_core::serde_erase::json;

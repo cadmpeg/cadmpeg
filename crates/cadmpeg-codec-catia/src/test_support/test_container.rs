@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer-container wrapping and variant CATPart images.
 
-#![allow(clippy::unwrap_used)]
 use crate::container::{DIR_MAGIC, OUTER_MAGIC};
 
 use crate::test_support::test_bytes::{be32, be_f32, le_f32, le_f64};

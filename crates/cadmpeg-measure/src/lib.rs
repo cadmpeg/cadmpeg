@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Geometric measurement of decoded cadmpeg models.
 //!
 //! [`Measurer`] reads a [`cadmpeg_ir::CadIr`] and measures its bodies, faces

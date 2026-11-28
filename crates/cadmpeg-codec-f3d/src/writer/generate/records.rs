@@ -1184,7 +1184,6 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
 #[cfg(test)]
 mod tests {
     // Hand-built relations assert the written bytes; the drafts are valid by construction.
-    #![allow(clippy::unwrap_used)]
     use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
     use crate::records::{
         identity::ReferenceRun,
@@ -1348,7 +1347,6 @@ mod tests {
 
 #[cfg(test)]
 mod relation_ordinal_tests {
-    #![allow(clippy::unwrap_used)]
     use super::encode_sketch_relation;
     use crate::records::{
         identity::ReferenceRun,

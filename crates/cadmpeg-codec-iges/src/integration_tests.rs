@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized IGES card streams.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;

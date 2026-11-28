@@ -247,7 +247,6 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
 #[cfg(test)]
 mod tests {
     // Source frames are explicit; wire assertions exercise derived positions.
-    #![allow(clippy::unwrap_used)]
     use super::FeatureSwp104LeadingBranch;
     use cadmpeg_core::serde_erase::json;
 

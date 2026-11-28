@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `b5` family over synthetic byte fixtures.
 
-#![allow(clippy::unwrap_used)]
-
 use crate::test_support::test_a5a8::a8_surface_stream;
 use crate::test_support::test_b5::{
     append_b5_record, b5_analytic_line_pcurve_payload, b5_closed_triangle_stream,

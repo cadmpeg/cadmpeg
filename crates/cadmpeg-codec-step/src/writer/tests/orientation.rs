@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Loop orientation of written STEP solids.
 
-#![allow(clippy::unwrap_used)]
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};

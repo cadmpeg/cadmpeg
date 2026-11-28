@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-region boundaries resolved by exact conic intersection and stored tangency.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(clippy::indexing_slicing, clippy::panic)]
 use cadmpeg_core::json;
 
 use super::projection::replace_query;

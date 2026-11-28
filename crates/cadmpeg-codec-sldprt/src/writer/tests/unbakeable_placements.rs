@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body placements the writer cannot bake into model-space geometry.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

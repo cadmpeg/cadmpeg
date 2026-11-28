@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thin walls carry their Boolean scope, side and thickness controls into the design.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use serde_json::Value;

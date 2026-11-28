@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part parameters and formulas in the v11 design layer.
 
-#![allow(clippy::unwrap_used)]
-
 use std::collections::BTreeMap;
 use std::io::Cursor;
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native sketch-relation grouping and unit decode tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_test_support::EditableDecodeResult;
 

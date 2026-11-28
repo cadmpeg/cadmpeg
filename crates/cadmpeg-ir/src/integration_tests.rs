@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Crate-wide IR tests with no single production owner.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::ignored_unit_patterns)]
 

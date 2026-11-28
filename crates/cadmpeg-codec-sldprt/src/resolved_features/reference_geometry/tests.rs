@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed reference-plane frame and coordinate-system projection tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 
