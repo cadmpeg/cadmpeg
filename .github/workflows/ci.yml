@@ -355,15 +355,13 @@ jobs:
         # inside the deadline on the debug build.
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/side2/tmp/iges-l9"
           test -x target/debug/cadmpeg
           python3 scripts/verify-iges-bounded.py \
             crates/cadmpeg-codec-iges/tests/golden/fixtures \
             --cadmpeg target/debug/cadmpeg \
             --limits service \
             --timeout 30 \
-            --roundtrip \
-            --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
+            --roundtrip
 
       - name: Documentation tests
         # Reuses the library builds the Rust gate made; on its own job this
