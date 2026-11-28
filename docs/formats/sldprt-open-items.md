@@ -569,6 +569,14 @@ Each omitted owner-qualified construction circle can have its own current or ext
 
 **Conflict.** For an unresolved solid sweep, the compact binder still projects Join when every owned lane supplies word `15`. An owned unknown, malformed or ambiguous lane prevents that consensus, but agreement on word `15` does not supply the independent Merge Boolean carrier required here.
 
+### DI-94. Loft section order, guide curves, object extent, and Boolean operation
+
+**Question.** How are the intermediate sections of a `moBlend_c` loft with three or more sections ordered, which sketch entities form each guide curve, which field bounds a `moBlend_c` object in its stream, and which carrier stores the loft's Boolean operation?
+
+**Known.** `sldprt.md` §2 defines the section count, the section operands and their tail, and the guide curves. A `moCompEntGroup_c` guide child stores, after its ten-byte child prefix, a u16 count of `moGeneralCurveRef_w` component-profile operands that name the guide's sketch, followed by sketch-entity handles of the form class token `ce 80` and a u16 entity identifier. A sketch feature that a loft record holds in place has a name record between the loft's name record and its section count, and a smaller object identifier than the loft. The decoder looks for the first section operand before the first name record of an object other than a sketch feature with a smaller object identifier, and ends the loft object at the first name record after that operand. It reads three or more sections in stored order and states `feature.loft-section-order-assumed`. It keeps guide curves as native references and states `feature.loft-guides-retained`. A loft whose guide curves do not read keeps its sections and states `feature.loft-guides-unresolved`. It takes the Boolean operation from the feature's `Operation` property or its feature kind. It reads `moBlendCut_c` and `moBlendRefSurface_c` records by their XML properties.
+
+**Need.** Save a part with a loft through three sketches picked in an order other than their position along the loft, the same loft with a centerline instead of guide curves, a loft that adds material to an existing body, a loft cut, and a surface loft. Compare the section operands, the records after the guide-curve count, and the words before the section count.
+
 ### DI-31. Native neutral-plane Draft direction reversal and outward flag
 
 **Question.** Which native fields identify direction reversal and an independent outward flag of a neutral-plane Draft when Keywords omits them?

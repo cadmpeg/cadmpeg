@@ -4408,6 +4408,13 @@ fn build_geometry_ir(
         },
         &mut pmi_losses,
     );
+    crate::resolved_features::lofts::bind_guides(
+        &mut ir.model.features,
+        &[],
+        &histories,
+        &all_lanes,
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let given_up_configurations = configurations_given_up(&ir, scan, &given_up_partitions);
@@ -6003,6 +6010,13 @@ fn build_metadata_ir(
             entities: &mut ir.model.sketch_entities,
             spatial_entities: &mut ir.model.spatial_sketch_entities,
         },
+        &mut pmi_losses,
+    );
+    crate::resolved_features::lofts::bind_guides(
+        &mut ir.model.features,
+        &[],
+        &histories,
+        sketch_lanes,
         &mut pmi_losses,
     );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);

@@ -16,7 +16,11 @@ pub(super) struct Operand {
     pub(super) header_assumed: bool,
 }
 
-fn class_body(payload: &[u8], offset: usize, class: &str) -> Option<usize> {
+pub(in crate::resolved_features) fn class_body(
+    payload: &[u8],
+    offset: usize,
+    class: &str,
+) -> Option<usize> {
     let token = View::u16_le_at(payload, offset + class_head::TAG)?;
     if is_class_token(token) {
         return offset.checked_add(std::mem::size_of::<u16>());
@@ -86,6 +90,25 @@ fn circular_radius(payload: &[u8], offset: usize) -> Option<f64> {
     (radius_mm.is_finite() && radius_mm > 0.0).then_some(radius_mm)
 }
 
+/// The end of the `moWireContact_c` body that starts at `body`.
+pub(in crate::resolved_features) fn wire_contact_end(payload: &[u8], body: usize) -> Option<usize> {
+    if View::u32_le_at(payload, body + wire::ZERO)? != wire::ZERO_VALUE
+        || View::u32_le_at(payload, body + wire::ONE)? != wire::ONE_VALUE
+        || View::i32_le_at(payload, body + wire::SENTINEL)? != wire::SENTINEL_VALUE
+        || View::u16_le_at(payload, body + wire::DIMENSION)? != wire::DIMENSION_VALUE
+    {
+        return None;
+    }
+    for vector in [wire::FIRST_VECTOR, wire::SECOND_VECTOR] {
+        for axis in 0..3 {
+            if !View::f64_le_at(payload, body + vector + axis * 8)?.is_finite() {
+                return None;
+            }
+        }
+    }
+    body.checked_add(wire::LEN)
+}
+
 pub(super) fn path(lane: &FeatureInputLane, start: usize, end: usize) -> Option<Operand> {
     let payload = lane.native_payload.get(..end)?;
     let mut contacts = lane.classes.iter().filter(|class| {
@@ -101,21 +124,7 @@ pub(super) fn path(lane: &FeatureInputLane, start: usize, end: usize) -> Option<
         usize::try_from(contact.offset).ok()?,
         "moWireContact_c",
     )?;
-    if View::u32_le_at(payload, body + wire::ZERO)? != wire::ZERO_VALUE
-        || View::u32_le_at(payload, body + wire::ONE)? != wire::ONE_VALUE
-        || View::i32_le_at(payload, body + wire::SENTINEL)? != wire::SENTINEL_VALUE
-        || View::u16_le_at(payload, body + wire::DIMENSION)? != wire::DIMENSION_VALUE
-    {
-        return None;
-    }
-    for vector in [wire::FIRST_VECTOR, wire::SECOND_VECTOR] {
-        for axis in 0..3 {
-            if !View::f64_le_at(payload, body + vector + axis * 8)?.is_finite() {
-                return None;
-            }
-        }
-    }
-    let offset = body.checked_add(wire::LEN)?;
+    let offset = wire_contact_end(payload, body)?;
     let child = class_body(payload, offset, "moGeneralCurveRef_w")?;
     let prefix = class_body(payload, child, "moCompProfile_c")
         .or_else(|| class_body(payload, child, "moCompReferenceCurve_c"))?;

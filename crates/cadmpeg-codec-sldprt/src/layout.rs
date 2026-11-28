@@ -3936,6 +3936,27 @@ pub(crate) mod sweep_component_suffix {
     pub(crate) const ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `loft_section_tail` record.
+///
+/// Spec §2. Record length 29 B.
+pub(crate) mod loft_section_tail {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zeros` (`bytes[20]`). Spec §2.
+    pub(crate) const ZEROS: usize = 0;
+    /// Stated value of `zeros` (`bytes[20]`). Spec §2.
+    pub(crate) const ZEROS_VALUE: [u8; 20] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `unit` (`f64`, little-endian). Spec §2.
+    pub(crate) const UNIT: usize = 20;
+    /// Offset of `body_flag` (`u8`). Spec §2.
+    pub(crate) const BODY_FLAG: usize = 28;
+    /// Stated value of `body_flag` (`u8`). Spec §2.
+    pub(crate) const BODY_FLAG_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `sweep_reference_blob_prefix` record.
 ///
 /// Spec §2. Record length 10 B.

@@ -453,8 +453,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     ))
                 })?;
+            let retained_native_guides =
+                match crate::resolved_features::lofts::retained_guide_state(existing, guides) {
+                    crate::resolved_features::lofts::RetainedGuides::Absent => false,
+                    crate::resolved_features::lofts::RetainedGuides::Unchanged => true,
+                    crate::resolved_features::lofts::RetainedGuides::Changed => {
+                        return Err(CodecError::malformed(format_args!(
+                            "SLDPRT feature {} changes the guide curves its loft record retains",
+                            feature.id
+                        )));
+                    }
+                };
             let guide_sources = guides
                 .iter()
+                .filter(|_| !retained_native_guides)
                 .map(|path| path_source(path, record_sources, sketch_sources))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
@@ -464,7 +476,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     ))
                 })?;
             let mut properties = feature.source_properties.clone();
-            if !profile_sources.is_empty() || existing.is_none() {
+            let record_sections = crate::resolved_features::lofts::restates_record_sections(
+                existing,
+                properties.get("Profiles").map(String::as_str),
+                &profile_sources.join(","),
+            );
+            if record_sections {
+                properties.remove("Profiles");
+            } else if !profile_sources.is_empty() || existing.is_none() {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Profiles"),
                     profile_sources.join(","),

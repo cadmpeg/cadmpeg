@@ -15950,7 +15950,7 @@ section = "2"
 anchor = "The suffix stores an eight-byte `ff` block and a six-byte zero block"
 size = 14
 endianness = "little"
-parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+parsed_by = ["crates/cadmpeg-codec-sldprt/src/resolved_features/lofts.rs", "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"]
 
 [[record.field]]
 name = "sentinel"
@@ -15967,6 +15967,38 @@ type = "bytes[6]"
 source = "spec"
 anchor = "a six-byte zero block"
 value = [0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "loft_section_tail"
+kind = "byte"
+section = "2"
+anchor = "A loft section tail follows each source record"
+size = 29
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/lofts.rs"
+
+[[record.field]]
+name = "zeros"
+offset = 0
+type = "bytes[20]"
+source = "spec"
+anchor = "a zero block of twenty bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "unit"
+offset = 20
+type = "f64"
+source = "spec"
+anchor = "a unit f64 `1`"
+
+[[record.field]]
+name = "body_flag"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "a body flag byte `0`"
+value = 0
 
 [[record]]
 name = "sweep_reference_blob_prefix"

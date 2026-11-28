@@ -1122,6 +1122,8 @@ The sweep options follow the path component-reference suffix. Their circular-sec
 
 A path `moCompProfile_c` source ID selects a preceding sketch feature in the same history. The point-position line and arc forms address the point roster of that sketch's framed `sgSketch` object. Planar path coordinates use the sketch placement. Spatial point-position lines use the addressed point records' model-space xyz coordinates. An unframed spatial path uses one-based positions in its primary-point roster: coordinate-bearing markers with role `1` and selector low four bits `4`, in stream order. No file establishes that reading for an unframed spatial line with an identifier trailer (§2.3), and a path read so states `feature.sweep-path-roster-assumed`. Curve endpoints join in path order.
 
+`moBlend_c` produces a solid loft. After its name record, the loft stores its section count twice, as a u32 and then a u16 of the same value, immediately followed by that many section operands. A loft has two or more sections. A section operand is a `moGeneralCurveRef_w` whose child is a `moCompProfile_c` with a ten-byte child prefix and a complete component source record at one of the placements of a component-profile cross-section. The source ID names the sketch feature that supplies the section. The operands are consecutive; the first is the loft's start section and the last its end section. A loft section tail follows each source record: a zero block of twenty bytes, a unit f64 `1`, and a body flag byte `0`. The component-reference suffix follows the tail. The fixed fields are tabulated as `loft_section_tail` in `docs/layouts/sldprt.toml`. After the last section operand, the loft stores its guide-curve count as a u16, immediately followed by that many guide curves. A guide curve is a `moWireContact_c` with the body of a sweep wire contact, followed by a `moGeneralCurveRef_w` whose child is a `moCompEntGroup_c` with a ten-byte child prefix. A complete component source record at a cross-section placement of such a child makes the operand a section operand. Each guide curve ends with the component-reference suffix, and the next guide curve starts immediately after it.
+
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. Compact operation and component-path carriers supply absent attributes independently.
 
 An `moBaseBody_c` feature is stored body geometry. Its display name and Keywords `Type` value do not identify the construction. The feature's resolved output-body scope identifies the stored geometry that enters the subsequent history.
@@ -2264,6 +2266,7 @@ The table lists the classes whose bodies this specification describes, the strea
 | `moAttribute_c` | `ResolvedFeatures` | yes | §2 |
 | `moBaseBody_c` | `ResolvedFeatures` | yes | §2 |
 | `moBBoxCenterData_c` | `ResolvedFeatures` | no | §8 |
+| `moBlend_c` | `ResolvedFeatures` | yes | §2 |
 | `moBoss_c` | `ResolvedFeatures` | yes | §2 |
 | `moCirPattern_c` | `ResolvedFeatures` | yes | §2 |
 | `moCirPatternSurfIdRep_c` | either | no | §2 |
