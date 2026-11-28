@@ -4896,10 +4896,7 @@ fn build_geometry_ir(
     }
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if geometry_only {
-        if ir.populated_arena(ArenaClass::Design).is_some() {
-            retention.undelivered_embedded_design();
-        }
-        ir.model.drop_omitted_arenas();
+        finish_geometry_only(&mut ir, &mut retention);
         retired_states::retire(
             &mut ir,
             &mut annotations,
@@ -6066,10 +6063,7 @@ fn build_metadata_ir(
                 Vec::new(),
             )?;
         }
-        if ir.populated_arena(ArenaClass::Design).is_some() {
-            retention.undelivered_embedded_design();
-        }
-        ir.model.drop_omitted_arenas();
+        finish_geometry_only(&mut ir, &mut retention);
         return Ok((ir, annotations, unknowns, retention, pmi_losses));
     }
     if let (Some(rollback), Some(equations)) = (rollback, equation_managers) {
@@ -6382,43 +6376,53 @@ pub(crate) fn model_snapshot(model: &cadmpeg_ir::document::Model) -> ModelSnapsh
     }
 }
 
-fn snapshot_active_configuration(ir: &mut CadIr) {
-    let mut active = ir
-        .model
+fn configuration_to_snapshot(model: &cadmpeg_ir::document::Model) -> Option<usize> {
+    let mut active = model
         .configurations
         .iter()
         .enumerate()
         .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
-    let Some(configuration_index) = active.next() else {
+    let configuration_index = active.next()?;
+    if active.next().is_some() {
+        return None;
+    }
+    let configuration = &model.configurations[configuration_index];
+    (configuration.parameter_values.is_empty() && configuration.feature_states.is_empty())
+        .then_some(configuration_index)
+}
+
+fn snapshot_active_configuration(ir: &mut CadIr) {
+    let Some(configuration_index) = configuration_to_snapshot(&ir.model) else {
         return;
     };
-    if active.next().is_some() {
-        return;
-    }
-    if !ir.model.configurations[configuration_index]
-        .parameter_values
-        .is_empty()
-        || !ir.model.configurations[configuration_index]
-            .feature_states
-            .is_empty()
-    {
-        return;
-    }
-
     let snapshot = model_snapshot(&ir.model);
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = snapshot.parameter_values;
     configuration.feature_states = snapshot.feature_states;
-    // Read-side fabricated snapshot of model-level state; tag the configuration
-    // so the write path can distinguish it from feature-input lane state.
-    let id = configuration.id.as_str().to_owned();
+    note_configuration_snapshot(ir, configuration_index);
+}
+
+fn note_configuration_snapshot(ir: &mut CadIr, configuration_index: usize) {
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_configuration_snapshot_synthesized"),
-            id,
+            ir.model.configurations[configuration_index]
+                .id
+                .as_str()
+                .to_owned(),
         );
     }
+}
+
+fn finish_geometry_only(ir: &mut CadIr, retention: &mut retention::Retention) {
+    if let Some(configuration_index) = configuration_to_snapshot(&ir.model) {
+        note_configuration_snapshot(ir, configuration_index);
+    }
+    if ir.populated_arena(ArenaClass::Design).is_some() {
+        retention.undelivered_embedded_design();
+    }
+    ir.model.drop_omitted_arenas();
 }
 
 fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
