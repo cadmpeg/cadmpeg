@@ -3,8 +3,8 @@
 //!
 //! An extrude whose profile is a whole sketch the design states, named by the
 //! sketch or by its feature, and whose limits are blind distances or
-//! through-all, is typed: the profile is a `Sketch` pick, checked against the
-//! profile loops the decoder resolved (`profile_check`), a blind limit binds
+//! through-all, is typed. Its profile uses the stated sketch and the decoded
+//! boundaries. A blind limit binds
 //! the dimension that holds its distance, and a merge into a part that holds
 //! no body yet is a new body (§6). An extrude whose start, limits, draft, or
 //! profile the decoder reads only in part stays `Unresolved`, and so does one
@@ -21,7 +21,6 @@ use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure,
 };
-use cadmpeg_ir::design::selection::PickTarget;
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
@@ -31,7 +30,6 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::scalar::Length;
 
 use super::profile_check::{Difference, Unchecked};
-use super::sketch::{pick, selection};
 use super::swept::{self, Before, Context};
 
 /// The extrudes typed, and the quantity of each parameter a limit binds.
@@ -170,9 +168,10 @@ fn extrude(
         return Err("the extrude's sketch follows it in the timeline");
     }
     let boolean = boolean(*op, before.body);
-    notes.profile = Some(swept::differences(sketch, context));
+    let profile = swept::profile(sketch, context, *solid == Some(true))?;
+    notes.profile = Some(profile.differences);
     Ok(Extrude {
-        profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
+        profile: profile.picks,
         loops: None,
         direction: Some(direction),
         origin: Some(ExtrudeOrigin::ProfilePlane),

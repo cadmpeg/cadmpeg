@@ -189,6 +189,26 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+F3D stored states are the second user. The walk of the stored states of a
+scope runs as a task of the decode (`DecodeContext::checkpoint`). Where a
+charge of the walk reaches a limit, the scope states no evaluation,
+`history.states-unread` names it, and the decode goes on with the
+allowance that it had before the walk. In the walk, the read of each
+history and its record archive, the read of its head, and the read of the
+record table of each stored state are tasks of their own. A read that does
+not fit the allowance left gives up the states of that history: the chain
+stops at the latest evaluation that needs one of them, and
+`history.state-unread` names the state of that feature and of each earlier
+feature of the scope, because each evaluation holds the state of every
+history. Before it states an evaluation, the walk adds an upper bound of
+the retained bytes that the attachment of its native records to the
+document charges: six bytes for each byte of each record identity and link,
+32 bytes for each record, and 3 bytes for each link. The chain stops before
+the evaluation where the sum exceeds the allowance left. The charge of the
+records, removed records and identity of each evaluation to the entity
+limit is a task of its own: where it does not fit, the chain stops before
+that evaluation in the same way.
+
 ## Scratch decodes
 
 `DecodeContext::scratch` runs optional evidence work in a separate arena
@@ -450,6 +470,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/body_history_tail.rs` | `MAX_HISTORY_TAIL_WORK` | `1 << 21` | 4 | State and topology slots examined in one body's tail after its last linked feature. Exhaustion retains a native body-history operation with `feature.body-history-incomplete`. |
 | `cadmpeg-codec-f3d` | `src/design/decode/scopes/hole.rs` | `MAX_SELECTION_CHAIN` | `16` | 4 | Records after a Hole's direct persistent selection scanned for the records that belong to it. A chain longer than the window leaves the Hole's plane reference unread. |
+| `cadmpeg-codec-f3d` | `src/history/stored_states.rs` | `MAX_STATE_WORK` | `1 << 22` | 4 | Floor of the record-table entries of the stored history states that one decode reads as evaluations, across all histories of the root scope. The budget is the larger of this floor and `STATE_WORK_PER_BYTE` (4) entries for each byte of those model blobs. Exhaustion stops the state chain at that state with `history.state-unread`. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
@@ -459,8 +480,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/design/decode/components.rs`                  | `MAX_OCCURRENCE_ATTRIBUTES`               | `16`                                                    | 2    | Attribute count of one attributed local-occurrence frame. Excess leaves the record unread as an occurrence.                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_ASSET_FOLDERS`                       | `64`                                                    | 2    | Top-level asset-folder count (non-zero). Excess is `Malformed`; the encoder checks the same limit.                                                                                                                                                                           |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_TOP_LEVEL_MANIFEST_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Size of one top-level manifest blob. Excess is `Malformed`.                                                                                                                                                                                                                  |
-| `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_ARCHIVE_BYTES`                       | `256 * 1024 * 1024`                                     | N    | Encode path only: total declared inflated size when Protein appearances are patched (`materials::patch_protein_appearances`).                                                                                                                                                |
-| `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_INFLATED_ENTRY_BYTES`                | `128 * 1024 * 1024`                                     | N    | Encode path only: per-entry inflate limit of `read_entry_bounded`, used by the same patcher.                                                                                                                                                                                 |
+| `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_ARCHIVE_BYTES`                       | `256 * 1024 * 1024`                                     | N    | Encode path only: total declared inflated size of the Protein members that `materials::patch_protein_appearances` expands. Excess is `Malformed`, and the write declines the patch. |
+| `cadmpeg-codec-f3d`      | `src/container.rs`                                 | `MAX_INFLATED_ENTRY_BYTES`                | `128 * 1024 * 1024`                                     | N    | Encode path only: declared inflated size of one archive member that the source patcher expands (`zip_write::expand_member`). Excess is `Malformed`, and the write declines the patch. The expansion charges the encode session. A member that exceeds its per-expansion allowance or fails to inflate causes the write to decline the patch. A session-wide ceiling refuses the write with `ResourceLimit`. |
 | `cadmpeg-codec-f3d`      | `src/design/geometry.rs`                           | `MAX_ARRANGEMENT_WALK_WORK`               | `50_000_000`                                             | 4    | `WorkBudget` in `ProfileGeometryWork`, created once in `decode/design_intent.rs` and shared by every extrude profile arrangement walk. Exact member matching and crossing-run counts use one arrangement graph. Exhaustion skips the arrangement search; `feature.profile-arrangement-capped` counts the extrude profile selections that skipped it and names the constant. |
 | `cadmpeg-codec-f3d` | `src/design/geometry.rs` | `MAX_CROSSING_RUN_MATCH_WORK` | `50_000_000` | 4 | Crossing-run candidate construction and member matching use this independent budget. The graph and initial exact pass retain their arrangement budget. Exhaustion skips crossing-run matching with `feature.profile-crossing-runs-capped`. |
 | `cadmpeg-codec-f3d`      | `src/design/geometry.rs`                           | `MAX_SUBDIVISIONS`                        | `100_000.0`                                             | 4    | Certified tubes of one NURBS span; lines and circular arcs are tested exactly and never densify. Above it `subdivision_count` returns `None` and the certification that needed the span is skipped; a skipped containment test also skips the profile region. `feature.profile-densification-capped` counts the extrude profile selections that skipped one and names the constant. |

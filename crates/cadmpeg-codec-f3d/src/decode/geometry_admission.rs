@@ -12,10 +12,56 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::HashMap;
 
+/// What the admission of one record leaves unstated.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Note {
+    /// A support side of the procedural curve `curve` keeps its native
+    /// support fields without a neutral surface chart.
+    SupportChart { curve: String, side: usize },
+    /// The spring curve `curve` keeps native support pcurves whose endpoint
+    /// relation is unresolved.
+    SpringPcurve { curve: String },
+}
+
+impl Note {
+    /// The record the note names.
+    pub(crate) fn record(&self) -> &str {
+        match self {
+            Self::SupportChart { curve, .. } | Self::SpringPcurve { curve } => curve,
+        }
+    }
+
+    /// The loss of the note for the record whose key is `key`.
+    pub(crate) fn loss(&self, key: &str) -> LossNote {
+        match self {
+            Self::SupportChart { side, .. } => F3dLossCode::ProceduralSupportChartUnresolved.note(
+                format!("Curve {key} support side {side} retains its native support fields without a neutral surface chart"),
+            ),
+            Self::SpringPcurve { .. } => F3dLossCode::SpringSupportPcurveUnresolved.note(format!(
+                "Curve {key} retains native support pcurves whose endpoint relation is unresolved"
+            )),
+        }
+    }
+}
+
+/// Admits the geometry of `ir`, and pushes to `losses` one loss per note.
 pub(super) fn admit(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let mut notes = Vec::new();
+    admit_noted(ctx, ir, &mut notes)?;
+    losses.extend(notes.iter().map(|note| note.loss(note.record())));
+    Ok(())
+}
+
+/// Admits the geometry of `ir`, and pushes to `notes` what the admission of
+/// each record leaves unstated.
+pub(crate) fn admit_noted(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    notes: &mut Vec<Note>,
 ) -> Result<(), CodecError> {
     for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
@@ -28,10 +74,10 @@ pub(super) fn admit(
         };
         for (side, support) in context.sides().iter().enumerate() {
             if support.surface.is_none() && support.pcurve.is_some() {
-                losses.push(F3dLossCode::ProceduralSupportChartUnresolved.note(format!(
-                    "Curve {} support side {side} retains its native support fields without a neutral surface chart",
-                    curve.id
-                )));
+                notes.push(Note::SupportChart {
+                    curve: curve.id.as_str().to_owned(),
+                    side,
+                });
             }
         }
     }
@@ -89,10 +135,9 @@ pub(super) fn admit(
     for (slot, replacement) in replacements {
         let curve = &mut ir.geometry.procedural_curves[slot];
         curve.replace_definition(ProceduralCurveDefinition::Spring(replacement));
-        losses.push(F3dLossCode::SpringSupportPcurveUnresolved.note(format!(
-            "Curve {} retains native support pcurves whose endpoint relation is unresolved",
-            curve.id
-        )));
+        notes.push(Note::SpringPcurve {
+            curve: curve.id.as_str().to_owned(),
+        });
     }
     Ok(())
 }

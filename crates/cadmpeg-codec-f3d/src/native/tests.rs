@@ -1575,7 +1575,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
         &protein,
         &std::collections::BTreeMap::new(),
         &mut Vec::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));
@@ -1781,4 +1781,25 @@ fn canonical_asm_change_and_history_record_fast_paths_match_serde() {
         let parsed = super::try_parse_canonical_asm_history_record(&json).unwrap();
         assert_eq!(&parsed, record);
     }
+}
+
+/// Geometry-stating Design records count toward the design's content; an empty
+/// native store, and parameters with their scope, owner and companion, state none.
+#[test]
+fn geometry_record_count_counts_geometry_records_only() {
+    use crate::test_support::parameter_machinery::{parameter_machinery_native, record_header};
+
+    assert_eq!(
+        crate::native::F3dNative::default().geometry_record_count(),
+        0
+    );
+    let mut native = parameter_machinery_native();
+    assert_eq!(native.geometry_record_count(), 0);
+
+    native.design_record_headers.push(record_header(20, "300"));
+    assert_eq!(native.geometry_record_count(), 1);
+    native
+        .sketch_texts
+        .push(crate::test_support::sketch_text::neutral_text_record());
+    assert_eq!(native.geometry_record_count(), 2);
 }
