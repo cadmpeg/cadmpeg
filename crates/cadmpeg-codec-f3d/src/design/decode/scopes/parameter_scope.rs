@@ -295,6 +295,9 @@ pub(crate) fn decode_parameter_scopes_for(
             }
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
+            if scope.companion_suppressed.is_some() {
+                losses.extend(reciprocal_hole_suppression_loss(bytes, &scope));
+            }
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
             if scope.kind() == scope::DesignFeatureKind::BoundaryFill {
                 let construction =
@@ -2344,12 +2347,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             && tail_form == ScopeTailForm::Fixed)
             .then(|| super::thread::hole_companion_tail(tail, record_index))
             .flatten();
-        let companion_history = match (&kind, tail_form) {
+        let reciprocal_hole_history = match (&kind, tail_form) {
             (scope::DesignFeatureKind::Hole, ScopeTailForm::Named) => {
                 named_reciprocal_hole_history(tail, record_index)
             }
-            _ => thread_companion.map(|companion| companion.previous_history_state),
+            (scope::DesignFeatureKind::Hole, ScopeTailForm::Fixed) => {
+                reciprocal_hole_tail(tail, record_index)
+            }
+            _ => None,
         };
+        let companion_history = reciprocal_hole_history
+            .or_else(|| thread_companion.map(|companion| companion.previous_history_state));
         let previous_history_state_id_offset = companion_history
             .or_else(|| match tail_form {
                 ScopeTailForm::Named => named.as_ref().map(|named| named.previous_history_state_id),
@@ -2620,13 +2628,22 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         .ok()?;
         scope.source_kind = source_kind;
         scope.tail_flags = tail_flags;
-        scope.companion_suppressed = match thread_companion {
-            Some(companion) => Some(crate::records::identity::Located {
+        if let Some(companion) = thread_companion {
+            scope.companion_suppressed = Some(crate::records::identity::Located {
                 value: companion.suppressed,
                 offset: u64_from_index(kind_end.checked_add(thread_companion_tail::FLAGS)?),
-            }),
-            None => None,
-        };
+            });
+        } else if reciprocal_hole_history.is_some() {
+            let [(first_at, first), (second_at, second)] = reciprocal_hole_flags(bytes, &scope)?;
+            scope.companion_suppressed = Some(crate::records::identity::Located {
+                value: first == 1 || second == 1,
+                offset: if first == 0 && second == 1 {
+                    second_at
+                } else {
+                    first_at
+                },
+            });
+        }
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -2768,6 +2785,25 @@ fn reciprocal_hole_members(
         && tail.get(closing_at + REFERENCE) == Some(&0)
         && tail.len() == closing_at + REFERENCE + 1)
         .then_some(history_at)
+}
+
+fn reciprocal_hole_flags(bytes: &[u8], scope: &DesignParameterScope) -> Option<[(u64, u8); 2]> {
+    let [first_at, second_at] = scope.reciprocal_hole_suppression_offsets()?;
+    let flag = |offset| Some((offset, *bytes.get(usize::try_from(offset).ok()?)?));
+    Some([flag(first_at)?, flag(second_at)?])
+}
+
+fn reciprocal_hole_suppression_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let [(first_at, first), (second_at, second)] = reciprocal_hole_flags(bytes, scope)?;
+    (first != second).then(|| {
+        crate::loss::F3dLossCode::FeatureHoleSuppressionConflict.note(format!(
+            "Hole scope {} stores suppression flags {first} at byte {first_at} and {second} at byte {second_at}. Read the Hole as suppressed.",
+            scope.id,
+        ))
+    })
 }
 
 fn exact_typed_canvas_scope_tail(tail: &[u8]) -> bool {
