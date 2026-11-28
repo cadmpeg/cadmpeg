@@ -235,6 +235,7 @@ fn decoded(
                 &mut builder,
                 design_v11::RESTATEMENT,
             )?;
+            design_v11::states::charge(ctx, &ir, &mut body.losses)?;
         }
         if minted {
             builder.exactness(definition, Exactness::Derived);

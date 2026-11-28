@@ -32,6 +32,7 @@
 
 pub(crate) mod configurations;
 mod datum;
+pub(crate) mod joint;
 mod operation;
 pub(crate) mod parameters;
 mod pattern;
@@ -107,6 +108,7 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     depth: DecodeDepth,
+    joint_roots: &joint::RootOperands,
     sources: Option<&StoredStates<'_>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
@@ -154,24 +156,33 @@ pub(crate) fn project(
         .iter()
         .map(|body| body.id.as_str())
         .collect::<BTreeSet<_>>();
-    let scopes = namespace
+    let scope_records = namespace
         .arena_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
             ctx,
             "design_parameter_scopes",
         )?;
+    let joint_records = if ir.model.assembly_joints.is_empty() {
+        None
+    } else {
+        Some(JointRecords {
+            motions: namespace.arena_as_for_decode(ctx, "design_joint_motions")?,
+            carriers: namespace.arena_as_for_decode(ctx, "design_component_occurrences")?,
+            references: namespace.arena_as_for_decode(ctx, "xref_references")?,
+        })
+    };
     let documents = timeline::project(
         ctx,
         &ir.model.features,
         &timelines,
         &types,
         &timeline::ScopeInputs {
-            records: &scopes,
+            records: &scope_records,
             tail_flags: &tail_flags,
         },
         &current,
         losses,
     )?;
-    let tails: states::Tails<'_> = scopes
+    let tails: states::Tails<'_> = scope_records
         .iter()
         .filter_map(|scope| {
             let key = (
@@ -295,6 +306,12 @@ pub(crate) fn project(
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .collect::<HashMap<_, _>>();
+    let joints = joint_records.as_ref().map(|records| {
+        records
+            .inputs(&ir.model, &scope_records)
+            .with_roots(joint_roots)
+    });
+    let mut restated = Vec::new();
     let mut root = None;
     let mut unwalked = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
@@ -319,6 +336,14 @@ pub(crate) fn project(
                     "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
                 )));
             }
+        }
+        if let Some(joints) = &joints {
+            restated.extend(joint::project(
+                &mut projected.features,
+                &definition,
+                joints,
+                losses,
+            ));
         }
         let bodiless = bodies.is_empty();
         let (current, unproduced) = match projected.containers.first() {
@@ -410,6 +435,7 @@ pub(crate) fn project(
             ));
         }
     }
+    joint::record(&mut ir.model, restated);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -555,6 +581,68 @@ fn built_prefix<'a>(members: &'a [Member], rollback: Option<&Rollback>) -> Optio
                 .unwrap_or(members.len());
             Some(&members[..built])
         }
+    }
+}
+
+/// The native records a joint feature reads beside its scope record.
+struct JointRecords {
+    motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
+    carriers: Vec<crate::records::feature::assembly_features::DesignComponentOccurrence>,
+    references: Vec<crate::records::xref::XrefReference>,
+}
+
+impl JointRecords {
+    fn inputs<'a>(
+        &'a self,
+        model: &'a cadmpeg_ir::document::Model,
+        scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    ) -> joint::Inputs<'a> {
+        let joined = model
+            .assembly_joints
+            .iter()
+            .filter_map(|joint| joint.native_ref.as_deref())
+            .collect::<BTreeSet<_>>();
+        let sources = scopes
+            .iter()
+            .filter(|scope| joined.contains(scope.id.as_str()))
+            .filter_map(|scope| {
+                let stream = crate::ids::native_stream(&scope.id)?;
+                let group = crate::design::assembly::rigid_as_built_scope(scope);
+                let motions =
+                    crate::design::assembly::scope_joint_motions(scope, stream, &self.motions);
+                Some((
+                    scope.id.as_str(),
+                    joint::Source {
+                        as_built: !group
+                            && scope.kind()
+                                == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                        group,
+                        additional_members: scope
+                            .assembly_alignment()
+                            .map_or(&[], |alignment| alignment.additional_members.as_slice()),
+                        motion: match motions.as_slice() {
+                            [motion] => Some(*motion),
+                            _ => None,
+                        },
+                        ambiguous: motions.len() > 1,
+                    },
+                ))
+            })
+            .collect();
+        joint::Inputs::new(
+            &model.features,
+            &model.assembly_joints,
+            sources,
+            joint::Places::new(
+                &model.product_definitions,
+                &model.occurrences,
+                crate::design::assembly::operand_keys::OperandKeys::new(
+                    &self.carriers,
+                    &self.references,
+                    scopes,
+                ),
+            ),
+        )
     }
 }
 

@@ -254,16 +254,26 @@ pub(crate) enum F3dLossCode {
     AssemblyAlignmentPartial,
     /// An `Assemble` copy differs from the solved `JointOrigin` carrier matrix.
     AssemblyJointOriginEnvelopeMatrixDiscarded,
-    /// Design assembly joints projected as fixed because their freedom codes or
-    /// limit lanes do not map to a joint kind.
+    /// Design assembly joints projected as fixed: their joint record's motion
+    /// is not decoded, or, in a decode below the design depth, their freedom
+    /// codes or limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
-    /// Projected Design assembly joints whose stored rest is malformed or
-    /// enabled. The neutral joint carries no rest; the native record retains
-    /// the valid rest or the malformed-rest mark.
+    /// Projected Design assembly joints whose stored rest is malformed, or
+    /// enabled in a decode below the design depth. The neutral joint carries
+    /// no rest; the native record retains the valid rest or the malformed-rest
+    /// mark.
     AssemblyJointRestUnprojected,
+    /// Fusion joint features whose design record keeps `Unresolved`: their
+    /// joint record does not restate as a v11 joint or rigid group.
+    AssemblyDesignJointUnprojected,
     /// Projected Design assembly joints whose activation state is assumed
     /// active because the scope-tail booleans' activation meaning is unknown.
     AssemblyJointActivationAssumed,
+    /// Design joints stated rigid where the motion record of their scope is
+    /// unread: two motion records bind the scope, or the scope binds none
+    /// where a record of freedom entries binds no joint record of its
+    /// stream.
+    AssemblyJointMotionAssumedRigid,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
@@ -1002,6 +1012,10 @@ pub(crate) enum F3dLossCode {
     /// the state that last updates the slot before the Combine has no unique
     /// earlier scope.
     FeatureCombineOperandWriterAssumed,
+    /// A feature names a body slot of its input state by the feature that
+    /// inserts it, because the state that last updates the slot before the
+    /// feature has no unique earlier scope.
+    FeatureBodyOperandWriterAssumed,
     /// A Combine tool in an inserted design binds to that design's final
     /// body in the inserting occurrence's frame.
     FeatureCombineToolExternalFinalStateAssumed,
@@ -1641,7 +1655,9 @@ impl F3dLossCode {
         Self::AssemblyJointOriginEnvelopeMatrixDiscarded,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
+        Self::AssemblyDesignJointUnprojected,
         Self::AssemblyJointActivationAssumed,
+        Self::AssemblyJointMotionAssumedRigid,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
@@ -2075,6 +2091,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureCombineOperandWriterAssumed,
+        Self::FeatureBodyOperandWriterAssumed,
         Self::FeatureCombineToolExternalFinalStateAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
@@ -2545,7 +2562,9 @@ impl F3dLossCode {
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyDesignJointUnprojected => "assembly.design-joint-unprojected",
             Self::AssemblyJointActivationAssumed => "assembly.joint-activation-assumed",
+            Self::AssemblyJointMotionAssumedRigid => "assembly.joint-motion-assumed-rigid",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
@@ -3216,6 +3235,7 @@ impl F3dLossCode {
                 "feature.combine-body-producer-unresolved"
             }
             Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
+            Self::FeatureBodyOperandWriterAssumed => "feature.body-operand-writer-assumed",
             Self::FeatureCombineToolExternalFinalStateAssumed => {
                 "feature.combine-tool-external-final-state-assumed"
             }
@@ -3817,7 +3837,9 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
+            | Self::AssemblyJointMotionAssumedRigid
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
@@ -4231,6 +4253,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
+            | Self::FeatureBodyOperandWriterAssumed
             | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
@@ -5029,6 +5052,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
+            | Self::FeatureBodyOperandWriterAssumed
             | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
@@ -5185,7 +5209,9 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
+            | Self::AssemblyJointMotionAssumedRigid
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
@@ -5533,7 +5559,9 @@ mod tests {
                 "assembly.joint-origin-envelope-matrix-discarded",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
+                "assembly.design-joint-unprojected",
                 "assembly.joint-activation-assumed",
+                "assembly.joint-motion-assumed-rigid",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",
@@ -5967,6 +5995,7 @@ mod tests {
                 "feature.reverse-normal-link-order-assumed",
                 "feature.combine-body-producer-unresolved",
                 "feature.combine-operand-writer-assumed",
+                "feature.body-operand-writer-assumed",
                 "feature.combine-tool-external-final-state-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
