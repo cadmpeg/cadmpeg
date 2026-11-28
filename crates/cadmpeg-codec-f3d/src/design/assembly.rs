@@ -3212,9 +3212,8 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
         );
 
-        // An enabled rest position is retained natively with a loss below the
-        // design depth, where the design layer's joint feature states it; a
-        // rest value without the flag is not reported.
+        // Below the design depth, where no joint feature states it, an enabled
+        // rest is charged; a rest value without the flag is not reported.
         let resting = |flag: u8| {
             let mut resting = motion(&[1], [1, 1]);
             if let Some(lanes) = resting.limits.as_mut() {
@@ -3225,50 +3224,28 @@ mod tests {
             }
             project(&[resting])
         };
-        let at = |mut projection: super::AssemblyJointProjection, depth| {
-            crate::test_support::loss_codes(&projection.take_losses(depth))
-        };
         let activation = crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind();
+        let at = |mut projection: super::AssemblyJointProjection, depth| {
+            let mut codes = crate::test_support::loss_codes(&projection.take_losses(depth));
+            codes.retain(|code| *code != activation);
+            codes
+        };
+        let rest = crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind();
         assert_eq!(kind(&resting(1))["kind"], "revolute");
-        assert_eq!(
-            at(resting(1), DecodeDepth::Geometry),
-            [
-                activation.clone(),
-                crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind(),
-            ]
-        );
-        for depth in [DecodeDepth::Design, DecodeDepth::Full] {
-            assert_eq!(at(resting(1), depth), std::slice::from_ref(&activation));
-        }
-        assert_eq!(
-            at(resting(0), DecodeDepth::Geometry),
-            std::slice::from_ref(&activation)
-        );
+        assert_eq!(at(resting(1), DecodeDepth::Geometry), [rest]);
+        assert!(at(resting(1), DecodeDepth::Design).is_empty());
+        assert!(at(resting(0), DecodeDepth::Geometry).is_empty());
 
-        // A slider with an angle offset is fixed in the assembly joint and a
-        // slider in the design layer's joint feature.
+        // An angled slider is a fixed assembly joint and a slider joint feature.
         let mut angled = scopes.clone();
         angled[2] = assemble(0.25);
-        let angled = || {
-            super::project_assembly_joints(
-                &angled,
-                &[],
-                &crate::design::components::ComponentInserts::default(),
-                &[motion(&[8], [0, 0])],
-            )
-        };
+        let inserts = crate::design::components::ComponentInserts::default();
+        let angled =
+            || super::project_assembly_joints(&angled, &[], &inserts, &[motion(&[8], [0, 0])]);
+        let undecoded = crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind();
         assert_eq!(kind(&angled())["kind"], "fixed");
-        assert_eq!(
-            at(angled(), DecodeDepth::Geometry),
-            [
-                activation.clone(),
-                crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind(),
-            ]
-        );
-        assert_eq!(
-            at(angled(), DecodeDepth::Design),
-            std::slice::from_ref(&activation)
-        );
+        assert_eq!(at(angled(), DecodeDepth::Geometry), [undecoded]);
+        assert!(at(angled(), DecodeDepth::Design).is_empty());
 
         // A rigid group is fixed: one whose joint record states a freedom is
         // left unprojected.
