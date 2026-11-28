@@ -68,6 +68,7 @@ mod edge_continuity;
 pub(crate) mod edge_flange;
 pub(crate) mod edge_recipe_scope;
 mod edge_samples;
+pub(crate) mod extrude_start_offset;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_envelopes;

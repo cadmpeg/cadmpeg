@@ -1475,6 +1475,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &model.sketch_entities,
         ),
     );
+    let mut oriented_starts = crate::history::extrude_start_offset::orient_historical_starts(
+        &mut model.features,
+        &model.sketches,
+        &design.design_parameter_scopes,
+        &scope_histories,
+        &design.asm_histories,
+        geometry.tolerances.angular.get(),
+    );
     losses.extend(crate::history::extrude_target::bind(
         &mut model.features,
         &model.sketches,
@@ -1509,6 +1517,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &model.sketches,
         &mut extrude_face_resolution,
+        &mut oriented_starts,
+    );
+    losses.extend(
+        crate::history::extrude_start_offset::unoriented_start_losses(
+            &model.features,
+            &oriented_starts,
+        ),
     );
     crate::design::face_resolve::bind_extrude_target_faces(
         &mut model.features,

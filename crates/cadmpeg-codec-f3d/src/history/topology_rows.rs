@@ -447,6 +447,16 @@ pub(super) fn historical_topology_with_senses(
                 })
             })
             .collect::<Option<Vec<_>>>()),
+        face_senses: topology_some!(brep
+            .faces
+            .iter()
+            .map(|face| {
+                Some(crate::history_records::AsmHistoricalFaceSense {
+                    face: stable_ref(face.id.as_str())?,
+                    forward: face.sense == cadmpeg_ir::topology::Sense::Forward,
+                })
+            })
+            .collect::<Option<Vec<_>>>()),
         edge_curves: topology_some!(brep
             .edges
             .iter()

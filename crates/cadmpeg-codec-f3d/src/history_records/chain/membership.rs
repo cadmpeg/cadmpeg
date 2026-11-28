@@ -41,6 +41,7 @@ pub(super) struct Memberships {
     coedge_topology: HashSet<i64>,
     edge_vertices: HashSet<i64>,
     face_surfaces: HashSet<i64>,
+    face_senses: HashSet<i64>,
     vertex_points: HashSet<i64>,
     edge_curves: HashSet<i64>,
     coedge_pcurves: HashSet<i64>,
@@ -196,6 +197,7 @@ impl Memberships {
         apply_rows(&mut self.coedge_topology, &rows.coedge_topology)?;
         apply_rows(&mut self.edge_vertices, &rows.edge_vertices)?;
         apply_rows(&mut self.face_surfaces, &rows.face_surfaces)?;
+        apply_rows(&mut self.face_senses, &rows.face_senses)?;
         apply_rows(&mut self.vertex_points, &rows.vertex_points)?;
         apply_rows(&mut self.edge_curves, &rows.edge_curves)?;
         apply_rows(&mut self.coedge_pcurves, &rows.coedge_pcurves)?;
