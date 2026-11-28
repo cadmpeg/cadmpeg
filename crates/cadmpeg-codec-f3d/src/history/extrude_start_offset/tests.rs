@@ -85,7 +85,13 @@ fn plane_face(forward: bool) -> AsmHistoricalTopology {
 fn a_start_offset_keeps_its_sign_when_the_outward_normal_runs_with_the_travel() {
     let travel = Vector3::new(0.0, 0.0, 1.0);
     let along = along_travel(length(-5.0), travel, travel, EPS_START_OFFSET_ANGULAR);
-    assert_eq!(along, Some(length(-5.0)));
+    assert_eq!(
+        along,
+        Some(TravelOffset {
+            offset: length(-5.0),
+            settled: true
+        })
+    );
 }
 
 #[test]
@@ -96,11 +102,17 @@ fn a_start_offset_changes_sign_when_the_outward_normal_runs_against_the_travel()
         Vector3::new(0.0, 0.0, 2.0),
         EPS_START_OFFSET_ANGULAR,
     );
-    assert_eq!(along, Some(length(5.0)));
+    assert_eq!(
+        along,
+        Some(TravelOffset {
+            offset: length(5.0),
+            settled: true
+        })
+    );
 }
 
 #[test]
-fn an_inclined_start_face_offset_divides_by_the_normal_travel_cosine() {
+fn an_inclined_start_face_offset_divides_by_the_normal_travel_cosine_as_an_assumption() {
     let along = along_travel(
         length(0.5),
         Vector3::new(-1.0, 0.0, 1.0),
@@ -108,7 +120,8 @@ fn an_inclined_start_face_offset_divides_by_the_normal_travel_cosine() {
         EPS_START_OFFSET_ANGULAR,
     )
     .expect("an inclined face has a travel reading");
-    assert!((along.get() - 0.5 * std::f64::consts::SQRT_2).abs() < EPS_START_OFFSET_LENGTH);
+    assert!((along.offset.get() - 0.5 * std::f64::consts::SQRT_2).abs() < EPS_START_OFFSET_LENGTH);
+    assert!(!along.settled);
 }
 
 #[test]

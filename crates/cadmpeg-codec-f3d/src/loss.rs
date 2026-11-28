@@ -817,7 +817,7 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeOpaqueDistanceWordAssumed,
     FeatureExtrudeStartFaceAbsentAssumed,
     FeatureExtrudeStartFaceUnresolved,
-    /// An Extrude reads its stored start-face offset along the travel direction.
+    /// An Extrude assumes the travel reading of its stored start-face offset.
     FeatureExtrudeStartOffsetDirectionAssumed,
     FeatureExtrudeZeroSideTaperIgnored,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.

@@ -2198,13 +2198,13 @@ pub(crate) fn bind_extrude_start_planes(
                             resolution.angular_tolerance,
                         )
                     });
-                    rewritten = along.is_some();
+                    rewritten = along.is_some_and(|along| along.settled);
                     *start = ExtrudeStart::FromFace {
                         face: FaceSelection::Resolved {
                             faces: vec![selected],
                             native,
                         },
-                        offset: along.or(retained_offset),
+                        offset: along.map(|along| along.offset).or(retained_offset),
                     };
                 }
             }

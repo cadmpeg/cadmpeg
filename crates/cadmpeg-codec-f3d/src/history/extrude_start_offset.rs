@@ -42,6 +42,16 @@ pub(crate) fn travel(
     sweep.unit()
 }
 
+/// The offset along the travel of a selected-face start.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TravelOffset {
+    /// The stored distance divided by the normal-travel cosine.
+    pub(crate) offset: Length,
+    /// The outward normal is parallel or antiparallel to the travel, so the
+    /// specification settles the reading.
+    pub(crate) settled: bool,
+}
+
 /// The offset along `travel` that moves a planar start face onto its plane
 /// offset by `stored` along `outward`, when `outward` is not perpendicular to
 /// `travel`.
@@ -50,12 +60,16 @@ pub(crate) fn along_travel(
     outward: Vector3,
     travel: Vector3,
     angular_tolerance: f64,
-) -> Option<Length> {
+) -> Option<TravelOffset> {
     let cosine = outward.unit()?.dot(travel.unit()?);
     if cosine.abs() <= angular_tolerance {
         return None;
     }
-    Length::new(stored.get() / cosine)
+    let sine = (1.0 - cosine * cosine).max(0.0).sqrt();
+    Some(TravelOffset {
+        offset: Length::new(stored.get() / cosine)?,
+        settled: sine <= angular_tolerance,
+    })
 }
 
 fn sole<T>(mut rows: impl Iterator<Item = T>) -> Option<T> {
@@ -106,8 +120,9 @@ fn start_slot(face: &FaceSelection) -> Option<i64> {
     }
 }
 
-/// Rewrite the start offset of each Extrude whose start face resolves in the
-/// feature's input state, and return the ids of the rewritten features.
+/// Rewrite the start offset of each Extrude whose planar start face resolves in
+/// the feature's input state, and return the ids of the features whose
+/// offset the specification settles.
 pub(crate) fn orient_historical_starts(
     features: &mut [Feature],
     sketches: &[Sketch],
@@ -151,7 +166,7 @@ pub(crate) fn orient_historical_starts(
         else {
             continue;
         };
-        let mut rewritten = false;
+        let mut settled = false;
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
@@ -167,17 +182,18 @@ pub(crate) fn orient_historical_starts(
             else {
                 return;
             };
-            *offset = Some(along);
-            rewritten = true;
+            *offset = Some(along.offset);
+            settled = along.settled;
         });
-        if rewritten {
+        if settled {
             oriented.insert(feature.id.as_str().to_owned());
         }
     }
     oriented
 }
 
-/// One loss for each selected-face start offset that keeps its stored sign.
+/// One loss for each nonzero selected-face start offset whose travel reading
+/// the specification does not settle.
 pub(crate) fn unoriented_start_losses(
     features: &[Feature],
     oriented: &BTreeSet<String>,
@@ -195,7 +211,7 @@ pub(crate) fn unoriented_start_losses(
         })
         .map(|feature| {
             F3dLossCode::FeatureExtrudeStartOffsetDirectionAssumed.note(format!(
-                "Extrude {} reads its start-face offset along the travel direction; the start surface is the start face offset along its outward normal, which a travel offset states only for a planar face whose normal the decoder resolves.",
+                "Extrude {} assumes the travel reading of its start-face offset; the specification settles it only for a planar start face whose outward normal the decoder resolves parallel or antiparallel to the travel. An inclined planar face reads the stored distance divided by the normal-travel cosine, and any other start face keeps the stored distance along the travel.",
                 feature.id
             ))
         })
