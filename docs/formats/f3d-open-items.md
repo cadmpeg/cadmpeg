@@ -124,9 +124,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-1005. Live flags of duplicate scope envelopes
 
-**Question.** Same-index scope envelopes can differ only in their tail state bytes or in the suppression flags of their Thread companion tails, with no envelope bound to an ASM transition, or only in their tail state bytes and their no-result and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's tail state is live?
+**Question.** Same-index scope envelopes can differ only in their tail state bytes or in the suppression flags of their Thread companion or reciprocal Hole tails, with no envelope bound to an ASM transition, or only in their tail state bytes and their no-result and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's tail state is live?
 
-**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order, also over a unique primary record frame when only the state bytes or the Thread companion suppression flags differ. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
+**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order, also over a unique primary record frame when only the state bytes or the suppression flags of a Thread companion or reciprocal Hole tail differ. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the feature item tail flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
 
 **Need.** A field or an order rule that selects the live envelope. The state bytes decide whether the feature is suppressed and the rolled-back flag decides where the timeline marker stands, so the selection changes the evaluated design.
 
@@ -532,7 +532,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What do the typed compact parameter frames with other expression trailers or a null owner on a feature input encode?
 
-**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder gives up these frames as `parameter-frame` parts with `record.undecoded`.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown. A rule must bind the document trailer to a localized `User Parameter` source kind before such a frame forms a document parameter.
 
@@ -570,11 +570,11 @@ option `2`, and side extents `[1, 0]`.
 
 ### DR-115. Mesh container decode-failure taxonomy
 
-**Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?
+**Question.** Which container failures are malformed input and which are an unsupported container generation, and does the retained error identify the failing stage?
 
-**Known.** `f3d.md` §1.1.2 "When a document's mesh-body metadata" defines the omission: a mesh body whose metadata or referenced `.paramesh` container fails the container grammar transfers no tessellation and reports `mesh.container-undecoded` with the entry name and the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+**Known.** `f3d.md` §1.1.2 "When a referenced `.paramesh` container" defines the omission: a `.paramesh` container that fails the container grammar transfers no tessellation. The decoder gives up its entry as an `archive-entry` part, and the loss carries the decode error. B-rep evaluation then proceeds. A container that declares a version other than 2, or a stream whose descriptor is outside the version-2 descriptor grammar, gives up with `record.undecoded`: these are the generation stages. A failure at every other stage gives up with `record.unreadable`. The specification gives the container layout; the taxonomy of the other stages awaits definition.
 
-**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures this loss covers and whether the retained error text identifies the failing stage, before a reader can distinguish malformed input from an unsupported container generation.
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which of the other failures break the format and which are a later container generation, and whether the retained error text identifies the failing stage. Each stage found to be a generation stage gives up with `record.undecoded`.
 
 **Note.** A resource-limit failure returns an error through the error path.
 
@@ -1111,7 +1111,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
 
-**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)` in a Z-up document and `(1, 1, 1)` in a Y-up document, the up direction `(0, 0, 1)` or `(0, 1, 0)` respectively, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
 
 **Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
 
@@ -1195,6 +1195,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 **Need.** Allocate the profile group of a written `Extrude` as the groups of a `Revolve` are allocated: the record-timestamp table at `G + 1` and the item-tail companion at `G + 2`. Then state the relation in `f3d.md` §3.1 "**Profile group.**", and compare the records of each written `Extrude` before and after the change. The same comparison of the `Extrude` start record against stored `Extrude` start records would show whether its record-timestamp table and item-tail companion also belong at the next two records.
 
 ## 2. External references
+
+### DR-1077. Closing bytes of a legacy typed occurrence placement
+
+**Question.** Do the closing bytes `00 01 04 00 00 00 00 00 00 00 00 00` of a legacy typed occurrence placement name a local owner record, and is the record the legacy typed placement or the compact legacy external placement?
+
+**Known.** `f3d.md` §1.4 "A legacy typed occurrence placement uses" gives the typed envelope and its closing bytes `u8 0`, `u8 1`, `u8 4`, `u8[9] zero`. These bytes have the form of a zero byte and an eleven-byte untyped local reference to record `4`. `f3d.md` §1.4 "A compact legacy external placement uses" closes with a zero byte and an untyped local owner reference with a nonzero target. With root-component targets, the typed fields `u32 1`, `u8 0`, `u32 1` after the path discriminator have the form of the compact present-empty property block and a member ordinal of `1`. Both grammars then close the same record, at 403 bytes for identity and 531 bytes for a matrix. Record `4` of the Design stream can be a component naming space of type `904F885E-D859-4755-A7EF-6EBED8732FAD`.
+
+**Need.** A legacy typed placement whose Design stream holds a record of another type at index `4`, or a legacy placement whose closing reference has a target other than `4`.
+
+**Note.** The decoder reads a record that closes both grammars as the legacy typed placement, with no owner and no source occurrence key.
 
 ### DR-111. Component-path poses of nested occurrences
 
@@ -1370,7 +1380,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
 
-**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode is given up as an `archive-entry` part, and that give-up is the one report entry for every reference to the member. A member that cannot be scanned and whose entry the scan cannot give up reports `xref.member-undecoded` once, at scan time. The merge skips each reference to a given-up or unscannable member. Resource-limit failures return an error.
 
 **Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
 
@@ -1582,11 +1592,11 @@ The first closing reference run identifies a direct contained child by its local
 
 ### TS-07. T-spline cage decode-failure taxonomy
 
-**Question.** Which cage program failures does `tspline.cage-undecoded` cover?
+**Question.** Which cage program failures are malformed cages, and which are unsupported program generations?
 
-**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface and reports `tspline.cage-undecoded` with the entry name and the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
+**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface. The decoder gives up the entry as an `archive-entry` part with `record.undecoded`, and the loss carries the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
 
-**Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
+**Need.** Cage entries that fail at each program stage must show which failures break the program grammar.
 
 **Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
 
@@ -1932,7 +1942,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Conflict.** None.
 
-**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+**Note.** Give up the occurrence record with `record.undecoded` and keep the occurrence out of neutral product structure.
 
 ### DR-142. Thread construction option bytes
 
@@ -3398,7 +3408,7 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
 
-**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name joins the stored scope kind spelling, a space, and the feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
+**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name is the stored scope kind spelling directly followed by the stored feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
 
 **Need.** A design with a Sketch renamed in the timeline.
 
@@ -4273,7 +4283,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
-**Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+**Note.** The mesh graph requires a Scene node in that slot. The decoder gives up the `.paramesh` entries of such a design with `record.undecoded`.
 
 ### DR-1079. Document body of a keyless pattern copy
 

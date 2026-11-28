@@ -217,7 +217,7 @@ fn decode_rejects_a_composite_point_attachment_at_the_wrong_curve_endpoint() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
+            .filter(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected))
             .count(),
         1
     );
@@ -283,7 +283,7 @@ fn decode_rejects_consecutive_point_members_in_a_composite_with_curve_members() 
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
+            .filter(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected))
             .count(),
         1
     );

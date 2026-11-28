@@ -69,8 +69,6 @@ loss_codes! {
     ParameterLiteralUnusable => "parameter.literal-unusable",
     /// Redundant spline claims disagreed with the serialized carrier mathematics.
     SplineClaimRecovered => "geometry.spline-claim-recovered",
-    /// A NURBS coordinate or parameter transformation produced a non-finite value.
-    NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
     BoundaryPcurveOutsideSupportDomain => "topology.boundary-pcurve-outside-support-domain",
     /// An alternate boundary pcurve does not compose its model-space curve.
@@ -88,10 +86,6 @@ loss_codes! {
     ParameterCountOverdeclared => "parameter.count-overdeclared",
     /// A Type 422 attribute table states a count no row grid can be read from.
     AttributeTableCountUnstatable => "parameter.attribute-table-count-unstatable",
-    /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
-    DirectoryRecordQuarantined => "directory.record-quarantined",
-    /// A Compressed ASCII Data record restated an earlier Directory sequence and is not stated.
-    DirectoryRecordRepeated => "directory.record-repeated",
     /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
     ParameterDataQuarantined => "parameter.data-quarantined",
     /// Card framing came from the card census because the file's own declaration did not.
@@ -117,8 +111,12 @@ loss_codes! {
     CompositeCarrierDegraded => "curve.composite-carrier-degraded",
     /// A Global metadata field is absent or malformed and was not transferred.
     GlobalMetadataFieldUnusable => "global.metadata-field-unusable",
-    /// A Global comparison context came from this codec's specification.
+    /// A Global comparison context came from this codec's specification for
+    /// a field that the declared version lets the file omit or supply as zero.
     GlobalSemanticContextSubstituted => "global.semantic-context-substituted",
+    /// A Global comparison field is malformed, or absent where the declared
+    /// version requires it; the context came from this codec's specification.
+    GlobalSemanticContextInvalid => "global.semantic-context-invalid",
     /// A Global real used a recoverable noncanonical numeric spelling.
     GlobalNumericSyntaxRecovered => "global.numeric-syntax-recovered",
     /// The Global fields 13, 14, and 15 produced no millimetre length factor.
@@ -127,6 +125,9 @@ loss_codes! {
     GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified => "source.dialect-unverified",
+    /// The Global version flag is not an integer, or is below `1`; the
+    /// decoder recovered an effective version.
+    SourceVersionFlagInvalid => "source.version-flag-invalid",
     /// Procedural definitions were reduced to writable solved carriers.
     ProceduralReduced => "geometry.procedural-reduced",
     /// Different coedge pcurves were compared at discrete parameters.
@@ -205,7 +206,6 @@ impl IgesLossCode {
             | Self::GeometryNotProjected
             | Self::ParameterLiteralUnusable
             | Self::SplineClaimRecovered
-            | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::BoundaryPcurveDisagrees
             | Self::BoundaryWindingUnresolved
@@ -214,8 +214,6 @@ impl IgesLossCode {
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
-            | Self::DirectoryRecordQuarantined
-            | Self::DirectoryRecordRepeated
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
@@ -229,11 +227,13 @@ impl IgesLossCode {
             | Self::CompositeCarrierDegraded
             | Self::GlobalMetadataFieldUnusable
             | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalSemanticContextInvalid
             | Self::GlobalNumericSyntaxRecovered
             | Self::DirectoryMetadataUnreadable
             | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
+            | Self::SourceVersionFlagInvalid
             | Self::WriterMinimumResolutionAdjusted
             | Self::WriterGlobalFieldNotRestated
             | Self::WriterSupportGeometryNotRepresented
@@ -293,7 +293,6 @@ impl IgesLossCode {
             | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
             Self::CompositeCarrierDegraded
             | Self::GlobalLengthUnitUnresolved
-            | Self::NurbsTransformNonFinite
             | Self::GeometryNotProjected
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterFreeGeometryOmitted
@@ -302,18 +301,19 @@ impl IgesLossCode {
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalSemanticContextInvalid
             | Self::GlobalNumericSyntaxRecovered
             | Self::DirectoryMetadataUnreadable
             | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
-            | Self::DirectoryRecordQuarantined
-            | Self::DirectoryRecordRepeated
             | Self::ParameterDataQuarantined
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::SourceVersionFlagInvalid => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
@@ -334,9 +334,9 @@ impl IgesLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::PointerUnresolved
-            | Self::CompositeCarrierDegraded
-            | Self::SourceDialectUnverified
-            | Self::GlobalSemanticContextSubstituted
+            | Self::DirectoryMetadataNoncanonical
+            | Self::GlobalSemanticContextInvalid
+            | Self::SourceVersionFlagInvalid
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalLengthUnitUnresolved
             | Self::GlobalNoncanonicalFraming
@@ -376,7 +376,7 @@ impl IgesLossCode {
 
 #[cfg(test)]
 mod tests {
-    use super::IgesLossCode;
+    use super::{IgesLossCode, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -398,7 +398,6 @@ mod tests {
                 "geometry.not-projected",
                 "parameter.literal-unusable",
                 "geometry.spline-claim-recovered",
-                "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
@@ -407,8 +406,6 @@ mod tests {
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
                 "parameter.attribute-table-count-unstatable",
-                "directory.record-quarantined",
-                "directory.record-repeated",
                 "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",
@@ -422,10 +419,12 @@ mod tests {
                 "curve.composite-carrier-degraded",
                 "global.metadata-field-unusable",
                 "global.semantic-context-substituted",
+                "global.semantic-context-invalid",
                 "global.numeric-syntax-recovered",
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
+                "source.version-flag-invalid",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
@@ -481,16 +480,35 @@ mod tests {
         }
     }
 
-    /// A code that charges only beside a give-up leaves the refusal to
-    /// `record.unreadable`.
+    /// The codes that record a recovery from input that breaks the format
+    /// pin Warning, and no other code pins a floor (`iges.md`, Decode
+    /// admission).
     #[test]
-    fn the_give_up_codes_pin_no_strict_floor() {
-        for code in [
-            IgesLossCode::DirectoryRecordQuarantined,
-            IgesLossCode::DirectoryRecordRepeated,
-            IgesLossCode::ParameterDataQuarantined,
-        ] {
-            assert_eq!(code.note("").code.strict_floor(), None, "{}", code.code());
+    fn only_the_recovery_codes_pin_a_strict_floor() {
+        let floored = IgesLossCode::ALL
+            .iter()
+            .filter(|code| code.note("").code.strict_floor().is_some())
+            .map(|code| code.code())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            floored,
+            [
+                "directory.metadata-noncanonical",
+                "parameter.literal-unusable",
+                "graph.pointer-unresolved",
+                "parameter.count-overdeclared",
+                "card.framing-recovered",
+                "global.semantic-context-invalid",
+                "global.numeric-syntax-recovered",
+                "global.length-unit-unresolved",
+                "global.noncanonical-framing",
+                "source.version-flag-invalid",
+            ]
+        );
+        for code in IgesLossCode::ALL {
+            if let Some(floor) = code.note("").code.strict_floor() {
+                assert_eq!(floor, Severity::Warning, "{}", code.code());
+            }
         }
     }
 

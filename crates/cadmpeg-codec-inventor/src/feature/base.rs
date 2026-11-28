@@ -2,25 +2,25 @@
 //! Stored-body Base features and their current-model body joins.
 
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::decode::{unique_index, DecodeContext, View};
+use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
+use cadmpeg_ir::report::loss::LossNote;
 
-use super::history_views::{ResultStates, StateModel};
+use super::history_views::{ResultStates, StateLimit, StateModel};
 use super::{
     FeatureFamily, FeatureInventory, PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind,
     PmDcKernelEntityLink,
 };
 use crate::design::DesignInventory;
-use crate::layout::{
-    meta_external_reference as external, meta_external_revision as revision,
-    meta_segment_pair as pair,
-};
+use crate::kernel::ActiveCarrier;
+use crate::layout::meta_external_revision as revision;
+use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::reader;
-use crate::records::MetaSection;
+use crate::records::ReferenceTable;
 use crate::rse::{
     RecordFrameState, RseInventory, SegmentBulkState, SegmentDescriptor, SegmentKind,
     SegmentMetaState,
@@ -33,37 +33,20 @@ fn one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
     values.next().is_none().then_some(value)
 }
 
-fn section_count(section: &MetaSection<'_>, width: usize) -> Option<usize> {
-    let count = section
-        .payload
-        .counted(u64::from(section.discriminator), width)?;
-    (count.get().checked_mul(width)? == section.payload.remaining()).then_some(count.get())
-}
-
-fn entry<'a>(section: &MetaSection<'a>, index: u32, width: usize) -> Option<View<'a>> {
-    section_count(section, width)?;
-    if index >= section.discriminator {
-        return None;
-    }
-    let offset = usize::try_from(index).ok()?.checked_mul(width)?;
-    let start = section.payload.start().checked_add(offset)?;
-    section.payload.child(start, start.checked_add(width)?)
-}
-
 pub(super) fn reference_counts(
     ctx: &DecodeContext<'_>,
-    revisions: &MetaSection<'_>,
-    references: &MetaSection<'_>,
+    revisions: &ReferenceTable<'_>,
+    references: &ReferenceTable<'_>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let Some(count) = section_count(revisions, revision::LEN) else {
+    let Some(count) = revisions.count else {
         return Ok(None);
     };
-    if section_count(references, external::LEN).is_none() {
+    if references.count.is_none() {
         return Ok(None);
     }
     let mut counts = ctx.alloc_filled(count, 0_u32, "count Inventor external references")?;
-    for index in 0..references.discriminator {
-        let Some(mut node) = entry(references, index, external::LEN) else {
+    for index in 0..references.declared_count {
+        let Some(mut node) = references.entry(index) else {
             return Ok(None);
         };
         let revision_index = reader::u32(&mut node, "external revision index")?;
@@ -80,7 +63,7 @@ pub(super) fn reference_counts(
     for (index, &count) in counts.iter().enumerate() {
         let Some(mut node) = u32::try_from(index)
             .ok()
-            .and_then(|index| entry(revisions, index, revision::LEN))
+            .and_then(|index| revisions.entry(index))
         else {
             return Ok(None);
         };
@@ -124,11 +107,11 @@ pub(super) fn external_link<'a>(
     else {
         return Ok(None);
     };
-    let sections = &meta.tables.sections;
+    let [pairs, revisions, external] = &meta.tables.references;
     let Some(mut node) = reference
         .index()
         .checked_sub(1)
-        .and_then(|index| entry(&sections[9], index, external::LEN))
+        .and_then(|index| external.entry(index))
     else {
         return Ok(None);
     };
@@ -138,7 +121,7 @@ pub(super) fn external_link<'a>(
     if extension != 0 {
         return Ok(None);
     }
-    let Some(mut revision_entry) = entry(&sections[7], revision_index, revision::LEN) else {
+    let Some(mut revision_entry) = revisions.entry(revision_index) else {
         return Ok(None);
     };
     reader::take(
@@ -156,7 +139,7 @@ pub(super) fn external_link<'a>(
     {
         return Ok(None);
     }
-    let Some(mut segment_pair) = entry(&sections[6], u32::from(pair_index), pair::LEN) else {
+    let Some(mut segment_pair) = pairs.entry(u32::from(pair_index)) else {
         return Ok(None);
     };
     let segment_id = reader::array::<16>(&mut segment_pair, "external segment identifier")?;
@@ -254,8 +237,8 @@ enum StateBody {
     Absent,
     /// The state does not decode, or does not hold a body with the key.
     Failed,
-    /// The views of the part passed their work cap.
-    Bounded,
+    /// A limit gave up the state of the result body.
+    Bounded(StateLimit),
 }
 
 /// Read the state that first lists `source_index` for the result key of
@@ -276,16 +259,11 @@ fn state_body(
     let model = match &*state {
         StateModel::Model(model) => model,
         StateModel::Unavailable | StateModel::Failed => return Ok(StateBody::Failed),
-        StateModel::Bounded => return Ok(StateBody::Bounded),
+        StateModel::Bounded(limit) => return Ok(StateBody::Bounded(*limit)),
     };
-    let keys: Vec<BodyNativeKey> = model
-        .native
-        .namespace("inventor")
-        .map_or(Ok(Vec::new()), |namespace| {
-            namespace.arena_as_for_decode(ctx, "body_native_keys")
-        })?;
     let key = u64::from(link.entity_id);
-    let held = one(keys
+    let held = one(model
+        .body_keys
         .iter()
         .filter(|candidate| candidate.asm_body_key == Some(key)))
     .is_some_and(|candidate| {
@@ -314,39 +292,50 @@ pub(crate) fn unique_link_header(
     .is_some_and(|candidate| candidate.id() == link.id())
 }
 
+#[derive(Clone, Copy)]
+enum SourceBody {
+    Absent,
+    Present,
+    Bounded(cadmpeg_core::decode::ResourceLimit),
+}
+
 fn source_body(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
     inventory: &FeatureInventory,
     wrapper: &PmDcFeatureProperty,
-) -> Result<bool, CodecError> {
+) -> Result<SourceBody, CodecError> {
     let Some(reference) = surface_reference(wrapper) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     if reference.index() == 0 {
-        return Ok(!reference.qualified());
+        return Ok(if reference.qualified() {
+            SourceBody::Absent
+        } else {
+            SourceBody::Present
+        });
     }
     if !reference.qualified() {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     }
     let Some(link) = one(inventory.kernel_entity_links.iter().filter(|link| {
         link.identity.segment_token == wrapper.identity.segment_token
             && Some(link.identity.record_ordinal) == reference.record_ordinal()
     })) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     if link.state != 0
         || link.selection_source != wrapper.header.source_index
         || !link.body.qualified()
     {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     }
     let Some(segment) = one(document
         .segments
         .iter()
         .filter(|segment| *segment.pair.token.key() == wrapper.identity.segment_token))
     else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     let Some(record) = framed_records(segment).and_then(|records| {
         one(records.iter().filter(|record| {
@@ -354,10 +343,10 @@ fn source_body(
                 && record.type_id == crate::kernel::KERNEL_RECORD_TYPE_ID
         }))
     }) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     let Some(version) = segment.registry.map(|registry| registry.version_major) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     let Ok(carrier) = crate::kernel::parse_carrier(
         record.payload,
@@ -366,36 +355,47 @@ fn source_body(
         record.payload_offset,
         version,
     ) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     if PmDcReference::from_packed(carrier.selected_key) != link.body {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     }
+    inspect_source_body(ctx, &carrier, link.entity_id)
+}
+
+fn inspect_source_body(
+    ctx: &DecodeContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+    entity_id: u32,
+) -> Result<SourceBody, CodecError> {
     let Ok(header) = carrier.header.as_ref() else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
-    let decoded = match crate::kernel::decode_kernel_carrier(
-        ctx,
-        &carrier,
-        header,
-        cadmpeg_asm::brep::DecodePurpose::Inspect,
-    ) {
-        Ok(decoded) => decoded,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(false),
-    };
-    Ok(one(decoded
-        .brep
-        .body_native_keys
-        .iter()
-        .filter(|key| key.asm_body_key == Some(u64::from(link.entity_id))))
-    .is_some())
+    let result = ctx.scratch(carrier.bytes.window().len(), |scratch| {
+        match crate::kernel::inspect_kernel_carrier(scratch, carrier, header) {
+            Ok(brep) => Ok(
+                if one(brep
+                    .body_native_keys
+                    .iter()
+                    .filter(|key| key.asm_body_key == Some(u64::from(entity_id))))
+                .is_some()
+                {
+                    SourceBody::Present
+                } else {
+                    SourceBody::Absent
+                },
+            ),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(SourceBody::Absent),
+        }
+    })?;
+    Ok(result.unwrap_or_else(SourceBody::Bounded))
 }
 
 #[derive(Default)]
 pub(crate) struct Projection {
     pub(crate) transferred: usize,
-    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) losses: Vec<LossNote>,
 }
 
 /// Records that the Base projection reads.
@@ -578,8 +578,20 @@ pub(crate) fn project(
                 valid
             }
         };
-        if !source_valid {
-            continue;
+        match source_valid {
+            SourceBody::Present => {}
+            SourceBody::Absent => continue,
+            SourceBody::Bounded(limit) => {
+                projection
+                    .losses
+                    .push(InventorLossCode::FeatureBaseSourceBounded.note(format!(
+                        "{} source body check: {} during {}",
+                        feature.id,
+                        CodecError::ResourceLimit(limit),
+                        limit.operation
+                    )));
+                continue;
+            }
         }
         let Some(segment) = one(document
             .segments
@@ -592,9 +604,11 @@ pub(crate) fn project(
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let counts = match &segment.meta {
-                    SegmentMetaState::Parsed(meta) => {
-                        reference_counts(ctx, &meta.tables.sections[7], &meta.tables.sections[9])?
-                    }
+                    SegmentMetaState::Parsed(meta) => reference_counts(
+                        ctx,
+                        &meta.tables.references[1],
+                        &meta.tables.references[2],
+                    )?,
                     SegmentMetaState::Malformed { .. } => None,
                 };
                 entry.insert(counts)
@@ -673,9 +687,10 @@ pub(crate) fn project(
                         )));
                         continue;
                     }
-                    StateBody::Bounded => {
+                    StateBody::Bounded(limit) => {
                         projection.losses.push(code.note(format!(
-                            "{noun} result body is absent from the current model and its history state passed the local work cap of state views; the feature remains native.",
+                            "{noun} {} history-state result: {limit}; the feature remains native.",
+                            feature.id,
                         )));
                         continue;
                     }

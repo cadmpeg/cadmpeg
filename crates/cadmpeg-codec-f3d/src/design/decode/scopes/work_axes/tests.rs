@@ -3,6 +3,42 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 use crate::test_support::{indexed_header, lp_ascii, push_marked_reference};
 use cadmpeg_ir::features::{FeatureOperation, UnresolvedFamily};
 
+/// CADIR §3.3: each give-up states its own cause. A nonfinite scalar breaks
+/// the frame, and the adjacent form without a reading conforms to it.
+#[test]
+fn work_axis_failures_of_different_causes_stay_separate() {
+    let mut bytes = f64::NAN.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&[0; 8]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, source) = DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut reader = Reader::new(source, 0, bytes.len()).unwrap();
+    assert_eq!(reader.real(), ReadField::Unread);
+    reader.tail(
+        8,
+        Cause::Undecoded,
+        "WorkAxis carrier has an unreadable class tail",
+    );
+    let spans = reader
+        .failures
+        .iter()
+        .map(|failure| (failure.start, failure.end, failure.cause))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        spans,
+        [(0, 8, Cause::Unreadable), (8, 16, Cause::Undecoded)]
+    );
+    assert!(matches!(
+        reader.failures[1].error,
+        CodecError::NotImplemented(_)
+    ));
+    ctx.finish_session().unwrap();
+}
+
 #[test]
 fn work_axis_damaged_reference_counts_preserve_each_readable_prefix_occurrence() {
     for (declared, reference) in [

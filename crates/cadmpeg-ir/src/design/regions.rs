@@ -12,18 +12,19 @@ use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 use std::rc::Rc;
 
-use cadmpeg_ir::design::selection::{BoundaryUse, Fragment, SketchRegion};
-use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
-use cadmpeg_ir::features::selections::NonEmptyMembers;
-use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
+use crate::design::selection::{BoundaryUse, Fragment, SketchRegion};
+use crate::features::profiles::SketchProfileBoundaryUse;
+use crate::features::selections::NonEmptyMembers;
+use crate::math::portable::Portable;
+use crate::math::Point2;
+use crate::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
 
-use super::Projected;
-use crate::feature::profile::EPS_PROFILE_WIRE_POINT_MM;
+/// A mapping, or the reason it is refused.
+type Projected<T> = Result<T, &'static str>;
 
 /// Largest distance, in millimetres, between a point and a curve for the
-/// point to lie on it: one kernel linear tolerance, as for profile wires.
-const EPS_CUT_MM: f64 = EPS_PROFILE_WIRE_POINT_MM;
+/// point to lie on it: one kernel linear tolerance.
+const EPS_CUT_MM: f64 = 1.0e-5;
 /// Largest distance, in millimetres, at which two points on one curve are the
 /// same point: a cut point and an end of the curve, two cut points, and the
 /// end of a stored interval and the cut point or curve end it is matched to.
@@ -160,18 +161,18 @@ impl Curve {
             } => {
                 // The box of the whole ellipse holds every bounded part of it.
                 let (major, minor) = (radii.major().get(), radii.minor().get());
-                let (sin, cos) = major_angle.get().sin_cos();
+                let (sin, cos) = major_angle.get().portable_sin_cos();
                 Kind::Unread(Some(Bounds::about(
                     center.get(),
-                    (major * cos).hypot(minor * sin),
-                    (major * sin).hypot(minor * cos),
+                    (major * cos).portable_hypot(minor * sin),
+                    (major * sin).portable_hypot(minor * cos),
                 )))
             }
             SketchGeometryDefinition::Nurbs { curve } => Kind::Unread(Bounds::of_points(
                 curve
                     .control_points()
                     .into_iter()
-                    .map(cadmpeg_ir::units::FinitePoint2::get),
+                    .map(crate::units::FinitePoint2::get),
             )),
             _ => Kind::Unread(None),
         }
@@ -313,7 +314,8 @@ impl Curve {
             Self::Arc { center, radius, .. } | Self::Circle { center, radius } => {
                 radius * radius * (to - from)
                     + radius
-                        * (center.u * (to.sin() - from.sin()) - center.v * (to.cos() - from.cos()))
+                        * (center.u * (to.portable_sin() - from.portable_sin())
+                            - center.v * (to.portable_cos() - from.portable_cos()))
             }
         }
     }
@@ -321,13 +323,13 @@ impl Curve {
 
 fn polar(center: Point2, radius: f64, angle: f64) -> Point2 {
     Point2::new(
-        radius.mul_add(angle.cos(), center.u),
-        radius.mul_add(angle.sin(), center.v),
+        radius.mul_add(angle.portable_cos(), center.u),
+        radius.mul_add(angle.portable_sin(), center.v),
     )
 }
 
 fn distance(left: Point2, right: Point2) -> f64 {
-    (left.u - right.u).hypot(left.v - right.v)
+    (left.u - right.u).portable_hypot(left.v - right.v)
 }
 
 fn on_circle(point: Point2, center: Point2, radius: f64) -> Option<()> {
@@ -337,7 +339,7 @@ fn on_circle(point: Point2, center: Point2, radius: f64) -> Option<()> {
 /// The counterclockwise angle in `[0, TAU)` from `base` to the direction of
 /// `point` about `center`.
 fn angle_about(point: Point2, center: Point2, base: f64) -> f64 {
-    ((point.v - center.v).atan2(point.u - center.u) - base).rem_euclid(TAU)
+    ((point.v - center.v).portable_atan2(point.u - center.u) - base).rem_euclid(TAU)
 }
 
 fn line_line(first: Curve, second: Curve) -> Vec<Point2> {
@@ -359,7 +361,7 @@ fn line_line(first: Curve, second: Curve) -> Vec<Point2> {
         (b_end.u - b.u, b_end.v - b.v),
     );
     let cross = d1.0 * d2.1 - d1.1 * d2.0;
-    if cross.abs() <= EPS_PARALLEL_SINE * d1.0.hypot(d1.1) * d2.0.hypot(d2.1) {
+    if cross.abs() <= EPS_PARALLEL_SINE * d1.0.portable_hypot(d1.1) * d2.0.portable_hypot(d2.1) {
         return Vec::new();
     }
     let along = ((b.u - a.u) * d2.1 - (b.v - a.v) * d2.0) / cross;
@@ -434,7 +436,7 @@ enum Slot {
 
 /// The non-construction curves of one sketch and the cut points found on
 /// them so far.
-pub(super) struct Arrangement {
+pub struct Arrangement {
     curves: Vec<Curve>,
     /// The boxes of the non-construction curves that are not read, `None`
     /// where no box is known.
@@ -447,16 +449,17 @@ pub(super) struct Arrangement {
 /// The arrangements of the sketches of one decode, each built when a trimmed
 /// region of its sketch first needs it.
 #[derive(Default)]
-pub(in crate::design_v11::operations) struct Arrangements {
+pub struct Arrangements {
     by_sketch: RefCell<BTreeMap<SketchId, Projected<Rc<Arrangement>>>>,
 }
 
 impl Arrangements {
-    pub(super) fn get(
-        &self,
-        entities: &[SketchEntity],
-        sketch: &SketchId,
-    ) -> Projected<Rc<Arrangement>> {
+    /// The arrangement of `sketch`, built on its first use.
+    ///
+    /// # Errors
+    ///
+    /// The sketch cannot be arranged.
+    pub fn get(&self, entities: &[SketchEntity], sketch: &SketchId) -> Projected<Rc<Arrangement>> {
         if let Some(found) = self.by_sketch.borrow().get(sketch) {
             return found.clone();
         }
@@ -489,7 +492,13 @@ struct Step {
 }
 
 impl Arrangement {
-    pub(super) fn new(entities: &[SketchEntity], sketch: &SketchId) -> Projected<Self> {
+    /// The arrangement of the non-construction curves of `sketch` among
+    /// `entities`.
+    ///
+    /// # Errors
+    ///
+    /// The sketch holds more curves than a region is cut against.
+    pub fn new(entities: &[SketchEntity], sketch: &SketchId) -> Projected<Self> {
         let mut curves = Vec::new();
         let mut unread = Vec::new();
         let mut slots = BTreeMap::new();
@@ -703,7 +712,12 @@ impl Arrangement {
 
     /// The region of a trimmed outer ring and its hole rings. A region that
     /// any of its uses cannot be mapped for is refused whole.
-    pub(super) fn region(
+    ///
+    /// # Errors
+    ///
+    /// A use that is not whole pieces of its curve, or a ring that does not
+    /// close.
+    pub fn region(
         &self,
         outer: &[SketchProfileBoundaryUse],
         holes: &[NonEmptyMembers<SketchProfileBoundaryUse>],

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{MainLine, MainLineError, Replay, ReplayError, StateNode, TransmitError};
+use std::collections::BTreeSet;
+
+use super::{MainLine, MainLineError, Replay, ReplayError, StateError, StateNode, TransmitError};
 use crate::records::node_type::{BODY, GROUP, POINT};
 use crate::records::{DeltasRecords, NodeFields, PrimaryRecords};
 use crate::test_support::replay::{
@@ -690,5 +692,54 @@ fn a_state_that_does_not_write_as_a_partition_is_a_typed_error() {
             replay.step().unwrap();
             assert_eq!(replay.transmit(), Err(error));
         }
+    });
+}
+
+/// The identifier and written node images of each state `MainLine::states`
+/// yields for `wanted`, with the refusal that ends it.
+fn wanted_states(stream: &[u8], wanted: &[u32]) -> Vec<Result<(u32, Vec<Image>), StateError>> {
+    let records = DeltasRecords::read(stream).unwrap();
+    let line = MainLine::read(&records).unwrap();
+    let partition_bytes = partition(&current());
+    let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+    line.states(&partition, wanted.iter().copied().collect::<BTreeSet<_>>())
+        .unwrap()
+        .map(|state| state.map(|(mark, bytes)| (mark.identifier(), written_images(&bytes))))
+        .collect()
+}
+
+#[test]
+fn states_writes_each_wanted_mark_from_the_current_mark_back() {
+    with_decode_context(|_ctx| {
+        let expected = expected_states();
+        for stream in [solidworks(), nx()] {
+            assert_eq!(
+                wanted_states(&stream, &[3, 9]),
+                vec![Ok(expected[0].clone()), Ok(expected[2].clone())]
+            );
+            assert_eq!(wanted_states(&stream, &[6]), vec![Ok(expected[1].clone())]);
+            assert_eq!(wanted_states(&stream, &[4]), Vec::new());
+        }
+    });
+}
+
+#[test]
+fn a_refused_step_ends_the_states_with_its_error() {
+    with_decode_context(|_ctx| {
+        let stream = DeltasStream::new(C)
+            .delta(&[], &[(14, POINT)], &[])
+            .marks(&[INITIAL_B])
+            .terminator()
+            .finish();
+        assert_eq!(
+            wanted_states(&stream, &[6, 9]),
+            vec![
+                Ok(expected_states()[0].clone()),
+                Err(StateError::Replay(ReplayError::RemovedAbsent {
+                    mark: 9,
+                    xmt: 14
+                })),
+            ]
+        );
     });
 }

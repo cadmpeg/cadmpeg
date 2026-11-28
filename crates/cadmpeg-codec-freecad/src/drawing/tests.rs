@@ -530,20 +530,12 @@ fn rejects_noncanonical_page_link_carriers() {
 }
 
 #[test]
-fn rejects_duplicate_drawing_carrier_properties_and_values() {
+fn rejects_duplicate_drawing_carrier_values() {
     let documents = [
         r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
 <ObjectData Count="1"><Object name="View"><Properties Count="3">
  <Property name="X" type="App::PropertyDistance"><Float value="10"/><Float value="11"/></Property>
- <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
- <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
-</Properties></Object></ObjectData></Document>"#,
-        r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
-<ObjectData Count="1"><Object name="View"><Properties Count="4">
- <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
- <Property name="X" type="App::PropertyDistance"><Float value="11"/></Property>
  <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
  <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,

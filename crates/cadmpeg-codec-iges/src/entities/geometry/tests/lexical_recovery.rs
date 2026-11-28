@@ -54,7 +54,7 @@ fn a_pinned_decode_refuses_an_unreadable_nurbs_pole() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+            .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
         crate::test_support::assert_gives_up(recovered.report(), &[("entity", 1)]);
         let mut pinned = DecodeOptions::default();
         pinned.strictness.pinned = true;
@@ -149,11 +149,13 @@ fn unusable_metadata_use_flag_does_not_report_a_geometry_drop() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+        .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
     assert!(result
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()
-            && loss.message.contains("Entity Use Flag 06 is outside")));
+        .any(
+            |loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
+                && loss.message.contains("Entity Use Flag 06 is outside")
+        ));
 }
