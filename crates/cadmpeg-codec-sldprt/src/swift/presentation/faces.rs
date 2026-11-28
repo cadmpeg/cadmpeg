@@ -18,6 +18,7 @@ const REFERENCE_CLASSES: [&[u8]; 4] = [
     b"moLoopRef_c",
     b"moSilhEdgeRef_c",
 ];
+// resource-cap: MAX_REFERENCE_HOPS = 1
 const MAX_REFERENCE_HOPS: u32 = 64;
 const DOCUMENT_FORM: u16 = 2;
 const DOCUMENT_STRINGS: usize = 3;

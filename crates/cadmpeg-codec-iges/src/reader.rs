@@ -964,7 +964,7 @@ pub(crate) fn decode_with_test_limits(
     struct LimitedCodec(DecodeLimits);
 
     impl CodecBackend for LimitedCodec {
-        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+        const FORMAT: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
         fn detect_impl(
             &self,

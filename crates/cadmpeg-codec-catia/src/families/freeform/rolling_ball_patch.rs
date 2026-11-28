@@ -18,17 +18,23 @@ use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
 const U_DEGREE: usize = 3;
 const V_DEGREE: usize = 5;
 const HOLDOUT_STEPS: usize = 20;
+// resource-cap: MAX_FIT_ERROR_MM = N
 const MAX_FIT_ERROR_MM: f64 = 0.001;
 const MIN_PIVOT: f64 = 1.0e-12;
 const LOOP_CLOSURE_MM: f64 = 0.001;
 const LOOP_ORIENTATION_SAMPLES: usize = 40;
 const MIN_LOOP_UV_AREA: f64 = 1.0e-10;
+// resource-cap: MAX_PCURVE_CANDIDATES = 4
 const MAX_PCURVE_CANDIDATES: usize = 256;
+// resource-cap: MAX_CHART_ENDPOINT_SLACK = N
 const MAX_CHART_ENDPOINT_SLACK: f64 = 0.00001;
 const EDGE_DEGREE: usize = 5;
 const EDGE_HOLDOUT_STEPS: usize = 20;
+// resource-cap: MAX_EDGE_ERROR_MM = N
 const MAX_EDGE_ERROR_MM: f64 = 0.001;
+// resource-cap: MAX_EDGE_SPLIT_DEPTH = 4
 const MAX_EDGE_SPLIT_DEPTH: usize = 12;
+// resource-cap: MAX_EDGE_SPANS = 4
 const MAX_EDGE_SPANS: usize = 128;
 
 fn surface_evaluator<'a>(
@@ -556,6 +562,7 @@ const RECTANGULAR_U_DEGREE: usize = 5;
 const RECTANGULAR_V_DEGREE: usize = 5;
 const RECTANGULAR_U_SPANS: usize = 4;
 const RECTANGULAR_V_SPANS: usize = 2;
+// resource-cap: MAX_NATIVE_FIT_STATIONS = 4
 const MAX_NATIVE_FIT_STATIONS: usize = 64;
 const RECTANGULAR_V_POLES: usize = 9;
 const RECTANGULAR_HOLDOUT_U: usize = 60;

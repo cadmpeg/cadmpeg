@@ -764,7 +764,7 @@ fn the_id_table_lists_sketches_then_the_base_feature() {
         pairs,
         (300..305).zip(scopes.iter().copied()).collect::<Vec<_>>()
     );
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     assert!(!native.persistent_subentity_tags.is_empty());
     assert!(native
         .persistent_subentity_tags

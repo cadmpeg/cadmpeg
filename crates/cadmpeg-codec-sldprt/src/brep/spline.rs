@@ -91,6 +91,7 @@ struct SurfaceDescriptor {
     refs: [u32; 5],
 }
 
+// resource-cap: MAX_ARRAY_VALUES = 2
 const MAX_ARRAY_VALUES: usize = 1_000_000;
 
 fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {

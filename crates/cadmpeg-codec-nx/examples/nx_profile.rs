@@ -1045,6 +1045,7 @@ mod tests {
             name: None,
             color: None,
             visible: None,
+            unstated: None,
             native_ref: None,
         });
         ir.model.features.push(Feature {
@@ -1240,6 +1241,7 @@ mod tests {
             name: None,
             color: None,
             visible: None,
+            unstated: None,
             native_ref: None,
         };
         let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
@@ -1314,6 +1316,7 @@ mod tests {
             name: None,
             color: None,
             visible: None,
+            unstated: None,
             native_ref: None,
         };
         let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())

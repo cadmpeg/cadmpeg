@@ -311,6 +311,7 @@ pub(super) fn build_mesh_coordinate_gauge(
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
 ) -> Result<MeshCoordinateGauge, CodecError> {
+    // resource-cap: MAX_COORDINATE_GAUGE_PERMUTATIONS = 4
     const MAX_COORDINATE_GAUGE_PERMUTATIONS: usize = 4_096;
     let identity = || {
         Ok(MeshCoordinateGauge {

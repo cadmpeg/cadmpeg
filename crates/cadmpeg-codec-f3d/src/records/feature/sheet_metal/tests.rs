@@ -62,7 +62,7 @@ fn edge_flange_operation_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:edge-flange#0",
         value: &operation,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::EDGE_FLANGE_OPERATION_CLONE_COUNT.with(|count| count.set(0)),

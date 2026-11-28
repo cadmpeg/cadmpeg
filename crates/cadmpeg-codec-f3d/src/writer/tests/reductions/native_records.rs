@@ -11,7 +11,7 @@ use cadmpeg_ir::report::export::ExportReport;
 
 use crate::records::sketch_links::{SketchCurveLink, SketchLinkSense};
 use crate::test_support::assert_written_with_loss;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 
 const OMITTED: &str = "export/native.records-omitted";
 
@@ -921,7 +921,7 @@ fn a_record_header_named_by_the_base_record_slot_is_written_with_its_sketch() {
     let scope = crate::ids::native_stream(&header.id)
         .expect("a stream-scoped header id")
         .to_owned();
-    let written = crate::test_support::zip_test::with_scan(&bytes, |scan| {
+    let written = crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
         crate::design::decode::sketch::decode_related_record_headers(scan, &[(scope, 584)])
     })
     .expect("the written Design stream scans");
@@ -1007,8 +1007,8 @@ fn a_sketch_curve_link_that_names_a_dropped_curve_is_dropped_with_it() {
 fn several_asm_histories_are_dropped_and_the_design_stream_is_written() {
     use crate::history_records::AsmHistory;
 
-    let source = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh(),
+    let source = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh(),
     );
     let decoded = cadmpeg_ir::codec::Codec::decode(
         &crate::F3dCodec,

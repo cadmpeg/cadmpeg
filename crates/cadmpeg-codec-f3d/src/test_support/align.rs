@@ -92,13 +92,13 @@ pub(crate) fn align_archive(
     bytes.extend_from_slice(&constructor);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    super::manifest_test::write_synthetic_manifests(&mut zip, options);
+    super::manifest_fixture::write_synthetic_manifests(&mut zip, options);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
         .unwrap();
     zip.write_all(&bytes).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
         .unwrap();
-    zip.write_all(&super::streams_test::design_metastream(&[]))
+    zip.write_all(&super::streams_fixture::design_metastream(&[]))
         .unwrap();
     zip.finish().unwrap().into_inner()
 }

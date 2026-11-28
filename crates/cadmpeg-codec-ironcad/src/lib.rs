@@ -30,7 +30,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct IronCadCodec;
 
 impl CodecBackend for IronCadCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,

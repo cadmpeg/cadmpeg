@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::decode;
-use crate::test_support::body_reference_tail_test::{archive, frame, metadata};
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::body_reference_tail_fixture::{archive, frame, metadata};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 
 #[test]
 fn body_reference_tail_replays_exactly_and_unsupported_edits_regenerate() {

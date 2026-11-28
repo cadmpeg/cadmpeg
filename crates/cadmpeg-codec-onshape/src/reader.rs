@@ -34,6 +34,7 @@ use cadmpeg_ir::unknown::part::{record_given_up, Cause, GivenUpPart};
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
 /// Nesting limit of referenced Part Studios.
+// resource-cap: MAX_REFERENCE_DEPTH = 2
 pub(super) const MAX_REFERENCE_DEPTH: usize = 7;
 
 fn text<'a>(row: &'a Value, key: &str) -> Mapping<&'a str> {

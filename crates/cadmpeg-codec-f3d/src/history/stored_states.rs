@@ -32,6 +32,7 @@ mod tests;
 
 /// The least record work, in table entries, that the stored states of one
 /// decode may spend.
+// resource-cap: MAX_STATE_WORK = 4
 pub(crate) const MAX_STATE_WORK: usize = 1 << 22;
 
 /// The record work, in table entries, that each byte of the model blobs

@@ -17,10 +17,13 @@ use crate::layout::{
 };
 
 /// Deepest segment nesting the walker accepts.
+// resource-cap: MAX_SEGMENT_DEPTH = 2
 pub(super) const MAX_SEGMENT_DEPTH: usize = 256;
 /// Most vertices one shell record may declare.
+// resource-cap: MAX_SHELL_VERTICES = 2
 pub(super) const MAX_SHELL_VERTICES: usize = 1 << 24;
 /// Most mask words one attribute record may carry.
+// resource-cap: MAX_MASK_WORDS = 1
 const MAX_MASK_WORDS: usize = 4;
 
 /// Size of one vertex in a shell record: three `f32`.
@@ -53,6 +56,7 @@ const COLOUR_CHANNELS: usize = 3;
 /// Top bit of a colour mask byte: another mask byte follows.
 const COLOUR_MASK_MORE: u8 = 0x80;
 /// Most mask bytes one colour record may carry.
+// resource-cap: MAX_COLOUR_MASK_BYTES = 1
 const MAX_COLOUR_MASK_BYTES: usize = 4;
 /// Bytes of a tag-0 record after its opcode.
 const TAG0_PAYLOAD: usize = 4;

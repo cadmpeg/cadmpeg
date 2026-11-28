@@ -29,6 +29,7 @@ mod bodies;
 
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
+// resource-cap: MAX_OCCURRENCES = 4
 pub(super) const MAX_OCCURRENCES: usize = 100_000;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_FORMATION",

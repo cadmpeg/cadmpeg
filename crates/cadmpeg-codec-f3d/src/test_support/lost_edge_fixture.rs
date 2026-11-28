@@ -10,7 +10,7 @@
 //! group's operand list.
 #![allow(clippy::unwrap_used)]
 
-use super::streams_test::{
+use super::streams_fixture::{
     generated_design_bulkstream, generated_design_class_tag, GeneratedDesignMetastreamVariant,
 };
 use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};

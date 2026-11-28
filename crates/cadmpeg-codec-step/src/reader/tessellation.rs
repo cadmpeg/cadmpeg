@@ -573,6 +573,7 @@ enum AssociationMode {
 /// Distinct inherited placements that one association walk follows into a
 /// tessellated item. Past it, the item and the items it contains keep source
 /// coordinates.
+// resource-cap: MAX_ITEM_PLACEMENTS = 4
 const MAX_ITEM_PLACEMENTS: usize = 64;
 
 /// The state of one association walk.

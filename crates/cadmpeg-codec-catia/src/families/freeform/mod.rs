@@ -56,6 +56,7 @@ use crate::math::distance;
 
 const EPS_TORUS_FRAME: f64 = 1.0e-12;
 const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
+// resource-cap: MAX_PATCH_RECORD_VISITS_PER_RECORD = 4
 const MAX_PATCH_RECORD_VISITS_PER_RECORD: usize = 64;
 
 #[derive(Clone)]
@@ -1455,7 +1456,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != cadmpeg_ir::codec_id!(crate::dialect::FORMAT) {
+        if source.format != cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT) {
             continue;
         }
         let Some(tag) = source

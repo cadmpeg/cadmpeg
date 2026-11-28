@@ -9,8 +9,8 @@ use crate::layout::{
 use crate::records::entity_header::SegmentType;
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::zip_test::with_scan;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::zip_fixture::with_scan;
 use crate::test_support::{
     indexed_header, lp_utf16, push_marked_reference, write_marked_reference,
 };

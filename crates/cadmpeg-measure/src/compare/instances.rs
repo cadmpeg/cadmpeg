@@ -25,6 +25,7 @@ use super::{Operand, Row, Rule};
 use crate::value::Unit;
 
 /// Largest number of instances one document's comparison enumerates.
+// resource-cap: MAX_COMPARE_INSTANCES = N
 const MAX_COMPARE_INSTANCES: usize = 1 << 20;
 
 /// The placements of each body of a document, by body ID, or `None` when an

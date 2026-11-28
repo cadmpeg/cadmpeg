@@ -20,6 +20,7 @@ mod patch_slots;
 use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
 
 fn exact_count(value: f64) -> Option<i64> {
+    // resource-cap: MAX_EXCLUSIVE_COUNT = N
     const MAX_EXCLUSIVE_COUNT: f64 = 9_223_372_036_854_775_808.0;
     if !(0.0..MAX_EXCLUSIVE_COUNT).contains(&value) {
         return None;

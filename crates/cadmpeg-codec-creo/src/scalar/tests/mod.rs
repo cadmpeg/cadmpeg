@@ -595,7 +595,10 @@ fn compact_plane_rotation_expands_repeats_and_preserves_all_axis_signs() {
                     let mut v = [0.0; 3];
                     u[u_axis] = u_sign;
                     v[v_axis] = v_sign;
-                    let n = crate::vecmath::cross(u, v);
+                    let n = <[f64; 3]>::from(
+                        cadmpeg_ir::math::Vector3::from(u)
+                            .cross(cadmpeg_ir::math::Vector3::from(v)),
+                    );
                     let matrix: [f64; 9] = std::array::from_fn(|i| [u, v, n][i % 3][i / 3]);
                     let mut body = Vec::new();
                     let mut cursor = 0;
