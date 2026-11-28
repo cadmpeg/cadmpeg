@@ -102,9 +102,8 @@ fn a_reference_plane_owner_whose_entity_is_another_class_is_no_plane() {
             "GSMPlaneOffset",
             "plane-offset-entry",
         );
-        let native = CatiaNative {
+        let mut native = CatiaNative {
             design_objects: vec![parent, plane],
-            entity_records: vec![compact_entity(21, class)],
             object_graphs: vec![CatiaObjectGraph {
                 id: "graph".to_string(),
                 byte_offset: 0,
@@ -127,6 +126,10 @@ fn a_reference_plane_owner_whose_entity_is_another_class_is_no_plane() {
             }],
             ..CatiaNative::default()
         };
+        native.entity_records = vec![compact_entity(
+            &mut native.object_graphs[0].records[1],
+            class,
+        )];
         let mut ir = CadIr::empty();
         crate::test_support::with_service_context(|ctx| {
             transfer_design_features(
@@ -141,4 +144,5 @@ fn a_reference_plane_owner_whose_entity_is_another_class_is_no_plane() {
     };
     assert_eq!(planes("GSMPlaneOffset"), 1);
     assert_eq!(planes("Pad"), 0);
+    assert_eq!(planes(""), 1);
 }

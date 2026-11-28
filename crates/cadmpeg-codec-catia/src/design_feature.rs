@@ -13,6 +13,7 @@ use crate::chain_walk::{ChainStep, ChainStops};
 
 use crate::design_v11;
 use crate::ids::neutral_history_id;
+use crate::native::paired_records::PairedRecords;
 use crate::native::{
     CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
 };
@@ -254,23 +255,16 @@ pub(crate) fn transfer_design_features(
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<DesignFeatureTransfer, cadmpeg_core::CodecError> {
-    let records = (native
+    let objects = native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record)))
-    .collect::<std::collections::HashMap<_, _>>();
-    let paired_classes = native
-        .entity_records
+        .collect::<Vec<_>>();
+    let records = objects
         .iter()
-        .filter_map(|entity| {
-            let class = entity.compact_class.as_ref()?;
-            Some((
-                (entity.object_graph.as_str(), entity.entity_id),
-                class.name.as_str(),
-            ))
-        })
+        .map(|record| (record.id.as_str(), *record))
         .collect::<HashMap<_, _>>();
+    let pairs = PairedRecords::new(&native.entity_records, &objects);
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -278,9 +272,11 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
-        let class = paired_classes
-            .get(&(object.parent.as_str(), object.owner_entity_id))
-            .copied();
+        let class = pairs
+            .pair(&object.parent, object.owner_entity_id)
+            .filter(|(_, record)| Some(record.id.as_str()) == object.owner_record.as_deref())
+            .and_then(|(entity, _)| entity.compact_class.as_ref())
+            .and_then(|class| design_v11::classes::read(&class.name));
         let admits = |classes: &[&str]| class.is_none_or(|class| classes.contains(&class));
         let plane_candidate = principal_plane_candidate(object, &records)
             .filter(|_| admits(&[design_v11::classes::PLANE]));

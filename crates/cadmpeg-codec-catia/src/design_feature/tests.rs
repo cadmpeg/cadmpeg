@@ -399,11 +399,17 @@ fn sketch_owner_native() -> CatiaNative {
 }
 
 /// An entity record of `graph` whose compact definition names `class`.
-fn compact_entity(entity_id: u32, class: &str) -> crate::native::entity_record::CatiaEntityRecord {
+fn compact_entity(
+    object: &mut CatiaObjectRecord,
+    class: &str,
+) -> crate::native::entity_record::CatiaEntityRecord {
+    let pair = object.entity.as_mut().unwrap();
+    let entity_id = pair.id;
+    pair.record = format!("entity-{entity_id}");
     crate::native::entity_record::CatiaEntityRecord {
-        id: format!("entity-{entity_id}"),
-        object_graph: "graph".to_string(),
-        object_record: format!("record-{entity_id}"),
+        id: pair.record.clone(),
+        object_graph: object.parent.clone(),
+        object_record: object.id.clone(),
         ordinal: 0,
         byte_offset: 0,
         lead: 0,
@@ -427,13 +433,19 @@ fn compact_entity(entity_id: u32, class: &str) -> crate::native::entity_record::
     }
 }
 
-/// A sketch owner transfers only where the owner entity's compact class is
-/// `PRTSketch` (`catia.md` §7.3.2).
+/// Only a unique reciprocal pair with a read class can contradict a sketch owner.
 #[test]
 fn a_sketch_owner_whose_entity_is_another_class_is_no_sketch() {
-    let sketches = |class: &str| {
+    let sketches = |class: &str, paired: bool, duplicate: bool| {
         let mut native = sketch_owner_native();
-        native.entity_records = vec![compact_entity(1, class)];
+        let mut entity = compact_entity(&mut native.object_graphs[0].records[0], class);
+        if !paired {
+            entity.object_record = "unpaired-record".to_owned();
+        }
+        native.entity_records = vec![entity.clone()];
+        if duplicate {
+            native.entity_records.push(entity);
+        }
         let mut ir = CadIr::empty();
         crate::test_support::with_service_context(|ctx| {
             transfer_design_features(
@@ -446,8 +458,12 @@ fn a_sketch_owner_whose_entity_is_another_class_is_no_sketch() {
         .unwrap();
         ir.model.sketches.len()
     };
-    assert_eq!(sketches("PRTSketch"), 1);
-    assert_eq!(sketches("Pad"), 0);
+    assert_eq!(sketches("PRTSketch", true, false), 1);
+    assert_eq!(sketches("Pad", true, false), 0);
+    assert_eq!(sketches("", true, false), 1);
+    assert_eq!(sketches(" ", true, false), 1);
+    assert_eq!(sketches("Pad", false, false), 1);
+    assert_eq!(sketches("Pad", true, true), 1);
 }
 
 #[test]

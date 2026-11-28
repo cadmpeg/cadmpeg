@@ -83,7 +83,7 @@ use zero_entity_allocation::CatiaZeroEntityAllocationEdge;
 pub(crate) mod inline_field;
 use inline_field::CatiaInlineField;
 
-mod paired_records;
+pub(crate) mod paired_records;
 pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
 pub(crate) mod schema_configuration_roles;

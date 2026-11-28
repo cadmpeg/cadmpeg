@@ -181,10 +181,12 @@ pub(crate) enum CatiaLossCode {
     /// Parameters that hold an input parameter the decoder resolved as text,
     /// or omit it, and state no dependency on that parameter.
     DesignParameterReferenceAsText,
-    /// Feature-tree records the design layer does not state: a member listed
-    /// more than once, a set that no set lists, and every record of a tree
-    /// that is not read.
+    /// Unread feature trees and omitted tree placements.
     DesignTreeRecordsUnstated,
+    /// A stated container has an unread member list.
+    DesignMemberListUnread,
+    /// A Boolean feature has no stated body tool.
+    DesignBooleanToolUnread,
     /// Features that no stated set lists are members of the part's group.
     DesignFeaturesUngrouped,
     /// Tree members whose record is unread keep their place as native
@@ -194,8 +196,8 @@ pub(crate) enum CatiaLossCode {
     DesignSetKindUnread,
     /// Sets that no read list holds are stated as roots of the part's scope.
     DesignSetsUnlisted,
-    /// The in-work object is read and no stated rollback holds it, or a
-    /// stated rollback is before a member whose record is unread.
+    /// An unread in-work field, an unmatched in-work object, or a rollback
+    /// before an unread member.
     DesignRollbackUnread,
     /// Sketches are stated without their entities.
     DesignSketchEntitiesUnread,
@@ -292,6 +294,8 @@ impl CatiaLossCode {
         Self::HistoryParameterLiteralAssumed,
         Self::DesignParameterReferenceAsText,
         Self::DesignTreeRecordsUnstated,
+        Self::DesignMemberListUnread,
+        Self::DesignBooleanToolUnread,
         Self::DesignFeaturesUngrouped,
         Self::DesignMembersUnread,
         Self::DesignSetKindUnread,
@@ -393,6 +397,8 @@ impl CatiaLossCode {
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignTreeRecordsUnstated => "design.tree-records-unstated",
+            Self::DesignMemberListUnread => "design.member-list-unread",
+            Self::DesignBooleanToolUnread => "design.boolean-tool-unread",
             Self::DesignFeaturesUngrouped => "design.features-ungrouped",
             Self::DesignMembersUnread => "design.members-unread",
             Self::DesignSetKindUnread => "design.set-kind-unread",
@@ -523,6 +529,8 @@ impl CatiaLossCode {
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignTreeRecordsUnstated
+            | Self::DesignMemberListUnread
+            | Self::DesignBooleanToolUnread
             | Self::DesignFeaturesUngrouped
             | Self::DesignMembersUnread
             | Self::DesignSetKindUnread
@@ -633,6 +641,8 @@ mod tests {
                 "history.parameter-literal-assumed",
                 "design.parameter-reference-as-text",
                 "design.tree-records-unstated",
+                "design.member-list-unread",
+                "design.boolean-tool-unread",
                 "design.features-ungrouped",
                 "design.members-unread",
                 "design.set-kind-unread",

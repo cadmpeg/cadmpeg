@@ -2,7 +2,7 @@
 //! The part's bodies, its sets, its own group, and their member features
 //! (§5.2).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
@@ -23,7 +23,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{SketchConstraint as LegacyConstraint, SketchId};
 use cadmpeg_ir::CadIr;
 
-use super::tree::{Item, Set, SetKind, Tree};
+use super::tree::{BooleanTools, Evidence, Item, Set, SetKind, Tree};
 use super::{classes, datums, sketches};
 use crate::ids::neutral_history_id;
 use crate::loss::{identity_statement, CatiaLossCode};
@@ -54,7 +54,7 @@ pub(super) fn project(
         legacy: &legacy,
         model_sketches: &model_sketches,
         model_constraints: &ir.model.sketch_constraints,
-        current: tree.and_then(|tree| tree.current),
+        current: tree.and_then(|tree| tree.current.value()),
         tools: tree.map(|tree| &tree.tools),
         rollback_stated: false,
         restated: BTreeSet::new(),
@@ -80,7 +80,7 @@ pub(super) fn project(
                 .map(|record| format!("{} ({})", record.record, record.reason))
                 .collect::<Vec<_>>();
             losses.push(CatiaLossCode::DesignTreeRecordsUnstated.note(format!(
-                "{} record(s) of the part's feature tree, and the members they list, are not stated: {}",
+                "{} tree placement(s) are omitted: {}",
                 records.len(),
                 identity_statement(&records),
             )));
@@ -92,10 +92,28 @@ pub(super) fn project(
                 identity_statement(&tree.unlisted),
             )));
         }
-        if let (Some(current), false) = (tree.current, stated.rollback_stated) {
-            stated.charges.rollbacks.push(format!(
-                "the in-work object, entity {current}, is no member of a stated body and is no stated body"
-            ));
+        if !tree.unread_lists.is_empty() {
+            let records = tree
+                .unread_lists
+                .iter()
+                .map(|record| (*record).to_owned())
+                .collect::<Vec<_>>();
+            losses.push(CatiaLossCode::DesignMemberListUnread.note(format!(
+                "Feature-tree member lists are unread for these records: {}",
+                identity_statement(&records),
+            )));
+        }
+        match tree.current {
+            Evidence::Read(current) if !stated.rollback_stated => {
+                stated.charges.rollbacks.push(format!(
+                    "the in-work object, entity {current}, is no member of a stated body and is no stated body"
+                ));
+            }
+            Evidence::Unread => stated.charges.rollbacks.push(format!(
+                "{} has an unread CurrentFeature field",
+                tree.root.object_record
+            )),
+            Evidence::Absent | Evidence::Read(_) => {}
         }
     }
     let mut ungrouped = Vec::new();
@@ -154,6 +172,7 @@ pub(super) fn project(
 struct Charges {
     /// Members kept in place whose record is unread.
     members: Vec<String>,
+    boolean_tools: Vec<String>,
     /// Sets stated unordered because their kind is unread.
     sets: Vec<String>,
     /// In-work objects no stated rollback holds, and stated rollbacks
@@ -172,6 +191,11 @@ impl Charges {
                 self.members,
                 CatiaLossCode::DesignMembersUnread,
                 "member(s) of the part's feature tree whose record is unread are stated as native placeholder features",
+            ),
+            (
+                self.boolean_tools,
+                CatiaLossCode::DesignBooleanToolUnread,
+                "Boolean feature(s) are stated without their body tool",
             ),
             (
                 self.sets,
@@ -215,7 +239,7 @@ struct Statements<'c, 'l> {
     /// The in-work object's entity.
     current: Option<u32>,
     /// The tool set of each Boolean feature, by the Boolean's entity.
-    tools: Option<&'l HashMap<u32, &'l CatiaFeatureContainer>>,
+    tools: Option<&'l BooleanTools<'l>>,
     /// Whether a stated body's rollback holds the in-work object.
     rollback_stated: bool,
     restated: BTreeSet<FeatureId>,
@@ -308,12 +332,23 @@ impl Statements<'_, '_> {
             .as_ref()
             .map(|target| target.object_record.clone());
         let operation = match class.map(|class| (class, classes::family(class))) {
-            Some((class, Some(OperationFamily::Combine))) if at == Anchor::Input => {
-                match self.tools.and_then(|tools| tools.get(&member.entity_id)) {
-                    Some(tool) => combine(class, tool)?,
-                    None => FeatureOperation::Unresolved {
-                        family: OperationFamily::Combine,
-                    },
+            Some((class, Some(OperationFamily::Combine))) => {
+                let tool = self.tools.and_then(|tools| tools.get(&member.entity_id));
+                match (classes::boolean_op(class), tool, &at) {
+                    (Some(op), Some(Ok(tool)), Anchor::Input) => combine(op, tool)?,
+                    (_, tool, _) => {
+                        let reason = match tool {
+                            Some(Err(reason)) => reason,
+                            Some(Ok(_)) => "the feature has no ordered target body",
+                            None => "the feature has no readable operand record",
+                        };
+                        self.charges
+                            .boolean_tools
+                            .push(format!("entity {} ({reason})", member.entity_id));
+                        FeatureOperation::Unresolved {
+                            family: OperationFamily::Combine,
+                        }
+                    }
                 }
             }
             Some((_, Some(family))) => FeatureOperation::Unresolved { family },
@@ -402,21 +437,10 @@ impl Statements<'_, '_> {
     }
 }
 
-/// The Boolean feature of class `class` whose tool is the root set `tool`:
+/// The Boolean operation whose tool is the root body `tool`:
 /// it targets the body it sits in, and picks the tool's result at the
 /// tool's rollback position.
-fn combine(class: &str, tool: &CatiaFeatureContainer) -> Result<FeatureOperation, CodecError> {
-    let op = match class {
-        "Add" => BooleanOp::Join,
-        "Remove" => BooleanOp::Cut,
-        "Intersect" => BooleanOp::Intersect,
-        "Assemble" => BooleanOp::Assemble,
-        _ => {
-            return Ok(FeatureOperation::Unresolved {
-                family: OperationFamily::Combine,
-            })
-        }
-    };
+fn combine(op: BooleanOp, tool: &CatiaFeatureContainer) -> Result<FeatureOperation, CodecError> {
     let tool_id = ContainerId::mint(tool.id.clone()).map_err(CodecError::malformed)?;
     let pick = Picked {
         target: PickTarget::Native { within: None },

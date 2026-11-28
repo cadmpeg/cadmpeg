@@ -17,16 +17,7 @@ const COMPACT_TAG_BASE: u8 = 0x34;
 
 /// Classes whose payload is read as a run of tagged segments: the part root,
 /// bodies, geometrical sets, and Boolean features.
-const SEGMENTED_CLASSES: [&str; 8] = [
-    "MechanicalPart",
-    "MechanicalTool",
-    "HybridBody",
-    "GSMTool",
-    "Add",
-    "Remove",
-    "Assemble",
-    "Intersect",
-];
+const SEGMENTED_CLASSES: [&str; 4] = ["MechanicalPart", "MechanicalTool", "HybridBody", "GSMTool"];
 
 /// Stored token of one compact field: a class, a second prefix field, or a
 /// payload field tag.
@@ -418,11 +409,10 @@ pub(crate) fn derive(
             let Some((entity, object)) = pairs.pair(&graph.id, entity_id) else {
                 continue;
             };
-            let Some(class) = entity
-                .compact_class
-                .as_ref()
-                .filter(|class| SEGMENTED_CLASSES.contains(&class.name.as_str()))
-            else {
+            let Some(class) = entity.compact_class.as_ref().filter(|class| {
+                SEGMENTED_CLASSES.contains(&class.name.as_str())
+                    || crate::design_v11::classes::boolean_op(&class.name).is_some()
+            }) else {
                 continue;
             };
             let Some(payload) = object_payload(bytes, object) else {

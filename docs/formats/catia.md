@@ -1805,7 +1805,7 @@ The class field names the record's class. The second field selects one entry of 
 | `GSMTool` | `Open_body` |
 | `MechanicalPart` | the part's name |
 
-Preserve the class tag or wide ordinal, its prefix offset, the selected zero-based ordinal, and the selected entry and name. Each wide field is also a definition selector under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
+Preserve the class tag or wide ordinal, the selected zero-based ordinal, and the selected entry and name. Each wide field is also a definition selector under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
 
 The paired `7C0A` payload of a part root, a body, a geometrical set, or a Boolean feature (`Add`, `Remove`, `Assemble`, `Intersect`) in the compact form is a run of tagged segments:
 
@@ -1863,7 +1863,7 @@ The part root's other segments are its remaining fields:
 
 The root's other fields, such as `PartAlgoConfigs`, have the same segment form. The `_ReferencePlanes` list selects the same three `GSMPlane` records as the first three members of the root's `_FtrList`.
 
-A Boolean feature's `_FtrList` starts with the result record. The list can end after the result or carry a second member. When that member is a body, it is the Boolean's tool. `ToolList` repeats this body, which stands outside the set member lists. A `Remove` can also store a record of class `Boolean` as the second member. A Boolean feature listed by a body targets that body.
+A Boolean feature's `_FtrList` starts with the result record. The list can end after the result or carry a second member. When that member is a body, it is the Boolean's tool. `ToolList` lists the tool body independently of the result list. In the two-member form it can repeat the second member. The tool body stands outside the set member lists. A `Remove` can also store a record of class `Boolean` as the second member. A Boolean feature listed by a body targets that body.
 
 The compact class of a member names its feature kind. Each class below has the operation family of CADIR v11 §6:
 

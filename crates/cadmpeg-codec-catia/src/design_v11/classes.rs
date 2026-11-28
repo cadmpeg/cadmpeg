@@ -3,6 +3,7 @@
 //! Feature classes).
 
 use cadmpeg_ir::design::feature::OperationFamily;
+use cadmpeg_ir::design::options::BooleanOp;
 
 /// The class of a sketch record.
 pub(crate) const SKETCH: &str = "PRTSketch";
@@ -69,10 +70,6 @@ const FAMILIES: &[(&str, OperationFamily)] = &[
     ("UserPattern", OperationFamily::Pattern),
     ("Mirror", OperationFamily::Pattern),
     ("UdfFeature", OperationFamily::TemplateInstance),
-    ("Add", OperationFamily::Combine),
-    ("Remove", OperationFamily::Combine),
-    ("Assemble", OperationFamily::Combine),
-    ("Intersect", OperationFamily::Combine),
     ("Split", OperationFamily::Split),
     ("GSMSplit", OperationFamily::Split),
     ("GSMTrim", OperationFamily::Split),
@@ -109,7 +106,7 @@ const FAMILIES: &[(&str, OperationFamily)] = &[
 ];
 
 /// The solid feature classes: a set that lists one of them is a body.
-const BODY_FEATURES: [&str; 25] = [
+pub(super) const BODY_FEATURES: [&str; 21] = [
     "Pad",
     "Pocket",
     "Shaft",
@@ -127,10 +124,6 @@ const BODY_FEATURES: [&str; 25] = [
     "ThickSurface",
     "CloseSurface",
     "SewSurface",
-    "Add",
-    "Remove",
-    "Assemble",
-    "Intersect",
     "Split",
     "RemoveFace",
     "Thread",
@@ -139,13 +132,25 @@ const BODY_FEATURES: [&str; 25] = [
 
 /// The §6 family of a feature class's operation.
 pub(super) fn family(class: &str) -> Option<OperationFamily> {
+    if boolean_op(class).is_some() {
+        return Some(OperationFamily::Combine);
+    }
     FAMILIES
         .iter()
         .find(|(name, _)| *name == class)
         .map(|(_, family)| *family)
 }
 
-/// Whether a class is a solid feature class.
-pub(super) fn is_body_feature(class: &str) -> bool {
-    BODY_FEATURES.contains(&class)
+pub(crate) fn boolean_op(class: &str) -> Option<BooleanOp> {
+    match class {
+        "Add" => Some(BooleanOp::Join),
+        "Remove" => Some(BooleanOp::Cut),
+        "Intersect" => Some(BooleanOp::Intersect),
+        "Assemble" => Some(BooleanOp::Assemble),
+        _ => None,
+    }
+}
+
+pub(crate) fn read(name: &str) -> Option<&str> {
+    (!name.trim().is_empty()).then_some(name)
 }

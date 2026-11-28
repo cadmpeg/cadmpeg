@@ -718,16 +718,16 @@ fn a_root_record_of_a_class_with_no_family_is_a_native_feature() {
     }
 }
 
-/// A Boolean feature whose `_FtrList` lists a set that no other list holds
-/// combines that set into the body it sits in: the set is a root body, and
+/// A Boolean feature with a stored tool combines it into the body that lists it: the set is a root body, and
 /// the Boolean picks its result at its rollback position and absorbs it
 /// (§6, `Combine`; `catia.md` §7.3.2).
 #[test]
-fn a_boolean_absorbs_the_body_its_feature_list_holds() {
+fn a_boolean_absorbs_the_body_its_fields_select() {
     let mut catalog = crate::test_support::test_feature_tree::CATALOG.to_vec();
-    catalog.extend(["Assemble", "Solid"]);
-    let assemble = 0x43;
+    catalog.extend(["Add", "Solid", "ToolList", "GSMTool"]);
+    let add = 0x43;
     let solid = 0x44;
+    let tool_list = 0x45;
     let mut records = part();
     let mut body = vec![FTR_LIST, 0x84, 0x81, 0x86];
     body.extend(escaped(0x2000));
@@ -737,11 +737,13 @@ fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     body.extend(escaped(0x2002));
     body.push(0xfe);
     records[1].2 = body;
-    let boolean = vec![FTR_LIST, 0x83, 0x81, 0x8c, 0x81, 0x8a, 0x81, 0xfe];
+    let boolean = vec![
+        FTR_LIST, 0x82, 0x81, 0x8c, 0x81, tool_list, 0x82, 0x81, 0x8a, 0x81, 0xfe,
+    ];
     let mut tool = vec![FTR_LIST, 0x82, 0x81, 0x8b];
     tool.extend(escaped(0x3001));
     tool.push(0xfe);
-    records.push((8, compact(0x08, assemble), boolean));
+    records.push((8, compact(0x08, add), boolean));
     records.push((9, compact(0x08, HYBRID_BODY), tool));
     records.push((10, compact(0x08, PAD), vec![0xfe]));
     records.push((11, compact(0x08, solid), vec![0xfe]));
@@ -787,7 +789,7 @@ fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     let FeatureOperation::Combine(combine) = &feature.definition.operation else {
         panic!("the Boolean is a combine");
     };
-    assert_eq!(combine.op, Some(BooleanOp::Assemble));
+    assert_eq!(combine.op, Some(BooleanOp::Join));
     assert_eq!(combine.tools_after, Some(ToolDisposition::Absorbed));
     assert_eq!(
         combine
@@ -812,29 +814,262 @@ fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
 
-    records[6].2.swap(3, 5);
-    let reversed = decode(
-        outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
-        &DecodeOptions::default(),
-    );
-    let feature = reversed
-        .ir()
-        .design
-        .features
-        .iter()
-        .find(|feature| entity(feature.id.as_str()) == 8)
-        .unwrap();
+    let decode_records = |records: &[_]| {
+        decode(
+            outer_container_catpart(&stream_with_catalog(records, &catalog)).0,
+            &DecodeOptions::default(),
+        )
+    };
+    for fallback in [
+        vec![tool_list, 0x82, 0x81, 0x8a, 0x81, 0xfe],
+        vec![FTR_LIST, 0x83, 0x81, 0x8c, 0x81, 0x8a, 0x81, 0xfe],
+        vec![
+            FTR_LIST, 0x83, 0x81, 0x8c, 0x81, 0x8a, 0x81, tool_list, 0x82, 0x81, 0x8a, 0x81, 0xfe,
+        ],
+        vec![
+            FTR_LIST, 0x83, 0x81, 0x8a, 0x81, 0x8c, 0x81, tool_list, 0x82, 0x81, 0x8a, 0x81, 0xfe,
+        ],
+    ] {
+        records[6].2 = fallback;
+        let result = decode_records(&records);
+        let FeatureOperation::Combine(combine) = boolean_operation(&result) else {
+            panic!("the Boolean is a combine");
+        };
+        assert_eq!(
+            combine.tools.at,
+            Anchor::Pinned(Position::After(Member::Container(tool.id().clone())))
+        );
+    }
+    records[6].2 = vec![
+        FTR_LIST, 0x83, 0x81, 0x8c, 0x81, 0x8a, 0x81, tool_list, 0x82, 0x81, 0x88, 0x81, 0xfe,
+    ];
+    let conflict = decode_records(&records);
     assert!(matches!(
-        feature.definition.operation,
+        boolean_operation(&conflict),
         FeatureOperation::Unresolved {
-            family: OperationFamily::Combine,
+            family: OperationFamily::Combine
+        }
+    ));
+    assert!(has_loss(
+        &conflict,
+        CatiaLossCode::DesignBooleanToolUnread,
+        "select different bodies"
+    ));
+    assert!(!has_loss(
+        &conflict,
+        CatiaLossCode::DesignSetsUnlisted,
+        "the tool of"
+    ));
+
+    records[6].2 = vec![FTR_LIST, 0x83, 0x81, 0x8a, 0x81, 0x8c, 0x81, 0xfe];
+    let reversed = decode_records(&records);
+    assert!(matches!(
+        boolean_operation(&reversed),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Combine
         }
     ));
     assert!(!has_loss(
         &reversed,
         CatiaLossCode::DesignSetsUnlisted,
-        "(HybridBody, the tool of "
+        "the tool of"
     ));
+
+    records[7].1 = compact(0x08, 0x46);
+    records[6].2 = vec![FTR_LIST, 0x83, 0x81, 0x8c, 0x81, 0x8a, 0x81, 0xfe];
+    let geometrical_set = decode_records(&records);
+    assert!(matches!(
+        boolean_operation(&geometrical_set),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Combine
+        }
+    ));
+    assert!(!has_loss(
+        &geometrical_set,
+        CatiaLossCode::DesignSetsUnlisted,
+        "the tool of"
+    ));
+}
+
+fn boolean_operation(result: &EditableDecodeResult) -> &FeatureOperation {
+    &result
+        .ir()
+        .design
+        .features
+        .iter()
+        .find(|feature| entity(feature.id.as_str()) == 8)
+        .unwrap()
+        .definition
+        .operation
+}
+
+#[test]
+fn a_body_with_only_imports_keeps_its_end_rollback() {
+    let mut catalog = crate::test_support::test_feature_tree::CATALOG.to_vec();
+    catalog.extend(["ListOfImports", "Solid"]);
+    let mut records = part();
+    records[0].2[19] = 0x88;
+    records[5].2 = vec![0x32, 16, 0, 0, 0, 0x82, 0x81, 0x89, 0x81, 0xfe];
+    records.push((8, compact(0x08, 0x44), vec![0xfe]));
+    let result = decode(
+        outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(matches!(
+        container(result.ir(), "catia:outer:feature-container", 7),
+        Container::Ordered { rollback: Some(Rollback::End), members, .. } if members.is_empty()
+    ));
+    assert!(!has_loss(&result, CatiaLossCode::DesignMembersUnread, ""));
+    assert!(!has_loss(
+        &result,
+        CatiaLossCode::DesignMemberListUnread,
+        ""
+    ));
+    assert!(!has_loss(&result, CatiaLossCode::DesignRollbackUnread, ""));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+
+    records[5].2 = vec![FTR_LIST, 0x81, 0xfe];
+    let unread_list = decode(
+        outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(matches!(
+        container(unread_list.ir(), "catia:outer:feature-container", 7),
+        Container::Ordered { rollback: Some(Rollback::End), members, .. } if members.is_empty()
+    ));
+    assert!(has_loss(
+        &unread_list,
+        CatiaLossCode::DesignMemberListUnread,
+        ""
+    ));
+    assert!(!has_loss(
+        &unread_list,
+        CatiaLossCode::DesignRollbackUnread,
+        ""
+    ));
+}
+
+#[test]
+fn duplicate_membership_identifies_the_omitted_position() {
+    let mut records = part();
+    records[0].2[1] = 0x85;
+    records[0]
+        .2
+        .splice(18..18, [0x84].into_iter().chain(escaped(0x1001)));
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let Container::Ordered { members, .. } =
+        container(result.ir(), "catia:outer:feature-container", 3)
+    else {
+        panic!("the first body placement survives");
+    };
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 5), ("feature", 6)]
+    );
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "membership at position 4 for entity 3"
+    ));
+    assert!(!has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "members they list"
+    ));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+}
+
+#[test]
+fn a_disconnected_membership_cycle_is_reported_as_unreachable() {
+    let mut records = part();
+    records.extend([
+        (
+            8,
+            compact(0x08, HYBRID_BODY),
+            vec![FTR_LIST, 0x82, 0x81, 0x8a, 0x81, 0xfe],
+        ),
+        (
+            9,
+            compact(0x08, HYBRID_BODY),
+            vec![FTR_LIST, 0x82, 0x81, 0x89, 0x81, 0xfe],
+        ),
+    ]);
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let scope = &result.ir().design.scopes[0];
+    assert_eq!(
+        scope
+            .roots
+            .iter()
+            .map(|id| entity(id.as_str()))
+            .collect::<Vec<_>>(),
+        [2, 3, 7]
+    );
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "unreachable from every stated root"
+    ));
+    assert!(!has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "no set lists it"
+    ));
+}
+
+#[test]
+fn solid_kind_survives_a_conflicting_earlier_membership() {
+    let mut records = part();
+    records[5].1 = compact(0x08, HYBRID_BODY);
+    records[5].2 = vec![FTR_LIST, 0x82, 0x81, 0x86, 0x81, 0xfe];
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(matches!(
+        container(result.ir(), "catia:outer:feature-container", 7),
+        Container::Ordered { kind: OrderedKind::Body, members, .. } if members.is_empty()
+    ));
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "membership at position 1 for entity 5"
+    ));
+    assert!(!has_loss(&result, CatiaLossCode::DesignSetKindUnread, ""));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+}
+
+#[test]
+fn a_conflicting_current_feature_charges_the_unread_rollback() {
+    use crate::test_support::test_feature_tree::CURRENT_FEATURE;
+
+    let mut records = part();
+    records[0].2.splice(20..20, [CURRENT_FEATURE, 0x87]);
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(matches!(
+        container(result.ir(), "catia:outer:feature-container", 3),
+        Container::Ordered { rollback: None, .. }
+    ));
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignRollbackUnread,
+        "unread CurrentFeature"
+    ));
+
+    records[0].2.drain(18..22);
+    let absent = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(!has_loss(&absent, CatiaLossCode::DesignRollbackUnread, ""));
 }
 
 /// Feature-tree records with no part root leave the tree unread, and a loss

@@ -3,9 +3,7 @@
 //! sets, the members of the part's own group, and the tree records no design
 //! record can state.
 
-use std::collections::{BTreeSet, HashMap};
-
-use cadmpeg_ir::design::feature::OperationFamily;
+use std::collections::{hash_map::Entry, BTreeSet, HashMap};
 
 use super::classes;
 use crate::decode::ModelingGraphScope;
@@ -25,14 +23,17 @@ pub(super) struct Tree<'a> {
     /// The root's sets in list order, then the sets no read list holds.
     pub(super) sets: Vec<Set<'a>>,
     /// The entity the root's `CurrentFeature` selects: the in-work object.
-    pub(super) current: Option<u32>,
+    pub(super) current: Evidence<u32>,
     /// Tree records the projection does not state.
     pub(super) unstated: Vec<Unstated>,
     /// The sets among `sets` that no read list holds.
     pub(super) unlisted: Vec<String>,
+    pub(super) unread_lists: Vec<&'a str>,
     /// The root body in each Boolean feature's tool slot, by Boolean entity.
-    pub(super) tools: HashMap<u32, &'a CatiaFeatureContainer>,
+    pub(super) tools: BooleanTools<'a>,
 }
+
+pub(super) type BooleanTools<'a> = HashMap<u32, Result<&'a CatiaFeatureContainer, &'static str>>;
 
 /// A body or a geometrical set and its members in stored order.
 pub(super) struct Set<'a> {
@@ -78,7 +79,7 @@ impl Item<'_> {
 /// A tree record the projection does not state, and why.
 pub(super) struct Unstated {
     pub(super) record: String,
-    pub(super) reason: &'static str,
+    pub(super) reason: String,
 }
 
 const ORDERED_BODY_CLASS: &str = "MechanicalTool";
@@ -112,7 +113,6 @@ pub(super) fn read<'a>(
         .find(|graph| graph.id == root.object_graph)
         .ok_or("the part root's object graph is absent")?
         .byte_offset;
-    let listed = member_list(root).ok_or("the part root's member list is unread")?;
     let containers = native
         .feature_containers
         .iter()
@@ -122,43 +122,30 @@ pub(super) fn read<'a>(
         })
         .map(|container| (container.object_record.as_str(), container))
         .collect::<HashMap<_, _>>();
-    let main = token(root, "MainTool")
+    let main = RecordEvidence(root)
+        .token("MainTool")
+        .value()
         .and_then(|reference| reference.target.as_ref())
         .map(|target| target.object_record.as_str());
     let mut walk = Walk {
         containers: &containers,
         main,
-        placed: BTreeSet::from([root.entity_id]),
+        placed: HashMap::from([(root.entity_id, root.entity_id)]),
         unstated: Vec::new(),
+        unread_lists: Vec::new(),
     };
     let mut group = Vec::new();
     let mut sets = Vec::new();
-    for member in listed {
-        match walk.item(member) {
+    for (index, member) in walk.members(root).iter().enumerate() {
+        match walk.item(root, index, member) {
             Some(Item::Set(set)) => sets.push(set),
             Some(item) => group.push(item),
             None => {}
         }
     }
-    let booleans = native
-        .feature_containers
-        .iter()
-        .filter(|container| {
-            container.object_graph == root.object_graph
-                && classes::family(&container.class.name) == Some(OperationFamily::Combine)
-        })
-        .filter_map(|boolean| {
-            let members = member_list(boolean)?;
-            let [_, tool] = members.as_slice() else {
-                return None;
-            };
-            let record = tool.target.as_ref()?.object_record.as_str();
-            Some((boolean, *containers.get(record)?))
-        })
-        .collect::<Vec<_>>();
     let listed_anywhere = containers
         .values()
-        .filter_map(|container| member_list(container))
+        .filter_map(|container| RecordEvidence(container).members().value())
         .flatten()
         .map(|member| member.entity_id)
         .collect::<BTreeSet<_>>();
@@ -166,44 +153,21 @@ pub(super) fn read<'a>(
         .values()
         .copied()
         .filter(|container| {
-            !walk.placed.contains(&container.entity_id)
+            !walk.placed.contains_key(&container.entity_id)
                 && !listed_anywhere.contains(&container.entity_id)
         })
         .collect::<Vec<_>>();
     unlisted_sets.sort_by(|a, b| a.object_record.cmp(&b.object_record));
-    let mut unlisted = Vec::new();
+    let first_unlisted = sets.len();
     for container in unlisted_sets {
-        walk.placed.insert(container.entity_id);
-        match walk.set(container) {
-            Some(set) => {
-                let holders = booleans
-                    .iter()
-                    .filter(|(_, tool)| tool.entity_id == container.entity_id)
-                    .map(|(boolean, _)| {
-                        format!(
-                            ", the tool of {} ({})",
-                            boolean.object_record, boolean.class.name
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .concat();
-                unlisted.push(format!(
-                    "{} ({}{holders})",
-                    container.object_record, container.class.name
-                ));
-                sets.push(set);
-            }
-            None => walk.unstated.push(Unstated {
-                record: container.object_record.clone(),
-                reason: "no set lists it, and its member list is unread",
-            }),
-        }
+        walk.placed.insert(container.entity_id, root.entity_id);
+        sets.push(walk.set(container));
     }
     for container in containers.values() {
-        if !walk.placed.contains(&container.entity_id) {
+        if !walk.placed.contains_key(&container.entity_id) {
             walk.unstated.push(Unstated {
                 record: container.object_record.clone(),
-                reason: "no set lists it",
+                reason: "unreachable from every stated root".to_owned(),
             });
         }
     }
@@ -211,20 +175,50 @@ pub(super) fn read<'a>(
     let root_bodies = sets
         .iter()
         .filter(|set| set.kind == SetKind::Body)
-        .map(|set| set.container.entity_id)
-        .collect::<BTreeSet<_>>();
-    let tools = booleans
-        .into_iter()
-        .filter(|(_, tool)| root_bodies.contains(&tool.entity_id))
-        .map(|(boolean, tool)| (boolean.entity_id, tool))
+        .map(|set| (set.container.object_record.as_str(), set.container))
+        .collect::<HashMap<_, _>>();
+    let mut holders = HashMap::<_, Vec<String>>::new();
+    let mut tools = HashMap::new();
+    for boolean in in_scope {
+        if boolean.object_graph != root.object_graph
+            || classes::boolean_op(&boolean.class.name).is_none()
+        {
+            continue;
+        }
+        let owner = walk.placed.get(&boolean.entity_id).copied();
+        let tool = RecordEvidence(boolean).boolean_tool(&root_bodies, owner);
+        if let Ok(tool) = tool {
+            holders.entry(tool.entity_id).or_default().push(format!(
+                ", the tool of {} ({})",
+                boolean.object_record, boolean.class.name
+            ));
+        }
+        tools.insert(boolean.entity_id, tool);
+    }
+    let unlisted = sets[first_unlisted..]
+        .iter()
+        .map(|set| {
+            let container = set.container;
+            let holders = holders
+                .remove(&container.entity_id)
+                .unwrap_or_default()
+                .concat();
+            format!(
+                "{} ({}{holders})",
+                container.object_record, container.class.name
+            )
+        })
         .collect();
     Ok(Some(Tree {
         graph_offset,
         root,
         group,
         sets,
-        current: token(root, "CurrentFeature").map(|reference| reference.entity_id),
+        current: RecordEvidence(root)
+            .token("CurrentFeature")
+            .map(|reference| reference.entity_id),
         unstated: walk.unstated,
+        unread_lists: walk.unread_lists,
         unlisted,
         tools,
     }))
@@ -233,22 +227,42 @@ pub(super) fn read<'a>(
 struct Walk<'a, 'm> {
     containers: &'m HashMap<&'a str, &'a CatiaFeatureContainer>,
     main: Option<&'a str>,
-    /// The entities of the members walked so far.
-    placed: BTreeSet<u32>,
+    /// The first parent of each placed entity.
+    placed: HashMap<u32, u32>,
     unstated: Vec<Unstated>,
+    unread_lists: Vec<&'a str>,
 }
 
 impl<'a> Walk<'a, '_> {
-    /// The item for one listed member, or `None` where the member repeats an
-    /// earlier one.
-    fn item(&mut self, member: &'a CatiaFeatureMember) -> Option<Item<'a>> {
-        if !self.placed.insert(member.entity_id) {
+    fn members(&mut self, container: &'a CatiaFeatureContainer) -> &'a [CatiaFeatureMember] {
+        match RecordEvidence(container).members() {
+            Evidence::Read(members) => members,
+            Evidence::Absent => &[],
+            Evidence::Unread => {
+                self.unread_lists.push(&container.object_record);
+                &[]
+            }
+        }
+    }
+
+    fn item(
+        &mut self,
+        parent: &CatiaFeatureContainer,
+        index: usize,
+        member: &'a CatiaFeatureMember,
+    ) -> Option<Item<'a>> {
+        let Entry::Vacant(placement) = self.placed.entry(member.entity_id) else {
             self.unstated.push(Unstated {
-                record: format!("entity {}", member.entity_id),
-                reason: "is listed more than once",
+                record: parent.object_record.clone(),
+                reason: format!(
+                    "membership at position {} for entity {} repeats an earlier placement",
+                    index + 1,
+                    member.entity_id
+                ),
             });
             return None;
-        }
+        };
+        placement.insert(parent.entity_id);
         let unread = |reason| Some(Item::Unread { member, reason });
         let Some(target) = member.target.as_ref() else {
             return unread("selects no record");
@@ -257,82 +271,136 @@ impl<'a> Walk<'a, '_> {
         let Some(container) = self.containers.get(record).copied() else {
             return match target.class.as_ref() {
                 None => unread("has no compact class"),
-                Some(class) if class.name.trim().is_empty() => {
-                    unread("selects a blank catalog entry")
-                }
-                Some(class) => Some(Item::Feature {
-                    member,
-                    class: class.name.as_str(),
-                }),
+                Some(class) => match classes::read(&class.name) {
+                    Some(class) => Some(Item::Feature { member, class }),
+                    None => unread("selects a blank catalog entry"),
+                },
             };
         };
-        match self.set(container) {
-            Some(set) => Some(Item::Set(set)),
-            None => unread("is a set whose member list is unread"),
-        }
+        Some(Item::Set(self.set(container)))
     }
 
-    /// The set a container states, or `None` where its member list is unread.
-    fn set(&mut self, container: &'a CatiaFeatureContainer) -> Option<Set<'a>> {
-        let listed = member_list(container)?;
-        let members = listed
-            .into_iter()
-            .filter_map(|member| self.item(member))
-            .collect::<Vec<_>>();
-        let holds_body_feature = members.iter().any(
-            |item| matches!(item, Item::Feature { class, .. } if classes::is_body_feature(class)),
-        );
+    fn set(&mut self, container: &'a CatiaFeatureContainer) -> Set<'a> {
+        let listed = self.members(container);
         let kind = if container.class.name == ORDERED_BODY_CLASS
             || (container.class.name == MAIN_BODY_CLASS
-                && (self.main == Some(container.object_record.as_str()) || holds_body_feature))
+                && (self.main == Some(container.object_record.as_str())
+                    || listed.iter().any(|member| {
+                        member
+                            .target
+                            .as_ref()
+                            .and_then(|target| target.class.as_ref())
+                            .is_some_and(|class| {
+                                classes::BODY_FEATURES.contains(&class.name.as_str())
+                                    || classes::boolean_op(&class.name).is_some()
+                            })
+                    })))
         {
             SetKind::Body
         } else {
             SetKind::KindUnread
         };
-        Some(Set {
+        let members = listed
+            .iter()
+            .enumerate()
+            .filter_map(|(index, member)| self.item(container, index, member))
+            .collect();
+        Set {
             container,
             kind,
             members,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Evidence<T> {
+    Absent,
+    Read(T),
+    Unread,
+}
+
+impl<T> Evidence<T> {
+    fn map<U>(self, project: impl FnOnce(T) -> U) -> Evidence<U> {
+        match self {
+            Self::Absent => Evidence::Absent,
+            Self::Read(value) => Evidence::Read(project(value)),
+            Self::Unread => Evidence::Unread,
+        }
+    }
+
+    pub(super) fn value(self) -> Option<T> {
+        match self {
+            Self::Read(value) => Some(value),
+            Self::Absent | Self::Unread => None,
+        }
+    }
+}
+
+struct RecordEvidence<'a>(&'a CatiaFeatureContainer);
+
+impl<'a> RecordEvidence<'a> {
+    fn field<T>(
+        &self,
+        name: &str,
+        read: impl FnOnce(&'a CatiaSegmentValue) -> Option<T>,
+    ) -> Evidence<T> {
+        let mut matches = self
+            .0
+            .segments
+            .iter()
+            .filter(|segment| segment.name == name);
+        match (matches.next(), matches.next()) {
+            (Some(segment), None) => read(&segment.value).map_or(Evidence::Unread, Evidence::Read),
+            (None, _) if self.0.unsegmented_payload_offset.is_none() => Evidence::Absent,
+            _ => Evidence::Unread,
+        }
+    }
+
+    fn list(&self, name: &str) -> Evidence<&'a [CatiaFeatureMember]> {
+        self.field(name, |value| match value {
+            CatiaSegmentValue::List(members) => Some(members.as_slice()),
+            _ => None,
         })
     }
-}
 
-/// The container's `_FtrList` members, an empty list for a complete walk
-/// that stores no segment, or `None` where the list is unread.
-fn member_list(container: &CatiaFeatureContainer) -> Option<Vec<&CatiaFeatureMember>> {
-    let mut lists = container
-        .segments
-        .iter()
-        .filter(|segment| segment.name == "_FtrList");
-    match (lists.next(), lists.next()) {
-        (Some(segment), None) => match &segment.value {
-            CatiaSegmentValue::List(members) => Some(members.iter().collect()),
-            CatiaSegmentValue::Token(_) | CatiaSegmentValue::FieldOf { .. } => None,
-        },
-        (None, _)
-            if container.segments.is_empty() && container.unsegmented_payload_offset.is_none() =>
-        {
-            Some(Vec::new())
-        }
-        _ => None,
+    fn members(&self) -> Evidence<&'a [CatiaFeatureMember]> {
+        self.list("_FtrList")
     }
-}
 
-/// The value of the container's one single-token segment `name`.
-fn token<'a>(
-    container: &'a CatiaFeatureContainer,
-    name: &str,
-) -> Option<&'a CatiaFeatureReference> {
-    let mut found = container
-        .segments
-        .iter()
-        .filter(|segment| segment.name == name);
-    match (found.next(), found.next()) {
-        (Some(segment), None) => match &segment.value {
+    fn token(&self, name: &str) -> Evidence<&'a CatiaFeatureReference> {
+        self.field(name, |value| match value {
             CatiaSegmentValue::Token(reference) => Some(reference),
-            CatiaSegmentValue::List(_) | CatiaSegmentValue::FieldOf { .. } => None,
-        },
-        _ => None,
+            _ => None,
+        })
+    }
+
+    fn boolean_tool(
+        &self,
+        root_bodies: &HashMap<&str, &'a CatiaFeatureContainer>,
+        owner: Option<u32>,
+    ) -> Result<&'a CatiaFeatureContainer, &'static str> {
+        let body = |member: &CatiaFeatureMember| {
+            let target = member.target.as_ref()?;
+            let body = *root_bodies.get(target.object_record.as_str())?;
+            (Some(body.entity_id) != owner).then_some(body)
+        };
+        let feature_tool = self.members().value().and_then(|list| match list {
+            [_, tool] => body(tool),
+            _ => None,
+        });
+        let explicit_tool = self.list("ToolList").value().and_then(|list| match list {
+            [tool] => body(tool),
+            _ => None,
+        });
+        match (feature_tool, explicit_tool) {
+            (Some(a), Some(b)) if a.entity_id != b.entity_id => {
+                Err("_FtrList and ToolList select different bodies")
+            }
+            (Some(tool), _) | (_, Some(tool)) => Ok(tool),
+            (None, None) => {
+                Err("neither _FtrList nor ToolList selects an eligible ordered root body")
+            }
+        }
     }
 }
