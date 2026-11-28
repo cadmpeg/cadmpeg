@@ -2,17 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Build an ordinal-only Inventor envelope census and framing oracle.
 
-The reader in this file is intentionally independent of the Rust codec.  It
-walks CFB allocation and directory structures itself, then parses only the
-RSe structures needed to establish an envelope, frame records, and identify a
-typed kernel carrier.  It accepts paths only as input selectors.  Output does
-not contain input paths or directory names, so a result can be retained as
-aggregate evidence without exposing the source collection.
+The reader is independent of the Rust codec. It follows CFB FAT, DIFAT,
+directory, mini-FAT, and stream chains. It parses the RSe database, registry,
+Meta Stream 8 tables, bulk envelope, record frames, and typed kernel-carrier
+envelope. It accepts paths as input selectors. Output contains no input paths
+or source file names.
 
 The optional CLI comparison mode invokes a caller-supplied ``cadmpeg`` binary
 on an input and on each independently extracted carrier.  Extracted carriers
 are held in a temporary directory and are deleted before the command exits.
-No comparison result is written unless the caller redirects the JSON output.
+The result goes to standard output or to the path selected by ``--output``.
 
 The JSON result contains ordinal document IDs, declared envelope tuples,
 logical ranges, physical stream spans, and SHA-256 digests. Use an output path
