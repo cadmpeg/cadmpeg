@@ -44,7 +44,7 @@ class CheckLoadingTests(unittest.TestCase):
             site.mkdir()
             (builtin / "preflight_builtin.py").write_text(
                 'NAME = "builtin"\nORDER = 20\ndef run(context): pass\n')
-            (site / "preflight_local.py").write_text(
+            (site / "local.py").write_text(
                 'NAME = "local"\nORDER = 10\ndef run(context): pass\n')
             with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(site)}):
                 modules = preflight.load_checks(builtin)
@@ -76,6 +76,13 @@ class CheckLoadingTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(site)}):
                 with self.assertRaisesRegex(ValueError, "duplicate check name"):
                     preflight.load_checks(builtin)
+
+    def test_explicit_missing_site_directory_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing"
+            with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(missing)}):
+                with self.assertRaises(FileNotFoundError):
+                    preflight.load_checks(Path(tmp))
 
     def test_unknown_check_fails(self) -> None:
         with mock.patch.object(preflight, "load_checks", return_value=[]):

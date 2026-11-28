@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Check a branch against the upstream default branch before a pull request.
 
-Each check is a module ``preflight_<name>.py`` that defines ``NAME``,
-``ORDER``, and ``run(context)``. Site-local checks load from
+Each check defines ``NAME``, ``ORDER``, and ``run(context)``. Built-in
+checks are named ``preflight_<name>.py``. Site-local checks load from
 ``$CADMPEG_PREFLIGHT_DIR`` (default ``~/.config/cadmpeg/preflight``).
 This program loads the modules, runs the
 checks against the merge base with the upstream default branch, and prints one
@@ -196,12 +196,16 @@ def default_branch(root: Path, remote: str) -> str:
 
 def load_checks(directory: Path = SCRIPTS) -> list:
     """Import built-in and site-local checks in ORDER."""
-    site = Path(os.environ.get("CADMPEG_PREFLIGHT_DIR") or
-                "~/.config/cadmpeg/preflight").expanduser()
+    configured = os.environ.get("CADMPEG_PREFLIGHT_DIR")
+    site = Path(configured or "~/.config/cadmpeg/preflight").expanduser()
+    if configured and not site.is_dir():
+        raise FileNotFoundError(f"site check directory is unavailable: {site}")
     modules = []
     names = set()
-    for location in (directory, site):
-        for path in sorted(location.glob("preflight_*.py")):
+    for location, pattern in ((directory, "preflight_*.py"), (site, "*.py")):
+        for path in sorted(location.glob(pattern)):
+            if path.name.startswith("_"):
+                continue
             spec = importlib.util.spec_from_file_location(f"preflight_check_{len(modules)}", path)
             if spec is None or spec.loader is None:
                 raise ValueError(f"cannot load check: {path}")
