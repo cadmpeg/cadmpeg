@@ -72,6 +72,7 @@ fn motion_link_binds_the_projected_revolute_joints_in_record_order() {
             offset: 0,
         }],
         entry_words: Vec::new(),
+        lane_limits: Vec::new(),
         limits: None,
     });
     let scopes = [first, second, scope];

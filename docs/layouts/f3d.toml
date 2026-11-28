@@ -57252,3 +57252,69 @@ offset = 217
 type = "u8"
 source = "spec"
 anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+
+[[record]]
+name = "joint_record_freedom_lane"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A lane is u32 `1` followed by 51 bytes from the marked self-reference through the freedom code"
+size = 55
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/joint_motion.rs"
+note = "Offsets start at the lane's u32 `1`. A joint record stores one lane per degree of freedom; zero bytes can separate lanes."
+
+[[record.field]]
+name = "presence"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A lane is u32 `1`"
+
+[[record.field]]
+name = "self_reference_marker"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "51 bytes from the marked self-reference through the freedom code"
+
+[[record.field]]
+name = "self_reference_index"
+offset = 5
+type = "u64"
+source = "spec"
+anchor = "51 bytes from the marked self-reference through the freedom code"
+
+[[record.field]]
+name = "limit_flags"
+offset = 15
+type = "u8"
+source = "spec"
+anchor = "the two limit flags and the rest flag eleven bytes after the self-reference"
+
+[[record.field]]
+name = "maximum"
+offset = 27
+type = "f64"
+source = "spec"
+anchor = "the maximum, minimum and rest f64 values twenty-three bytes after it"
+
+[[record.field]]
+name = "freedom_code"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "the u32 freedom code forty-seven bytes after it"
+
+[[record.gap]]
+offset = 13
+size = 2
+note = "Bytes between the self-reference and the limit flags."
+
+[[record.gap]]
+offset = 16
+size = 11
+note = "The second limit flag, the rest flag and the bytes before the maximum."
+
+[[record.gap]]
+offset = 35
+size = 16
+note = "The minimum and the rest value, both f64 after the maximum."

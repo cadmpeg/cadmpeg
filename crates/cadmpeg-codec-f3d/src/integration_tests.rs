@@ -24,6 +24,7 @@ mod fusion_combine_patterns;
 mod fusion_combine_producers;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
+mod fusion_joint_record_lanes;
 mod fusion_joint_tail;
 mod fusion_mirror_remove;
 mod fusion_patterns;

@@ -1277,6 +1277,11 @@ enum JointMotionKind {
     /// Translation along the connector z axis, with its limits in
     /// millimetres.
     Slider { limits: Option<JointLimits> },
+    /// Rotation about and translation along the connector z axis, with the
+    /// rotation's limits.
+    Cylindrical { angular_limits: Option<JointLimits> },
+    /// Rotation about the connector origin.
+    Ball,
 }
 
 fn zero_lane_rotation_limits(
@@ -1326,6 +1331,23 @@ fn joint_motion_kind(
         [8] => Ok(JointMotionKind::Slider {
             limits: limits(10.0, "translation")?,
         }),
+        // Joint-record lanes: rotation about z, then translation along it.
+        [2, 8] if !motion.lane_limits.get(1).copied().unwrap_or(true) => {
+            Ok(JointMotionKind::Cylindrical {
+                angular_limits: limits(1.0, "rotation")?,
+            })
+        }
+        // Joint-record lanes: the three rotations of a ball.
+        // Only joint-record lanes confirm the ball's codes; a motion record
+        // has no lanes.
+        [3, 4, 5]
+            if !motion.lane_limits.is_empty()
+                && motion.lane_limits.iter().all(|limited| !limited) =>
+        {
+            Ok(JointMotionKind::Ball)
+        }
+        [2, 6] => Err("pin-slot motion has no paired joint kind".to_owned()),
+        [2, 6, 7] => Err("planar motion has no paired joint kind".to_owned()),
         codes => Err(format!("freedom codes {codes:?}")),
     }
 }
@@ -1526,6 +1548,34 @@ fn project_assembly_joint(
                     turn_y_to_z,
                     None,
                 )
+            }
+        }
+        Some(Ok(JointMotionKind::Cylindrical { angular_limits })) => {
+            if alignment.offset()[..2].iter().any(|value| *value != 0.0) {
+                (
+                    fixed,
+                    false,
+                    Some("cylindrical with an offset across its axis".to_owned()),
+                )
+            } else {
+                (
+                    PairedJointKind::Cylindrical {
+                        angle: Some(angle),
+                        distance: Some(translation_offset[2]),
+                        angular_limits,
+                        linear_limits: None,
+                    },
+                    false,
+                    None,
+                )
+            }
+        }
+        Some(Ok(JointMotionKind::Ball)) => {
+            if alignment.angle().abs() > 0.0 || alignment.offset().iter().any(|value| *value != 0.0)
+            {
+                (fixed, false, Some("ball with an offset".to_owned()))
+            } else {
+                (PairedJointKind::Ball {}, false, None)
             }
         }
         Some(Ok(JointMotionKind::Slider { limits })) => {
@@ -3046,6 +3096,7 @@ mod tests {
                 })
                 .collect(),
             entry_words: Vec::new(),
+            lane_limits: Vec::new(),
             limits: Some(DesignJointLimitLanes {
                 flags_offset: 811,
                 first_flag: flags[0],

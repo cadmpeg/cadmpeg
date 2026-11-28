@@ -9,8 +9,8 @@ cadmpeg_core::named_optional_field!(deserialize_entry_value, f64, "value");
 cadmpeg_core::named_optional_field!(deserialize_rest, DesignJointRest, "rest");
 
 /// The freedoms and limits of one assembly joint, read from its motion record
-/// and its joint record. A joint without freedom entries has no motion record
-/// here: it is rigid.
+/// and its joint record, or from the freedom lanes of a joint record that has
+/// no motion record. A joint without freedoms has no motion here: it is rigid.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignJointMotion {
     /// Globally unique deterministic identifier for this native motion.
@@ -30,6 +30,11 @@ pub(crate) struct DesignJointMotion {
     /// every entry stores word `3`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) entry_words: Vec<DesignJointFreedomWord>,
+    /// For a joint record that stores its freedoms in lanes, whether each
+    /// lane sets a limit or rest flag, one per freedom in the same order.
+    /// Empty when a motion record holds the freedoms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) lane_limits: Vec<bool>,
     /// The joint record's limit lanes, when its self-reference is present.
     #[serde(
         default,
