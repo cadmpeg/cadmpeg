@@ -80,6 +80,83 @@ pub(crate) fn select(topology: &Topology, keep: &BTreeSet<String>) -> Topology {
     selected
 }
 
+/// The records of `state` that `base` does not hold with equal content, and a
+/// reference to each record of `base` whose id `state` does not hold, each in
+/// arena order. A changed procedural construction also needs its carrier
+/// (§3.3). A changed carrier that writes a solved cache also needs its
+/// construction.
+pub(crate) fn difference(state: &Topology, base: &Topology) -> (Topology, Vec<RecordRef>) {
+    let mut records = Topology::default();
+    let mut removed = Vec::new();
+    macro_rules! differ {
+        ($($field:ident $arm:ident),*) => {
+            $(
+                let held: BTreeMap<&str, _> = base.$field.iter()
+                    .map(|record| (record.record_identity(), record))
+                    .collect();
+                let kept: BTreeSet<&str> = state.$field.iter()
+                    .map(|record| record.record_identity())
+                    .collect();
+                records.$field = state.$field.iter()
+                    .filter(|record| held.get(record.record_identity()) != Some(record))
+                    .cloned()
+                    .collect();
+                removed.extend(base.$field.iter()
+                    .filter(|record| !kept.contains(record.record_identity()))
+                    .map(|record| RecordRef::$arm(record.id.clone())));
+            )*
+        };
+    }
+    topology_arenas!(differ);
+
+    macro_rules! carry_procedural_pairs {
+        ($carriers:ident, $constructions:ident) => {
+            if !state.$constructions.is_empty()
+                && (!records.$carriers.is_empty() || !records.$constructions.is_empty())
+            {
+                let carriers: BTreeSet<_> = records.$carriers.iter().map(|row| &row.id).collect();
+                let constructions: BTreeSet<_> =
+                    records.$constructions.iter().map(|row| &row.id).collect();
+                let mut missing_carriers = Vec::new();
+                let mut needed_constructions = BTreeSet::new();
+                for carrier in &state.$carriers {
+                    let Some(construction) = carrier.geometry.procedural_construction() else {
+                        continue;
+                    };
+                    if carriers.contains(&carrier.id) {
+                        if carrier.geometry.solved_cache().is_some()
+                            && !constructions.contains(construction)
+                        {
+                            needed_constructions.insert(construction);
+                        }
+                    } else if constructions.contains(construction) {
+                        missing_carriers.push(carrier.clone());
+                    }
+                }
+                if !missing_carriers.is_empty() {
+                    records.$carriers.extend(missing_carriers);
+                    records.$carriers.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+                }
+                if !needed_constructions.is_empty() {
+                    records.$constructions.extend(
+                        state
+                            .$constructions
+                            .iter()
+                            .filter(|row| needed_constructions.contains(&row.id))
+                            .cloned(),
+                    );
+                    records
+                        .$constructions
+                        .sort_unstable_by(|a, b| a.id.cmp(&b.id));
+                }
+            }
+        };
+    }
+    carry_procedural_pairs!(curves, procedural_curves);
+    carry_procedural_pairs!(surfaces, procedural_surfaces);
+    (records, removed)
+}
+
 /// Removes the records whose ids `drop` holds.
 pub(super) fn remove(topology: &mut Topology, drop: &BTreeSet<String>) {
     macro_rules! retain {

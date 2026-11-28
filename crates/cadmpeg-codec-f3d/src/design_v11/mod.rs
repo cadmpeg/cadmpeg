@@ -48,8 +48,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::features::FeatureId;
@@ -198,7 +200,7 @@ pub(crate) fn project(
             .iter()
             .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone())),
     );
-    let scoped_parameters;
+    let mut scoped_parameters;
     let scoped_configurations;
     {
         let features = scopes
@@ -352,6 +354,24 @@ pub(crate) fn project(
     ir.design
         .spatial_sketch_constraints
         .extend(sketches.spatial_constraints);
+    let diameter_parameters = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match &constraint.relation {
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+                ..
+            } => Some(parameter),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    for parameter in &mut scoped_parameters {
+        if diameter_parameters.contains(&parameter.id) {
+            parameter.display = None;
+        }
+    }
     ir.design.parameters.extend(scoped_parameters);
     ir.design.parameters.extend(sketches.parameters);
     ir.design

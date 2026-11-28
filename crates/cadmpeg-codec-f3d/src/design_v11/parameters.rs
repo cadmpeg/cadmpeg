@@ -17,8 +17,9 @@
 //! states one; its record stores the value of its literal, which can differ
 //! (f3d.md §3.1, "Sketch dimensions"), and the source setting `f3d:literal`
 //! keeps that literal. The role Fusion stores on a model parameter is the
-//! source setting `f3d:role`, and the diameter or radius presentation of a
-//! diameter or radius dimension's parameter is its `display`.
+//! source setting `f3d:role`. A typed sketch diameter relation carries the
+//! diameter presentation for its bound parameter. Other diameter and radius
+//! presentations stay in the parameter's `display`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroI8;

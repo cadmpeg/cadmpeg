@@ -121,6 +121,9 @@ pub(crate) enum SldprtLossCode {
     HistoryIncompleteReferences,
     /// The stored marks do not fix the rollback position of the feature tree.
     HistoryRollbackUnread,
+    /// A configuration stores states between features that its states
+    /// between features do not state.
+    HistoryStatesUnread,
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
@@ -581,6 +584,8 @@ pub(crate) enum SldprtLossCode {
     /// A feature folder whose members regeneration order does not keep in
     /// one run is not stated.
     DesignFolderDropped,
+    /// A stored producer falls outside the shared CADIR timeline position.
+    DesignStateNameNative,
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
@@ -730,6 +735,7 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
         Self::HistoryRollbackUnread,
+        Self::HistoryStatesUnread,
         Self::HistoryRollbackMarkClassInferred,
         Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
@@ -900,6 +906,7 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignDatumUnresolved,
         Self::DesignFolderDropped,
+        Self::DesignStateNameNative,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignParameterReferenceAsText,
@@ -975,6 +982,7 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryStatesUnread => "history.states-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
@@ -1179,6 +1187,7 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignDatumUnresolved => "design.datum-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignStateNameNative => "design.state-name-native",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
@@ -1308,6 +1317,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
             | Self::HistoryRollbackUnread
+            | Self::HistoryStatesUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1415,6 +1425,7 @@ impl SldprtLossCode {
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
+            | Self::DesignStateNameNative
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignParameterReferenceAsText
@@ -1548,6 +1559,7 @@ impl SldprtLossCode {
             | Self::DesignDatumUnresolved
             | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignStateNameNative => LossTaxonomy::AttributesNotTransferred,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
@@ -1660,6 +1672,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
             | Self::HistoryRollbackUnread
+            | Self::HistoryStatesUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1937,6 +1950,7 @@ mod tests {
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
                 "history.rollback-unread",
+                "history.states-unread",
                 "history.rollback-mark-class-inferred",
                 "history.unread",
                 "history.application-not-transferred",
@@ -2107,6 +2121,7 @@ mod tests {
                 "design.feature-unresolved",
                 "design.datum-unresolved",
                 "design.folder-dropped",
+                "design.state-name-native",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.parameter-reference-as-text",
