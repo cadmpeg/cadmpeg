@@ -20,12 +20,11 @@ use super::eval::{cache_value, evaluate_tree, kind_value};
 use super::history::{Context, Currents, Dependents, History};
 use super::wire::{record_reads, rewrite, Reads};
 use super::EditError;
-use crate::design::dimension::{Dimension, ParamRef, RefTarget};
+use crate::design::dimension::{ParamRef, RefTarget};
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::expr::{Expression, Neutral};
 use crate::design::ids::{OperationId, ProcessParameterId, SetupId};
-use crate::design::parameter::{FitDeviations, ParameterValue, Tolerance};
-use crate::pmi::PmiDefinition;
+use crate::design::parameter::ParameterValue;
 use crate::process::groups::{ProcessDefinition, ProcessOwner};
 use crate::process::operation::{OperationKind, Tooling};
 use crate::process::setup::Step;
@@ -132,7 +131,6 @@ impl CadIr {
         currents: &Currents,
         dependents: &Dependents,
     ) -> Result<(), EditError> {
-        self.clear_bound_fits(dependents);
         let design: BTreeSet<String> = dependents
             .parameters
             .iter()
@@ -147,33 +145,6 @@ impl CadIr {
             .collect();
         self.clear_choices(&named)?;
         self.mark_process_stale(history, currents, dependents, &named)
-    }
-
-    /// Clears the `Cell` and `Unchecked` deviations of every PMI dimension
-    /// whose nominal binds a parameter of `dependents` (D58).
-    fn clear_bound_fits(&mut self, dependents: &Dependents) {
-        for annotation in &mut self.model.pmi {
-            let PmiDefinition::Dimension(dimension) = &mut annotation.definition else {
-                continue;
-            };
-            let bound = match &dimension.nominal {
-                Some(Dimension::Parameter(parameter) | Dimension::Negated(parameter)) => {
-                    dependents.parameters.contains(parameter)
-                }
-                Some(Dimension::Literal(_)) | None => false,
-            };
-            if let (
-                true,
-                Some(Tolerance::Fit {
-                    deviations:
-                        deviations @ Some(FitDeviations::Cell(_) | FitDeviations::Unchecked(_)),
-                    ..
-                }),
-            ) = (bound, &mut dimension.tolerance)
-            {
-                *deviations = None;
-            }
-        }
     }
 
     /// The process parameters whose definition names a design parameter of

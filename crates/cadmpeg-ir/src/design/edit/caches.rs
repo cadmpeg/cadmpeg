@@ -25,7 +25,7 @@ use super::{EditError, Literal, ParameterDrivers};
 use crate::design::configuration::{
     ArrangementRef, DesignConfiguration, Overrides, ParameterOverride, Stated,
 };
-use crate::design::dimension::{ParameterRef, RefTarget};
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::expr::{print, Expression, ExpressionToken, Neutral, Node as ExprNode, UnaryOp};
 use crate::design::feature::FeatureDefinition;
@@ -37,6 +37,7 @@ use crate::design::scope::DesignScope;
 use crate::design::units::ValueKind;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::OccurrenceId;
+use crate::pmi::PmiDefinition;
 use crate::scalar::NonNegativeReal;
 use crate::CadIr;
 
@@ -378,7 +379,34 @@ impl CadIr {
         self.mark_states_stale(&history, &dependents.features);
         self.mark_sketches_stale(&dependents.features);
         self.refresh_caches(&history, &currents, &dependents)?;
+        self.clear_bound_fits(&dependents);
         self.refresh_process(&history, &currents, &dependents)
+    }
+
+    /// Clears cached fit deviations bound to an edited parameter.
+    fn clear_bound_fits(&mut self, dependents: &Dependents) {
+        for annotation in &mut self.model.pmi {
+            let PmiDefinition::Dimension(dimension) = &mut annotation.definition else {
+                continue;
+            };
+            let bound = match &dimension.nominal {
+                Some(Dimension::Parameter(parameter) | Dimension::Negated(parameter)) => {
+                    dependents.parameters.contains(parameter)
+                }
+                Some(Dimension::Literal(_)) | None => false,
+            };
+            if let (
+                true,
+                Some(Tolerance::Fit {
+                    deviations:
+                        deviations @ Some(FitDeviations::Cell(_) | FitDeviations::Unchecked(_)),
+                    ..
+                }),
+            ) = (bound, &mut dimension.tolerance)
+            {
+                *deviations = None;
+            }
+        }
     }
 
     /// Marks `Stale` every evaluation and current state that depends on any
