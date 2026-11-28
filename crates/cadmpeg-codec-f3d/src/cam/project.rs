@@ -478,17 +478,26 @@ fn project(
                 "overall_length",
             ),
         ] {
-            if let Some(value) = names.iter().find_map(|name| {
-                tool.parameters
+            if let Some(converted) = names.iter().find_map(|name| {
+                let parameter = tool
+                    .parameters
                     .iter()
-                    .find(|parameter| parameter.name == *name)
-                    .and_then(|parameter| parameter.value.parse::<f64>().ok())
-                    .filter(|value| value.is_finite())
-            }) {
-                let converted = value * tool_scale;
-                if converted.is_finite() {
-                    record["cutter"][field] = literal(converted);
+                    .find(|parameter| parameter.name == *name)?;
+                if parameter.unit.as_deref() == Some("mm") {
+                    return measure(parameter)
+                        .filter(|(_, quantity)| *quantity == LENGTH)
+                        .map(|(value, _)| value);
                 }
+                let value = parameter.value.parse::<f64>().ok()?;
+                let scale = if name.starts_with("body.") {
+                    tool_scale
+                } else {
+                    1.0
+                };
+                let converted = value * scale;
+                (value.is_finite() && converted.is_finite()).then_some(converted)
+            }) {
+                record["cutter"][field] = literal(converted);
             }
         }
         let mut catalog = json!({});

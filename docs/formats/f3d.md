@@ -4465,7 +4465,8 @@ point named by `wcs_origin_boxPoint`.
 
 The tool table uses the `http://www.hsmworks.com/xml/2004/cnc/tool-library`
 namespace. A `tool` record's `id` is the operation's `toolId` reference.
-The tool's `type` and `unit` attributes identify its cutter type and units.
+The tool's `type` identifies its cutter type. Its `unit` scales body attributes.
+Named parameters with a stated length unit store canonical millimeters.
 `nc` attributes hold the tool number and post settings. `body` attributes
 hold cutter dimensions and flute count; `overall-length` is the cutter's
 overall length and `body-length` is a separate dimension. `motion` attributes hold feed and

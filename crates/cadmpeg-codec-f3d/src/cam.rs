@@ -123,9 +123,11 @@ fn source(
     })
 }
 
-/// The element forms the format states (`object`, `tool`, `toolpath`).
 fn record(node: XmlNode<'_>) -> bool {
-    matches!(node.tag_name().name(), "object" | "tool" | "toolpath")
+    matches!(
+        node.tag_name().name(),
+        "object" | "tool" | "toolpath" | "toolpathToolView"
+    )
 }
 
 /// Element forms that other CAM documents name records with. The format
@@ -238,9 +240,11 @@ impl<'a> Index<'a> {
 /// `2mm`, `0.2cm`, `1000mmpm`, `10000rpm`.
 fn literal_suffix(expression: &str) -> Option<&str> {
     let expression = expression.trim();
-    let split = expression.find(|c: char| c.is_ascii_alphabetic())?;
+    let split = expression
+        .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+        .len();
     expression[..split].replace(',', ".").parse::<f64>().ok()?;
-    Some(&expression[split..])
+    (!expression[split..].is_empty()).then_some(&expression[split..])
 }
 
 /// The unit of a parameter's `value`, from the unit suffix of its `expression`
@@ -627,11 +631,12 @@ fn parse(
             }
         };
         let mut parameters = parameters(ctx, &index, node, losses)?;
-        let path = node
+        let frame = node
             .children()
-            .find(|child| child.has_tag_name("toolpath") || child.has_tag_name("toolpathToolView"));
-        if let Some(path) = path {
-            parameters.extend(self::parameters(ctx, &index, path, losses)?);
+            .find(|child| child.has_tag_name("toolpathToolView"));
+        let path = node.children().find(|child| child.has_tag_name("toolpath"));
+        for descriptor in frame.into_iter().chain(path) {
+            parameters.extend(self::parameters(ctx, &index, descriptor, losses)?);
         }
         if parameters.iter().any(|parameter| parameter.name.is_empty()) {
             losses.push(
@@ -688,8 +693,8 @@ fn parse(
             );
         }
         let mut geometry = selections(ctx, &index, node, losses)?;
-        if let Some(path) = path {
-            geometry.extend(selections(ctx, &index, path, losses)?);
+        for descriptor in frame.into_iter().chain(path) {
+            geometry.extend(selections(ctx, &index, descriptor, losses)?);
         }
         let order = orders.entry(setup.clone()).or_default();
         target.operations.push(ManufacturingOperation {
@@ -704,7 +709,7 @@ fn parse(
             tool,
             parameters,
             geometry,
-            computed_path_present: path.is_some(),
+            computed_path_present: path.is_some() || frame.is_some(),
             computed_path_valid,
             source: source(ctx, node, member, &document)?,
         });

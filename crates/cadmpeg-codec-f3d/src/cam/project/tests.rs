@@ -248,3 +248,86 @@ fn cam_missing_operation_setup_keeps_other_records() {
         assert!(has_loss(&losses, F3dLossCode::CamOperationUnreadable));
     });
 }
+
+#[test]
+fn tool_canonical_dimensions_match_parameters_in_an_inch_table() {
+    let (ir, losses) = decode(
+        r#"<document><tool id="t" unit="inches" type="flat end mill"><Parameters><Parameter name="tool_diameter" value="6" expression="6mm"/></Parameters><body diameter="0.2362204724409449" flute-length="1"/></tool></document>"#,
+    );
+    let cutter = &json(&ir.process.tools[0])["cutter"];
+    let (_, diameter) = parameter(&ir, "tool", "tool_diameter");
+    assert_eq!(diameter, 6.0);
+    assert_eq!(
+        cutter["diameter"],
+        cadmpeg_core::json!({"kind":"literal","value":diameter})
+    );
+    assert_eq!(
+        cutter["flute_length"],
+        cadmpeg_core::json!({"kind":"literal","value":25.4})
+    );
+    assert!(!has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
+}
+
+#[test]
+fn descriptor_sibling_orders_bind_toolpath_feed() {
+    let frame = r#"<toolpathToolView><Parameters><Parameter name="stepover" value="2" expression="2mm"/></Parameters></toolpathToolView>"#;
+    let path = r#"<toolpath valid="true"><Parameters><Parameter name="tool_feedCutting" value="1200" expression="1200mmpm"/></Parameters></toolpath>"#;
+    for descriptors in [format!("{frame}{path}"), format!("{path}{frame}")] {
+        let (ir, losses) = decode(&format!(
+            r#"<document><object id="job" strategy="setup"/><object parent="job" strategy="face">{descriptors}</object></document>"#
+        ));
+        let operation = json(&ir.process.operations[0]);
+        let (feed, value) = parameter(&ir, "operation", "tool_feedCutting");
+        assert_eq!(value, 20.0);
+        assert_eq!(
+            operation["technology"]["feeds"][0][1],
+            cadmpeg_core::json!({"kind":"per_time","value":bound(&feed)})
+        );
+        let (stepover, _) = parameter(&ir, "operation", "stepover");
+        assert_eq!(operation["technology"]["stepover"], bound(&stepover));
+        assert_eq!(ir.process.parameters.len(), 2);
+        assert!(!has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
+    }
+}
+
+#[test]
+fn exponent_literals_keep_canonical_quantities_and_bindings() {
+    for exponent in ["e+3", "e-3"] {
+        for (name, suffixes, scale) in [
+            ("stepover", &["mm", "cm", "in"][..], 1.0),
+            (
+                "tool_feedCutting",
+                &["mmpm", "cmpm", "inpm"][..],
+                1.0 / 60.0,
+            ),
+            (
+                "tool_spindleSpeed",
+                &["rpm"][..],
+                std::f64::consts::TAU / 60.0,
+            ),
+        ] {
+            for suffix in suffixes {
+                for mantissa in ["1.5", "1,5"] {
+                    let (ir, operation, losses) = operation_with(&format!(
+                        r#"<Parameter name="{name}" value="2" expression="{mantissa}{exponent}{suffix}"/>"#
+                    ));
+                    let (id, value) = parameter(&ir, "operation", name);
+                    assert_eq!(value, 2.0 * scale);
+                    let technology = &operation["technology"];
+                    match name {
+                        "stepover" => assert_eq!(technology["stepover"], bound(&id)),
+                        "tool_feedCutting" => assert_eq!(
+                            technology["feeds"][0][1],
+                            cadmpeg_core::json!({"kind":"per_time","value":bound(&id)})
+                        ),
+                        _ => assert_eq!(
+                            technology["spindle"],
+                            cadmpeg_core::json!({"kind":"rotation","value":bound(&id)})
+                        ),
+                    }
+                    assert!(!has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
+                }
+            }
+        }
+    }
+}

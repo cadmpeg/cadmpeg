@@ -408,3 +408,19 @@ fn cam_tool_parameters_are_the_tools_own_not_every_descendant_attribute() {
         .filter(|parameter| parameter.name.contains('.'))
         .all(|parameter| parameter.native_xml.len() < 60));
 }
+
+#[test]
+fn cam_descriptor_sibling_orders_keep_validity_and_each_parameter_once() {
+    let frame = r#"<toolpathToolView><Parameters><Parameter name="stepover" value="2" expression="2mm"/></Parameters><CadRef value="frame"/></toolpathToolView>"#;
+    let path = r#"<toolpath valid="true"><Parameters><Parameter name="tool_feedCutting" value="1200" expression="1200mmpm"/></Parameters><CadRef value="path"/></toolpath>"#;
+    for descriptors in [format!("{frame}{path}"), format!("{path}{frame}")] {
+        let (target, _) = parse_text(&format!(
+            r#"<document><object id="job" strategy="setup"/><object parent="job" strategy="face" valid="false">{descriptors}</object></document>"#
+        ));
+        assert_eq!(target.operations.len(), 1);
+        let operation = &target.operations[0];
+        assert_eq!(operation.computed_path_valid, Some(true));
+        assert_eq!(operation.parameters.len(), 2);
+        assert_eq!(operation.geometry.len(), 2);
+    }
+}
