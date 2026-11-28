@@ -127,8 +127,8 @@ fn complex_draughting_model_reads_inherited_representation_attributes() {
         .iter()
         .any(|target| target.native_text() == Some("#3")));
     assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::DrawingRecordTooFewParameters.kind()
-            && loss.message.contains("#2")
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.contains("#2 has too few")
     }));
 }
 
@@ -153,7 +153,7 @@ fn complex_draughting_callout_reads_inherited_name() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == StepLossCode::DrawingRecordTooFewParameters.kind() }));
+        .any(|loss| loss.message.contains("too few")));
 }
 
 #[test]

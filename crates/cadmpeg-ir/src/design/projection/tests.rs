@@ -12,7 +12,7 @@ use crate::ids::ProductDefinitionId;
 use crate::products::{ExternalDocument, ProductDefinition};
 use crate::report::loss::LossNote;
 use crate::report::Severity;
-use crate::unknown::part::record_unreadable_kind;
+use crate::unknown::part::{record_undecoded_kind, record_unreadable_kind};
 use crate::CadIr;
 
 fn definition(key: &str) -> ProductDefinitionId {
@@ -64,8 +64,8 @@ fn a_failed_projection_leaves_the_document_as_it_was_with_one_loss() {
     assert_eq!(ir.design.entity_count(), 0);
     assert_eq!(losses.len(), 2);
     assert_eq!(losses[0], kept_loss());
-    assert_eq!(losses[1].code, record_unreadable_kind());
-    assert_eq!(losses[1].severity, Severity::Error);
+    assert_eq!(losses[1].code, record_undecoded_kind());
+    assert_eq!(losses[1].severity, Severity::Warning);
     assert_eq!(
         losses[1].message,
         "test v11 design layer is not stated: malformed container: the third record has no frame"
@@ -287,11 +287,11 @@ fn a_typed_operation_with_fewer_operands_leaves_out_its_definition_and_dependenc
 }
 
 /// A model feature's outputs are carried where a design record states that
-/// the feature produced them, here the current state after the feature, and
-/// cut otherwise.
+/// the feature produced them, in its own stored operation or the current
+/// state after the feature.
 #[test]
-fn the_outputs_of_a_feature_are_carried_only_by_a_state_after_it() {
-    use crate::design::feature::{FeatureOperation, OperationFamily};
+fn the_outputs_of_a_feature_are_carried_by_its_stored_geometry_or_state() {
+    use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
     use crate::features::{FeatureDefinition, FeatureOperation as ModelOperation};
 
     let current = restated_document().design.scopes[0].current[0]
@@ -309,8 +309,19 @@ fn the_outputs_of_a_feature_are_carried_only_by_a_state_after_it() {
     assert_eq!(cut_by_itself(&stated, FILLET), Some(Vec::new()));
     let mut more = current;
     more.push(body("elsewhere"));
-    let unstated = project_fillet(unresolved(), more, Vec::new(), operation());
+    let unstated = project_fillet(unresolved(), more.clone(), Vec::new(), operation());
     assert_eq!(cut_by_itself(&unstated, FILLET), Some(vec!["outputs"]));
+    let stored = project_fillet(
+        unresolved(),
+        more,
+        Vec::new(),
+        FeatureOperation::Stored {
+            bodies: Some(vec![body("elsewhere")]),
+            tessellations: Vec::new(),
+            origin: StoredOrigin::Base {},
+        },
+    );
+    assert_eq!(cut_by_itself(&stored, FILLET), Some(Vec::new()));
 }
 
 /// A record restated by several restaters keeps each restater's cut apart:
@@ -438,6 +449,7 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
 fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
         ParameterField::Owner => &[ModelParameterField::Owner],
+        ParameterField::Position => &[ModelParameterField::Ordinal],
         ParameterField::Name => &[ModelParameterField::Name],
         ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
         ParameterField::Definition => &[

@@ -17,7 +17,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::Identity;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -349,11 +349,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         (matched, kernel),
     )?;
     crate::loss::text_stream_losses(
-        text_header.diagnostics.iter().chain(&framing),
-        unread
-            .as_ref()
-            .filter(|_| unread_stream_layout)
-            .map(|span| span.start),
+        text_header.diagnostics.iter().chain(
+            framing
+                .iter()
+                .filter(|diagnostic| diagnostic.kind != sat::StreamDiagnosticKind::Unread),
+        ),
+        None,
         &mut result.body.losses,
     );
     if extensions {
@@ -401,6 +402,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .chain(concatenated_span),
     )?;
     if let Some(span) = unread {
+        let (cause, code) = if unread_stream_layout {
+            (Cause::Undecoded, SatLossCode::SourceStreamLayoutUnprojected)
+        } else {
+            (Cause::Unreadable, SatLossCode::FramingRecordsUnread)
+        };
         let reason = framing
             .iter()
             .find(|diagnostic| diagnostic.kind == sat::StreamDiagnosticKind::Unread)
@@ -418,7 +424,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             part = part.digest_only();
         }
         let loss = ctx
-            .give_up_part(part, CodecError::malformed(reason))?
+            .give_up_part(
+                part,
+                cause,
+                CodecError::malformed(format_args!("{}: {reason}", code.kind())),
+            )?
             .commit(ctx, &mut result.ir, &mut result.source_fidelity)?;
         result.body.losses.push(loss);
     }
@@ -546,17 +556,19 @@ fn build_result(
             (SatLossCode::EdgeToleranceUnresolved,
                 "edge tolerance is not positive and finite; tolerance left unset; source record retained")
         } else if id.contains(":brep:shell#") {
-            given_up.push(unprojected.give_up(ctx, &record, "shell", SatLossCode::TopologyShellUnprojected.note(
-                "shell has no admissible members or owner; shell omitted from region references"))?);
+            given_up.push(unprojected.give_up(
+                ctx,
+                &record,
+                "shell",
+                "shell has no admissible members or owner; shell omitted from region references",
+            )?);
             continue;
         } else if id.contains(":brep:face#") {
             given_up.push(unprojected.give_up(
                 ctx,
                 &record,
                 "face",
-                SatLossCode::TopologyFaceOwnerUnprojected.note(
-                    "standalone source face has no shell owner required by the IR; face omitted",
-                ),
+                "standalone source face has no shell owner required by the IR; face omitted",
             )?);
             continue;
         } else if id.contains(":brep:untyped-record#") {
@@ -672,8 +684,7 @@ fn build_result(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
-    for (why, part) in given_up {
-        body.losses.push(why);
+    for part in given_up {
         body.losses
             .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
@@ -698,14 +709,15 @@ struct Unprojected {
 
 impl Unprojected {
     /// Gives up `record`, a source record of `kind` that no neutral topology
-    /// holds, for the codec loss `why`, as a part over its bytes.
+    /// holds, as a part over its bytes. The record conforms to the format,
+    /// and the IR has no place for it.
     fn give_up(
         &self,
         ctx: &DecodeContext<'_>,
         record: &cadmpeg_ir::unknown::UnknownRecord,
         kind: &'static str,
-        why: cadmpeg_ir::report::loss::LossNote,
-    ) -> Result<(cadmpeg_ir::report::loss::LossNote, GivenUpPart), CodecError> {
+        why: &str,
+    ) -> Result<GivenUpPart, CodecError> {
         let mut part = Part::at(
             FORMAT,
             kind,
@@ -723,8 +735,7 @@ impl Unprojected {
         if self.whole_stream {
             part = part.digest_only();
         }
-        let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
-        Ok((why, ctx.give_up_part(part, error)?))
+        ctx.give_up_part(part, Cause::Undecoded, CodecError::malformed(why))
     }
 
     /// Gives up `record`, a topology record the shared decode read and left
@@ -738,7 +749,7 @@ impl Unprojected {
         if self.whole_stream {
             part = part.digest_only();
         }
-        ctx.give_up_part(part, record.error())
+        ctx.give_up_part(part, record.cause, record.error())
     }
 }
 

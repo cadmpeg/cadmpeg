@@ -572,12 +572,13 @@ fn synthetic_datum_tag_array_with_unread_duplicate() -> Vec<u8> {
     bytes
 }
 
-/// The one `record.unreadable` of `kind` in `result`, the stub it names, and
-/// the offset and end of the `NeuPrtSld` section of `bytes`.
+/// The one give-up of `kind` in `result`, which `cause` charges, the stub it
+/// names, and the offset and end of the `NeuPrtSld` section of `bytes`.
 fn neutral_part_charge(
     bytes: &[u8],
     result: &cadmpeg_ir::codec::DecodeResult,
     kind: &str,
+    cause: &cadmpeg_ir::report::loss::LossKind,
 ) -> (String, cadmpeg_ir::NativeUnknownRecord, usize, usize) {
     let scan = crate::container::scan_bytes_ok(bytes.to_vec());
     let section = scan
@@ -590,10 +591,10 @@ fn neutral_part_charge(
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
         .filter(|loss| loss.message.starts_with(&format!("part {kind} ")))
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_eq!(&charges[0].code, cause, "{charges:#?}");
     let message = charges[0].message.clone();
     let stub = result
         .ir()
@@ -637,12 +638,33 @@ fn decode_neutral(payload: Vec<u8>) -> (Vec<u8>, cadmpeg_ir::codec::DecodeResult
 #[test]
 fn an_unread_neutral_attribute_table_is_given_up_as_a_part_of_its_section() {
     let (bytes, result) = decode_neutral(b"PTC_GTOL_TYPE\0".to_vec());
-    let (message, _, offset, end) = neutral_part_charge(&bytes, &result, "neutral-section");
+    let (message, _, offset, end) = neutral_part_charge(
+        &bytes,
+        &result,
+        "neutral-section",
+        &cadmpeg_ir::unknown::part::record_undecoded_kind(),
+    );
     assert!(
         message.starts_with(&format!(
             "part neutral-section stream=\"\" offset={offset} length={} record=",
             end - offset
         )),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_neutral_attribute_count_past_its_section_is_given_up_as_unreadable() {
+    let (bytes, result) =
+        decode_neutral(b"\xe0\x00attributes\0\xf4\x05\xf8\x7f\xf7\x1b\xfbPTC_GTOL_TYPE\0".to_vec());
+    let (message, _, _, _) = neutral_part_charge(
+        &bytes,
+        &result,
+        "neutral-section",
+        &cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    );
+    assert!(
+        message.contains("declares more rows than its section holds bytes"),
         "{message}"
     );
 }
@@ -659,7 +681,12 @@ fn an_ownerless_tolerance_type_row_is_given_up_as_a_part_of_its_section() {
         .windows(ownerless.len())
         .position(|window| window == ownerless)
         .expect("the ownerless row");
-    let (message, _, _, _) = neutral_part_charge(&bytes, &result, "pmi-attribute-row");
+    let (message, _, _, _) = neutral_part_charge(
+        &bytes,
+        &result,
+        "pmi-attribute-row",
+        &cadmpeg_ir::unknown::part::record_undecoded_kind(),
+    );
     assert!(
         message.starts_with(&format!(
             "part pmi-attribute-row stream=\"\" offset={row} length={} record=",
@@ -668,4 +695,10 @@ fn an_ownerless_tolerance_type_row_is_given_up_as_a_part_of_its_section() {
         "{message}"
     );
     assert!(message.contains(": the geometric-tolerance type attribute row names no owner"));
+    // The give-up is the one entry for the row: no count note repeats it.
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::PmiRecordUnresolved.kind()));
 }

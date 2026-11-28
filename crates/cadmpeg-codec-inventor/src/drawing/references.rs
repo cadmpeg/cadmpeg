@@ -13,6 +13,7 @@ use crate::layout::{
 };
 use crate::pmdc::PmDcReference;
 use crate::reader;
+use crate::records::{reference_section_count, ReferenceTable};
 use crate::rse::SegmentMeta;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,46 +44,36 @@ pub(crate) struct Tables {
     pub(crate) segment_token: IdentityKey,
     pub(crate) segment_id: NativeBytes<[u8; 16]>,
     pub(crate) counts: [u32; 3],
-    pub(crate) payloads: [NativeBytes; 3],
+    pub(crate) payloads: [Option<NativeBytes>; 3],
     pub(crate) pairs: Vec<Pair>,
     pub(crate) revisions: Vec<Revision>,
     pub(crate) external: Vec<External>,
 }
 
 impl Tables {
-    /// The tables of metadata sections 7, 8, and 10, or the index in
-    /// `meta.tables.sections` of the section that does not read and its error.
+    /// Reads each reference table at its own metadata section boundary.
     pub(super) fn read(
         ctx: &DecodeContext<'_>,
         token: &IdentityKey,
         meta: &SegmentMeta<'_>,
-    ) -> Result<Self, (usize, CodecError)> {
-        let sections = SECTIONS.map(|index| &meta.tables.sections[index]);
-        let counts = sections.map(|section| section.discriminator);
-        let payloads = sections.map(|section| section.payload);
-        let (pairs, revisions, external) =
-            parse(ctx, counts, payloads).map_err(|(at, error)| (SECTIONS[at], error))?;
-        let mut retained = [
-            NativeBytes::default(),
-            NativeBytes::default(),
-            NativeBytes::default(),
-        ];
-        for ((target, payload), index) in retained.iter_mut().zip(payloads).zip(SECTIONS) {
-            let mut bytes = ctx
-                .alloc_filled(payload.remaining(), 0_u8, "retain drawing reference table")
-                .map_err(|error| (index, error))?;
-            bytes.copy_from_slice(payload.unread());
-            *target = bytes.into();
-        }
+    ) -> Result<Self, CodecError> {
+        let [pairs, revisions, external] = &meta.tables.references;
+        let (pair_rows, pair_payload) = retained(ctx, pairs, read_pairs)?;
+        let (revision_rows, revision_payload) = retained(ctx, revisions, read_revisions)?;
+        let (external_rows, external_payload) = retained(ctx, external, read_external)?;
         Ok(Self {
             id: format!("inventor:drawing:reference-tables#{token}"),
             segment_token: token.clone(),
             segment_id: meta.segment_id.into(),
-            counts,
-            payloads: retained,
-            pairs,
-            revisions,
-            external,
+            counts: [
+                pairs.declared_count,
+                revisions.declared_count,
+                external.declared_count,
+            ],
+            payloads: [pair_payload, revision_payload, external_payload],
+            pairs: pair_rows,
+            revisions: revision_rows,
+            external: external_rows,
         })
     }
 
@@ -90,132 +81,178 @@ impl Tables {
         if self.id != format!("inventor:drawing:reference-tables#{}", self.segment_token) {
             return Ok(false);
         }
-        match parse(
+        let [pairs, revisions, external] = self.payloads.each_ref();
+        Ok(table_matches(
             ctx,
-            self.counts,
-            self.payloads
-                .each_ref()
-                .map(|bytes| View::over_retained(bytes)),
-        ) {
-            Ok((pairs, revisions, external)) => {
-                Ok(pairs == self.pairs && revisions == self.revisions && external == self.external)
-            }
-            Err((_, error @ CodecError::ResourceLimit(_))) => Err(error),
-            Err(_) => Ok(false),
-        }
+            self.counts[0],
+            pairs.as_ref(),
+            &self.pairs,
+            pair::LEN,
+            read_pairs,
+        )? && table_matches(
+            ctx,
+            self.counts[1],
+            revisions.as_ref(),
+            &self.revisions,
+            revision::LEN,
+            read_revisions,
+        )? && table_matches(
+            ctx,
+            self.counts[2],
+            external.as_ref(),
+            &self.external,
+            external::LEN,
+            read_external,
+        )?)
     }
 
-    pub(super) fn target(&self, reference: PmDcReference) -> Option<(&Pair, &External)> {
+    /// The section needed by this reference, or an invalid stored join.
+    fn resolve(&self, reference: PmDcReference) -> Result<(&Pair, &External), LinkFailure> {
         if reference.qualified() {
-            return None;
+            return Err(LinkFailure::Invalid);
         }
-        let index = usize::try_from(reference.index().checked_sub(1)?).ok()?;
-        let external = self.external.get(index)?;
-        if external.revision_word > u32::from(u16::MAX) {
-            return None;
+        let index = reference
+            .index()
+            .checked_sub(1)
+            .ok_or(LinkFailure::Invalid)?;
+        let external = self.entry(2, &self.external, index)?;
+        if external.revision_word > u32::from(u16::MAX) || external.key_extension != 0 {
+            return Err(LinkFailure::Invalid);
         }
-        let revision = self
-            .revisions
-            .get(usize::try_from(external.revision_word).ok()?)?;
-        Some((
-            self.pairs.get(usize::from(revision.segment_pair_index))?,
-            external,
-        ))
+        let revision = self.entry(1, &self.revisions, external.revision_word)?;
+        let pair = self.entry(0, &self.pairs, u32::from(revision.segment_pair_index))?;
+        Ok((pair, external))
+    }
+
+    fn entry<'r, T>(
+        &self,
+        section: usize,
+        rows: &'r [T],
+        index: u32,
+    ) -> Result<&'r T, LinkFailure> {
+        if index >= self.counts[section] {
+            return Err(LinkFailure::Invalid);
+        }
+        if self.payloads[section].is_none() {
+            return Err(LinkFailure::Unread([7, 8, 10][section]));
+        }
+        usize::try_from(index)
+            .ok()
+            .and_then(|at| rows.get(at))
+            .ok_or(LinkFailure::Invalid)
     }
 }
 
-type Parsed = (Vec<Pair>, Vec<Revision>, Vec<External>);
+#[derive(Debug)]
+enum LinkFailure {
+    Unread(u8),
+    Invalid,
+}
 
-/// The indices in the section list of the metadata sections 7, 8, and 10,
-/// which store the segment-pair, revision, and external-reference tables.
-const SECTIONS: [usize; 3] = [6, 7, 9];
+fn retained<T>(
+    ctx: &DecodeContext<'_>,
+    table: &ReferenceTable<'_>,
+    read: impl FnOnce(&DecodeContext<'_>, usize, View<'_>) -> Result<Vec<T>, CodecError>,
+) -> Result<(Vec<T>, Option<NativeBytes>), CodecError> {
+    let Some(count) = table.count else {
+        return Ok((Vec::new(), None));
+    };
+    let rows = read(ctx, count, table.payload)?;
+    let mut bytes = ctx.alloc_filled(
+        table.payload.remaining(),
+        0_u8,
+        "retain drawing reference table",
+    )?;
+    bytes.copy_from_slice(table.payload.unread());
+    Ok((rows, Some(bytes.into())))
+}
+
+fn table_matches<T: PartialEq>(
+    ctx: &DecodeContext<'_>,
+    count: u32,
+    payload: Option<&NativeBytes>,
+    rows: &[T],
+    width: usize,
+    read: impl FnOnce(&DecodeContext<'_>, usize, View<'_>) -> Result<Vec<T>, CodecError>,
+) -> Result<bool, CodecError> {
+    let Some(payload) = payload else {
+        return Ok(rows.is_empty());
+    };
+    let view = View::over_retained(payload);
+    let Ok(count) = reference_section_count(count, view, width) else {
+        return Ok(false);
+    };
+    match read(ctx, count, view) {
+        Ok(parsed) => Ok(parsed == rows),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(false),
+    }
+}
 
 fn read_entries<T: Clone>(
     ctx: &DecodeContext<'_>,
-    count: u32,
+    count: usize,
     mut payload: View<'_>,
-    width: usize,
     initial: T,
     mut read: impl FnMut(&mut View<'_>) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
-    let bounded = payload.counted(u64::from(count), width).ok_or_else(|| {
-        CodecError::malformed("drawing reference table count exceeds its payload")
-    })?;
-    if bounded.get().checked_mul(width) != Some(payload.remaining()) {
-        return Err(CodecError::malformed(
-            "drawing reference table has a wrong entry width",
-        ));
-    }
-    let mut entries =
-        ctx.alloc_filled(bounded.get(), initial, "retain drawing reference entries")?;
+    let mut entries = ctx.alloc_filled(count, initial, "retain drawing reference entries")?;
     for target in &mut entries {
         *target = read(&mut payload)?;
     }
     Ok(entries)
 }
 
-/// The three tables, or the index in `payloads` of the table that does not
-/// read and its error.
-fn parse(
+fn read_pairs(
     ctx: &DecodeContext<'_>,
-    counts: [u32; 3],
-    payloads: [View<'_>; 3],
-) -> Result<Parsed, (usize, CodecError)> {
-    let pairs = read_entries(
-        ctx,
-        counts[0],
-        payloads[0],
-        pair::LEN,
-        Pair::default(),
-        |view| {
-            Ok(Pair {
-                segment_id: reader::array(view, "drawing reference segment")?.into(),
-                revision_id: reader::array(view, "drawing reference revision")?.into(),
-            })
-        },
-    )
-    .map_err(|error| (0, error))?;
-    let revisions = read_entries(
-        ctx,
-        counts[1],
-        payloads[1],
-        revision::LEN,
-        Revision::default(),
-        |view| {
-            Ok(Revision {
-                identifier: reader::array(view, "drawing revision identifier")?.into(),
-                segment_pair_index: reader::u16(view, "drawing revision segment index")?,
-                reference_count: reader::u16(view, "drawing revision reference count")?,
-            })
-        },
-    )
-    .map_err(|error| (1, error))?;
-    let external = read_entries(
-        ctx,
-        counts[2],
-        payloads[2],
-        external::LEN,
-        External::default(),
-        |view| {
-            Ok(External {
-                revision_word: reader::u32(view, "drawing external revision index")?,
-                key_extension: reader::u16(view, "drawing external key extension")?,
-                header_id: reader::u16(view, "drawing external header identifier")?,
-            })
-        },
-    )
-    .map_err(|error| (2, error))?;
-    Ok((pairs, revisions, external))
+    count: usize,
+    payload: View<'_>,
+) -> Result<Vec<Pair>, CodecError> {
+    read_entries(ctx, count, payload, Pair::default(), |view| {
+        Ok(Pair {
+            segment_id: reader::array(view, "drawing reference segment")?.into(),
+            revision_id: reader::array(view, "drawing reference revision")?.into(),
+        })
+    })
+}
+
+fn read_revisions(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    payload: View<'_>,
+) -> Result<Vec<Revision>, CodecError> {
+    read_entries(ctx, count, payload, Revision::default(), |view| {
+        Ok(Revision {
+            identifier: reader::array(view, "drawing revision identifier")?.into(),
+            segment_pair_index: reader::u16(view, "drawing revision segment index")?,
+            reference_count: reader::u16(view, "drawing revision reference count")?,
+        })
+    })
+}
+
+fn read_external(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    payload: View<'_>,
+) -> Result<Vec<External>, CodecError> {
+    read_entries(ctx, count, payload, External::default(), |view| {
+        Ok(External {
+            revision_word: reader::u32(view, "drawing external revision index")?,
+            key_extension: reader::u16(view, "drawing external key extension")?,
+            header_id: reader::u16(view, "drawing external header identifier")?,
+        })
+    })
 }
 
 /// The id of the given-up record that `record` fails its links for: for a
 /// sheet, the first local view it names that `refused` holds by its segment
 /// token and ordinal; for a cached view, the reference tables of its own
-/// segment that `failed_tables` holds by segment token.
+/// segment whose required section gave up.
 pub(super) fn refused_link<'r>(
     record: &super::Record,
     refused: &'r std::collections::BTreeMap<(String, u32), String>,
-    failed_tables: &'r std::collections::BTreeMap<String, String>,
+    tables: &[Tables],
+    failed_sections: &'r std::collections::BTreeMap<(String, u8), String>,
 ) -> Option<&'r str> {
     let token = record.segment_token.as_str();
     match &record.fields {
@@ -231,7 +268,17 @@ pub(super) fn refused_link<'r>(
             .filter_map(|reference| reference.record_ordinal())
             .find_map(|ordinal| refused.get(&(token.to_owned(), ordinal)))
             .map(String::as_str),
-        super::records::Fields::CachedView { .. } => failed_tables.get(token).map(String::as_str),
+        super::records::Fields::CachedView { view, .. } => {
+            let table = tables
+                .iter()
+                .find(|table| table.segment_token.as_str() == token)?;
+            let Err(LinkFailure::Unread(section)) = table.resolve(*view) else {
+                return None;
+            };
+            failed_sections
+                .get(&(token.to_owned(), section))
+                .map(String::as_str)
+        }
         super::records::Fields::View { .. } | super::records::Fields::ModelReference { .. } => None,
     }
 }
@@ -282,12 +329,9 @@ pub(super) fn record_links_are_valid(
     if sources.next().is_some() {
         return false;
     }
-    let Some((pair, external)) = source.target(view) else {
+    let Ok((pair, external)) = source.resolve(view) else {
         return false;
     };
-    if external.key_extension != 0 {
-        return false;
-    }
     let mut targets = tables
         .iter()
         .filter(|table| table.segment_id == pair.segment_id);

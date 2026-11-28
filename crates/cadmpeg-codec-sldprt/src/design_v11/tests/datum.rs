@@ -85,7 +85,7 @@ fn part() -> (CadIr, SldprtNative) {
             ("moRefPlane_c", "Plane5", 37),
         ],
     );
-    let native = SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,

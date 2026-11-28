@@ -6,6 +6,7 @@ use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::design::PmDcParameter;
+use crate::feature::history_views::StateLimit;
 use crate::feature::{
     PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureProperty, PmDcFeaturePropertyKind,
     PmDcFeatureReferenceFamily,
@@ -26,7 +27,7 @@ pub(crate) enum NativeReason {
     SectionParameters,
     Profile,
     ResultTopology,
-    ResultStateBounded,
+    ResultStateBounded(StateLimit),
     ResultStateFailed,
     ResultJoin,
     ResultIdentity,
@@ -44,7 +45,7 @@ impl NativeReason {
             | Self::SectionCondition
             | Self::SectionOption => InventorLossCode::FeatureLoftOperandsNative,
             Self::ResultTopology
-            | Self::ResultStateBounded
+            | Self::ResultStateBounded(_)
             | Self::ResultStateFailed
             | Self::ResultJoin => InventorLossCode::FeatureLoftResultOperandsNative,
             Self::ResultCollection | Self::Profile | Self::ResultIdentity => {
@@ -64,7 +65,8 @@ impl NativeReason {
             Self::ResultTopology => "complete generator-owned result does not prove ordered positional loft construction".to_owned(),
             Self::ResultStateFailed => "history state of the loft does not decode".to_owned(),
             Self::ResultJoin => "joined result body does not merge with a body of the preceding history state".to_owned(),
-            Self::ResultStateBounded => "history state of the loft passed the local work cap of state views".to_owned(),
+            Self::ResultStateBounded(StateLimit::Work) => "history state of the loft passed the local work cap of state views".to_owned(),
+            Self::ResultStateBounded(limit) => format!("history state of the loft reached {limit}"),
             Self::ResultIdentity => "result body identity does not resolve".to_owned(),
         };
         code.note(format!("Retained Inventor solid loft natively: {reason}."))

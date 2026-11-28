@@ -4,7 +4,7 @@ use super::*;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };
-use crate::records::feature::scope::DesignFeatureKind;
+use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::products::ProductDefinition;
 
@@ -52,14 +52,18 @@ fn topology(extra_face: bool) -> AsmHistoricalTopology {
 }
 
 fn history() -> AsmHistory {
-    let history_id = "f3d:BREP.panel.smbh:asm-history#0";
-    let states = [(64, 1, Some(0), true), (59, 0, None, false)]
-        .into_iter()
+    history_at("panel.smbh", Some(59))
+}
+
+fn history_at(source: &str, previous: Option<i64>) -> AsmHistory {
+    let history_id = format!("f3d:BREP.{source}:asm-history#0");
+    let states = std::iter::once((64, 1, previous.map(|_| 0), true))
+        .chain(previous.map(|previous| (previous, 0, None, false)))
         .map(|(state_id, node_index, next_ref, extra)| {
             (
                 AsmDeltaState {
-                    id: format!("f3d:BREP.panel.smbh:asm-delta-state#{state_id}"),
-                    parent: history_id.into(),
+                    id: format!("f3d:BREP.{source}:asm-delta-state#{state_id}"),
+                    parent: history_id.clone(),
                     byte_offset: 0,
                     state_id,
                     node_index,
@@ -78,7 +82,26 @@ fn history() -> AsmHistory {
             )
         })
         .collect();
-    crate::test_support::history::history(history_id.into(), 0, None, false, states)
+    crate::test_support::history::history(history_id, 0, None, false, states)
+}
+
+fn collect(
+    features: &[Feature],
+    scopes: &[DesignParameterScope],
+    histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
+    primary_brep: Option<&str>,
+) -> BodyHistoryTails {
+    let bound = crate::history::feature_outputs::bind_feature_outputs(
+        &mut features.to_vec(),
+        scopes,
+        &mut histories.to_vec(),
+        &[],
+        scope_histories,
+        primary_brep,
+    )
+    .unwrap();
+    super::collect(features, histories, &bound.placements, primary_brep)
 }
 
 fn scope(current: i64) -> DesignParameterScope {
@@ -155,22 +178,90 @@ fn a_feature_at_the_head_state_retains_no_change_when_its_previous_state_is_unli
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let mut other = history();
-    other.id = "f3d:BREP.other.smbh:asm-history#0".into();
-    other.states_mut()[0]
-        .transition
-        .as_mut()
-        .unwrap()
-        .previous_state_id = Some(7);
+    let bound_history = history_at("panel.smbh", None);
+    let binding = HashMap::from([(scope.id.clone(), bound_history.id.clone())]);
+    let conflicting_histories = [
+        bound_history.clone(),
+        history_at("other.smbh", Some(7)),
+        history_at("third.smbh", Some(59)),
+    ];
     let found = collect(
         &[feature(&scope, 1)],
         &[scope],
-        &[history(), other],
-        &Default::default(),
+        &conflicting_histories,
+        &binding,
         None,
     );
     assert!(found.tails.is_empty());
     assert!(found.unread.is_empty());
+}
+
+#[test]
+fn a_stored_result_in_another_history_retains_its_unproved_tail() {
+    use cadmpeg_ir::features::selections::BodySelection;
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#1",
+        DesignFeatureKind::BaseFeature,
+        1,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(64);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut feature = feature(&scope, 1);
+    let across = BodyId::mint("f3d:brep/other.smbh/brep:entity#1").unwrap();
+    let results = DistinctMembers::try_from(vec![body(1), across.clone()]).unwrap();
+    feature.evaluation = FeatureEvaluation::new(
+        FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: results.clone(),
+                native: scope.id.clone(),
+            },
+        }),
+        Default::default(),
+    );
+    let mut histories = [
+        history_at("panel.smbh", None),
+        history_at("other.smbh", Some(59)),
+        history_at("third.smbh", Some(7)),
+    ];
+    let bindings = HashMap::from([(scope.id.clone(), histories[0].id.clone())]);
+    let mut model = Model::default();
+    model.features.push(feature);
+    let mut owner = definition();
+    owner.bodies = results.as_slice().to_vec();
+    model.product_definitions.push(owner);
+    let bound = crate::history::feature_outputs::bind_feature_outputs(
+        &mut model.features,
+        &[scope],
+        &mut histories,
+        &[],
+        &bindings,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        model.features[0].evaluation.outputs().as_slice(),
+        results.as_slice()
+    );
+    assert!(bound.losses.is_empty());
+    let found = super::collect(&model.features, &histories, &bound.placements, None);
+    let mut losses = Vec::new();
+    append(&mut model, &found, &mut losses).unwrap();
+    assert_eq!(model.features.len(), 2);
+    assert_eq!(
+        model.features[1].evaluation.outputs().as_slice(),
+        std::slice::from_ref(&across),
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureBodyHistoryIncomplete.kind()
+    );
+    assert!(losses[0].message.contains("from an unread state to 64"));
 }
 
 #[test]

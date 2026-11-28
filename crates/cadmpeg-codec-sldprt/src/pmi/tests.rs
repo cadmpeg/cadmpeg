@@ -835,19 +835,15 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
 }
 
-/// `losses` holds one malformed-record loss, then the `record.unreadable`
-/// naming the dimension of `guid`.
+/// `losses` holds only the `record.undecoded` naming the dimension of
+/// `guid`.
 fn assert_given_up(losses: &[cadmpeg_ir::report::loss::LossNote], guid: &str) {
-    let [loss, given_up] = losses else {
-        panic!("one malformed-record loss and its given-up record: {losses:?}");
+    let [given_up] = losses else {
+        panic!("one given-up record: {losses:?}");
     };
     assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
-    );
-    assert_eq!(
         given_up.code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
     let record = format!("sldprt:pmi:dimension#{guid}");
     assert!(
@@ -1048,10 +1044,11 @@ fn decode_extracts_array16_and_reordered_pmi_maps() {
             .expect("PMI dimension");
         assert_eq!(dimension.value.get(), value);
         assert_eq!(dimension.item_count.get(), item_count);
-        assert!(decoded.report().losses.iter().all(|loss| {
-            !loss.message.contains("semantic-record-malformed")
-                && !loss.message.contains("failed to parse MessagePack map")
-        }));
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| { !loss.message.contains("failed to parse MessagePack map") }));
     }
 }
 
@@ -1070,14 +1067,32 @@ fn decode_reports_malformed_pmi_semantic_map() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
     assert!(sldprt_native(decoded.ir()).pmi_dimensions.is_empty());
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("01234567-89ab-cdef-0123-456789abcdef")
-            && loss.message.contains("failed to parse MessagePack map")
-    }));
+    let [given_up] = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .contains("01234567-89ab-cdef-0123-456789abcdef")
+        })
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one loss names the dimension");
+    };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(given_up.message.contains("failed to parse MessagePack map"));
+    SldprtCodec
+        .decode(
+            &mut Cursor::new(source),
+            &crate::test_support::ir::strict_options(),
+        )
+        .expect("a pinned decode keeps an undecoded dimension");
 }
 
 #[test]
@@ -1386,7 +1401,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
         &record.parent,
         &mut payload,
         &|_| true,
-        cadmpeg_core::decode::ResourceLimits::default(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
@@ -1456,7 +1471,7 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
         &parent,
         &mut patched,
         &|_| true,
-        cadmpeg_core::decode::ResourceLimits::default(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(patched, payload);
@@ -1526,7 +1541,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load_under(
+    if let Err(error) = crate::test_support::native::load_under(
         namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -1542,7 +1557,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
             "block",
             &mut [],
             &|_| true,
-            cadmpeg_core::decode::ResourceLimits::default()
+            &cadmpeg_core::decode::test_support::desktop_decode_context()
         ),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
@@ -1601,16 +1616,12 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     let mut losses = Vec::new();
     let integer_key = record_with_trailing_entry("bulk", &[0x91, 0x81, 0x01, 0x02]);
     assert!(parse_payload(&integer_key, &mut losses).is_empty());
-    let [loss, given_up] = losses.as_slice() else {
-        panic!("one malformed-record loss and its given-up record: {losses:?}");
+    let [given_up] = losses.as_slice() else {
+        panic!("one given-up record: {losses:?}");
     };
     assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
-    );
-    assert_eq!(
         given_up.code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
     assert!(given_up
         .message

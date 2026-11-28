@@ -125,6 +125,24 @@ fn dimensions_and_global_variables_are_parameters_of_the_scope() {
     assert_no_design_findings(&ir);
 }
 
+/// A dimension takes its place in its feature's dimension list, also where
+/// it reads a dimension listed after it.
+#[test]
+fn a_dimension_is_placed_by_its_feature_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D2">D1@Boss * 2</Dimension>
+                <Dimension Name="D1">12.5mm</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[],
+    );
+    assert_eq!(parameter_named(&ir, "D2").position, Some(0));
+    assert_eq!(parameter_named(&ir, "D1").position, Some(1));
+    assert_no_design_findings(&ir);
+}
+
 #[test]
 fn a_bare_display_is_no_cache() {
     use cadmpeg_ir::design::units::{Quantity, ValueKind};
@@ -203,7 +221,7 @@ fn parameters_with_scalars(
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -1396,7 +1414,7 @@ fn parameters_with_manager(
     use cadmpeg_ir::features::parameters::{ParameterPmi, PmiDimensionSubtype};
 
     let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
