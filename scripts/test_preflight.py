@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import os
@@ -83,6 +84,19 @@ class CheckLoadingTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(missing)}):
                 with self.assertRaises(FileNotFoundError):
                     preflight.load_checks(Path(tmp))
+
+    def test_list_accepts_a_check_without_a_docstring(self) -> None:
+        class Check:
+            NAME = "local"
+            ORDER = 1
+            def run(self, context):
+                return None
+
+        output = io.StringIO()
+        with mock.patch.object(preflight, "load_checks", return_value=[Check()]):
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(preflight.main(["--list"]), 0)
+        self.assertIn("local:", output.getvalue())
 
     def test_unknown_check_fails(self) -> None:
         with mock.patch.object(preflight, "load_checks", return_value=[]):

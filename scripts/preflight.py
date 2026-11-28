@@ -270,7 +270,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"unknown checks: {', '.join(sorted(unknown))}")
     if args.list:
         for module in modules:
-            print(f"{module.NAME}: {(module.__doc__ or '').strip().splitlines()[0]}")
+            description = (module.__doc__ or "").strip().splitlines()
+            print(f"{module.NAME}: {description[0] if description else ''}")
         return 0
     root = args.repo.resolve()
     upstream = args.upstream
