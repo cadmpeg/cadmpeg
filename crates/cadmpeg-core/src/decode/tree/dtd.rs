@@ -7,7 +7,7 @@
 //! fetches no external subset. The session gives it a resolver that
 //! expands every external entity to empty text.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::mem::size_of;
 use std::ops::Range;
 
@@ -309,6 +309,89 @@ pub(super) fn reference(tail: &[u8]) -> Option<&[u8]> {
     let predefined = matches!(name, b"lt" | b"gt" | b"amp" | b"apos" | b"quot");
     (rest.get(length) == Some(&b';') && !name.is_empty() && !name.starts_with(b"#") && !predefined)
         .then_some(name)
+}
+
+pub(super) struct RetryInsertion {
+    at: usize,
+    new_subset: bool,
+}
+
+pub(super) struct Prepared {
+    pub(super) text: String,
+    pub(super) at: usize,
+    pub(super) inserted: usize,
+}
+
+/// The closing delimiter of the subset in which the reader can append
+/// empty stand-ins. A standalone document requires its own declarations.
+pub(super) fn retry_insertion(text: &str) -> Option<RetryInsertion> {
+    if matches!(
+        xmlparser::Tokenizer::from(text).next(),
+        Some(Ok(xmlparser::Token::Declaration {
+            standalone: Some(true),
+            ..
+        }))
+    ) {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let (end, _) = walk(bytes, locate(bytes)?, |_| {}).ok()?;
+    let before_close = text
+        .get(..end.checked_sub(1)?)?
+        .trim_end_matches([' ', '\t', '\r', '\n']);
+    if let Some(subset) = before_close.strip_suffix(']') {
+        Some(RetryInsertion {
+            at: subset.len(),
+            new_subset: false,
+        })
+    } else {
+        Some(RetryInsertion {
+            at: end - 1,
+            new_subset: true,
+        })
+    }
+}
+
+impl RetryInsertion {
+    pub(super) fn prepare(&self, source: &str) -> Option<Prepared> {
+        use xmlparser::{Reference, Stream};
+
+        const OPEN: &str = "<!ENTITY ";
+        const CLOSE: &str = " SYSTEM ''>";
+        let names = memchr::memchr_iter(b'&', source.as_bytes())
+            .filter_map(|at| match Stream::from(&source[at..]).consume_reference() {
+                Ok(Reference::Entity(name)) => Some(name),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        if names.is_empty() {
+            return None;
+        }
+        let bracket = if self.new_subset { " []".len() } else { 0 };
+        let inserted = names.iter().try_fold(bracket, |size, name| {
+            size.checked_add(OPEN.len() + CLOSE.len())?
+                .checked_add(name.len())
+        })?;
+        let mut text = String::with_capacity(source.len().checked_add(inserted)?);
+        text.push_str(&source[..self.at]);
+        if self.new_subset {
+            text.push_str(" [");
+        }
+        for name in names {
+            text.push_str(OPEN);
+            text.push_str(name);
+            text.push_str(CLOSE);
+        }
+        if self.new_subset {
+            text.push(']');
+        }
+        text.push_str(&source[self.at..]);
+        Some(Prepared {
+            text,
+            at: self.at,
+            inserted,
+        })
+    }
 }
 
 /// A text's DOCTYPE, its entities and the references to them.

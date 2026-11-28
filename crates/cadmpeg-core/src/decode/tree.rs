@@ -18,6 +18,9 @@ use super::{u64_from_index, DecodeContext, DepthGuard, ResourceDimension, Resour
 use crate::CodecError;
 
 mod dtd;
+mod xml_document;
+
+pub use xml_document::XmlDocument;
 
 /// One roxmltree 0.21.1 `NodeData` with the `positions` feature: four links,
 /// the node kind with an inline expanded name, and the source range.
@@ -132,8 +135,46 @@ impl DecodeContext<'_> {
         &self,
         text: &'input str,
         operation: &'static str,
-    ) -> Result<roxmltree::Document<'input>, CodecError> {
-        self.parse_xml_within(text, operation, |_| Ok(()))
+    ) -> Result<XmlDocument<'input>, CodecError> {
+        let plan = self.admit_xml(text, operation)?;
+        match self.parse_charged_xml(text, &plan, operation)? {
+            Ok(tree) => {
+                self.note_xml(plan.unread, operation);
+                Ok(XmlDocument::original(tree))
+            }
+            Err(error @ roxmltree::Error::UnknownEntityReference(..))
+                if plan.unread.external_subset =>
+            {
+                let Some(retry) = dtd::retry_insertion(text) else {
+                    return Err(Self::tree_malformed(error));
+                };
+                let references = memchr::memchr_iter(b'&', text.as_bytes()).count();
+                let charge = u64_from_index(references)
+                    .checked_mul(256)
+                    .and_then(|names| names.checked_add(u64_from_index(text.len()).checked_mul(2)?))
+                    .and_then(|bytes| bytes.checked_add(XML_FIXED_BYTES));
+                let Some(charge) = charge else {
+                    return Err(self.refuse_tree(
+                        self.budget.policy().limits.max_decompressed_bytes_total,
+                        self.budget.decompressed_used(),
+                        TreeNeed::Unbounded,
+                        operation,
+                    ));
+                };
+                self.budget.charge_expanded(charge, operation)?;
+                let Some(prepared) = retry.prepare(text) else {
+                    return Err(Self::tree_malformed(error));
+                };
+                let plan = self.admit_xml(&prepared.text, operation)?;
+                let document = XmlDocument::recovered(text, prepared, |text| {
+                    self.parse_charged_xml(text, &plan, operation)?
+                        .map_err(|error| Self::xml_error(error, plan.node_limit(), operation))
+                })?;
+                self.note_xml(plan.unread, operation);
+                Ok(document)
+            }
+            Err(error) => Err(Self::xml_error(error, plan.node_limit(), operation)),
+        }
     }
 
     /// Parses XML text that the session reads from memory, as a decoder reads
@@ -148,9 +189,13 @@ impl DecodeContext<'_> {
     ) -> Result<roxmltree::Document<'input>, CodecError> {
         self.budget
             .charge_input(u64_from_index(text.len()), operation)?;
-        self.parse_xml_within(text, operation, |entities| {
-            self.charge_entities(entities, operation)
-        })
+        let plan = self.admit_xml(text, operation)?;
+        self.charge_entities(plan.entities, operation)?;
+        let document = self
+            .parse_charged_xml(text, &plan, operation)?
+            .map_err(|error| Self::xml_error(error, plan.node_limit(), operation))?;
+        self.note_xml(plan.unread, operation);
+        Ok(document)
     }
 
     /// What the session's XML parses left unread from DOCTYPEs since the
@@ -159,14 +204,7 @@ impl DecodeContext<'_> {
         self.budget.take_xml_notes()
     }
 
-    /// Parses `text` after the session charges its parse and `admit` accepts
-    /// its attributes and distinct namespace prefixes.
-    fn parse_xml_within<'input>(
-        &self,
-        text: &'input str,
-        operation: &'static str,
-        admit: impl FnOnce(u64) -> Result<(), CodecError>,
-    ) -> Result<roxmltree::Document<'input>, CodecError> {
+    fn admit_xml(&self, text: &str, operation: &'static str) -> Result<XmlPlan, CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -195,27 +233,37 @@ impl DecodeContext<'_> {
             dtd::Stop::Malformed(reason) => Self::tree_malformed(reason),
         })?;
         self.budget.charge_expanded(plan.cost, operation)?;
-        admit(plan.entities)?;
-        let mut options = plan.options();
-        // roxmltree node ids are `u32`; a larger bound leaves the parser's own.
-        if let Ok(limit) = u32::try_from(plan.nodes) {
-            options.nodes_limit = limit;
+        Ok(plan)
+    }
+
+    fn parse_charged_xml<'input>(
+        &self,
+        text: &'input str,
+        plan: &XmlPlan,
+        operation: &'static str,
+    ) -> Result<Result<roxmltree::Document<'input>, roxmltree::Error>, CodecError> {
+        let options = roxmltree::ParsingOptions {
+            nodes_limit: plan.node_limit(),
+            ..plan.options()
+        };
+        self.at_depth(plan.depth, operation, || {
+            Ok(roxmltree::Document::parse_with_options(text, options))
+        })
+    }
+
+    fn xml_error(error: roxmltree::Error, limit: u32, operation: &'static str) -> CodecError {
+        match error {
+            roxmltree::Error::NodesLimitReached => CodecError::NotImplemented(format!(
+                "{operation}: the XML tree holds more than {limit} nodes"
+            )),
+            roxmltree::Error::EntityReferenceLoop(_) => CodecError::NotImplemented(format!(
+                "{operation}: an XML entity reference expands more than 255 nested references or 10 levels"
+            )),
+            error => Self::tree_malformed(error),
         }
-        let limit = options.nodes_limit;
-        // roxmltree recurses once per element level and entity level.
-        let document = self.at_depth(plan.depth, operation, || {
-            roxmltree::Document::parse_with_options(text, options).map_err(|error| match error {
-                roxmltree::Error::NodesLimitReached => CodecError::NotImplemented(format!(
-                    "{operation}: the XML tree holds more than {limit} nodes"
-                )),
-                roxmltree::Error::EntityReferenceLoop(_) => CodecError::NotImplemented(format!(
-                    "{operation}: an XML entity reference expands more than 255 nested \
-                     references or 10 levels"
-                )),
-                error => Self::tree_malformed(error),
-            })
-        })?;
-        let unread = plan.unread;
+    }
+
+    fn note_xml(&self, unread: dtd::Unread, operation: &'static str) {
         for (cause, held, references) in [
             (XmlUnread::ExternalSubset, unread.external_subset, 0),
             (XmlUnread::AttributeDefaults, unread.attribute_defaults, 0),
@@ -234,8 +282,8 @@ impl DecodeContext<'_> {
                 });
             }
         }
-        Ok(document)
     }
+
     /// Refuses a tree parse whose bound `need` passes the expanded bytes that
     /// the session has left.
     fn refuse_tree(
@@ -330,8 +378,8 @@ pub enum XmlUnread {
     /// The internal subset declares attribute defaults, which the parse
     /// does not apply.
     AttributeDefaults,
-    /// References to entities that the DOCTYPE declares by an external
-    /// identifier, which expand to empty text.
+    /// References with an unread declaration or external replacement,
+    /// which expand to empty text.
     ExternalEntity,
 }
 
@@ -371,6 +419,14 @@ struct XmlPlan {
 }
 
 impl XmlPlan {
+    fn node_limit(&self) -> u32 {
+        let mut options = roxmltree::ParsingOptions::default();
+        if let Ok(limit) = u32::try_from(self.nodes) {
+            options.nodes_limit = limit;
+        }
+        options.nodes_limit
+    }
+
     fn options<'input>(&self) -> roxmltree::ParsingOptions<'input> {
         roxmltree::ParsingOptions {
             allow_dtd: self.doctype,

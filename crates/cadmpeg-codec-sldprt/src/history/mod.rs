@@ -428,7 +428,7 @@ pub(crate) fn histories(
                 }
                 return Ok(histories);
             }
-            report_normalised(losses, stream.as_str(), &doc);
+            report_normalised(losses, stream.as_str(), doc.tree());
             let parent = format!("sldprt:history:feature-history#{source}");
             let applications = root
                 .children()
@@ -451,7 +451,7 @@ pub(crate) fn histories(
                         annotations,
                         crate::annotations::native_key(&id)?,
                         stream,
-                        cadmpeg_core::decode::u64_from_index(node.range().start),
+                        cadmpeg_core::decode::u64_from_index(doc.source_range(node.range()).start),
                         "Configuration",
                         Exactness::ByteExact,
                     )?;
@@ -518,7 +518,7 @@ pub(crate) fn histories(
                         annotations,
                         crate::annotations::native_key(&id)?,
                         stream,
-                        cadmpeg_core::decode::u64_from_index(node.range().start),
+                        cadmpeg_core::decode::u64_from_index(doc.source_range(node.range()).start),
                         node.tag_name().name(),
                         Exactness::ByteExact,
                     )?;
@@ -689,7 +689,7 @@ pub(crate) fn histories(
                 if crate::records::FeatureSource::try_from(raw).is_err() {
                     continue;
                 }
-                let range = node.range();
+                let range = doc.source_range(node.range());
                 let Some(len) = range.end.checked_sub(range.start) else {
                     return Err(CodecError::malformed(
                         "SLDPRT history feature range ends before it starts",

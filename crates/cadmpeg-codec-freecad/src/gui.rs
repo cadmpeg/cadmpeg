@@ -5,6 +5,7 @@ mod schema;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -258,7 +259,6 @@ fn transfer_xml(
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ir,
-        text,
         &xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
@@ -287,8 +287,7 @@ fn transfer_xml(
 
 fn transfer_schema_one(
     ir: &CadIr,
-    text: &str,
-    xml: &roxmltree::Document<'_>,
+    xml: &XmlDocument<'_>,
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
@@ -311,7 +310,7 @@ fn transfer_schema_one(
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
     {
-        states.push(gui_state(text, order, node)?);
+        states.push(gui_state(xml, order, node)?);
     }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
@@ -393,7 +392,7 @@ fn transfer_schema_one(
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
-                text,
+                xml,
                 provider,
                 provider_order,
                 None,
@@ -403,7 +402,7 @@ fn transfer_schema_one(
             continue;
         };
         append_native_provider(
-            text,
+            xml,
             provider,
             provider_order,
             Some(object_id),
@@ -441,7 +440,7 @@ fn transfer_schema_one(
                         && property.attribute("type") == Some(type_name)
                 })
                 .map_or(0, |property| {
-                    cadmpeg_core::decode::u64_from_index(property.range().start)
+                    cadmpeg_core::decode::u64_from_index(xml.source_range(property.range()).start)
                 });
             gui_provider_property_provenance(name, property_name, offset)
         };
@@ -1257,7 +1256,7 @@ fn transfer_primitive_appearance(
 }
 
 fn gui_state(
-    text: &str,
+    xml: &XmlDocument<'_>,
     order: usize,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<GuiStateRecord, CodecError> {
@@ -1275,7 +1274,7 @@ fn gui_state(
                 .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
                 .collect::<Result<_, CodecError>>()?,
             text: value.text().map(ToOwned::to_owned),
-            raw_xml: text[value.range()].to_owned(),
+            raw_xml: crate::persistence::source_xml(xml, value).to_owned(),
         });
     }
     let mut side_entries = Vec::new();
@@ -1294,10 +1293,7 @@ fn gui_state(
         .attributes()
         .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
         .collect::<Result<_, CodecError>>()?;
-    let xml = crate::native::RetainedXml::from_source(
-        &text[node.range()],
-        cadmpeg_core::decode::u64_from_index(node.range().start),
-    )?;
+    let xml = crate::persistence::retained_xml(xml, node)?;
     let key = format!("{kind}:{order}");
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", &key),
@@ -1328,7 +1324,7 @@ fn unique_child<'a, 'input>(
 }
 
 fn append_native_provider(
-    text: &str,
+    xml: &XmlDocument<'_>,
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
@@ -1352,7 +1348,7 @@ fn append_native_provider(
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: text[provider.range()].to_owned(),
+        raw_xml: crate::persistence::source_xml(xml, provider).to_owned(),
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::malformed(format_args!(
@@ -1416,7 +1412,7 @@ fn append_native_provider(
                     })
                     .collect::<Result<_, CodecError>>()?,
                 text: value.text().map(ToOwned::to_owned),
-                raw_xml: text[value.range()].to_owned(),
+                raw_xml: crate::persistence::source_xml(xml, value).to_owned(),
             });
         }
         let mut side_entries = Vec::new();
@@ -1443,10 +1439,7 @@ fn append_native_provider(
             order: property_order,
             values,
             side_entries,
-            xml: crate::native::RetainedXml::from_source(
-                &text[property.range()],
-                cadmpeg_core::decode::u64_from_index(property.range().start),
-            )?,
+            xml: crate::persistence::retained_xml(xml, property)?,
         });
     }
     Ok(())

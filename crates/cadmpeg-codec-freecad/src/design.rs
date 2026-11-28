@@ -1162,7 +1162,7 @@ fn append_spreadsheet(
             };
             CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
         })?;
-    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
+    let cells = direct_spreadsheet_value(xml.tree(), "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -1321,7 +1321,7 @@ fn spreadsheet_dimensions(
                 property.id
             ))
         })?;
-    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
+    let root = direct_spreadsheet_value(xml.tree(), container, &property.id)?;
     let found = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -1863,7 +1863,7 @@ fn parse_sketch(
                     geometry.id
                 ))
             })?;
-        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
+        let records = direct_counted_records(xml.tree(), "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
@@ -2563,7 +2563,7 @@ fn parse_constraints(
                 property.id
             ))
         })?;
-    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(xml.tree(), "ConstraintList", "Constrain", &property.id)?;
     let mut name_counts = BTreeMap::<&str, usize>::new();
     for node in &records {
         if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {

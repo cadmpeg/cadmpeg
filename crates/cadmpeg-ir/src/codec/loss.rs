@@ -51,9 +51,8 @@ pub(crate) enum DecodeLossCode {
     /// An XML text's internal subset declares attribute defaults, which the
     /// decoder does not apply.
     XmlAttributeDefaultsUnapplied,
-    /// References to an entity that an XML text's DOCTYPE declares by an
-    /// external identifier expand to empty text: the decoder fetches no
-    /// external entity.
+    /// XML entity references with an unread declaration or external
+    /// replacement expand to empty text.
     XmlExternalEntityUnexpanded,
 }
 

@@ -66,8 +66,8 @@ fn unread_doctype_parts_are_charged_once_as_decode_losses() {
         charged(DecodeLossCode::XmlExternalEntityUnexpanded),
         [(
             Severity::Warning,
-            "read test XML: 4 reference(s) in 2 XML text(s) name an external entity; the \
-             decoder fetches no external entity and expands each to empty text"
+            "read test XML: 4 reference(s) in 2 XML text(s) refer to an entity with an unread \
+             declaration or replacement. Each expands to empty text"
                 .to_owned()
         )]
     );

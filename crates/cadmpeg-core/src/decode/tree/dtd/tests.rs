@@ -367,3 +367,38 @@ fn notes_reach_the_session_through_task_traces_and_arenas() {
         );
     });
 }
+
+#[test]
+fn an_entity_from_an_unread_external_subset_keeps_independent_markup() {
+    for (text, original) in [
+        ("<!DOCTYPE r SYSTEM 'labels.dtd'><r><label>Plate</label>&units;</r>", "<label>Plate</label>"),
+        ("<!DOCTYPE r SYSTEM 'labels.dtd' [<!ENTITY label 'Plate'>]><r><label>&label;</label>&units;</r>", "<label>&label;</label>"),
+    ] {
+        with_session(|ctx| {
+            let document = ctx.parse_xml(text, "XML").expect("readable local markup");
+            let node = document.root_element().first_element_child().expect("label");
+            assert_eq!(node.text(), Some("Plate"));
+            assert_eq!(&document.source()[document.source_range(node.range())], original);
+            assert_eq!(ctx.take_xml_notes(), [
+                XmlNote { operation: "XML", unread: XmlUnread::ExternalSubset, documents: 1, references: 0 },
+                XmlNote { operation: "XML", unread: XmlUnread::ExternalEntity, documents: 1, references: 1 },
+            ]);
+        });
+    }
+}
+
+#[test]
+fn missing_entities_still_refuse_when_the_declaration_is_required() {
+    with_session(|ctx| {
+        for text in [
+            "<?xml version='1.0' standalone='yes'?><!DOCTYPE r SYSTEM 'labels.dtd'><r>&units;</r>",
+            "<!DOCTYPE r><r>&units;</r>",
+        ] {
+            assert!(matches!(
+                ctx.parse_xml(text, "XML"),
+                Err(CodecError::Malformed(_))
+            ));
+        }
+        assert!(ctx.take_xml_notes().is_empty());
+    });
+}

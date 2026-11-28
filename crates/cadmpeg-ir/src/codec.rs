@@ -337,8 +337,8 @@ impl DecodeResult {
                 XmlUnread::ExternalEntity => {
                     DecodeLossCode::XmlExternalEntityUnexpanded.note(format!(
                         "{operation}: {references} reference(s) in {documents} XML text(s) \
-                         name an external entity; the decoder fetches no external entity and \
-                         expands each to empty text"
+                         refer to an entity with an unread declaration or replacement. Each expands \
+                         to empty text"
                     ))
                 }
             });
