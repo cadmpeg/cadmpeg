@@ -7,14 +7,23 @@
 
 mod brep;
 mod chart;
+mod construction;
 mod container;
 mod decode;
 mod dialect;
+mod dimension;
+mod dressup;
+mod extents;
+mod features;
 mod geometry;
 mod intersection;
 mod isocurve;
+mod layout;
 mod loss;
 mod partition;
+mod psm;
+mod settings;
+mod sketches;
 mod sp_curve;
 mod trace;
 
