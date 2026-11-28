@@ -345,6 +345,141 @@ fn every_feature_not_written_is_charged_evaluation_missing() {
     .is_empty());
 }
 
+/// A rigid group of the timeline is charged by name with the reason the
+/// writer leaves it out.
+#[test]
+fn a_rigid_group_is_charged_evaluation_missing_as_no_joint_written() {
+    const GROUP: &str = "test:design:feature#group";
+    let mut ir = scoped_cube();
+    let path = |name: &str| {
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(
+                OccurrenceId::mint(format!("test:model:occurrence#{name}"))
+                    .expect("identity grammar"),
+            ),
+            configuration: None,
+        }])
+    };
+    let mut group = feature(GROUP, OperationFamily::Joint);
+    group.definition.operation =
+        FeatureOperation::RigidGroup(Box::new(cadmpeg_ir::design::ops::assembly::RigidGroup {
+            members: [path("a"), path("b")].into(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }));
+    ir.design.features.push(group);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        panic!("the timeline")
+    };
+    members.push(Member::Feature(
+        FeatureId::mint(GROUP).expect("identity grammar"),
+    ));
+    let (report, _) = write(&ir);
+    let missing = loss(&report, "export/evaluation.missing");
+    assert!(
+        missing.iter().any(|message| message.contains(GROUP)
+            && message.contains("the writer writes no joint or rigid group")),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// The `writer.joint-omitted` messages of writing a rigid group that restates
+/// joint `grouped` without `cut`, beside a joint `alone` that no feature
+/// restates.
+fn grouped_joint_losses(cut: &[&'static str]) -> Vec<String> {
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
+    };
+
+    const GROUP: &str = "test:design:feature#group";
+    let mut ir = scoped_cube();
+    let mut group = feature(GROUP, OperationFamily::Joint);
+    let path = |name: &str| {
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(
+                OccurrenceId::mint(format!("test:model:occurrence#{name}"))
+                    .expect("identity grammar"),
+            ),
+            configuration: None,
+        }])
+    };
+    group.definition.operation =
+        FeatureOperation::RigidGroup(Box::new(cadmpeg_ir::design::ops::assembly::RigidGroup {
+            members: [path("a"), path("b")].into(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }));
+    ir.design.features.push(group);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        panic!("the timeline")
+    };
+    members.push(Member::Feature(
+        FeatureId::mint(GROUP).expect("identity grammar"),
+    ));
+    let joint = |name: &str| {
+        let connector = || JointConnector {
+            operand: JointOperand::root(format!("{name}-origin"), Vec::new()),
+            frame: Transform::identity(),
+            detached: false,
+        };
+        AssemblyJoint::paired(
+            JointId::mint(format!("test:model:joint#{name}")).expect("identity grammar"),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [connector(), connector()],
+            None,
+        )
+    };
+    ir.model.assembly_joints = vec![joint("grouped"), joint("alone")];
+    ir.model.restated_mut().record(
+        "test:model:joint#grouped",
+        Restater::Record(GROUP.to_owned()),
+        cut.iter().copied(),
+    );
+    let (report, _) = write(&ir);
+    loss(&report, &F3dLossCode::WriterJointOmitted.kind().to_string())
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A joint that a written rigid group restates is charged with the group
+/// alone; a joint no design feature restates is charged as omitted.
+#[test]
+fn a_joint_its_written_group_restates_is_charged_once() {
+    let omitted = grouped_joint_losses(&[]);
+    assert_eq!(omitted.len(), 1, "{omitted:#?}");
+    assert!(
+        omitted[0].contains("test:model:joint#alone"),
+        "{}",
+        omitted[0]
+    );
+    assert!(
+        !omitted[0].contains("test:model:joint#grouped"),
+        "{}",
+        omitted[0]
+    );
+}
+
+/// A joint that a written rigid group restates without some of its fields is
+/// charged with those fields.
+#[test]
+fn a_joint_its_written_group_restates_in_part_is_charged_with_its_cut() {
+    let losses = grouped_joint_losses(&["operands"]);
+    assert_eq!(losses.len(), 2, "{losses:#?}");
+    assert!(
+        losses.iter().any(|message| message
+            .ends_with("stated in part by the design features that restate them: test:model:joint#grouped (operands)")),
+        "{losses:#?}"
+    );
+}
+
 #[test]
 fn an_illegal_name_is_renamed() {
     let mut ir = scoped_cube();
