@@ -405,9 +405,10 @@ fn classify<'a>(
             }
         }
     }
-    for message in
-        cadmpeg_parasolid::push_extras(layers, cadmpeg_parasolid::extra_layers(parasolid, &[]))
-    {
+    for message in cadmpeg_parasolid::push_extras(
+        layers,
+        cadmpeg_parasolid::extra_layers(parasolid, dialect::VERIFIED_PARASOLID_GRAMMARS),
+    ) {
         losses.push(IronCadLossCode::KernelUnverified.note(message));
     }
     for matched in layers.iter() {
