@@ -69,6 +69,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
+            consumers: Vec::new(),
             id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,

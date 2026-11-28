@@ -98,7 +98,7 @@ impl Brep {
 
     /// Bodies with at least one edge, whose every edge stores a sketch-curve
     /// link, and whose faces store no attribute.
-    fn sketch_region_bodies(&self) -> HashSet<BodyId> {
+    pub(crate) fn sketch_region_bodies(&self) -> HashSet<BodyId> {
         let mut linked_edges = HashSet::new();
         for link in &self.sketch_curve_links {
             if let AttributeTarget::Edge(edge) = &link.target {
@@ -176,7 +176,7 @@ impl Brep {
         regions
     }
 
-    fn retain_bodies(
+    pub(crate) fn retain_bodies(
         &mut self,
         ctx: &DecodeContext<'_>,
         selected: Vec<BodyId>,

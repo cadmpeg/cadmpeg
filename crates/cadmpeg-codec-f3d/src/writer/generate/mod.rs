@@ -427,6 +427,9 @@ fn attempt(
             coverage.design.sketch_entities = ArenaDisposition::Reported;
             coverage.design.sketch_constraints = ArenaDisposition::Reported;
         }
+        if design.restates_evaluations() {
+            coverage.design.evaluations = ArenaDisposition::Reported;
+        }
         let restated_parameters = Some(design.restated_parameters());
         let mut losses = appearance_losses(target);
         losses.extend(design.into_losses());
