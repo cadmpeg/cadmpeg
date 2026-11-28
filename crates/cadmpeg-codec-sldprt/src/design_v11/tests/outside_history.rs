@@ -92,6 +92,8 @@ pub(in crate::design_v11) fn project_from(
             },
             outside_profile: &HashSet::new(),
             given_up_configurations: &BTreeSet::new(),
+            scan: None,
+            marks: &crate::rollback::StoredMarks::new(),
         },
         &mut losses,
     )

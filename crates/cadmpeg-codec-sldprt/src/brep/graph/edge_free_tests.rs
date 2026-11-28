@@ -200,7 +200,7 @@ fn a_derived_shell_states_no_members_once_a_typed_face_is_not_stated() {
 #[test]
 fn a_spherical_face_whose_loop_record_is_missing_keeps_a_partial_loop_list() {
     let mut nodes = loopless_nodes(53);
-    nodes[3].2[5] = F::P(6);
+    nodes[3].2 = face_fields();
     let out = decode(&nodes);
     let [face] = &out.faces[..] else {
         panic!("the face is kept");

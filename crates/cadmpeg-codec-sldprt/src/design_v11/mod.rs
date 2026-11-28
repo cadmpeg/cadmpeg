@@ -40,6 +40,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
@@ -57,10 +58,11 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntityId;
 
+use crate::container::ContainerScan;
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::resolved_features::assembly::ConfigurationMaps;
-use crate::rollback::{Reading, Unread};
+use crate::rollback::{Reading, StoredMarks, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
@@ -98,6 +100,11 @@ pub(crate) struct Part<'a> {
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
     /// The native ids of the configurations whose partition was given up.
     pub(crate) given_up_configurations: &'a BTreeSet<String>,
+    /// The container whose partitions store the states between features,
+    /// where the decode reads the partitions.
+    pub(crate) scan: Option<&'a ContainerScan<'a>>,
+    /// The mark records of each partition site.
+    pub(crate) marks: &'a StoredMarks<'a>,
 }
 
 /// What [`project`] stated.
@@ -110,6 +117,9 @@ pub(crate) struct Projection {
     /// configuration whose state holds each. They are no part of the current
     /// geometry (§5.5).
     pub(crate) retired: BTreeMap<String, ConfigurationId>,
+    /// The annotations of the records of the deltas of the states between
+    /// features.
+    pub(crate) annotations: Annotations,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
@@ -149,6 +159,8 @@ pub(crate) fn project(
         rollback,
         outside_profile,
         given_up_configurations,
+        scan,
+        marks,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -172,8 +184,20 @@ pub(crate) fn project(
     let definition = root_definition();
     let mut configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
+    let sources = scan
+        .filter(|_| listed)
+        .map(|scan| states::between::Sources {
+            scan,
+            histories,
+            lanes,
+            marks,
+        });
+    let joins = sources
+        .as_ref()
+        .map(|sources| states::between::joins(sources, &timeline.features));
     if listed {
-        losses.extend(order::regeneration_order(&mut timeline, &ir.model));
+        let orders = joins.iter().flat_map(states::between::Joins::orders);
+        losses.extend(order::regeneration_order(&mut timeline, &ir.model, orders));
     } else if ir.model.sketches.is_empty()
         && ir.model.spatial_sketches.is_empty()
         && configurations.records.is_empty()
@@ -289,10 +313,11 @@ pub(crate) fn project(
     let mut unproduced = BTreeSet::new();
     let mut table = BTreeMap::new();
     let mut states = states::States::default();
+    let mut between = states::between::Between::default();
     if listed {
         let id = container_id(cadmpeg_ir::identity_key!("timeline"));
         let members = timeline.members();
-        let (rollback, at) = match stated(&timeline.features, rollback) {
+        let (mut rollback, mut at) = match stated(&timeline.features, rollback) {
             Ok((built, None)) => {
                 let (rollback, at) = built_through(&id, &members, built);
                 (Some(rollback), at)
@@ -305,8 +330,15 @@ pub(crate) fn project(
                 (None, Position::After(Member::Container(id.clone())))
             }
         };
+        if let Position::After(Member::Feature(feature)) = &at {
+            if joins.as_ref().is_some_and(|joined| joined.earlier(feature)) {
+                rollback = None;
+                at = Position::After(Member::Container(id.clone()));
+            }
+        }
+        let tip = joins.as_ref().and_then(states::between::Joins::native_ref);
         if !bodies.is_empty() {
-            current.push(current_state(at, bodies.clone()));
+            current.push(current_state(at.clone(), bodies.clone(), tip));
         }
         let designed = sketches
             .entities
@@ -320,21 +352,32 @@ pub(crate) fn project(
         let names = names::Names::new(persistent, histories, &timeline.features_by_record)
             .with_generators(generators);
         table = names.entries(&ir.geometry, &bodies, |_| true);
-        states = states::configuration_states(
-            ctx,
-            ir,
-            &states::Scope {
-                definition: &definition,
-                timeline: &id,
-                features: &timeline.features,
-                configurations: &configurations.records,
-                active: configurations.active.as_ref(),
-                current: &bodies,
-                given_up: given_up_configurations,
-            },
-            &names,
-            losses,
-        )?;
+        let scope = states::Scope {
+            definition: &definition,
+            timeline: &id,
+            features: &timeline.features,
+            configurations: &configurations.records,
+            active: configurations.active.as_ref(),
+            current: &bodies,
+            given_up: given_up_configurations,
+        };
+        states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
+        if let (Some(sources), Some(joins)) = (&sources, joins) {
+            between = states::between::states(
+                ctx,
+                ir,
+                &scope,
+                states::between::Latest {
+                    joins,
+                    at: &at,
+                    names: &table,
+                    evaluations: &mut states.evaluations,
+                },
+                &names,
+                sources,
+                losses,
+            )?;
+        }
         // The timeline restates each folder node as a `Folder` (§5.2).
         let folders = timeline.folder_nodes(&Restater::Record(id.as_str().to_owned()));
         containers.push(Container::Ordered {
@@ -398,7 +441,9 @@ pub(crate) fn project(
         + configurations.records.len()
         + table.len()
         + states.evaluations.len()
-        + states.records;
+        + states.records
+        + between.evaluations.len()
+        + between.records;
     ir.model
         .product_definitions
         .push(root(definition.clone(), length, bodies));
@@ -426,10 +471,12 @@ pub(crate) fn project(
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
     ir.design.evaluations.extend(states.evaluations);
+    ir.design.evaluations.extend(between.evaluations);
     ir.design.names = NameTable::from(table);
     Ok(Projection {
         added,
         retired: states.retired,
+        annotations: between.annotations,
     })
 }
 
@@ -565,12 +612,12 @@ fn container_id(key: impl Into<cadmpeg_ir::ids::IdentityKey>) -> ContainerId {
     ))
 }
 
-fn current_state(at: Position, bodies: Vec<BodyId>) -> CurrentState {
+fn current_state(at: Position, bodies: Vec<BodyId>, native_ref: Option<String>) -> CurrentState {
     CurrentState {
         at,
         bodies,
         poses: BTreeMap::new(),
         status: EvaluationStatus::Current,
-        native_ref: None,
+        native_ref,
     }
 }
