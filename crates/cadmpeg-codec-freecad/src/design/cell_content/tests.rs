@@ -19,7 +19,7 @@ fn value(content: &str) -> (Option<Quantity>, Option<String>, f64, Option<String
 fn content_that_is_no_value_is_text() {
     for content in [
         "3 bolts", "-abc", "2*3", "-5 mm", "+5 mm", "1 m*s", "1/2/3", "1ft 2in", "note", "5. mm",
-        "mm", "1 mm2", "",
+        "mm", "1 mm2", "1 mm^2", "1 (m/s)", "",
     ] {
         assert!(
             matches!(read(content), CellContent::Text(text) if text == content),
@@ -66,8 +66,7 @@ fn a_number_with_a_unit_is_a_quantity_in_canonical_units() {
         ("2in", Quantity::LENGTH, 50.8, Some("2[in]")),
         ("2\"", Quantity::LENGTH, 50.8, Some("2[in]")),
         ("3 dm", Quantity::LENGTH, 300.0, None),
-        ("1 mm^2", Quantity::AREA, 1.0, Some("1[mm^2]")),
-        ("1 (m/s)", speed, 1000.0, Some("1[m*s^-1]")),
+        ("2 mm^2 / 2", Quantity::AREA, 1.0, Some("2[mm^2] / 2")),
         ("1 m/s", speed, 1000.0, Some("1[m] / 1[s]")),
         ("1/2", Quantity::REAL, 0.5, Some("1 / 2")),
         ("3 mm / 2", Quantity::LENGTH, 1.5, Some("3[mm] / 2")),
@@ -138,5 +137,37 @@ fn a_display_unit_is_a_neutral_unit_where_each_word_has_a_symbol() {
     );
     for text in ["dm", "A", "mm 2", ""] {
         assert!(neutral_unit(text).is_none(), "{text:?}");
+    }
+}
+
+#[test]
+fn raw_fractions_accept_grouped_denominators_and_constants() {
+    let speed = Quantity::of(1, 0, 0, -1);
+    for (content, quantity, expected, neutral) in [
+        ("2 mm/(2 s)", speed, 1.0, "2[mm] / 2[s]"),
+        ("1 / ((2))", Quantity::REAL, 0.5, "1 / 2"),
+        ("1 / (2 mm)", Quantity::of(-1, 0, 0, 0), 0.5, "1 / 2[mm]"),
+        (
+            "1/pi",
+            Quantity::REAL,
+            std::f64::consts::FRAC_1_PI,
+            "1 / 3.141592653589793",
+        ),
+    ] {
+        assert_eq!(
+            value(content),
+            (Some(quantity), None, expected, Some(neutral.to_owned())),
+            "{content}"
+        );
+    }
+    for content in [
+        "1/(2",
+        "1/(2+3)",
+        "1/(2) text",
+        "1/parts",
+        "1/(m/s)",
+        "1/False",
+    ] {
+        assert!(matches!(read(content), CellContent::Text(text) if text == content));
     }
 }

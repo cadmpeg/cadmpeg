@@ -605,12 +605,12 @@ parameter whose identity includes its sheet and address. Address and alias remai
 content, display unit, alignment, style, colors, and spans are retained independently. Cell content
 that starts with `=` is a formula, and content that starts with `'` is the text after the mark.
 Other content is a value where, after its surrounding white space, it is a number, a number with a
-unit, or a division whose numerator is a number or a number with a unit and whose denominator is a
-number, a number with a unit, or a unit. A number is unsigned and takes a `.` or `,` decimal mark
-and an exponent, and content that is one signed number in the C library's form is also a value. A
-unit is a word of `FreeCAD`'s unit vocabulary, a parenthesized product or quotient of units, or a
-unit with an integer power. Every other content is text, including content that starts with a
-digit or a sign (`3 bolts`, `2*3`, `-5 mm`). A text cell's value is its text. A value cell's value
+single unit word or symbol, or a division of a numeric value by a numeric value or a unit word or
+symbol. A numeric operand can carry a compound unit. Parentheses can enclose the divisor.
+The constants `pi` and `e` can be divisors. A number is unsigned and takes a `.` or `,` decimal mark
+and an exponent. Content that is one signed number in the C library's form is also a value.
+Other content is text, including `3 bolts`, `2*3`, `-5 mm`, and `2 mm^2`.
+A text cell's value is its text. A value cell's value
 is a length in millimetres, an angle in radians, or a dimensionless real; a value of another
 quantity has no legacy value. A formula states its own value where it is a number with an optional
 length unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or
@@ -630,7 +630,11 @@ a word has none (`3 dm`). A value whose unit has a dimension other than length, 
 time (`5 mA`) has the `Native` kind named by its unit as written, its number as written as its
 value, and the source's text as its expression. A formula is a neutral expression where it
 translates. An expression names a cell by its alias or its address, unqualified within its sheet
-and as `Sheet.name` elsewhere. A reference to an object property that is no parameter stays the
+and as `Sheet.name` elsewhere. A stored alias can contain non-ASCII letters. A range argument of an
+aggregate names its endpoints by address or alias. Its expression binds those endpoints that have
+cell parameters. The range syntax stays in the source expression. An unavailable endpoint alias or
+an interior cell without a token emits `parameter.dependency-dropped`.
+A reference to an object property that is no parameter stays the
 source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A formula
 that `FreeCAD`'s expression grammar does not read is a text cell whose value is its content. A
 value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
@@ -654,8 +658,9 @@ rules, with the cells it references read first in dependency order:
   `parameter.integer-assumed`. A parameter whose expression references that parameter takes its
   text and emits no `parameter.integer-assumed` of its own. A `sum`, `min`, `max`, or `average` of
   constants is its value.
-- `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
-  Boolean cell are Boolean. `==` and `!=` compare any two values that `FreeCAD` evaluates and
+- `True`, `False`, `true`, `false`, a comparison, and a reference to an `App::PropertyBool` property
+  or to a Boolean cell are Boolean. A numeric or Boolean constant followed by a unit has that
+  unit's quantity. `==` and `!=` compare any two values that `FreeCAD` evaluates and
   admits as operands. Refused operands are `None` (a link that stores no target), a tuple (an
   `App::PropertyLinkSub` value, a link that stores a sub-name, a color, `tuple()`), a set (an
   `App::PropertyIntegerSet` value), an `App::PropertyPythonObject` value, a conditional with a

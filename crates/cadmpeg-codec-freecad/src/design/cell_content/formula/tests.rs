@@ -3,7 +3,10 @@ use std::collections::HashMap;
 
 use cadmpeg_ir::design::units::Quantity;
 
-use super::{parse, Kind, Node, Operator, Origin, Path, Python, Reference, Scope, Unparsed, Value};
+use super::{
+    parse, Kind, Node, Operator, Origin, Path, Python, Reference, Scope, Unparsed, Value,
+    MAX_NESTING, MAX_TOKENS,
+};
 
 const REAL: Kind = Kind::Quantity(Quantity::REAL);
 const LENGTH: Kind = Kind::Quantity(Quantity::LENGTH);
@@ -393,7 +396,7 @@ fn a_range_takes_the_quantity_its_cells_share() {
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
     let node = parse("sum(A1:A3) + B1").unwrap();
     let references = node.references();
-    assert!(matches!(references[0], Reference::Range("A1", "A3")));
+    assert!(matches!(references[0], Reference::Range(range) if range.endpoints == ["A1", "A3"]));
     assert!(matches!(references[1], Reference::Path(path) if path.components == ["B1"]));
 }
 
@@ -440,4 +443,16 @@ fn text_the_parser_refuses_is_unparsed() {
     }
     let deep = format!("{}1{}", "(".repeat(100), ")".repeat(100));
     assert_eq!(parse(&deep).err(), Some(Unparsed::Limit));
+}
+
+#[test]
+fn formula_limits_cover_unit_groups_and_token_collection() {
+    let groups = "(".repeat(MAX_NESTING);
+    let closes = ")".repeat(MAX_NESTING);
+    assert_eq!(
+        parse(&format!("1 {groups}mm{closes}")).err(),
+        Some(Unparsed::Limit)
+    );
+    let long = format!("{}1", "1+".repeat(MAX_TOKENS / 2));
+    assert_eq!(parse(&long).err(), Some(Unparsed::Limit));
 }

@@ -823,3 +823,139 @@ fn a_write_names_the_expression_a_driven_constraint_leaves_out() {
     let driving = bound_constraint("1");
     assert!(parameter_charge(&driving, DISTANCE).is_empty());
 }
+
+#[test]
+fn spreadsheet_constants_keep_their_kind_and_units() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="1">
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="4">
+<Cell address="A1" content="=pi mm"/>
+<Cell address="A2" content="=true"/>
+<Cell address="A3" content="=false"/>
+<Cell address="A4" content="=true mm"/>
+</Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    for (address, kind) in [
+        ("A1", ValueKind::Quantity(Quantity::LENGTH)),
+        ("A2", ValueKind::Boolean),
+        ("A3", ValueKind::Boolean),
+        ("A4", ValueKind::Quantity(Quantity::LENGTH)),
+    ] {
+        let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
+        assert_eq!(parameter(&ir, &id).kind, kind, "{address}");
+        assert!(
+            !charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                &id
+            ),
+            "{address}: {losses:?}"
+        );
+    }
+    let pi = parameter(&ir, "fcstd:design:parameter#Sheet:cell:A1");
+    assert_eq!(neutral(pi), ("pi * 1[mm]".to_owned(), vec![]));
+}
+
+#[test]
+fn spreadsheet_range_tokens_bind_endpoints_and_report_implicit_members() {
+    use cadmpeg_ir::design::dimension::RefTarget;
+    use cadmpeg_ir::design::expr::ExpressionToken;
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="1">
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="6">
+<Cell address="A1" alias="Start" content="2 mm"/>
+<Cell address="A2" content="3 mm"/>
+<Cell address="A3" content="4 mm"/>
+<Cell address="B1" content="=sum(Start : A2)"/>
+<Cell address="B2" content="=sum($A$1:A3)"/>
+<Cell address="B3" content="=sum(A1:Missing)"/>
+</Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let id = |address| format!("fcstd:design:parameter#Sheet:cell:{address}");
+    let check = |address, expected: &[&str], kind, dropped| {
+        let key = id(address);
+        let cell = parameter(&ir, &key);
+        assert_eq!(cell.kind, ValueKind::Quantity(kind), "{address}");
+        let ParameterDefinition::Expression(Expression::Source { tokens, .. }) = &cell.definition
+        else {
+            panic!("{address}: {:?}", cell.definition);
+        };
+        let parts = tokens
+            .iter()
+            .map(|token| match token {
+                ExpressionToken::Text(text) => text.as_str(),
+                ExpressionToken::Reference(reference) => match &reference.target {
+                    RefTarget::Parameter(id) => id.as_str(),
+                    target @ RefTarget::External { .. } => panic!("{target:?}"),
+                },
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(parts, expected, "{address}");
+        assert_eq!(
+            charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterDependencyDropped,
+                &key
+            ),
+            dropped,
+            "{address}: {losses:?}"
+        );
+    };
+    check(
+        "B1",
+        &["sum(", &id("A1"), " : ", &id("A2"), ")"],
+        Quantity::LENGTH,
+        false,
+    );
+    check(
+        "B2",
+        &["sum(", &id("A1"), ":", &id("A3"), ")"],
+        Quantity::LENGTH,
+        true,
+    );
+    check(
+        "B3",
+        &["sum(", &id("A1"), ":Missing)"],
+        Quantity::REAL,
+        true,
+    );
+}
+
+#[test]
+fn spreadsheet_expressions_bind_unicode_aliases() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="1">
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="3">
+<Cell address="A1" alias="Länge" content="2 mm"/>
+<Cell address="A2" content="=Länge + 1 mm"/>
+<Cell address="A3" content="=Sheet.Länge + 1 mm&#160;"/>
+</Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let target = "fcstd:design:parameter#Sheet:cell:A1";
+    for address in ["A2", "A3"] {
+        let key = format!("fcstd:design:parameter#Sheet:cell:{address}");
+        let cell = parameter(&ir, &key);
+        assert_eq!(
+            cell.kind,
+            ValueKind::Quantity(Quantity::LENGTH),
+            "{address}"
+        );
+        assert_eq!(
+            neutral(cell),
+            ("$0 + 1[mm]".to_owned(), vec![target.to_owned()])
+        );
+        assert!(
+            !charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterDependencyDropped,
+                &key
+            ),
+            "{address}: {losses:?}"
+        );
+    }
+}

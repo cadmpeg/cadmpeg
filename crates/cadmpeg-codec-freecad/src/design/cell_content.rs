@@ -95,7 +95,7 @@ fn hexadecimal(text: &str) -> Option<f64> {
 pub(super) fn neutral_unit(text: &str) -> Option<(Quantity, IrUnit)> {
     let mut cursor = Cursor { text, at: 0 };
     cursor.skip_space();
-    let unit = cursor.unit_expression()?;
+    let unit = cursor.unit_expression(0)?;
     cursor.skip_space();
     if !cursor.done() || unit.native {
         return None;
@@ -119,19 +119,20 @@ pub(super) fn neutral_unit(text: &str) -> Option<(Quantity, IrUnit)> {
 /// or a number with a unit.
 fn value(text: &str) -> Option<CellValue> {
     let mut cursor = Cursor { text, at: 0 };
-    let numerator = cursor.term()?;
+    let top = cursor.number()?;
+    let numerator = cursor.term(top, 0);
     cursor.skip_space();
     let denominator = if cursor.eat('/') {
         cursor.skip_space();
-        Some(match cursor.term() {
-            Some(term) => term,
-            None => (1.0, Some(cursor.unit()?)),
-        })
+        Some(cursor.denominator()?)
     } else {
         None
     };
     cursor.skip_space();
     if !cursor.done() {
+        return None;
+    }
+    if denominator.is_none() && numerator.1.as_ref().is_some_and(|unit| unit.compound) {
         return None;
     }
     let one = Unit::one();
@@ -183,6 +184,7 @@ fn value(text: &str) -> Option<CellValue> {
 pub(in crate::design) struct Unit {
     exponents: [i8; 4],
     scale: f64,
+    compound: bool,
     /// A word of the unit has a dimension other than the four.
     native: bool,
     /// The symbol and power of each word, where each word has a symbol.
@@ -195,6 +197,7 @@ impl Unit {
         Self {
             exponents: [0; 4],
             scale: 1.0,
+            compound: false,
             native: false,
             symbols: Some(Vec::new()),
             text: String::new(),
@@ -230,6 +233,7 @@ impl Unit {
             } else {
                 self.scale * other.scale
             },
+            compound: true,
             native: self.native || other.native,
             symbols,
             text: format!(
@@ -249,6 +253,7 @@ impl Unit {
         Some(Self {
             exponents,
             scale: self.scale.powi(i32::from(power)),
+            compound: true,
             native: self.native,
             symbols: self.symbols.map(|symbols| {
                 symbols
@@ -337,24 +342,64 @@ impl Cursor<'_> {
     }
 
     /// A number and the unit that follows it.
-    fn term(&mut self) -> Option<(f64, Option<Unit>)> {
-        let number = self.number()?;
+    fn term(&mut self, number: f64, nesting: usize) -> (f64, Option<Unit>) {
         let before = self.at;
         self.skip_space();
-        let unit = self.unit();
+        let unit = self.unit(nesting);
         if unit.is_none() {
             self.at = before;
         }
-        Some((number, unit))
+        (number, unit)
+    }
+
+    fn denominator(&mut self) -> Option<(f64, Option<Unit>)> {
+        let mut groups = 0;
+        while self.eat('(') {
+            groups += 1;
+            if groups > formula::MAX_NESTING {
+                return None;
+            }
+            self.skip_space();
+        }
+        let term = if let Some(number) = self.number().or_else(|| self.constant()) {
+            self.term(number, groups)
+        } else {
+            (1.0, Some(self.word()?))
+        };
+        for _ in 0..groups {
+            self.skip_space();
+            if !self.eat(')') {
+                return None;
+            }
+        }
+        Some(term)
+    }
+
+    fn constant(&mut self) -> Option<f64> {
+        let text = &self.text[self.at..];
+        let end = text
+            .find(|ch: char| !ch.is_alphanumeric() && ch != '_')
+            .unwrap_or(text.len());
+        let number = match &text[..end] {
+            "pi" => PI,
+            "e" => std::f64::consts::E,
+            _ => return None,
+        };
+        self.at += end;
+        Some(number)
     }
 
     /// A unit word, or a parenthesized unit expression, with an optional
     /// integer power.
-    fn unit(&mut self) -> Option<Unit> {
+    fn unit(&mut self, nesting: usize) -> Option<Unit> {
         let start = self.at;
         let atom = if self.eat('(') {
+            if nesting == formula::MAX_NESTING {
+                self.at = start;
+                return None;
+            }
             self.skip_space();
-            let inner = self.unit_expression();
+            let inner = self.unit_expression(nesting + 1);
             self.skip_space();
             match inner {
                 Some(mut inner) if self.eat(')') => {
@@ -392,8 +437,8 @@ impl Cursor<'_> {
     }
 
     /// Units joined by `*` and `/`.
-    fn unit_expression(&mut self) -> Option<Unit> {
-        let mut unit = self.unit()?;
+    fn unit_expression(&mut self, nesting: usize) -> Option<Unit> {
+        let mut unit = self.unit(nesting)?;
         loop {
             let before = self.at;
             self.skip_space();
@@ -406,7 +451,7 @@ impl Cursor<'_> {
                 return Some(unit);
             };
             self.skip_space();
-            unit = unit.times(self.unit()?, sign)?;
+            unit = unit.times(self.unit(nesting)?, sign)?;
         }
     }
 
@@ -530,6 +575,7 @@ fn unit_word(word: &str) -> Option<Unit> {
             return Some(Unit {
                 exponents: [0; 4],
                 scale: 1.0,
+                compound: false,
                 native: true,
                 symbols: None,
                 text: word.to_owned(),
@@ -540,6 +586,7 @@ fn unit_word(word: &str) -> Option<Unit> {
     Some(Unit {
         exponents,
         scale,
+        compound: false,
         native: false,
         symbols: symbol.map(|symbol| vec![(symbol, 1)]),
         text: word.to_owned(),

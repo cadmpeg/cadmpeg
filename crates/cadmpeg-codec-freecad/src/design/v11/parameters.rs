@@ -406,30 +406,30 @@ impl<'a> Catalog<'a> {
         owner: Option<&FeatureId>,
         from: &str,
         to: &str,
-    ) -> Option<Vec<&'a ParameterId>> {
+    ) -> Option<impl Iterator<Item = &'a ParameterId> + '_> {
         let owner = owner?;
         let cells = self.cells.get(owner)?;
-        let corner = |name: &str| {
-            CellAddress::parse(&name.replace('$', "")).or_else(|| {
-                let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
-                cells
-                    .iter()
-                    .find(|(_, cell)| *cell == id)
-                    .map(|(address, _)| *address)
-            })
-        };
-        let (from, to) = (corner(from)?, corner(to)?);
+        let (from, to) = (
+            self.range_address(owner, from)?,
+            self.range_address(owner, to)?,
+        );
         let rows = from.row().min(to.row())..=from.row().max(to.row());
         let columns = from.col().min(to.col())..=from.col().max(to.col());
         Some(
             cells
                 .iter()
-                .filter(|(address, _)| {
+                .filter(move |(address, _)| {
                     rows.contains(&address.row()) && columns.contains(&address.col())
                 })
-                .map(|(_, id)| *id)
-                .collect(),
+                .map(|(_, id)| *id),
         )
+    }
+
+    fn range_address(&self, owner: &FeatureId, name: &str) -> Option<CellAddress> {
+        CellAddress::parse(&name.replace('$', "")).or_else(|| {
+            let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
+            CellAddress::parse(property(self.parameters.get(id)?, "address")?)
+        })
     }
 }
 
@@ -574,8 +574,11 @@ fn cell_values<'a>(
                         sources.insert(target);
                     }
                 }
-                Reference::Range(from, to) => {
-                    sources.extend(catalog.range(owner, from, to).unwrap_or_default());
+                Reference::Range(formula::CellRange {
+                    endpoints: [from, to],
+                    ..
+                }) => {
+                    sources.extend(catalog.range(owner, from, to).into_iter().flatten());
                 }
             }
         }
@@ -676,7 +679,7 @@ impl Scope for Lookup<'_, '_> {
 
     fn range(&mut self, from: &str, to: &str) -> Option<Vec<Value>> {
         let ids = self.catalog.range(self.owner, from, to)?;
-        Some(ids.into_iter().map(|id| self.parameter(id, None)).collect())
+        Some(ids.map(|id| self.parameter(id, None)).collect())
     }
 
     fn assume_integer(&mut self) {
@@ -1056,35 +1059,68 @@ fn translated(
 ) -> Expression {
     let mut spans = BTreeMap::new();
     let mut dropped = Vec::new();
-    for reference in node.references() {
-        let Reference::Path(path) = reference else {
-            continue;
-        };
-        match context.catalog.resolve(parameter.owner.as_ref(), path) {
-            Target::Parameter(id, _)
-                if context.minted.contains(&parameter.id)
-                    || context.minted.contains(id)
-                    || parameter
-                        .dependencies
-                        .iter()
-                        .any(|dependency| dependency == id) =>
-            {
-                let reference = ParameterRef {
+    let owner = parameter.owner.as_ref();
+    let bind = |spans: &mut BTreeMap<_, _>, span: &std::ops::Range<usize>, id: &ParameterId| {
+        spans.insert(
+            span.start,
+            (
+                span.end,
+                ParameterRef {
                     target: RefTarget::Parameter(id.clone()),
                     through: None,
-                };
-                spans.insert(path.span.start, (path.span.end, reference));
+                },
+            ),
+        );
+    };
+    for reference in node.references() {
+        match reference {
+            Reference::Path(path) => match context.catalog.resolve(owner, path) {
+                Target::Parameter(id, _)
+                    if context.minted.contains(&parameter.id)
+                        || context.minted.contains(id)
+                        || parameter.dependencies.contains(id) =>
+                {
+                    bind(&mut spans, &path.span, id);
+                }
+                Target::Property(_) | Target::Outside => {
+                    dropped.push(&text[path.span.clone()]);
+                }
+                Target::Parameter(..) | Target::Unresolved => {}
+            },
+            Reference::Range(range) => {
+                let addresses = range
+                    .endpoints
+                    .map(|name| owner.and_then(|owner| context.catalog.range_address(owner, name)));
+                let ids = addresses.map(|address| {
+                    let address = address?;
+                    context
+                        .catalog
+                        .cells
+                        .get(owner?)?
+                        .iter()
+                        .find_map(|(cell, id)| (*cell == address).then_some(*id))
+                });
+                for ((span, address), id) in range.spans.iter().zip(addresses).zip(ids) {
+                    if let Some(id) = id {
+                        bind(&mut spans, span, id);
+                    } else if address.is_none() {
+                        dropped.push(&text[span.clone()]);
+                    }
+                }
+                let [from, to] = range.endpoints;
+                if context
+                    .catalog
+                    .range(owner, from, to)
+                    .is_some_and(|mut members| members.any(|id| !ids.contains(&Some(id))))
+                {
+                    dropped.push(&text[range.spans[0].start..range.spans[1].end]);
+                }
             }
-            Target::Property(_) | Target::Outside => {
-                dropped.push(text.get(path.span.clone()).unwrap_or(text));
-            }
-            Target::Parameter(..) | Target::Unresolved => {}
         }
     }
     if !dropped.is_empty() {
         losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
-            "FCStd parameter {} references {}, which is no parameter; the reference stays \
-             the source's text",
+            "FCStd parameter {} has dependencies in {} without source reference tokens",
             parameter.id.as_str(),
             dropped.join(", ")
         )));
@@ -1149,7 +1185,10 @@ fn neutral_text(
                 Some(unit) => format!("{number}[{}]", unit.spelling()?),
             }
         }
-        Formula::Constant { name, .. } if matches!(*name, "pi" | "e") => (*name).to_owned(),
+        Formula::Constant { name, unit, .. } if matches!(*name, "pi" | "e") => match unit {
+            None => (*name).to_owned(),
+            Some(unit) => format!("({name} * 1[{}])", unit.spelling()?),
+        },
         Formula::Path(path) => {
             let (_, reference) = spans.get(&path.span.start)?;
             let index = refs

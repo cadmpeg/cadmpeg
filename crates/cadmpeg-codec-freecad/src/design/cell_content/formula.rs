@@ -11,7 +11,7 @@ use super::{unit_word, Cursor, Unit};
 const MAX_TOKENS: usize = 1024;
 
 /// The deepest nesting of parentheses, calls, and signs the reader parses.
-const MAX_NESTING: usize = 64;
+pub(super) const MAX_NESTING: usize = 64;
 
 /// The distance from an integer within which `FreeCAD` takes an exponent
 /// of a unit as that integer.
@@ -55,6 +55,7 @@ pub(in crate::design) enum Node<'a> {
     Constant {
         name: &'a str,
         value: f64,
+        unit: Option<Unit>,
     },
     /// A `<<…>>` string.
     Text,
@@ -151,7 +152,13 @@ const REAL: Kind = Kind::Quantity(Quantity::REAL);
 #[derive(Debug)]
 pub(in crate::design) enum Argument<'a> {
     Value(Node<'a>),
-    Range(&'a str, &'a str),
+    Range(CellRange<'a>),
+}
+
+#[derive(Debug)]
+pub(in crate::design) struct CellRange<'a> {
+    pub(in crate::design) endpoints: [&'a str; 2],
+    pub(in crate::design) spans: [std::ops::Range<usize>; 2],
 }
 
 /// A reference to a property, or to a cell of a sheet.
@@ -183,7 +190,7 @@ pub(in crate::design) enum Origin {
 #[derive(Debug, Clone, Copy)]
 pub(in crate::design) enum Reference<'n, 'a> {
     Path(&'n Path),
-    Range(&'a str, &'a str),
+    Range(&'n CellRange<'a>),
 }
 
 /// What the references of a formula name.
@@ -200,14 +207,12 @@ pub(in crate::design) trait Scope {
 
 /// The tree of `text`, a formula without its `=`.
 pub(in crate::design) fn parse(text: &str) -> Result<Node<'_>, Unparsed> {
-    let lexemes = lex(text).ok_or(Unparsed::Syntax)?;
-    if lexemes.len() > MAX_TOKENS {
-        return Err(Unparsed::Limit);
-    }
+    let lexemes = lex(text)?;
     let mut parser = Parser {
         lexemes,
         at: 0,
         nesting: 0,
+        unit_limit: false,
     };
     if let Some(unit) = parser.attempt(Parser::unit_expression) {
         if parser.done() {
@@ -215,7 +220,11 @@ pub(in crate::design) fn parse(text: &str) -> Result<Node<'_>, Unparsed> {
         }
         parser.at = 0;
     }
-    let node = parser.expression()?;
+    let parsed = parser.expression();
+    if parser.unit_limit {
+        return Err(Unparsed::Limit);
+    }
+    let node = parsed?;
     if parser.done() {
         Ok(node)
     } else {
@@ -245,9 +254,12 @@ impl<'a> Node<'a> {
                 unit: Some(unit), ..
             }
             | Node::Unit(unit) => Value::new(unit_kind(unit), Python::Object),
-            Node::Constant { name, .. } => match *name {
-                "None" => Value::new(Kind::Unknown, Python::Refused),
-                "True" | "False" => Value::new(Kind::Boolean, Python::Int),
+            Node::Constant { name, unit, .. } => match (*name, unit) {
+                ("None", _) => Value::new(Kind::Unknown, Python::Refused),
+                (_, Some(unit)) => Value::new(unit_kind(unit), Python::Object),
+                ("True" | "False" | "true" | "false", None) => {
+                    Value::new(Kind::Boolean, Python::Int)
+                }
                 _ => Value::new(REAL, Python::Float),
             },
             Node::Text => Value::new(Kind::Text, Python::Object),
@@ -335,7 +347,7 @@ impl<'a> Node<'a> {
                 for arg in args {
                     match arg {
                         Argument::Value(node) => node.collect(found),
-                        Argument::Range(from, to) => found.push(Reference::Range(from, to)),
+                        Argument::Range(range) => found.push(Reference::Range(range)),
                     }
                 }
             }
@@ -347,7 +359,11 @@ impl<'a> Node<'a> {
     fn constant(&self) -> Option<f64> {
         match self {
             Node::Number { text, unit: None } => text.replace(',', ".").parse().ok(),
-            Node::Constant { name, value } => (*name != "None").then_some(*value),
+            Node::Constant {
+                name,
+                value,
+                unit: None,
+            } => (*name != "None").then_some(*value),
             Node::Call { name, args } => fold(name, args),
             Node::Negate(operand) => operand.constant().map(|value| -value),
             Node::Plus(operand) | Node::Group(operand) => operand.constant(),
@@ -692,7 +708,10 @@ fn aggregate(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value 
                     _ => vec![value],
                 }
             }
-            Argument::Range(from, to) => {
+            Argument::Range(CellRange {
+                endpoints: [from, to],
+                ..
+            }) => {
                 let Some(values) = scope.range(from, to) else {
                     return unknown;
                 };
@@ -780,15 +799,18 @@ struct Lexeme<'a> {
 
 /// The tokens of `text` as `FreeCAD`'s lexer reads them: the longest match,
 /// and on a tie the earlier rule.
-fn lex(text: &str) -> Option<Vec<Lexeme<'_>>> {
+fn lex(text: &str) -> Result<Vec<Lexeme<'_>>, Unparsed> {
     let mut lexemes = Vec::new();
     let mut at = 0;
     while let Some(ch) = text[at..].chars().next() {
-        if matches!(ch, ' ' | '\t' | '\n') {
-            at += 1;
+        if ch.is_whitespace() {
+            at += ch.len_utf8();
             continue;
         }
-        let (token, length) = lexeme(&text[at..])?;
+        if lexemes.len() == MAX_TOKENS {
+            return Err(Unparsed::Limit);
+        }
+        let (token, length) = lexeme(&text[at..]).ok_or(Unparsed::Syntax)?;
         lexemes.push(Lexeme {
             token,
             start: at,
@@ -796,7 +818,7 @@ fn lex(text: &str) -> Option<Vec<Lexeme<'_>>> {
         });
         at += length;
     }
-    Some(lexemes)
+    Ok(lexemes)
 }
 
 fn lexeme(rest: &str) -> Option<(Token<'_>, usize)> {
@@ -895,7 +917,7 @@ fn word(rest: &str) -> (Token<'_>, usize) {
         .find(|(_, ch)| !(ch.is_alphanumeric() || *ch == '_'))
         .map_or(rest.len(), |(at, _)| at);
     let function = rest.starts_with(char::is_alphabetic).then(|| {
-        let after = rest[run..].trim_start_matches('\t');
+        let after = rest[run..].trim_start_matches([' ', '\t']);
         after
             .starts_with('(')
             .then_some(rest.len() - after.len() + 1)
@@ -930,6 +952,7 @@ struct Parser<'a> {
     lexemes: Vec<Lexeme<'a>>,
     at: usize,
     nesting: usize,
+    unit_limit: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -1069,7 +1092,8 @@ impl<'a> Parser<'a> {
             }
             Token::Constant { name, value } => {
                 self.at += 1;
-                Ok(Node::Constant { name, value })
+                let unit = self.attempt(Self::unit_suffix).map(|(unit, _)| unit);
+                Ok(Node::Constant { name, value, unit })
             }
             Token::Text(_) if !matches!(self.peek_at(1), Some(Token::Symbol('.' | '#'))) => {
                 self.at += 1;
@@ -1127,8 +1151,15 @@ impl<'a> Parser<'a> {
             Token::Unit(unit) => (unit.clone(), false),
             Token::UsUnit(unit) => (unit.clone(), true),
             Token::Symbol('(') => {
+                if self.nesting == MAX_NESTING {
+                    self.unit_limit = true;
+                    return None;
+                }
                 self.at += 1;
-                let unit = self.unit_expression()?;
+                self.nesting += 1;
+                let unit = self.unit_expression();
+                self.nesting -= 1;
+                let unit = unit?;
                 if !self.symbol(')') {
                     return None;
                 }
@@ -1177,17 +1208,26 @@ impl<'a> Parser<'a> {
     fn call(&mut self, name: &'a str) -> Result<Node<'a>, Unparsed> {
         let mut args = Vec::new();
         loop {
-            let range = match (self.peek_at(0), self.peek_at(1), self.peek_at(2)) {
-                (
-                    Some(Token::Identifier(from) | Token::Cell(from)),
-                    Some(Token::Symbol(':')),
-                    Some(Token::Identifier(to) | Token::Cell(to)),
-                ) => Some((*from, *to)),
-                _ => None,
-            };
-            if let Some((from, to)) = range {
+            let range = self.lexemes.get(self.at..self.at + 3).and_then(|tokens| {
+                let [first, colon, last] = tokens else {
+                    return None;
+                };
+                let (
+                    Token::Identifier(from) | Token::Cell(from),
+                    Token::Symbol(':'),
+                    Token::Identifier(to) | Token::Cell(to),
+                ) = (&first.token, &colon.token, &last.token)
+                else {
+                    return None;
+                };
+                Some(CellRange {
+                    endpoints: [from, to],
+                    spans: [first.start..first.end, last.start..last.end],
+                })
+            });
+            if let Some(range) = range {
+                args.push(Argument::Range(range));
                 self.at += 3;
-                args.push(Argument::Range(from, to));
             } else {
                 args.push(Argument::Value(self.expression()?));
             }

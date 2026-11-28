@@ -3513,6 +3513,10 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
     let bytes = expression.as_bytes();
     let mut identifiers = Vec::new();
     let mut cursor = 0;
+    let identifier_len = |text: &str| {
+        text.find(|character: char| !character.is_alphanumeric() && !matches!(character, '_' | '.'))
+            .unwrap_or(text.len())
+    };
     while cursor < bytes.len() {
         if matches!(bytes[cursor], b'\'' | b'"') {
             let quote = bytes[cursor];
@@ -3542,27 +3546,20 @@ fn expression_identifiers(expression: &str) -> Vec<&str> {
             cursor = end + 2;
             if bytes.get(cursor) == Some(&b'.') {
                 cursor += 1;
-                while cursor < bytes.len()
-                    && (bytes[cursor].is_ascii_alphanumeric()
-                        || matches!(bytes[cursor], b'_' | b'.'))
-                {
-                    cursor += 1;
-                }
+                cursor += identifier_len(&expression[cursor..]);
             }
             continue;
         }
-        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+        let Some(character) = expression[cursor..].chars().next() else {
+            break;
+        };
+        if character.is_alphabetic() || character == '_' {
             let start = cursor;
-            cursor += 1;
-            while cursor < bytes.len()
-                && (bytes[cursor].is_ascii_alphanumeric() || matches!(bytes[cursor], b'_' | b'.'))
-            {
-                cursor += 1;
-            }
+            cursor += identifier_len(&expression[cursor..]);
             identifiers.push(&expression[start..cursor]);
             continue;
         }
-        cursor += 1;
+        cursor += character.len_utf8();
     }
     identifiers
 }
