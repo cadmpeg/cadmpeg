@@ -424,7 +424,8 @@ pub(crate) fn project(
         }
     }
     joint::record(&mut ir.model, restated);
-    settle_components(ir, &scoped_features, &owners, losses);
+    let unstated = unstated_components(&scope_records);
+    settle_components(ir, &scoped_features, &owners, &unstated, losses);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -654,18 +655,26 @@ fn member_component(
         .then(|| owner.clone())
 }
 
-/// Sets `Feature.component` of each scope's features from the definitions the
-/// scope spans by the occurrence walk of §5.1, the set a reader of the
-/// document computes: a feature names its owner where the scope spans several
-/// definitions and the owner is one of them, and names none otherwise. Each
-/// round computes the span of every scope once and stops when no span changed.
-/// A scope whose span still changes after `SETTLE_ROUNDS` rounds has no
-/// established owner for its features: their component is `None`, the value
-/// that states the decoder did not establish the owner (§5.1).
+fn unstated_components(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> BTreeSet<&str> {
+    scopes
+        .iter()
+        .filter(|scope| {
+            matches!(
+                scope.kind_name(),
+                "Base Feature" | "CutPaste" | "Component Insert"
+            )
+        })
+        .map(|scope| scope.id.as_str())
+        .collect()
+}
+
 fn settle_components(
     ir: &mut CadIr,
     scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
     owners: &HashMap<FeatureId, ProductDefinitionId>,
+    unstated: &BTreeSet<&str>,
     losses: &mut Vec<LossNote>,
 ) {
     let mut spans = vec![BTreeSet::<String>::new(); scoped.len()];
@@ -688,7 +697,14 @@ fn settle_components(
             {
                 feature.component = owners
                     .get(&feature.id)
-                    .filter(|owner| spans[index].len() > 1 && spans[index].contains(owner.as_str()))
+                    .filter(|owner| {
+                        !feature
+                            .native_ref
+                            .as_deref()
+                            .is_some_and(|id| unstated.contains(id))
+                            && spans[index].len() > 1
+                            && spans[index].contains(owner.as_str())
+                    })
                     .cloned();
             }
         }
@@ -706,26 +722,19 @@ fn settle_components(
             feature.component = None;
         }
     }
-    let spans = ir.spanned_definitions_of_scopes();
     for (definition, members) in scoped {
-        let Some(span) = spans.get(definition.as_str()) else {
-            continue;
-        };
-        let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
+        let mut withheld = BTreeMap::<&ProductDefinitionId, Vec<&str>>::new();
         for feature in &ir.design.features {
             if members.contains(&feature.id) && feature.component.is_none() {
-                if let Some(owner) = owners
-                    .get(&feature.id)
-                    .filter(|owner| span.contains(owner.as_str()))
-                {
-                    *withheld.entry(owner).or_default() += 1;
+                if let Some(owner) = owners.get(&feature.id).filter(|owner| *owner != definition) {
+                    withheld.entry(owner).or_default().push(feature.id.as_str());
                 }
             }
         }
-        let prefix = timeline::document_prefix(definition.as_str());
-        for (owner, count) in withheld {
+        for (owner, features) in withheld {
             losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
-                "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+                "scope {definition}: features {} retain component None; their model owner is {owner}",
+                features.join(", ")
             )));
         }
     }

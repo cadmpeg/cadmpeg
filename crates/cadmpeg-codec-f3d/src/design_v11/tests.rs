@@ -365,6 +365,7 @@ fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &BTreeSet::new(),
         &mut Vec::new(),
     );
     let components = ir
@@ -377,6 +378,72 @@ fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
         components,
         [Some(scope.as_str()), Some(placed.as_str()), None]
     );
+}
+
+#[test]
+fn uncertain_item_kinds_in_a_spanned_component_keep_none_with_one_loss() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let scope = "f3d:xref/role-1/reference-0/occurrence-0/archive:product-definition#0";
+    let owner = "f3d:xref/role-1/reference-0/occurrence-0/model:component#embedded";
+    let occurrence = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#embedded").unwrap();
+    let mut member = file_definition(scope);
+    member.occurrences.push(occurrence.clone());
+    let (mut ir, ids, owners) = component_document(
+        scope,
+        vec![member, definition(owner, Storage::Embedded, &[])],
+        &[
+            ("base", owner),
+            ("cut", owner),
+            ("insert", owner),
+            ("extrude", owner),
+        ],
+    );
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            occurrence,
+            ProductDefinitionId::mint(owner).unwrap(),
+            None,
+        ));
+    let records = ["Base Feature", "CutPaste", "Component Insert", "Extrude"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| {
+            let id = format!("{STREAM}:design-parameter-scope#{}", 100 + index);
+            ir.design.features[index].native_ref = Some(id.clone());
+            DesignParameterScope::empty(
+                &id,
+                DesignFeatureKind::try_from(kind.to_owned()).unwrap(),
+                100 + index as u32,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &owners,
+        &super::unstated_components(&records),
+        &mut losses,
+    );
+    assert!(ir.design.features[..3]
+        .iter()
+        .all(|feature| feature.component.is_none()));
+    assert_eq!(
+        ir.design.features[3]
+            .component
+            .as_ref()
+            .map(ProductDefinitionId::as_str),
+        Some(owner)
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(loss.code, "history.member-component-unstated");
+    assert!(loss.message.contains(owner));
+    for key in ["base", "cut", "insert"] {
+        assert!(loss.message.contains(&format!("f3d:design:feature#{key}")));
+    }
 }
 
 #[test]
@@ -415,6 +482,7 @@ fn a_component_named_in_one_round_widens_the_span_of_the_next() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &BTreeSet::new(),
         &mut Vec::new(),
     );
     let components = ir
@@ -434,44 +502,24 @@ fn a_component_named_in_one_round_widens_the_span_of_the_next() {
 }
 
 #[test]
-fn a_scope_that_reaches_no_other_definition_names_no_component() {
+fn a_hosted_owner_outside_the_span_charges_one_loss_for_its_features() {
     const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
     let scope = format!("{XREF}archive:product-definition#0");
-    let unplaced = format!("{XREF}model:component#unplaced");
+    let unplaced = "f3d:hosted@model:component#unplaced".to_owned();
     let (mut ir, ids, owners) = component_document(
         &scope,
         vec![
             file_definition(&scope),
             definition(&unplaced, Storage::Embedded, &[]),
         ],
-        &[("a", &scope), ("b", &unplaced)],
-    );
-    super::settle_components(
-        &mut ir,
-        &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
-        &owners,
-        &mut Vec::new(),
-    );
-    assert!(ir
-        .design
-        .features
-        .iter()
-        .all(|feature| feature.component.is_none()));
-}
-
-#[test]
-fn a_spanned_owner_with_no_component_charges_one_loss_for_its_features() {
-    let scope = "f3d:archive:product-definition#0";
-    let (mut ir, ids, owners) = component_document(
-        scope,
-        vec![file_definition(scope)],
-        &[("a", scope), ("b", scope)],
+        &[("a", &scope), ("b", &unplaced), ("c", &unplaced)],
     );
     let mut losses = Vec::new();
     super::settle_components(
         &mut ir,
-        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &BTreeSet::new(),
         &mut losses,
     );
     assert!(ir
@@ -483,9 +531,33 @@ fn a_spanned_owner_with_no_component_charges_one_loss_for_its_features() {
         panic!("one loss: {losses:?}")
     };
     assert_eq!(loss.code, "history.member-component-unstated");
-    assert_eq!(loss.message, format!(
-        "2 features of the document \"\" name no component: their owner {scope} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
-    ));
+    assert!(loss.message.contains(&unplaced));
+    assert!(loss.message.contains("f3d:design:feature#b"));
+    assert!(loss.message.contains("f3d:design:feature#c"));
+}
+
+#[test]
+fn the_scope_owner_needs_no_component_loss() {
+    let scope = "f3d:archive:product-definition#0";
+    let (mut ir, ids, owners) = component_document(
+        scope,
+        vec![file_definition(scope)],
+        &[("a", scope), ("b", scope)],
+    );
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &owners,
+        &BTreeSet::new(),
+        &mut losses,
+    );
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| feature.component.is_none()));
+    assert!(losses.is_empty());
 }
 
 #[test]
