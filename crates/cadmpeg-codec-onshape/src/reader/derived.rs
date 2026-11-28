@@ -443,18 +443,23 @@ pub(super) fn map(
     Ok(payload)
 }
 
-pub(super) struct BooleanInputs {
-    pub operation: &'static str,
-    pub keep: bool,
-    pub target: Vec<(String, String)>,
-    pub tools: Vec<(String, String)>,
+pub(super) struct BooleanBody<'a> {
+    pub native: &'a str,
+    pub producer: String,
 }
 
-pub(super) fn boolean_inputs(
-    feature: &Value,
+pub(super) struct BooleanInputs<'a> {
+    pub operation: &'static str,
+    pub keep: bool,
+    pub target: Vec<BooleanBody<'a>>,
+    pub tools: Vec<BooleanBody<'a>>,
+}
+
+pub(super) fn boolean_inputs<'a>(
+    feature: &'a Value,
     ordinal: usize,
     inputs: &topology::Inputs<'_>,
-) -> Mapping<BooleanInputs> {
+) -> Mapping<BooleanInputs<'a>> {
     if feature
         .get("namespace")
         .and_then(Value::as_str)
@@ -499,8 +504,8 @@ pub(super) fn boolean_inputs(
     }
     let keep = features::enabled(feature, "keepTools")?;
     let parts = inputs.solid_parts(ordinal)?;
-    let selected = |key| -> Mapping<Vec<(String, String)>> {
-        let mut picked = Vec::new();
+    let selected = |key| -> Mapping<Vec<BooleanBody<'a>>> {
+        let mut picked: Vec<BooleanBody<'a>> = Vec::new();
         for query in features::queries(feature, key)? {
             let ids = rows(query, "deterministicIds")?;
             if query.get("queryString").is_some()
@@ -513,16 +518,17 @@ pub(super) fn boolean_inputs(
             }
             for value in ids {
                 let native = value.as_str().ok_or("a Boolean body identity is missing")?;
-                if !parts.contains_key(native)
-                    || picked.iter().any(|(local, _)| local == &id("body", native))
-                {
+                if !parts.contains_key(native) || picked.iter().any(|body| body.native == native) {
                     return Err(
                         "a Boolean body is missing or repeats in its input rollback state".into(),
                     );
                 }
                 let producer = inputs.producer(ordinal, native, topology::OperandKind::Body)?;
                 inputs.unique_feature(&producer, ordinal)?;
-                picked.push((id("body", native), id("feature", &producer)));
+                picked.push(BooleanBody {
+                    native,
+                    producer: id("feature", &producer),
+                });
             }
         }
         Ok(picked)
@@ -533,7 +539,7 @@ pub(super) fn boolean_inputs(
         if target.len() != 1
             || target
                 .iter()
-                .any(|(local, _)| tools.iter().any(|(tool, _)| tool == local))
+                .any(|body| tools.iter().any(|tool| tool.native == body.native))
         {
             return Err("this Boolean needs one target and disjoint tool bodies".into());
         }
@@ -572,9 +578,10 @@ pub(super) fn boolean(
             tools.len()
         ));
     }
-    let generated = |selected: Vec<(String, String)>| -> Mapping<Value> {
+    let generated = |selected: Vec<BooleanBody<'_>>| -> Mapping<Value> {
         let mut references = Vec::new();
-        for (local, producer) in selected {
+        for body in selected {
+            let local = id("body", body.native);
             let owners: Vec<_> = model
                 .feature_result_topologies
                 .iter()
@@ -585,7 +592,7 @@ pub(super) fn boolean(
                     "a Boolean body cannot be tied uniquely to an earlier feature result".into(),
                 );
             };
-            if owner.output_of.as_str() != producer {
+            if owner.output_of.as_str() != body.producer {
                 return Err(
                     "the Boolean body producer disagrees with its stored rollback transition"
                         .into(),

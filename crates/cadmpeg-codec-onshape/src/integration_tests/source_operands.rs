@@ -37,11 +37,185 @@ fn parameter_wire<'a>(wire: &'a Value, native: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("{id} has no design parameter"))
 }
 
+fn parameter_loss(result: &cadmpeg_ir::codec::DecodeResult, key: &str, subject: &str) -> bool {
+    result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "history.parameter-not-projected"
+            && loss.message.starts_with(&format!("parameter {key} "))
+            && loss.message.ends_with(&format!("; subject: {subject}"))
+    })
+}
+
+#[test]
+fn boolean_scope_keeps_selected_targets_without_a_false_loss() {
+    for (fixture, subject) in [("plate-fillet", "Plate"), ("revolve", "Ring")] {
+        let bytes = part_studio(fixture, |document| {
+            let operation = &mut document["features"][1];
+            parameter(operation, "operationType")["value"] = json!("REMOVE");
+            rows(operation).extend([
+                json!({"parameterId":"defaultScope","value":false}),
+                json!({"parameterId":"booleanScope","queries":[{"deterministicIds":["body"]}]}),
+            ]);
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), subject);
+        let targets = &operation["value"]["output"]["boolean"]["targets"];
+        assert_eq!(targets["kind"], "selected");
+        assert_eq!(
+            targets["picks"]["value"][0]["native"]["value"]["value"],
+            "body"
+        );
+        assert!(!parameter_loss(&result, "defaultScope", subject));
+        assert!(!parameter_loss(&result, "booleanScope", subject));
+        validate(result);
+    }
+}
+
+#[test]
+fn an_empty_or_unread_explicit_scope_never_selects_all_bodies() {
+    for (queries, expected) in [
+        (json!([]), Some("selected")),
+        (
+            json!([{"deterministicIds":[],"queryString":"query=qEverything(EntityType.BODY);"}]),
+            None,
+        ),
+        (
+            json!([{"queryString":"query=qEverything(EntityType.BODY);"}]),
+            None,
+        ),
+    ] {
+        let bytes = part_studio("plate-fillet", |document| {
+            let extrude = &mut document["features"][1];
+            parameter(extrude, "operationType")["value"] = json!("REMOVE");
+            rows(extrude).extend([
+                json!({"parameterId":"defaultScope","value":false}),
+                json!({"parameterId":"booleanScope","queries":queries}),
+            ]);
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), "Plate");
+        let boolean = &operation["value"]["output"]["boolean"];
+        assert_eq!(boolean["kind"], "apply");
+        assert_eq!(boolean["targets"]["kind"].as_str(), expected);
+        if expected.is_some() {
+            assert_eq!(boolean["targets"]["picks"]["value"], json!([]));
+        }
+        assert_eq!(
+            parameter_loss(&result, "booleanScope", "Plate"),
+            expected.is_none()
+        );
+        validate(result);
+    }
+}
+
+#[test]
+fn direct_selection_keeps_resolved_ids_and_reports_only_unread_queries() {
+    for (last_row, missing_ids) in [
+        (json!({"deterministicIds":[]}), false),
+        (
+            json!({"deterministicIds":[],"queryString":"query=qEverything(EntityType.FACE);"}),
+            true,
+        ),
+        (
+            json!({"queryString":"query=qEverything(EntityType.FACE);"}),
+            true,
+        ),
+    ] {
+        let bytes = part_studio("plate-fillet", |document| {
+            document["features"][2] = feature(
+                "Wall",
+                "shell",
+                json!([
+                    {"parameterId":"entities","queries":[{"deterministicIds":["entry-face"]},last_row]},
+                    {"parameterId":"thickness","expression":"2 mm"},
+                ]),
+            );
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), "Wall");
+        let removed = operation["value"]["removed"]["picks"]["value"]
+            .as_array()
+            .unwrap();
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0]["native"]["value"]["value"], "entry-face");
+        assert_eq!(parameter_loss(&result, "entities", "Wall"), missing_ids);
+        validate(result);
+    }
+}
+
+#[test]
+fn symmetric_draft_uses_the_span_rule_and_clears_the_legacy_loss() {
+    for (end_bound, stale_second) in [("BLIND", false), ("BLIND", true), ("THROUGH_ALL", false)] {
+        let bytes = part_studio("plate-fillet", |document| {
+            let extrude = &mut document["features"][1];
+            parameter(extrude, "endBound")["value"] = json!(end_bound);
+            rows(extrude).extend([
+                json!({"parameterId":"symmetric","value":true}),
+                json!({"parameterId":"hasDraft","value":true}),
+                json!({"parameterId":"draftAngle","expression":"5 deg"}),
+                json!({"parameterId":"draftPullDirection","value":true}),
+            ]);
+            if stale_second {
+                rows(extrude).extend([
+                    json!({"parameterId":"hasSecondDirection","value":true}),
+                    json!({"parameterId":"hasSecondDirectionDraft","value":true}),
+                ]);
+            }
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), "Plate");
+        let extrude = &operation["value"];
+        let draft = &extrude["draft"];
+        assert_eq!(
+            draft["end"],
+            json!({"kind":"literal","value":5_f64.to_radians()})
+        );
+        if end_bound == "BLIND" {
+            assert_eq!(extrude["span"]["kind"], "symmetric");
+            assert!(draft.get("start").is_none());
+        } else {
+            assert_eq!(extrude["span"]["start"]["kind"], "through_all");
+            assert_eq!(extrude["span"]["end"]["kind"], "through_all");
+            assert_eq!(draft["start"], draft["end"]);
+        }
+        assert!(!result.report().losses.iter().any(|loss| {
+            loss.message.starts_with("hasDraft ") || loss.message.starts_with("hasSecondDirection ")
+        }));
+        validate(result);
+    }
+}
+
+#[test]
+fn an_explicit_sketch_hole_start_is_charged_without_losing_the_bore() {
+    for start in ["PART", "SKETCH"] {
+        let bytes = part_studio("hole-forms", |document| {
+            let hole = &mut document["features"][5];
+            rows(hole).push(json!({"parameterId":"startStyle","value":start}));
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), "Tapped");
+        assert_eq!(operation["kind"], "hole");
+        assert_eq!(operation["value"]["positions"]["kind"], "points");
+        assert_eq!(operation["value"]["extent"]["kind"], "amount");
+        assert_eq!(
+            parameter_loss(&result, "startStyle", "Tapped"),
+            start == "SKETCH"
+        );
+        if start == "SKETCH" {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message == "parameter startStyle uses SKETCH as the hole depth reference; subject: Tapped"));
+        }
+        validate(result);
+    }
+}
+
 #[test]
 fn chamfer_angle_measure_and_per_edge_override_come_from_its_parameters() {
     for (measure, expected) in [
-        ("FACE_OFFSET", "offset_faces"),
-        ("APEX_RANGE", "along_faces"),
+        ("FACE_OFFSET", json!({"kind":"offset_faces"})),
+        ("APEX_RANGE", json!({"kind":"native","value":"APEX_RANGE"})),
     ] {
         let bytes = edit(&fixture("plate-fillet"), |path, document| {
             if path == "partstudios/studio/bodydetails/2.json" {
@@ -80,13 +254,17 @@ fn chamfer_angle_measure_and_per_edge_override_come_from_its_parameters() {
                     .abs()
                     < 1e-12
             );
-            assert_eq!(set["measure"]["kind"], expected);
+            assert_eq!(set["measure"], expected);
             assert_eq!(set["flip"]["value"], flipped);
             assert_eq!(
                 set["edges"]["picks"]["value"]["terms"][0]["seeds"][0]["native"]["value"]["value"],
                 edge
             );
         }
+        assert_eq!(
+            parameter_loss(&result, "chamferMethod", "Corner bevel"),
+            measure == "APEX_RANGE"
+        );
         assert!(result
             .report()
             .losses
@@ -158,7 +336,12 @@ fn an_asymmetric_fillet_keeps_its_ordered_seeds_and_compound_radius() {
 
 #[test]
 fn a_hole_keeps_its_start_flat_bottom_and_active_thread_bindings() {
-    for through in [false, true] {
+    for (bore, tap_through, full) in [
+        ("BLIND", false, false),
+        ("BLIND", true, false),
+        ("THROUGH", false, false),
+        ("THROUGH", true, true),
+    ] {
         let bytes = with_variables(
             &fixture("hole-forms"),
             &[
@@ -173,7 +356,8 @@ fn a_hole_keeps_its_start_flat_bottom_and_active_thread_bindings() {
                     .unwrap();
                 parameter(hole, "majorDiameter")["expression"] = json!("#major");
                 parameter(hole, "tappedDepth")["expression"] = json!("#threadDepth");
-                parameter(hole, "isTappedThrough")["value"] = json!(through);
+                parameter(hole, "endStyle")["value"] = json!(bore);
+                parameter(hole, "isTappedThrough")["value"] = json!(tap_through);
                 parameter(hole, "standardTappedOrClearance")["value"]["pitch"] =
                     json!("1.25 mm (M)");
                 rows(hole).extend([
@@ -181,7 +365,7 @@ fn a_hole_keeps_its_start_flat_bottom_and_active_thread_bindings() {
                     json!({"parameterId":"startBoundEntity","queries":[{"deterministicIds":["entry-plane"]}]}),
                     json!({"parameterId":"tipAngleStyle","value":"FLAT"}),
                 ]);
-                if through {
+                if bore == "THROUGH" {
                     rows(hole).retain(|parameter| parameter["parameterId"] != "tipAngle");
                 }
             },
@@ -203,7 +387,11 @@ fn a_hole_keeps_its_start_flat_bottom_and_active_thread_bindings() {
             operation["start"]["picks"]["value"][0]["native"]["value"]["value"],
             "entry-plane"
         );
-        assert_eq!(operation["shape"]["bottom"], json!({"kind":"flat"}));
+        if bore == "BLIND" {
+            assert_eq!(operation["shape"]["bottom"], json!({"kind":"flat"}));
+        } else {
+            assert!(operation["shape"].get("bottom").is_none());
+        }
         assert_eq!(operation["thread"]["major_diameter"]["kind"], "parameter");
         assert_eq!(
             operation["thread"]["pitch"],
@@ -211,9 +399,9 @@ fn a_hole_keeps_its_start_flat_bottom_and_active_thread_bindings() {
         );
         assert_eq!(
             operation["thread"]["length"]["kind"],
-            if through { "full" } else { "blind" }
+            if full { "full" } else { "blind" }
         );
-        if !through {
+        if !full {
             assert_eq!(operation["thread"]["length"]["value"]["kind"], "parameter");
         }
         assert!(result
@@ -252,7 +440,7 @@ fn peer_booleans_use_the_stored_tool_order_without_a_target() {
                 .iter()
                 .map(|pick| pick["native"]["value"]["value"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            [id("body", "inserted"), id("body", "base")]
+            ["inserted", "base"]
         );
         validate(result);
     }

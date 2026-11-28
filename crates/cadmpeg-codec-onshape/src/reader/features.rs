@@ -513,7 +513,7 @@ pub(super) fn report_evaluated_variables(
             ("angle", Ok("revolve")) => {
                 value(feature, "revolveType") == Some("FULL") || enabled(feature, "fullRevolve")?
             }
-            ("tappedDepth", Ok("hole")) => enabled(feature, "isTappedThrough")?,
+            ("tappedDepth", Ok("hole")) => !tapped_standard(feature) || tap_through(feature)?,
             ("tipAngle", Ok("hole")) => tip_angle_preset(feature).is_some(),
             ("turns" | "angle" | "pitch", Ok("sweep")) => !enabled(feature, "hasTwist")?,
             ("scaleFactor", Ok("sweep")) => !enabled(feature, "hasScale")?,
@@ -1419,6 +1419,19 @@ pub(super) fn tip_angle_preset(feature: &Value) -> Option<f64> {
         _ => return None,
     };
     Some(degrees.to_radians())
+}
+
+pub(super) fn tapped_standard(feature: &Value) -> bool {
+    parameter(feature, "standardTappedOrClearance")
+        .is_ok_and(|param| param["value"]["type"] == "Tapped")
+}
+
+pub(super) fn through_hole(feature: &Value) -> bool {
+    matches!(value(feature, "endStyle"), Some("THROUGH" | "THROUGH_ALL"))
+}
+
+pub(super) fn tap_through(feature: &Value) -> Mapping<bool> {
+    Ok(through_hole(feature) && enabled(feature, "isTappedThrough")?)
 }
 
 pub(super) fn pitch_mm(source: &str) -> Option<f64> {

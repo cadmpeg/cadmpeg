@@ -73,11 +73,12 @@ fn derived_studio_keeps_neutral_reference_and_generated_boolean_operands() {
     let combine = crate::test_support::review::design_operation(&model.ir, "Cut");
     assert_eq!(combine["kind"], "combine");
     assert_eq!(combine["value"]["op"]["kind"], "cut");
-    for role in ["target", "tools"] {
+    for (role, source_id) in [("target", "base"), ("tools", "inserted")] {
         let picks = combine["value"][role]["picks"]["value"].as_array().unwrap();
         assert!(!picks.is_empty());
         for pick in picks {
             assert_eq!(pick["target"]["kind"], "native");
+            assert_eq!(pick["native"]["value"]["value"], source_id);
             let within = &pick["target"]["value"]["within"];
             assert_eq!(within["kind"], "feature");
             assert!(dependencies.contains(&within["value"]), "{pick}");

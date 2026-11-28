@@ -32,24 +32,26 @@ keeps its definition beside its suppressed state. Sketches, extrudes of a
 whole sketch, its regions, or its entities (blind, through all, symmetric,
 up to next, up to a face), thin extrudes, revolves, sweeps, fillets,
 chamfers, shells, holes, derived Booleans, and offset datum planes take their
-typed operation. A selected face or edge is a Native pick named by its
-deterministic id, and an edge pick carries the edge's stored sample as its
-witness. Tangent propagation is one Explicit term on the selected edges with
+typed operation. A selected face, edge, or Boolean body is a Native pick
+named by its deterministic ID. A Boolean body pick names its producer
+separately, and an edge pick carries the edge's stored sample as its witness.
+Tangent propagation is one Explicit term on the selected edges with
 G1 propagation. A chamfer with two setbacks reads the first on the face whose
 loop runs along the edge and charges `onshape/history.chamfer-side-assumed`
 (ONSHAPE-013). A feature whose model row the design cannot state takes its
 operation family, and `onshape/history.design-operation-unresolved` names
-the feature. A derived Part Studio is a native design operation, and
-`onshape/history.design-operation-native` names its captured design, which
-stays in the model row. A sketch whose frame or curves the
+the feature. A derived Part Studio states a linked stored operation with
+the source document, version and element pin. Its captured design stays
+in the model row. A sketch whose frame or curves the
 design cannot state falls back to its family alone. Each body that one
 feature before the rollback bar makes takes a generated name by that
 feature. Variables and feature and sketch dimensions are design parameters.
-An expression the reader evaluates is a neutral expression with the units
-and terms of the stored text, and a parameter whose literals state one unit
-declares it. Any other expression is its stored source text, with
-`onshape/parameter.expression-text`. Each operation binds the parameters of
-the values it states. Sketch constraints are design relations, on point
+An operation dimension with one literal stays literal. The reader
+translates supported expressions into neutral expressions and keeps the
+source text. A parameter whose literals state one unit declares it. The
+parameter keeps a compatible stored numeric cache when present. The reader
+retains unsupported expressions in source syntax with
+`onshape/parameter.expression-text`. Sketch constraints are design relations, on point
 entities for the curve ends and centres they name, and a curve end takes
 the point id Onshape stores as its native name.
 A thin extrude keeps a Native model operation, and

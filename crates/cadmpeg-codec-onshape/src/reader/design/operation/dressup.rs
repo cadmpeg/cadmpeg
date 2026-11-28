@@ -135,7 +135,6 @@ pub(super) fn chamfer(
     let sided = !matches!(size, ChamferSize::Distance(_));
     let measure = match source.tag("chamferMethod") {
         None | Some("FACE_OFFSET") => ChamferMeasure::OffsetFaces,
-        Some("APEX_RANGE") => ChamferMeasure::AlongFaces,
         Some(other) => ChamferMeasure::Native(text(other)?),
     };
     let input = context.input(model);
@@ -337,12 +336,15 @@ pub(super) fn hole(
         }
         _ => return Err("endStyle is outside the blind and through hole forms".into()),
     };
-    let targets = if features::parameter(source.record, "scope").is_ok()
-        && !picks::ids(source.record, "scope")?.is_empty()
-    {
-        Some(cadmpeg_ir::design::options::Targets::Selected(
-            picks::selected(source.record, "scope")?,
-        ))
+    let targets = if features::parameter(source.record, "scope").is_ok() {
+        let ids = picks::ids(source.record, "scope")?;
+        if ids.is_empty() {
+            None
+        } else {
+            Some(cadmpeg_ir::design::options::Targets::Selected(
+                picks::named_ids(ids)?,
+            ))
+        }
     } else {
         None
     };
@@ -383,7 +385,7 @@ pub(super) fn hole(
 }
 
 fn text(value: &str) -> Mapping<NonBlankString> {
-    NonBlankString::new(value.trim()).ok_or("a hole standard text is blank")
+    NonBlankString::new(value.trim()).ok_or("a source text value is blank")
 }
 
 fn option(options: &mut NativeOptions, key: &str, value: NativeOption) -> Mapping<()> {
@@ -457,7 +459,7 @@ fn standard(
                 .is_ok()
                 .then(|| length("majorDiameter", "MajorDiameter"))
                 .transpose()?;
-            let depth = if source.flag("isTappedThrough")? {
+            let depth = if features::tap_through(source.record)? {
                 ThreadLength::Full
             } else {
                 ThreadLength::Blind(length("tappedDepth", "TappedDepth")?)

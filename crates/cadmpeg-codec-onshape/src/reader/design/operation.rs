@@ -133,10 +133,14 @@ fn family(kind: &str) -> Option<OperationFamily> {
 /// The design operation of a thin extrude, admitted where every sketch
 /// entity its profile picks is a stated entity of a sketch earlier in the
 /// timeline.
-pub(super) fn thin(thin: &Value, context: &Context<'_, '_>) -> Result<FeatureOperation, String> {
-    let operation: FeatureOperation = json::from_value(thin.clone())
+pub(super) fn thin(
+    thin: &Value,
+    source: &Source<'_>,
+    context: &Context<'_, '_>,
+) -> Result<FeatureOperation, String> {
+    let mut operation: FeatureOperation = json::from_value(thin.clone())
         .map_err(|error| format!("the thin design operation is not supported yet ({error})"))?;
-    let FeatureOperation::Extrude(extrude) = &operation else {
+    let FeatureOperation::Extrude(extrude) = &mut operation else {
         return Err("the thin design feature is no extrusion".into());
     };
     let Picks::Named(picks) = &extrude.profile.picks else {
@@ -152,6 +156,9 @@ pub(super) fn thin(thin: &Value, context: &Context<'_, '_>) -> Result<FeatureOpe
         if !context.preceding.contains(*sketch) {
             return Err("the thin profile's sketch does not precede it in the timeline".into());
         }
+    }
+    if let Some(Boolean::Apply { targets: scope, .. }) = &mut extrude.output.boolean {
+        *scope = targets(source, "defaultScope", "booleanScope")?;
     }
     Ok(operation)
 }
@@ -316,26 +323,22 @@ fn boolean(source: &Source<'_>) -> SourceMapping<Boolean> {
     };
     Ok(Boolean::Apply {
         op,
-        targets: Some(targets(source, "booleanScope")?),
+        targets: targets(source, "defaultScope", "booleanScope")?,
     })
 }
 
-fn targets(source: &Source<'_>, key: &str) -> SourceMapping<Targets> {
-    let default = if key == "booleanScope" {
-        "defaultScope"
-    } else {
-        "defaultSurfaceScope"
+fn targets(source: &Source<'_>, default: &str, key: &str) -> SourceMapping<Option<Targets>> {
+    if source.default_scope(default)? {
+        return Ok(Some(Targets::All));
+    }
+    let Ok(parameter) = features::parameter(source.record, key) else {
+        return Ok(None);
     };
-    if source.flag(default)? {
-        return Ok(Targets::All);
+    let ids = picks::ids(source.record, key)?;
+    if ids.is_empty() && crate::reader::query::has_unresolved_ids(parameter) {
+        return Ok(None);
     }
-    if features::parameter(source.record, key).is_ok()
-        && !picks::ids(source.record, key)?.is_empty()
-    {
-        Ok(Targets::Selected(picks::selected(source.record, key)?))
-    } else {
-        Ok(Targets::All)
-    }
+    Ok(Some(Targets::Selected(picks::named_ids(ids)?)))
 }
 
 fn source_profile(
@@ -395,7 +398,7 @@ fn extrude(
             reverse,
         )
     };
-    let symmetric = source.flag("symmetric")?;
+    let symmetric = source.symmetric_extrude()?;
     let end = match source.tag("endBound") {
         Some("BLIND") => Limit::Amount(distance(
             "depth",
@@ -438,7 +441,7 @@ fn extrude(
     } else {
         source.flag("oppositeDirection")?
     };
-    let second = source.flag("hasSecondDirection")?;
+    let second = !symmetric && source.flag("hasSecondDirection")?;
     let span = match end {
         Limit::Amount(amount) if symmetric => Span::Symmetric {
             amount,
@@ -489,7 +492,7 @@ fn extrude(
             None | Some("NEW") => Boolean::NewBody,
             Some("ADD") => Boolean::Apply {
                 op: BooleanOp::Join,
-                targets: Some(targets(source, "booleanSurfaceScope")?),
+                targets: targets(source, "defaultSurfaceScope", "booleanSurfaceScope")?,
             },
             _ => return Err("surfaceOperationType does not name a supported operation".into()),
         }
@@ -513,15 +516,19 @@ fn extrude(
             )
         })
         .transpose()?;
-    let start_draft = (second && source.flag("hasSecondDirectionDraft")?)
-        .then(|| {
-            draft_angle(
-                "secondDirectionDraftAngle",
-                "AgainstDraftAngle",
-                source.flag("secondDirectionDraftPullDirection")?,
-            )
-        })
-        .transpose()?;
+    let start_draft = if symmetric && matches!(span, Span::Between { .. }) {
+        end_draft.clone()
+    } else {
+        (second && source.flag("hasSecondDirectionDraft")?)
+            .then(|| {
+                draft_angle(
+                    "secondDirectionDraftAngle",
+                    "AgainstDraftAngle",
+                    source.flag("secondDirectionDraftPullDirection")?,
+                )
+            })
+            .transpose()?
+    };
     let draft = (start_draft.is_some() || end_draft.is_some()).then_some(ExtrudeDraft {
         end: end_draft,
         start: start_draft,
@@ -772,8 +779,6 @@ fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
     })
 }
 
-/// A solid sweep of one planar profile along a chain of sketch curves, with
-/// no orientation, twist, or scaling control.
 fn sweep(
     feature: &v10::Feature,
     source: &Source<'_>,

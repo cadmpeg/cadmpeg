@@ -17,7 +17,8 @@ use cadmpeg_ir::features::evaluation::FeatureInputTopology;
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, SketchProfileRegion};
 
 use super::Context;
-use crate::reader::{features, rows, Mapping as SourceMapping};
+use crate::reader::derived::BooleanBody;
+use crate::reader::{features, query, rows, Mapping as SourceMapping};
 use serde_json::Value;
 
 pub(super) type Mapping<T> = Result<T, &'static str>;
@@ -57,6 +58,9 @@ pub(super) fn native(id: &str, within: Option<NativeOwner>) -> Mapping<Picked> {
 pub(super) fn ids<'a>(feature: &'a Value, key: &str) -> SourceMapping<Vec<&'a str>> {
     let mut ids = Vec::new();
     for query in rows(features::parameter(feature, key)?, "queries")? {
+        if query::needs_deterministic_ids(query) {
+            continue;
+        }
         for value in rows(query, "deterministicIds")? {
             ids.push(value.as_str().ok_or("a selected id is not a string")?);
         }
@@ -125,22 +129,26 @@ pub(super) fn selected<O: MemberOrder>(feature: &Value, key: &str) -> SourceMapp
     if ids.is_empty() {
         return Err(format!("{key} has no selected ids"));
     }
-    let picks = ids
-        .into_iter()
-        .map(|id| native(id, None))
-        .collect::<Mapping<_>>()?;
-    Ok(selection(picks)?)
+    Ok(named_ids(ids)?)
+}
+
+pub(super) fn named_ids<O: MemberOrder>(ids: Vec<&str>) -> Mapping<Selection<O>> {
+    selection(
+        ids.into_iter()
+            .map(|id| native(id, None))
+            .collect::<Mapping<_>>()?,
+    )
 }
 
 /// The bodies in source order, each within the feature that made it.
-pub(super) fn bodies<O: MemberOrder>(values: &[(String, String)]) -> Mapping<Selection<O>> {
+pub(super) fn bodies<O: MemberOrder>(values: &[BooleanBody<'_>]) -> Mapping<Selection<O>> {
     selection(
         values
             .iter()
-            .map(|(body, producer)| {
-                let feature = cadmpeg_ir::features::FeatureId::mint(producer)
+            .map(|body| {
+                let feature = cadmpeg_ir::features::FeatureId::mint(&body.producer)
                     .map_err(|_| "a selected body has an invalid producer identity")?;
-                native(body, Some(NativeOwner::Feature(feature)))
+                native(body.native, Some(NativeOwner::Feature(feature)))
             })
             .collect::<Mapping<_>>()?,
     )

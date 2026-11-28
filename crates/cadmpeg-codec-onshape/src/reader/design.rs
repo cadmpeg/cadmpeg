@@ -100,7 +100,7 @@ impl<'a> Source<'a> {
             )
     }
 
-    fn restates_legacy_loss(operation: &FeatureOperation, loss: &LossNote) -> bool {
+    fn restates_legacy_loss(&self, operation: &FeatureOperation, loss: &LossNote) -> bool {
         use cadmpeg_ir::design::ops::shared::{Limit, Span};
         match operation {
             FeatureOperation::Combine(combine) => {
@@ -116,6 +116,14 @@ impl<'a> Source<'a> {
                 loss.message.starts_with("hasOffset ")
                     && matches!(extrude.span.as_ref(), Some(Span::Between { end, .. })
                     if matches!(end.as_ref(), Limit::ToGeometry { offset: Some(_), .. }))
+                    || loss.message.starts_with("hasDraft ")
+                        && extrude
+                            .draft
+                            .as_ref()
+                            .is_some_and(|draft| draft.end.is_some())
+                    || (loss.message.starts_with("hasSecondDirection ")
+                        || loss.message.starts_with("hasSecondDirectionDraft "))
+                        && self.symmetric_extrude() == Ok(true)
             }
             FeatureOperation::Sweep(sweep) => {
                 loss.message.starts_with("this sweep Boolean operation")
@@ -131,6 +139,17 @@ impl<'a> Source<'a> {
 
     fn tag(&self, key: &str) -> Option<&str> {
         features::value(self.record, key)
+    }
+
+    fn symmetric_extrude(&self) -> super::Mapping<bool> {
+        Ok(
+            self.flag("symmetric")?
+                && matches!(self.tag("endBound"), Some("BLIND" | "THROUGH_ALL")),
+        )
+    }
+
+    fn default_scope(&self, key: &str) -> super::Mapping<bool> {
+        Ok(self.flag(key)? || features::parameter(self.record, key).is_err())
     }
 
     fn flag(&self, key: &str) -> Result<bool, String> {
@@ -231,7 +250,7 @@ impl Source<'_> {
                 continue;
             }
             let role =
-                if self.kind() == Some("extrude") && key == "depth" && self.flag("symmetric")? {
+                if self.kind() == Some("extrude") && key == "depth" && self.symmetric_extrude()? {
                     "TotalDistance"
                 } else {
                     role
@@ -345,9 +364,9 @@ pub(super) fn project(
             scope: &definition,
             derived_parameters: &derived_parameters,
         };
-        let thin = source.and_then(|source| source.thin.as_ref());
+        let thin = source.and_then(|source| Some((source.thin.as_ref()?, source)));
         let typed = match (thin, sketch_failures.get(&model.id)) {
-            (Some(thin), _) => match operation::thin(thin, &context) {
+            (Some((thin, source)), _) => match operation::thin(thin, source, &context) {
                 Ok(operation) => Ok((operation, None)),
                 Err(reason) => {
                     thin_refused.push((name.to_owned(), reason));
@@ -366,8 +385,8 @@ pub(super) fn project(
         };
         let legacy_loss = source.and_then(|source| source.legacy_loss.as_ref());
         let restated = match (&typed, source, legacy_loss) {
-            (Ok((operation, _)), Some(_), Some(loss)) => {
-                Source::restates_legacy_loss(operation, loss)
+            (Ok((operation, _)), Some(source), Some(loss)) => {
+                source.restates_legacy_loss(operation, loss)
             }
             _ => false,
         };

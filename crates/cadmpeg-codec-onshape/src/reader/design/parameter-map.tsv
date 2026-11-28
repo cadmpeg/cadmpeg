@@ -66,10 +66,10 @@ chamfer	width	chamfer.fs:48	/value/sets/0/size
 chamfer	width1	chamfer.fs:53	/value/sets/0/size
 chamfer	width2	chamfer.fs:68	/value/sets/0/size
 extrude	bodyType	extrude.fs:173	/value/output/body
-extrude	booleanScope	boolean.fs:318	/value/output/boolean/value/targets
-extrude	booleanSurfaceScope	boolean.fs:558	/value/output/boolean/value/targets
-extrude	defaultScope	boolean.fs:314	/value/output/boolean/value/targets
-extrude	defaultSurfaceScope	boolean.fs:553	/value/output/boolean/value/targets
+extrude	booleanScope	boolean.fs:318	/value/output/boolean/targets
+extrude	booleanSurfaceScope	boolean.fs:558	/value/output/boolean/targets
+extrude	defaultScope	boolean.fs:314	/value/output/boolean/targets
+extrude	defaultSurfaceScope	boolean.fs:553	/value/output/boolean/targets
 extrude	depth	extrudeCommon.fs:61	/value/span
 extrude	domain	extrude.fs:168	history.parameter-not-projected
 extrude	draftAngle	extrude.fs:490	/value/draft
@@ -188,7 +188,7 @@ hole	holeVersion	hole.fs:361	history.parameter-not-projected
 hole	initEntities	hole.fs:365	history.parameter-not-projected
 hole	isMultiple	hole.fs:643	history.parameter-not-projected
 hole	isTapped	hole.fs:3265	/value/thread
-hole	isTappedThrough	hole.fs:706	/value/thread
+hole	isTappedThrough	hole.fs:706	/value/thread/length
 hole	isV2	hole.fs:359	history.parameter-not-projected
 hole	isoHoleTable	hole.fs:424	history.parameter-not-projected
 hole	isoHoleTableEx	hole.fs:419	history.parameter-not-projected
@@ -207,7 +207,7 @@ hole	showThreadClassV2	hole.fs:432	history.parameter-not-projected
 hole	standardBlindInLast	hole.fs:548	history.parameter-not-projected
 hole	standardTappedOrClearance	hole.fs:543	/value/thread|/value/standard
 hole	startBoundEntity	hole.fs:494	/value/start
-hole	startStyle	hole.fs:489	/value/start|/value/positions
+hole	startStyle	hole.fs:489	/value/start
 hole	style	hole.fs:387	/value/shape/head
 hole	styleV2	hole.fs:382	history.parameter-not-projected
 hole	tapClearance	hole.fs:734	history.parameter-not-projected
@@ -215,7 +215,7 @@ hole	tapDrillDiameter	hole.fs:630	/value/shape/diameter
 hole	tapDrillDiameterV2	hole.fs:482	history.parameter-not-projected
 hole	tapDrillDiameterV3	hole.fs:470	history.parameter-not-projected
 hole	tappedAngle	hole.fs:727	history.parameter-not-projected
-hole	tappedDepth	hole.fs:719	/value/thread
+hole	tappedDepth	hole.fs:719	/value/thread/length/value
 hole	tappedDepthV3	hole.fs:714	history.parameter-not-projected
 hole	threadClass	REST lookup table	history.parameter-not-projected
 hole	threadStandard	hole.fs:371	history.parameter-not-projected
@@ -243,9 +243,9 @@ revolve	angle	revolve.fs:127	/value/span
 revolve	angleBack	revolve.fs:182	/value/span
 revolve	axis	revolve.fs:112	/value/axis
 revolve	bodyType	revolve.fs:60	/value/output/body
-revolve	booleanScope	boolean.fs:318	/value/output/boolean/value/targets
+revolve	booleanScope	boolean.fs:318	/value/output/boolean/targets
 revolve	booleanSurfaceScope	boolean.fs:558	history.parameter-not-projected
-revolve	defaultScope	boolean.fs:314	/value/output/boolean/value/targets
+revolve	defaultScope	boolean.fs:314	/value/output/boolean/targets
 revolve	defaultSurfaceScope	boolean.fs:553	history.parameter-not-projected
 revolve	endBound	revolve.fs:120	/value/span
 revolve	endBoundEntityBody	revolve.fs:145	history.parameter-not-projected
@@ -293,10 +293,10 @@ sketchDimension	localSecond	REST Features: Sketch constraints	constraint
 sketchDimension	radius	REST Features: Quantity	parameter
 sweep	angle	sweep.fs:124	/value/controls/twist
 sweep	bodyType	sweep.fs:39	/value/output/body
-sweep	booleanScope	boolean.fs:318	/value/output/boolean/value/targets
+sweep	booleanScope	boolean.fs:318	/value/output/boolean/targets
 sweep	booleanSurfaceScope	boolean.fs:558	history.parameter-not-projected
 sweep	ccw	sweep.fs:132	/value/controls/twist
-sweep	defaultScope	boolean.fs:314	/value/output/boolean/value/targets
+sweep	defaultScope	boolean.fs:314	/value/output/boolean/targets
 sweep	defaultSurfaceScope	boolean.fs:553	history.parameter-not-projected
 sweep	extendToFullPath	Sweep Help: Twist	history.parameter-not-projected
 sweep	flipWall	sweep.fs:76	history.parameter-not-projected

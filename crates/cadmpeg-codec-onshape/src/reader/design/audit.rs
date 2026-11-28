@@ -3,13 +3,15 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::options::{BodyForm, Thickness};
 use cadmpeg_ir::report::loss::LossNote;
 use serde_json::Value;
 
 use super::Source;
 use crate::loss::OnshapeLossCode;
-use crate::reader::features;
+use crate::reader::{expression, features, query};
 
 pub(super) const TABLE: &str = include_str!("parameter-map.tsv");
 
@@ -72,10 +74,64 @@ pub(super) fn report(
             }),
             None => false,
         };
-        if !kept {
-            notes
-                .push(OnshapeLossCode::DesignParameterUnprojected.note(loss_message(key, subject)));
+        let message = if kept {
+            residual(kind, key, row, operation)
+                .map(|reason| format!("parameter {key} {reason}; subject: {subject}"))
+        } else if key == "startStyle"
+            && row["value"] == "SKETCH"
+            && matches!(operation, FeatureOperation::Hole(_))
+        {
+            Some(format!(
+                "parameter startStyle uses SKETCH as the hole depth reference; subject: {subject}"
+            ))
+        } else {
+            Some(loss_message(key, subject))
+        };
+        if let Some(message) = message {
+            notes.push(OnshapeLossCode::DesignParameterUnprojected.note(message));
         }
+    }
+}
+
+fn residual(
+    kind: &str,
+    key: &str,
+    row: &Value,
+    operation: &FeatureOperation,
+) -> Option<&'static str> {
+    match (kind, key) {
+        ("extrude", "thickness1" | "thickness2")
+            if row["expression"]
+                .as_str()
+                .is_some_and(|text| !expression::literal(text)) =>
+        {
+            let FeatureOperation::Extrude(extrude) = operation else {
+                return None;
+            };
+            let Some(BodyForm::Thin(wall)) = &extrude.output.body else {
+                return None;
+            };
+            matches!(wall.thickness, Thickness::Symmetric(Dimension::Literal(_)))
+                .then_some("contributes to the evaluated symmetric wall without a formula binding")
+        }
+        ("chamfer", "chamferMethod") if row["value"] == "APEX_RANGE" => {
+            Some("keeps APEX_RANGE as a native measure with no neutral equivalent")
+        }
+        ("extrude" | "revolve" | "sweep", "booleanScope")
+        | (
+            "extrude",
+            "booleanSurfaceScope"
+            | "endBoundEntityFace"
+            | "endBoundEntityBody"
+            | "startOffsetEntity",
+        )
+        | ("chamfer", "entities" | "directionOverrides")
+        | ("fillet", "entities")
+        | ("hole", "scope" | "startBoundEntity")
+        | ("shell", "entities" | "parts")
+        | ("sweep", "lockFaces" | "lockDirectionQuery") => query::has_unresolved_ids(row)
+            .then_some("contains a query with no readable deterministic ids"),
+        _ => None,
     }
 }
 
@@ -88,6 +144,8 @@ fn has_query(row: &Value) -> bool {
 pub(super) fn dormant(source: &Source<'_>, key: &str, row: &Value) -> bool {
     let flag = |key| source.flag(key) == Ok(true);
     let tag = |key| source.tag(key);
+    let symmetric = || source.symmetric_extrude() == Ok(true);
+    let second = || !symmetric() && flag("hasSecondDirection");
     let false_value = row.get("value").and_then(Value::as_bool) == Some(false);
     match (source.kind(), key) {
         (Some("extrude"), "thickness") => tag("bodyType") != Some("THIN") || !flag("midplane"),
@@ -95,7 +153,7 @@ pub(super) fn dormant(source: &Source<'_>, key: &str, row: &Value) -> bool {
             tag("bodyType") != Some("THIN") || flag("midplane")
         }
         (Some("extrude"), "secondDirectionDepth") => {
-            !flag("hasSecondDirection") || tag("secondDirectionBound") != Some("BLIND")
+            !second() || tag("secondDirectionBound") != Some("BLIND")
         }
         (Some("extrude"), "startOffsetDistance") => {
             !flag("startOffset") || tag("startOffsetBound") != Some("BLIND")
@@ -109,19 +167,24 @@ pub(super) fn dormant(source: &Source<'_>, key: &str, row: &Value) -> bool {
         (Some("hole"), "cSinkDiameter" | "cSinkAngle") => tag("style") != Some("C_SINK"),
         (Some("hole"), "oppositeDirection") => false_value,
         (Some("hole"), "majorDiameter" | "tapDrillDiameter") => {
-            !features::parameter(source.record, "standardTappedOrClearance")
-                .is_ok_and(|param| param["value"]["type"] == "Tapped")
+            !features::tapped_standard(source.record)
         }
         (Some("extrude" | "sweep" | "revolve"), "booleanScope") => {
-            flag("defaultScope") || tag("operationType") == Some("NEW")
+            source.default_scope("defaultScope") == Ok(true)
+                || tag("operationType") == Some("NEW")
+                || tag("bodyType") == Some("SURFACE")
         }
         (Some("extrude" | "sweep" | "revolve"), "defaultScope") => {
-            tag("operationType") == Some("NEW")
+            tag("operationType") == Some("NEW") || tag("bodyType") == Some("SURFACE")
         }
         (Some("extrude"), "booleanSurfaceScope") => {
-            flag("defaultSurfaceScope") || tag("surfaceOperationType") != Some("ADD")
+            source.default_scope("defaultSurfaceScope") == Ok(true)
+                || tag("surfaceOperationType") != Some("ADD")
+                || tag("bodyType") != Some("SURFACE")
         }
-        (Some("extrude"), "defaultSurfaceScope") => tag("surfaceOperationType") != Some("ADD"),
+        (Some("extrude"), "defaultSurfaceScope") => {
+            tag("surfaceOperationType") != Some("ADD") || tag("bodyType") != Some("SURFACE")
+        }
         (Some("extrude"), "depth") => tag("endBound") != Some("BLIND"),
         (Some("extrude"), "width" | "wallShape" | "midplane" | "flipWall") => {
             tag("bodyType") != Some("THIN")
@@ -133,19 +196,16 @@ pub(super) fn dormant(source: &Source<'_>, key: &str, row: &Value) -> bool {
         (Some("extrude"), "endBoundEntityFace") => tag("endBound") != Some("UP_TO_SURFACE"),
         (Some("extrude"), "endBoundEntityBody") => tag("endBound") != Some("UP_TO_BODY"),
         (Some("extrude"), "endBoundEntityVertex") => tag("endBound") != Some("UP_TO_VERTEX"),
-        (
-            Some("extrude"),
-            "hasOffset" | "hasDraft" | "hasSecondDirectionDraft" | "hasDirection",
-        ) => false_value,
+        (Some("extrude"), "hasOffset" | "hasDraft" | "hasDirection") => false_value,
+        (Some("extrude"), "hasSecondDirection") => symmetric(),
+        (Some("extrude"), "hasSecondDirectionDraft") => false_value || !second(),
         (Some("extrude"), "offsetDistance" | "offsetOppositeDirection") => {
             !flag("hasOffset") || matches!(tag("endBound"), Some("BLIND" | "THROUGH_ALL"))
         }
-        (Some("extrude"), "secondDirectionBound" | "secondDirectionOppositeDirection") => {
-            !flag("hasSecondDirection")
-        }
+        (Some("extrude"), "secondDirectionBound" | "secondDirectionOppositeDirection") => !second(),
         (Some("extrude"), "draftAngle" | "draftPullDirection") => !flag("hasDraft"),
         (Some("extrude"), "secondDirectionDraftAngle" | "secondDirectionDraftPullDirection") => {
-            !flag("hasSecondDirection") || !flag("hasSecondDirectionDraft")
+            !second() || !flag("hasSecondDirectionDraft")
         }
         (Some("extrude"), "startOffsetBound" | "startOffsetOppositeDirection") => {
             !flag("startOffset")
@@ -180,16 +240,18 @@ pub(super) fn dormant(source: &Source<'_>, key: &str, row: &Value) -> bool {
             tag("endStyle") != Some("BLIND") || tag("tipAngleStyle") == Some("FLAT")
         }
         (Some("hole"), "startBoundEntity") => tag("startStyle") != Some("PLANE"),
+        (Some("hole"), "startStyle") => tag("startStyle") == Some("PART"),
+        (Some("hole"), "isTappedThrough") => {
+            !features::tapped_standard(source.record) || !features::through_hole(source.record)
+        }
         (Some("hole"), "tappedDepth") => {
-            flag("isTappedThrough")
-                || !features::parameter(source.record, "standardTappedOrClearance")
-                    .is_ok_and(|param| param["value"]["type"] == "Tapped")
+            !features::tapped_standard(source.record)
+                || features::tap_through(source.record) == Ok(true)
         }
         (Some("hole"), "scope" | "initEntities") => !has_query(row),
         (Some("hole"), "holeDiameter") => {
             features::parameter(source.record, "tapDrillDiameter").is_ok()
-                && features::parameter(source.record, "standardTappedOrClearance")
-                    .is_ok_and(|parameter| parameter["value"]["type"] == "Tapped")
+                && features::tapped_standard(source.record)
         }
         (Some("shell"), "parts") => !flag("isHollow"),
         (Some("shell"), "entities") => flag("isHollow"),

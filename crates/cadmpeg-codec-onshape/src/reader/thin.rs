@@ -170,7 +170,9 @@ pub(super) fn feature(
             return Err("thin thickness is zero".into());
         }
         let flip = flip ^ clockwise;
-        if first == second && !formula("thickness1") && !formula("thickness2") {
+        let bound_offsets =
+            closed && entities.len() == 1 && (formula("thickness1") || formula("thickness2"));
+        if first == second && !bound_offsets {
             let total = first + second;
             if !total.is_finite() {
                 return Err("thin thickness exceeds the finite range".into());
@@ -229,7 +231,7 @@ pub(super) fn feature(
     let boolean = if op == "new_body" {
         json!({"kind":"new_body"})
     } else {
-        json!({"kind":"apply","op":{"kind":op},"targets":{"kind":"all"}})
+        json!({"kind":"apply","op":{"kind":op}})
     };
     let picks: Vec<_> = entities
         .iter()
