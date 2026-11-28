@@ -2257,6 +2257,7 @@ pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
 #[cfg(test)]
 pub(super) mod test_support;
 
+// resource-cap: MAX_CURVE_POINT_CACHE_ENTRIES = N
 const MAX_CURVE_POINT_CACHE_ENTRIES: usize = 131_072;
 
 #[derive(Default)]

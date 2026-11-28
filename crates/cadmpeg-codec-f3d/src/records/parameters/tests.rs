@@ -151,7 +151,7 @@ fn parameter_text_value_lies_after_the_source_kind_and_round_trips() {
 #[test]
 fn parameter_native_retained_limit_refuses_before_record_clone() {
     let record = parameter(false);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameters",
         || PARAMETER_CLONE_COUNT.with(|count| count.set(0)),
@@ -213,7 +213,7 @@ fn parameter_owner_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn parameter_owner_native_retained_limit_refuses_before_record_clone() {
     let record = owner(Some(0));
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_owners",
         || PARAMETER_OWNER_CLONE_COUNT.with(|count| count.set(0)),
@@ -235,7 +235,7 @@ fn parameter_companion_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn parameter_companion_native_retained_limit_refuses_before_record_clone() {
     let record = companion(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_companions",
         || PARAMETER_COMPANION_CLONE_COUNT.with(|count| count.set(0)),

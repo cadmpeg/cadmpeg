@@ -13,10 +13,6 @@ pub(super) fn scale(value: [f64; 3], scalar: f64) -> [f64; 3] {
     Vector3::from(value).scale(scalar).into()
 }
 
-pub(super) fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
-    Vector3::from(left).cross(Vector3::from(right)).into()
-}
-
 pub(super) fn coordinates(point: FinitePoint3) -> [f64; 3] {
     point.get().into()
 }

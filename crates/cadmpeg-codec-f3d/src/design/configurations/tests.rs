@@ -641,7 +641,7 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     use std::io::{Cursor, Write};
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     let bad = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.bad.dsgcfg";
     zip.start_file(bad, stored).unwrap();
     zip.write_all(b"[").unwrap();

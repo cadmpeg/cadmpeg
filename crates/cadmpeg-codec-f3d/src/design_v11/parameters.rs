@@ -17,13 +17,16 @@
 //! states one; its record stores the value of its literal, which can differ
 //! (f3d.md §3.1, "Sketch dimensions"), and the source setting `f3d:literal`
 //! keeps that literal. The role Fusion stores on a model parameter is the
-//! source setting `f3d:role`, and the diameter or radius presentation of a
-//! diameter or radius dimension's parameter is its `display`.
+//! source setting `f3d:role`. A typed sketch diameter relation carries the
+//! diameter presentation for its bound parameter. Other diameter and radius
+//! presentations stay in the parameter's `display`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroI8;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
@@ -39,12 +42,16 @@ use cadmpeg_ir::features::parameters::{
 };
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::timeline::document_prefix;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
+use crate::records::parameters::{
+    DesignParameter as NativeParameter, DesignParameterOwner as NativeOwner,
+};
 
 /// The v10 property that holds the role Fusion stores on a model parameter.
 const ROLE: &str = "source_kind";
@@ -62,6 +69,54 @@ const MEASURED: &str = "measured_value";
 /// dimension's parameter stores.
 pub(crate) const LITERAL: &str = "f3d:literal";
 
+/// Where the owner record that an owned native parameter names lists it: the
+/// owner's stream and parameter scope record, and its local ordinal there.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct OwnerPlace {
+    pub(super) list: (String, u32),
+    pub(super) ordinal: u32,
+}
+
+/// The [`OwnerPlace`] of each owned native parameter, by the native
+/// parameter's id. A parameter whose owner record index names no owner
+/// record, or more than one, has none.
+pub(super) fn owner_places(
+    ctx: &DecodeContext<'_>,
+    namespace: &NativeNamespace,
+) -> Result<HashMap<String, OwnerPlace>, CodecError> {
+    let owners = namespace.arena_as_for_decode::<NativeOwner>(ctx, "design_parameter_owners")?;
+    let mut by_index = HashMap::<(&str, u32), Option<&NativeOwner>>::new();
+    for owner in &owners {
+        let Some(stream) = native_stream(owner.id()) else {
+            continue;
+        };
+        by_index
+            .entry((stream, owner.record_index()))
+            .and_modify(|found| *found = None)
+            .or_insert(Some(owner));
+    }
+    let mut places = HashMap::new();
+    for parameter in namespace.arena_iter_as_for_decode::<NativeParameter>(ctx, "design_parameters")
+    {
+        let parameter = parameter?;
+        let Some(stream) = native_stream(&parameter.id) else {
+            continue;
+        };
+        let Some(Some(owner)) = parameter
+            .owner_record_index()
+            .and_then(|index| by_index.get(&(stream, index)))
+        else {
+            continue;
+        };
+        let place = OwnerPlace {
+            list: (stream.to_owned(), owner.scope_record_index()),
+            ordinal: owner.local_ordinal(),
+        };
+        places.insert(parameter.id, place);
+    }
+    Ok(places)
+}
+
 /// The parameters of the scopes keyed by document prefix in `scopes`.
 /// `features` holds the ids of the scopes' features. A parameter owned by a
 /// document's parameter scope, the root's or a referenced design's, is a user
@@ -69,9 +124,13 @@ pub(crate) const LITERAL: &str = "f3d:literal";
 /// such feature, or is unresolved, has no owner the scope states. A document
 /// in `hosted`, or one `scopes` does not key, has no scope of its own for its
 /// user parameters. These parameters, and those with a blank name, stay v10
-/// parameters, and one loss per class in `losses` names them.
+/// parameters, and one loss per class in `losses` names them. A parameter of
+/// a feature takes the local ordinal of its owner record as its position,
+/// where the owner records of all the feature's parameters belong to one
+/// parameter scope and state distinct local ordinals.
 pub(crate) fn project(
     legacy: &[LegacyParameter],
+    places: &HashMap<String, OwnerPlace>,
     scopes: &BTreeMap<String, ProductDefinitionId>,
     hosted: &BTreeSet<String>,
     features: &BTreeSet<&str>,
@@ -164,10 +223,40 @@ pub(crate) fn project(
         .iter()
         .map(|(parameter, ..)| (&parameter.id, parameter.name.as_str()))
         .collect::<HashMap<_, _>>();
+    let mut lists = HashMap::<_, Vec<Option<&OwnerPlace>>>::new();
+    for (parameter, scope, owner, _) in &scoped {
+        if let Some(owner) = owner {
+            lists.entry((*scope, *owner)).or_default().push(
+                parameter
+                    .native_ref
+                    .as_ref()
+                    .and_then(|native| places.get(native)),
+            );
+        }
+    }
+    let listed = lists
+        .into_iter()
+        .filter(|(_, members)| {
+            let ordinals = members
+                .iter()
+                .map(|place| place.map(|place| place.ordinal))
+                .collect::<Option<BTreeSet<_>>>();
+            ordinals.is_some_and(|ordinals| ordinals.len() == members.len())
+                && members.iter().all(|place| {
+                    place.map(|place| &place.list) == members[0].map(|place| &place.list)
+                })
+        })
+        .map(|(key, _)| key)
+        .collect::<BTreeSet<_>>();
     scoped
         .iter()
         .map(|(parameter, scope, owner, name)| {
-            record(parameter, (*scope).clone(), *owner, name.clone(), &names)
+            let mut record = record(parameter, (*scope).clone(), *owner, name.clone(), &names);
+            record.position = owner
+                .filter(|owner| listed.contains(&(*scope, *owner)))
+                .and_then(|_| places.get(parameter.native_ref.as_ref()?))
+                .map(|place| place.ordinal);
+            record
         })
         .collect()
 }
@@ -227,6 +316,7 @@ fn record(
         id: parameter.id.clone(),
         scope,
         owner: owner.cloned().map(ParameterOwner::Feature),
+        position: None,
         name: Some(name),
         kind,
         unit: None,

@@ -1981,3 +1981,5 @@ fn a_binding_on_a_charged_record_is_dropped() {
         "test:model:cloud#9",
     )));
 }
+
+mod unread_xml;

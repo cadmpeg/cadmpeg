@@ -44,7 +44,7 @@ fn invalid_mesh_features(graph: &SyntheticMeshGraph, omitted_scope: Option<u64>)
     }
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
     {
-        let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+        let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
         native.design_parameter_scopes.extend(scopes);
         native.design_mesh_features.extend(features);
     }

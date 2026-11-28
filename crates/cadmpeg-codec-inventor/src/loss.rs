@@ -329,6 +329,9 @@ pub(crate) enum InventorLossCode {
     /// The Base or Split feature of a decoded history body is not a projected
     /// feature, so the body has no origin to name.
     FeatureHistoryBodyUnlinked,
+    /// The history state of a history body has no evaluation in the part's
+    /// timeline.
+    FeatureHistoryStateUnplaced,
     /// The decode of the source carrier of a Base feature reached a resource
     /// limit, so the feature keeps its native form.
     FeatureBaseSourceBounded,
@@ -493,6 +496,7 @@ impl InventorLossCode {
         Self::FeatureHistoryBodyNotClosed,
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUnlinked,
+        Self::FeatureHistoryStateUnplaced,
         Self::FeatureBaseSourceBounded,
         Self::DrawingNativeOnly,
         Self::PmiTargetUnresolved,
@@ -684,6 +688,7 @@ impl InventorLossCode {
             Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
+            Self::FeatureHistoryStateUnplaced => "feature.history-state-unplaced",
             Self::FeatureBaseSourceBounded => "feature.base-source-bounded",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -835,6 +840,7 @@ impl InventorLossCode {
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureBaseSourceBounded
             | Self::FeatureHistoryBodyUnlinked
+            | Self::FeatureHistoryStateUnplaced
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -1049,6 +1055,7 @@ mod tests {
                 "feature.history-body-not-closed",
                 "feature.history-body-bounded",
                 "feature.history-body-unlinked",
+                "feature.history-state-unplaced",
                 "feature.base-source-bounded",
                 "drawing.native-only",
                 "pmi.target-unresolved",

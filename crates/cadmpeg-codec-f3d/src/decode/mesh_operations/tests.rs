@@ -311,7 +311,7 @@ fn bind_inputs(
 
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(ENTRY, stored).unwrap();
     zip.write_all(&fixture.stream).unwrap();
     if let Some(meta) = &fixture.metadata {
@@ -321,7 +321,7 @@ fn bind_inputs(
     }
     let archive = zip.finish().unwrap().into_inner();
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             bind_features(ctx, scan, features, inputs, &mut losses)
         })
@@ -386,7 +386,7 @@ fn with_source_records(mut stream: Vec<u8>, kind: &str, bodies: &[u32]) -> Fixtu
     } else {
         "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF"
     };
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (guid, base, version, "Fusion", &[7]),
             (

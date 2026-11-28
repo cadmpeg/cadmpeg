@@ -18,7 +18,9 @@ use crate::settings::{interval, point, vector, xform, MillimeterScale};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
+// resource-cap: MAX_LOCALIZERS = 2
 const MAX_LOCALIZERS: usize = 1 << 16;
+// resource-cap: MAX_CAPTIVES = 2
 const MAX_CAPTIVES: usize = 1 << 20;
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0xd3, 0x79, 0xe6, 0xd8, 0x7c, 0x31, 0x44, 0x07, 0xa9, 0x13, 0xe3, 0xb7, 0x04, 0x0d, 0x03, 0x4a,
