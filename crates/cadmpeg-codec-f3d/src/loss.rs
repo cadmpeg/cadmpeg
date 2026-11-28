@@ -666,8 +666,8 @@ pub(crate) enum F3dLossCode {
     /// relation on the point names a point minted there.
     DesignSketchLocusAmbiguous,
     /// Sketch relations that name one point entity for both operands of a
-    /// coincidence: the point states the coincidence, and the relation is
-    /// not restated.
+    /// coincidence: the point states the coincidence, and the design holds
+    /// no relation record for it.
     DesignSketchRelationSinglePoint,
     /// Sketch relations with no typed relation of their operands and value:
     /// they state their native kind.

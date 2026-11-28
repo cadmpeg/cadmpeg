@@ -314,7 +314,7 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
         notes.push(
             SldprtLossCode::DesignSketchRelationSinglePoint.note(format!(
                 "{} sketch relations name one point entity for both operands of a coincidence; \
-             the point states the coincidence, and the relations are not restated: {}",
+             the point states the coincidence, and the design holds no relation record for them: {}",
                 single_point.len(),
                 listed(single_point.into_iter()),
             )),
