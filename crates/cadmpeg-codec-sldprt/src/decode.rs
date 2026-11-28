@@ -271,11 +271,11 @@ fn decode_scanned(
     }
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
-    // A scoped root lists only the bodies of its current states. A body of a
-    // configuration that is not active and whose state the design does not
-    // state stays in the geometry unlisted, as a scoped CATIA or Rhino root
-    // leaves its own (interim, errata A1). Local digests are stamped after
-    // the root is complete.
+    // A scoped root lists only the bodies of its current states and its
+    // unproduced bodies. A body of a configuration that is not active and
+    // whose state the design does not state stays in the geometry unlisted,
+    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
+    // Local digests are stamped after the root is complete.
     let current = if ctx.depth() == DecodeDepth::Geometry && part {
         decoded
             .ir
@@ -291,8 +291,13 @@ fn decode_scanned(
                 .design
                 .scopes
                 .iter()
-                .flat_map(|scope| &scope.current)
-                .flat_map(|state| &state.bodies)
+                .flat_map(|scope| {
+                    scope
+                        .current
+                        .iter()
+                        .flat_map(|state| &state.bodies)
+                        .chain(&scope.unproduced)
+                })
                 .cloned()
                 .collect::<std::collections::HashSet<_>>()
         })
