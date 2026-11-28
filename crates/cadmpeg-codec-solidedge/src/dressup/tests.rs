@@ -1,0 +1,785 @@
+// SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
+
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_4};
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ops::dressup::ShellFeature;
+use cadmpeg_ir::design::ops::dressup::{
+    CenterSource, Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead,
+    HolePositions, HoleShape, StationAt,
+};
+use cadmpeg_ir::design::ops::shared::Limit;
+use cadmpeg_ir::design::ops::sketch::{EntityDefinition, PlanarCurve};
+use cadmpeg_ir::design::options::{Thickness, WallSide};
+use cadmpeg_ir::design::selection::{MemberOrder, PickTarget, Picks, Selection};
+use cadmpeg_ir::math::Vector3;
+
+use crate::test_support::{dressup_document, Dress, HoleProps, Member2d, ProfileFrame, Slot};
+use crate::SolidEdgeCodec;
+
+/// Agreement of a computed millimetre or radian value with the hand-computed
+/// one.
+const EPS_VALUE: f64 = 1e-9;
+
+const HOLE: &str = "JMHoleFunction";
+const ROUND: &str = "JMRoundFunction";
+const CHAMFER: &str = "JMChamferFunction";
+const THINWALL: &str = "JMThinwallAssocFunctionNew";
+
+/// A profile on the XY plane with normal +Z.
+const XY: ProfileFrame = ProfileFrame {
+    origin: [0.0, 0.0, 0.0],
+    normal: [0.0, 0.0, 1.0],
+    x_axis: [1.0, 0.0, 0.0],
+};
+
+fn decode(bytes: Vec<u8>) -> DecodeResult {
+    SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+fn codes(result: &DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.local_code().to_owned())
+        .collect()
+}
+
+fn operation(result: &DecodeResult) -> &FeatureOperation {
+    &result.ir().design.features[0].definition.operation
+}
+
+fn unresolved(result: &DecodeResult, family: OperationFamily) -> bool {
+    operation(result) == &FeatureOperation::Unresolved { family }
+}
+
+/// Whether the feature stays untyped and names its sketch natively.
+fn names_profile(result: &DecodeResult) -> bool {
+    matches!(
+        operation(result),
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
+    )
+}
+
+fn props(kind: u32, diameter: f64) -> HoleProps {
+    HoleProps {
+        kind,
+        diameter,
+        head_diameter: 0.0,
+        head_depth: 0.0,
+        sink_degrees: 0.0,
+        depth: 0.0,
+        thread: None,
+    }
+}
+
+/// A hole feature with `positions`, stored extent `kind` and `side`, and the
+/// further slots `extra`.
+fn hole_with(
+    props: HoleProps,
+    kind: f64,
+    side: f64,
+    positions: &[[f64; 2]],
+    extra: &[(usize, Dress)],
+) -> DecodeResult {
+    let members: Vec<Member2d> = positions.iter().copied().map(Member2d::Hole).collect();
+    let mut slots = vec![
+        (96, Dress::Props(props)),
+        (208, Dress::Value(Slot::Double(kind))),
+        (236, Dress::Value(Slot::Double(side))),
+    ];
+    slots.extend_from_slice(extra);
+    decode(dressup_document(HOLE, Some((&XY, &members)), &slots))
+}
+
+fn hole(result: &DecodeResult) -> &Hole {
+    match operation(result) {
+        FeatureOperation::Hole(hole) => hole,
+        other => panic!("expected a hole, found {other:?}"),
+    }
+}
+
+fn bore(hole: &Hole) -> &cadmpeg_ir::design::ops::dressup::Bore {
+    match &hole.shape {
+        HoleShape::Bore(bore) => bore,
+        other => panic!("expected a bore, found {other:?}"),
+    }
+}
+
+fn mm(dimension: Option<&Dimension<cadmpeg_ir::scalar::PositiveLength>>) -> f64 {
+    match dimension {
+        Some(Dimension::Literal(value)) => value.get(),
+        other => panic!("expected a literal length, found {other:?}"),
+    }
+}
+
+fn radians(dimension: Option<&Dimension<cadmpeg_ir::scalar::InteriorAngle>>) -> f64 {
+    match dimension {
+        Some(Dimension::Literal(value)) => value.get(),
+        other => panic!("expected a literal angle, found {other:?}"),
+    }
+}
+
+fn blind_mm(hole: &Hole) -> f64 {
+    match &hole.extent {
+        Some(Limit::Amount(Dimension::Literal(length))) => length.get(),
+        other => panic!("expected a blind extent, found {other:?}"),
+    }
+}
+
+/// The positions of the hole: the points of the sketch that the hole names as
+/// a whole, on the XY profile plane, as `[u, v, 0]` in millimetres.
+fn points(result: &DecodeResult, hole: &Hole) -> Vec<[f64; 3]> {
+    let HolePositions::Points { points, centers } = &hole.positions else {
+        panic!("expected sketch positions, found {:?}", hole.positions);
+    };
+    assert_eq!(
+        centers.as_ref().unwrap().iter().collect::<Vec<_>>(),
+        [&CenterSource::Points]
+    );
+    let Picks::Named(picks) = &points.picks else {
+        panic!("expected a named pick");
+    };
+    let [pick] = picks.as_slice() else {
+        panic!("expected one pick");
+    };
+    let PickTarget::Sketch(sketch) = &pick.target else {
+        panic!("expected a whole-sketch pick");
+    };
+    result
+        .ir()
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .map(|entity| match &entity.definition {
+            EntityDefinition::Free(PlanarCurve::Point(point)) => {
+                let at = point.get();
+                [at.u, at.v, 0.0]
+            }
+            other => panic!("expected a point, found {other:?}"),
+        })
+        .collect()
+}
+
+fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() <= EPS_VALUE
+}
+
+#[test]
+fn simple_hole_four_millimetres_through_all() {
+    let result = hole_with(props(0, 0.004), 16.0, 1.0, &[[0.01, 0.02]], &[]);
+    let hole = hole(&result);
+    assert!(near(mm(bore(hole).diameter.as_ref()), 4.0));
+    assert_eq!(bore(hole).head, Some(HoleHead::Plain));
+    assert_eq!(hole.extent, Some(Limit::ThroughAll));
+    assert_eq!(hole.thread, None);
+    let at = points(&result, hole);
+    assert_eq!(at.len(), 1);
+    assert!(near(at[0][0], 10.0) && near(at[0][1], 20.0) && near(at[0][2], 0.0));
+    let found = codes(&result);
+    assert!(!found.contains(&"feature.dressup-unread".to_owned()));
+    assert!(!found.contains(&"feature.operands-pending".to_owned()));
+    assert!(!found.contains(&"feature.selection-unread".to_owned()));
+}
+
+#[test]
+fn six_millimetre_hole() {
+    let result = hole_with(props(0, 0.006), 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    assert!(near(mm(bore(hole(&result)).diameter.as_ref()), 6.0));
+}
+
+#[test]
+fn side_one_drills_against_the_profile_normal_and_side_two_along_it() {
+    let against = hole_with(props(0, 0.004), 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    let along = hole_with(props(0, 0.004), 16.0, 2.0, &[[0.0, 0.0]], &[]);
+    let direction = |result: &DecodeResult| {
+        let unit = hole(result).direction.as_ref().unwrap().resolved.unwrap();
+        Vector3::from(unit)
+    };
+    assert!(near(direction(&against).z, -1.0));
+    assert!(near(direction(&along).z, 1.0));
+}
+
+#[test]
+fn blind_hole_takes_its_depth_from_the_dimension() {
+    let depth = (264, Dress::Value(Slot::Dim(0.008)));
+    let result = hole_with(props(0, 0.004), 13.0, 1.0, &[[0.0, 0.0]], &[depth]);
+    assert!(near(blind_mm(hole(&result)), 8.0));
+}
+
+#[test]
+fn blind_hole_falls_back_to_the_stored_depth() {
+    let mut stored = props(0, 0.004);
+    stored.depth = 0.012;
+    let result = hole_with(stored, 13.0, 1.0, &[[0.0, 0.0]], &[]);
+    assert!(near(blind_mm(hole(&result)), 12.0));
+}
+
+#[test]
+fn counterbore_eight_by_three() {
+    let mut stored = props(2, 0.004);
+    stored.head_diameter = 0.008;
+    stored.head_depth = 0.003;
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    match &bore(hole(&result)).head {
+        Some(HoleHead::Counterbore { diameter, depth }) => {
+            assert!(near(mm(diameter.as_ref()), 8.0));
+            assert!(near(mm(depth.as_ref()), 3.0));
+        }
+        other => panic!("expected a counterbore, found {other:?}"),
+    }
+}
+
+#[test]
+fn counterbore_depth_prefers_its_dimension() {
+    let mut stored = props(2, 0.004);
+    stored.head_diameter = 0.008;
+    stored.head_depth = 0.001;
+    let depth = (124, Dress::Value(Slot::Dim(0.003)));
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[depth]);
+    match &bore(hole(&result)).head {
+        Some(HoleHead::Counterbore { depth, .. }) => assert!(near(mm(depth.as_ref()), 3.0)),
+        other => panic!("expected a counterbore, found {other:?}"),
+    }
+}
+
+#[test]
+fn countersink_eight_millimetres_ninety_degrees() {
+    let mut stored = props(1, 0.004);
+    stored.head_diameter = 0.008;
+    stored.sink_degrees = 90.0;
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    match &bore(hole(&result)).head {
+        Some(HoleHead::Countersink(cone)) => {
+            assert!(near(mm(cone.diameter.as_ref()), 8.0));
+            assert!(near(radians(cone.angle.as_ref()), FRAC_PI_2));
+        }
+        other => panic!("expected a countersink, found {other:?}"),
+    }
+}
+
+#[test]
+fn countersink_angle_prefers_its_dimension_in_radians() {
+    let mut stored = props(1, 0.004);
+    stored.head_diameter = 0.008;
+    stored.sink_degrees = 90.0;
+    let angle = (152, Dress::Value(Slot::Dim(FRAC_PI_3)));
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[angle]);
+    match &bore(hole(&result)).head {
+        Some(HoleHead::Countersink(cone)) => assert!(near(radians(cone.angle.as_ref()), FRAC_PI_3)),
+        other => panic!("expected a countersink, found {other:?}"),
+    }
+}
+
+#[test]
+fn tapped_hole_with_counterbore_states_bore_head_and_a_thread_loss() {
+    let mut stored = props(3, 0.005);
+    stored.head_diameter = 0.010;
+    stored.head_depth = 0.004;
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    let hole = hole(&result);
+    assert!(near(mm(bore(hole).diameter.as_ref()), 5.0));
+    match &bore(hole).head {
+        Some(HoleHead::Counterbore { diameter, depth }) => {
+            assert!(near(mm(diameter.as_ref()), 10.0));
+            assert!(near(mm(depth.as_ref()), 4.0));
+        }
+        other => panic!("expected a counterbore, found {other:?}"),
+    }
+    assert_eq!(hole.thread, None);
+    let found = codes(&result);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|code| *code == "feature.thread-unread")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn tapped_hole_without_a_head_is_a_plain_bore() {
+    let result = hole_with(props(3, 0.005), 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    assert_eq!(bore(hole(&result)).head, Some(HoleHead::Plain));
+}
+
+#[test]
+fn two_positions_state_two_points_in_profile_order() {
+    let result = hole_with(
+        props(0, 0.004),
+        16.0,
+        1.0,
+        &[[0.01, 0.02], [0.03, 0.04]],
+        &[],
+    );
+    let at = points(&result, hole(&result));
+    assert_eq!(at.len(), 2);
+    assert!(near(at[0][0], 10.0) && near(at[0][1], 20.0));
+    assert!(near(at[1][0], 30.0) && near(at[1][1], 40.0));
+}
+
+#[test]
+fn profile_without_hole_positions_stays_unresolved() {
+    let result = hole_with(props(0, 0.004), 16.0, 1.0, &[], &[]);
+    assert!(names_profile(&result));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+#[test]
+fn unknown_hole_type_stays_unresolved_and_names_the_feature() {
+    let result = hole_with(props(9, 0.004), 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    assert!(names_profile(&result));
+    let notes: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "feature.dressup-unread")
+        .collect();
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].message.contains("0xa"), "{}", notes[0].message);
+}
+
+#[test]
+fn dimension_with_p_144_reads() {
+    let depth = (264, Dress::Value(Slot::DimCompact(0.008)));
+    let result = hole_with(props(0, 0.004), 13.0, 1.0, &[[0.0, 0.0]], &[depth]);
+    assert!(near(blind_mm(hole(&result)), 8.0));
+}
+
+#[test]
+fn dimension_with_p_148_reads() {
+    let depth = (264, Dress::Value(Slot::Dim(0.009)));
+    let result = hole_with(props(0, 0.004), 13.0, 1.0, &[[0.0, 0.0]], &[depth]);
+    assert!(near(blind_mm(hole(&result)), 9.0));
+}
+
+#[test]
+fn dimension_whose_repeated_target_differs_does_not_read() {
+    let depth = (264, Dress::Value(Slot::DimBroken(0.008)));
+    let result = hole_with(props(0, 0.004), 13.0, 1.0, &[[0.0, 0.0]], &[depth]);
+    assert!(names_profile(&result));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+/// A round with one set per radius in `radii` (metres), each of kind
+/// `kinds[k]`.
+fn round_with(radii: &[Slot], kinds: &[f64]) -> DecodeResult {
+    let n = radii.len();
+    let mut slots = Vec::new();
+    for k in 0..n {
+        slots.push((72 + 20 * k, Dress::Proxy));
+        slots.push((84 + 20 * n + 20 * k, Dress::Value(Slot::Double(kinds[k]))));
+        slots.push((96 + 40 * n + 20 * k, Dress::Value(radii[k])));
+    }
+    decode(dressup_document(ROUND, None, &slots))
+}
+
+fn fillet(result: &DecodeResult) -> &Fillet {
+    match operation(result) {
+        FeatureOperation::Fillet(fillet) => fillet,
+        other => panic!("expected a fillet, found {other:?}"),
+    }
+}
+
+fn radius(set: &FilletSet) -> f64 {
+    match set {
+        FilletSet::Edges { edges, section, .. } => {
+            assert_eq!(edges.picks, Picks::Unread);
+            match &section.size {
+                Some(FilletSize::Radius(Dimension::Literal(radius))) => radius.get(),
+                other => panic!("expected a constant radius, found {other:?}"),
+            }
+        }
+        other => panic!("expected an edge set, found {other:?}"),
+    }
+}
+
+#[test]
+fn round_with_one_set_of_two_millimetres() {
+    let result = round_with(&[Slot::Dim(0.002)], &[1.0]);
+    let fillet = fillet(&result);
+    assert_eq!(fillet.sets.len(), 1);
+    assert!(near(radius(&fillet.sets[0]), 2.0));
+    let found = codes(&result);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|code| *code == "feature.selection-unread")
+            .count(),
+        1
+    );
+    assert!(!found.contains(&"feature.operands-pending".to_owned()));
+}
+
+#[test]
+fn round_with_two_sets() {
+    let result = round_with(&[Slot::Dim(0.002), Slot::Dim(0.003)], &[1.0, 1.0]);
+    let fillet = fillet(&result);
+    assert_eq!(fillet.sets.len(), 2);
+    assert!(near(radius(&fillet.sets[0]), 2.0));
+    assert!(near(radius(&fillet.sets[1]), 3.0));
+}
+
+/// A variable-radius round on the edge from `start` along +x of `length`,
+/// whose vertices are `vertices` with the radii `radii`.
+fn variable_round(vertices: [[f64; 3]; 2], radii: [f64; 2], length: f64) -> DecodeResult {
+    let start = [-0.02, -0.015, 0.02];
+    decode(dressup_document(
+        ROUND,
+        None,
+        &[
+            (
+                72,
+                Dress::Edge {
+                    start,
+                    direction: [1.0, 0.0, 0.0],
+                    length,
+                },
+            ),
+            (104, Dress::Value(Slot::Double(2.0))),
+            (168, Dress::Vertex(vertices[0])),
+            (188, Dress::Vertex(vertices[1])),
+            (220, Dress::Value(Slot::Dim(radii[0]))),
+            (240, Dress::Value(Slot::Dim(radii[1]))),
+        ],
+    ))
+}
+
+fn stations(result: &DecodeResult) -> Vec<(f64, f64)> {
+    match &fillet(result).sets[0] {
+        FilletSet::Edges { section, .. } => match &section.size {
+            Some(FilletSize::Variable(stations)) => stations
+                .points
+                .iter()
+                .map(|point| {
+                    let StationAt::Parameter {
+                        fraction: Dimension::Literal(fraction),
+                        ..
+                    } = &point.at
+                    else {
+                        panic!("expected a station at a fraction");
+                    };
+                    let Dimension::Literal(value) = &point.value else {
+                        panic!("expected a literal radius");
+                    };
+                    (fraction.get(), value.get())
+                })
+                .collect(),
+            other => panic!("expected a variable radius, found {other:?}"),
+        },
+        other => panic!("expected an edge set, found {other:?}"),
+    }
+}
+
+#[test]
+fn variable_radius_round_states_a_station_at_each_vertex() {
+    let result = variable_round(
+        [[-0.02, -0.015, 0.02], [0.02, -0.015, 0.02]],
+        [0.002, 0.004],
+        0.04,
+    );
+    let found = stations(&result);
+    assert_eq!(found.len(), 2);
+    assert!(near(found[0].0, 0.0) && near(found[0].1, 2.0));
+    assert!(near(found[1].0, 1.0) && near(found[1].1, 4.0));
+}
+
+#[test]
+fn variable_radius_stations_follow_the_vertex_order() {
+    let result = variable_round(
+        [[0.02, -0.015, 0.02], [-0.02, -0.015, 0.02]],
+        [0.005, 0.002],
+        0.04,
+    );
+    let found = stations(&result);
+    assert!(near(found[0].0, 1.0) && near(found[0].1, 5.0));
+    assert!(near(found[1].0, 0.0) && near(found[1].1, 2.0));
+}
+
+#[test]
+fn variable_radius_vertex_off_the_edge_stays_unresolved() {
+    let result = variable_round(
+        [[-0.02, -0.015, 0.02], [0.01, -0.015, 0.02]],
+        [0.002, 0.004],
+        0.04,
+    );
+    assert!(unresolved(&result, OperationFamily::Fillet));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+#[test]
+fn round_set_of_another_kind_stays_unresolved() {
+    let result = round_with(&[Slot::Dim(0.002), Slot::Dim(0.003)], &[1.0, 2.0]);
+    assert!(unresolved(&result, OperationFamily::Fillet));
+    let found = codes(&result);
+    assert!(found.contains(&"feature.dressup-unread".to_owned()));
+    assert!(!found.contains(&"feature.selection-unread".to_owned()));
+    assert!(found.contains(&"feature.operands-pending".to_owned()));
+}
+
+#[test]
+fn round_set_without_a_radius_stays_unresolved() {
+    let result = round_with(&[Slot::Empty], &[1.0]);
+    assert!(unresolved(&result, OperationFamily::Fillet));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+/// A chamfer of `kind` with the given setbacks.
+fn chamfer_with(kind: f64, first: Slot, second: Slot) -> DecodeResult {
+    decode(dressup_document(
+        CHAMFER,
+        None,
+        &[
+            (68, Dress::Value(Slot::Double(kind))),
+            (96, Dress::Proxy),
+            (128, Dress::Proxy),
+            (156, Dress::Value(first)),
+            (184, Dress::Value(second)),
+        ],
+    ))
+}
+
+fn chamfer(result: &DecodeResult) -> &Chamfer {
+    match operation(result) {
+        FeatureOperation::Chamfer(chamfer) => chamfer,
+        other => panic!("expected a chamfer, found {other:?}"),
+    }
+}
+
+fn length(dimension: &Dimension<cadmpeg_ir::scalar::PositiveLength>) -> f64 {
+    match dimension {
+        Dimension::Literal(value) => value.get(),
+        other => panic!("expected a literal length, found {other:?}"),
+    }
+}
+
+#[test]
+fn equal_distance_chamfer() {
+    let result = chamfer_with(41.0, Slot::Dim(0.003), Slot::Empty);
+    let set = &chamfer(&result).sets[0];
+    assert_eq!(set.edges.picks, Picks::Unread);
+    assert!(set.reference.is_none());
+    match set.size.as_ref().unwrap() {
+        ChamferSize::Distance(distance) => assert!(near(length(distance), 3.0)),
+        other => panic!("expected one distance, found {other:?}"),
+    }
+    assert!(codes(&result).contains(&"feature.selection-unread".to_owned()));
+}
+
+#[test]
+fn two_distance_chamfer() {
+    let result = chamfer_with(43.0, Slot::Dim(0.003), Slot::Dim(0.005));
+    let set = &chamfer(&result).sets[0];
+    assert_eq!(set.reference.as_ref().unwrap().picks, Picks::Unread);
+    match set.size.as_ref().unwrap() {
+        ChamferSize::Distances { first, second } => {
+            assert!(near(length(first), 3.0));
+            assert!(near(length(second), 5.0));
+        }
+        other => panic!("expected two distances, found {other:?}"),
+    }
+}
+
+#[test]
+fn distance_and_angle_chamfer() {
+    let result = chamfer_with(42.0, Slot::Dim(0.003), Slot::Dim(FRAC_PI_4));
+    let set = &chamfer(&result).sets[0];
+    assert_eq!(set.reference.as_ref().unwrap().picks, Picks::Unread);
+    match set.size.as_ref().unwrap() {
+        ChamferSize::DistanceAngle { distance, angle } => {
+            assert!(near(length(distance), 3.0));
+            assert!(near(radians(Some(angle)), FRAC_PI_4));
+        }
+        other => panic!("expected a distance and angle, found {other:?}"),
+    }
+}
+
+#[test]
+fn unknown_chamfer_type_stays_unresolved() {
+    let result = chamfer_with(44.0, Slot::Dim(0.003), Slot::Empty);
+    assert!(unresolved(&result, OperationFamily::Chamfer));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+/// A tapped hole of type `kind` that stores the thread block M6x1: minor
+/// diameter 4.917 mm and major diameter 6 mm.
+fn threaded(kind: u32) -> DecodeResult {
+    let mut stored = props(kind, 0.005);
+    stored.thread = Some((4.917, 6.0, "M6x1"));
+    hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[])
+}
+
+#[test]
+fn tapped_hole_states_its_thread() {
+    let result = threaded(3);
+    let thread = hole(&result).thread.as_ref().unwrap();
+    assert_eq!(thread.standard.as_ref().unwrap().standard.as_str(), "M6x1");
+    assert!(near(mm(thread.minor_diameter.as_ref()), 4.917));
+    assert!(near(mm(thread.major_diameter.as_ref()), 6.0));
+    assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+#[test]
+fn thread_values_of_a_hole_of_another_type_do_not_apply() {
+    for kind in [0, 1, 2] {
+        let mut stored = props(kind, 0.005);
+        stored.thread = Some((4.917, 6.0, "M6x1"));
+        stored.head_diameter = 0.010;
+        stored.head_depth = 0.004;
+        stored.sink_degrees = 90.0;
+        let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+        assert_eq!(hole(&result).thread, None);
+        assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+    }
+}
+
+#[test]
+fn counterbore_hole_without_a_selected_thread_states_bore_head_and_depth() {
+    let mut stored = props(2, 0.005);
+    stored.head_diameter = 0.011;
+    stored.head_depth = 0.001;
+    stored.thread = Some((-1.0, -1.0, ""));
+    let extra = [
+        (124, Dress::Value(Slot::Dim(0.005))),
+        (264, Dress::Value(Slot::Dim(0.015))),
+    ];
+    let result = hole_with(stored, 13.0, 1.0, &[[0.0, 0.0]], &extra);
+    let hole = hole(&result);
+    assert!(near(mm(bore(hole).diameter.as_ref()), 5.0));
+    match &bore(hole).head {
+        Some(HoleHead::Counterbore { diameter, depth }) => {
+            assert!(near(mm(diameter.as_ref()), 11.0));
+            assert!(near(mm(depth.as_ref()), 5.0));
+        }
+        other => panic!("expected a counterbore, found {other:?}"),
+    }
+    assert!(near(blind_mm(hole), 15.0));
+    assert_eq!(hole.thread, None);
+    assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+#[test]
+fn a_designation_that_is_not_printable_ascii_leaves_the_thread_unread() {
+    let mut stored = props(3, 0.005);
+    stored.thread = Some((4.917, 6.0, "M6\u{e9}"));
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    assert_eq!(hole(&result).thread, None);
+    assert!(codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+/// A thin wall of `kind` and `thickness` (metres).
+fn thinwall_with(kind: f64, thickness: Slot) -> DecodeResult {
+    decode(dressup_document(
+        THINWALL,
+        None,
+        &[
+            (68, Dress::Value(Slot::Double(kind))),
+            (96, Dress::Value(thickness)),
+            (124, Dress::Proxy),
+        ],
+    ))
+}
+
+fn shell(result: &DecodeResult) -> &ShellFeature {
+    match operation(result) {
+        FeatureOperation::Shell(shell) => shell,
+        other => panic!("expected a shell, found {other:?}"),
+    }
+}
+
+#[test]
+fn thin_wall_of_two_millimetres_hollows_inward() {
+    let result = thinwall_with(4.0, Slot::Dim(0.002));
+    let shell = shell(&result);
+    match shell.thickness.as_ref().unwrap() {
+        Thickness::OneSide {
+            value,
+            side: Some(WallSide::Inside),
+        } => assert!(near(mm(Some(value)), 2.0)),
+        other => panic!("expected an inward wall, found {other:?}"),
+    }
+    assert_eq!(shell.removed.picks, Picks::Unread);
+    assert!(codes(&result).contains(&"feature.selection-unread".to_owned()));
+}
+
+#[test]
+fn thin_wall_of_another_type_stays_unresolved() {
+    let result = thinwall_with(5.0, Slot::Dim(0.002));
+    assert!(unresolved(&result, OperationFamily::Shell));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+/// The straight edge the proxies of the tests store, in metres.
+const EDGE_START: [f64; 3] = [0.010, 0.020, 0.030];
+const EDGE_DIRECTION: [f64; 3] = [0.0, 0.0, 1.0];
+const EDGE_LENGTH: f64 = 0.015;
+
+fn assert_edge_pick<O: MemberOrder + std::fmt::Debug>(selection: &Selection<O>) {
+    let Picks::Named(members) = &selection.picks else {
+        panic!("expected a named selection, found {:?}", selection.picks);
+    };
+    let [pick] = members.as_slice() else {
+        panic!("expected one pick");
+    };
+    assert!(matches!(pick.target, PickTarget::Native { within: None }));
+    let [start, end] = pick.witness.as_ref().unwrap().endpoints.unwrap();
+    let (start, end) = (start.get(), end.get());
+    assert!(near(start.x, 10.0) && near(start.y, 20.0) && near(start.z, 30.0));
+    assert!(near(end.x, 10.0) && near(end.y, 20.0) && near(end.z, 45.0));
+}
+
+#[test]
+fn chamfer_of_a_straight_edge_states_the_edge_line() {
+    let result = decode(dressup_document(
+        CHAMFER,
+        None,
+        &[
+            (68, Dress::Value(Slot::Double(41.0))),
+            (
+                128,
+                Dress::Edge {
+                    start: EDGE_START,
+                    direction: EDGE_DIRECTION,
+                    length: EDGE_LENGTH,
+                },
+            ),
+            (156, Dress::Value(Slot::Dim(0.003))),
+        ],
+    ));
+    assert_edge_pick(&chamfer(&result).sets[0].edges);
+    assert!(!codes(&result).contains(&"feature.selection-unread".to_owned()));
+}
+
+#[test]
+fn round_of_a_straight_edge_states_the_edge_line() {
+    let result = decode(dressup_document(
+        ROUND,
+        None,
+        &[
+            (
+                72,
+                Dress::Edge {
+                    start: EDGE_START,
+                    direction: EDGE_DIRECTION,
+                    length: EDGE_LENGTH,
+                },
+            ),
+            (104, Dress::Value(Slot::Double(1.0))),
+            (136, Dress::Value(Slot::Dim(0.002))),
+        ],
+    ));
+    match &fillet(&result).sets[0] {
+        FilletSet::Edges { edges, .. } => assert_edge_pick(edges),
+        other => panic!("expected an edge set, found {other:?}"),
+    }
+    assert!(!codes(&result).contains(&"feature.selection-unread".to_owned()));
+}

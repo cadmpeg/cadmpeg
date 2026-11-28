@@ -5,17 +5,31 @@
 //! Support: L2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
 //! <!-- /generated: capability solidedge -->
 
+mod assembly;
 mod brep;
 mod chart;
+mod construction;
 mod container;
 mod decode;
 mod dialect;
+mod dimension;
+mod dressup;
+mod extents;
+mod features;
 mod geometry;
 mod intersection;
 mod isocurve;
+mod layout;
+mod lofts;
 mod loss;
 mod partition;
+mod patterns;
+mod proxy;
+mod psm;
+mod settings;
+mod sketches;
 mod sp_curve;
+mod sweeps;
 mod trace;
 
 use cadmpeg_core::decode::{DecodeContext, View};
