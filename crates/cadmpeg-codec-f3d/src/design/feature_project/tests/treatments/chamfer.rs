@@ -608,12 +608,17 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
         DesignChamferCornerType::Miter,
         DesignChamferCornerType::Blend,
     ] {
-        for tangent in [false, true] {
+        for (tangent, compact) in [(false, false), (true, false), (false, true), (true, true)] {
             let mut scope = mixed_scope();
             if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
                 let sets = payload.sets.as_mut().unwrap();
                 sets.corner_type = corner;
                 sets.sets[0].tangent_chain = tangent;
+                sets.sets[1].tangent_chain = tangent;
+                sets.sets[2].tangent_chain = tangent;
+                if compact {
+                    sets.sets[0].frame_length = COMPACT_SET_FRAME_LENGTH;
+                }
             }
             let projected = project_scope(&scope, &parameters, &owners, &groups);
             assert_eq!(
@@ -622,14 +627,61 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
             );
             assert_eq!(
                 loss_count(&projected, ChamferTangentChainAssumed),
-                usize::from(tangent)
+                usize::from(tangent && compact)
             );
             let retained: DesignChamferSetList =
                 serde_json::from_str(&projected.features[0].source_properties["chamfer:sets"])
                     .unwrap();
             assert_eq!(retained.corner_type, corner);
-            assert_eq!(retained.sets[0].tangent_chain, tangent);
+            assert!(retained.sets.iter().all(|set| set.tangent_chain == tangent));
         }
+    }
+}
+
+const COMPACT_SET_FRAME_LENGTH: u64 = 82;
+
+fn single_equal_distance_scope(frame_length: u64, tangent_chain: bool) -> DesignParameterScope {
+    let mut scope = localized_chamfer_scope();
+    if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
+        payload.sets = Some(
+            json::from_value(cadmpeg_core::json!({
+                "form":"current", "corner_type":"chamfer", "entry_count":3, "sets":[{
+                    "record_index":500, "byte_offset":2000, "frame_length":frame_length,
+                    "group_record_index":100,
+                    "spec":{"kind":"equal_distance", "distance_owner_record_index":10},
+                    "auxiliary_record_index":600, "entry_count":3, "tangent_chain":tangent_chain
+                }]
+            }))
+            .unwrap(),
+        );
+    }
+    scope
+}
+
+#[test]
+fn only_a_compact_tangent_chain_set_charges_the_propagated_selection() {
+    let (parameters, owners) = mixed_parameters();
+    let groups = mixed_groups();
+    for (frame_length, tangent, charged) in [
+        (83, true, 0),
+        (83, false, 0),
+        (COMPACT_SET_FRAME_LENGTH, true, 1),
+        (COMPACT_SET_FRAME_LENGTH, false, 0),
+    ] {
+        let scope = single_equal_distance_scope(frame_length, tangent);
+        let projected = project_scope(&scope, &parameters[..1], &owners[..1], &groups[..1]);
+        assert!(matches!(
+            projected_groups(&projected),
+            [ChamferGroup {
+                spec: ChamferSpec::Distance { .. },
+                ..
+            }]
+        ));
+        assert_eq!(
+            loss_count(&projected, ChamferTangentChainAssumed),
+            charged,
+            "frame {frame_length}, tangent chain {tangent}"
+        );
     }
 }
 

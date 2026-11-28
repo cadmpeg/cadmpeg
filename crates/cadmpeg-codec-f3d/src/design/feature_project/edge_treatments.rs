@@ -488,6 +488,9 @@ pub(super) fn project_chamfer(
             scope.id
         )));
     }
+    for set in scope.chamfer_sets().iter().flat_map(|sets| &sets.sets) {
+        chamfer::note_tangent_chain_assumption(scope, set, losses);
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
             groups,
