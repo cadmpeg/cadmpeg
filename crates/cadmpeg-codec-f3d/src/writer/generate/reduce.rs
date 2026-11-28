@@ -581,12 +581,15 @@ impl<'a> Reduction<'a> {
         }) {
             return;
         }
-        let dropped = self.remove_native_arenas(|arena| UNWRITTEN_ARENAS.contains(&arena));
-        self.native.drop_records(
-            "f3d",
-            "that require retained CAM documents, the ACT MetaStream registry, or ASM mesh-surface records",
-            dropped,
-        );
+        for (cam, reason) in [
+            (true, "that require retained CAM documents"),
+            (false, "that the source-less generator has no form for (ACT records and mesh-surface sentinels need the retained MetaStream registry and ASM record)"),
+        ] {
+            let dropped = self.remove_native_arenas(|arena| {
+                UNWRITTEN_ARENAS.contains(&arena) && arena.starts_with("cam_") == cam
+            });
+            self.native.drop_records("f3d", reason, dropped);
+        }
     }
 
     /// Neutral records the generator writes only from native Design records.
