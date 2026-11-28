@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::directory::UseFlag;
 use std::collections::BTreeSet;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 use crate::layout::end_record;
 use crate::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

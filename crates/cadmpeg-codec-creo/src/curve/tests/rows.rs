@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::curve::depdb_cross_section_rows;
 use crate::curve::expression_records;

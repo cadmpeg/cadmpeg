@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Format registration and composed document checks for library consumers.
 //!
 //! Detection and inspection use the input catalogue. Encoder targets and

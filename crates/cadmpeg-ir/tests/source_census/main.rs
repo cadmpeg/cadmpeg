@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg(test)]
+
 //! Census coverage for hand-written and derived wire readers.
 
 use std::collections::{BTreeMap, BTreeSet};

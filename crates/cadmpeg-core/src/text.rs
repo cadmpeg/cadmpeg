@@ -503,7 +503,6 @@ macro_rules! codec_id {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::{
         attribute_text, named_entries, named_entries_reporting, NamedEntryError, NonBlankString,

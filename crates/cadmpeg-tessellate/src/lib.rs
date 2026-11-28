@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Display tessellation of cadmpeg B-rep faces.
 //!
 //! [`Tessellator`] reads a [`cadmpeg_ir::CadIr`] and triangulates one face

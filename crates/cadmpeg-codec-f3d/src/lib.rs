@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write Autodesk Fusion `.f3d` archives.
 //!
 //! [`F3dCodec`] implements [`cadmpeg_ir::codec::Codec`] and

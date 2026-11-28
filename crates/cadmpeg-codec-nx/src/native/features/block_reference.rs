@@ -86,7 +86,6 @@ impl TryFrom<PositionWire> for BlockReferencePosition {
 #[cfg(test)]
 mod tests {
     // Wire fixtures use checked positions; failure assertions exercise deserialization.
-    #![allow(clippy::unwrap_used)]
     use super::{BlockReferencePosition, FeatureBlockConstructionReference};
     use cadmpeg_core::serde_erase::json;
 

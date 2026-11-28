@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 use crate::test_support::manifest_fixture::api_reference_extension;

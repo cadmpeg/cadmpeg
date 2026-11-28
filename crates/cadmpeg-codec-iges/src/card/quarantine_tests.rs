@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Recovered card framing: fused lines, positional sequences, census counts.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

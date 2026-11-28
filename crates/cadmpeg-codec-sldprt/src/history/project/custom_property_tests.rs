@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Custom-property projection tests.
-#![allow(clippy::unwrap_used)]
 
 use super::{custom_property_attributes, project_features};
 use crate::history::tests::feature;

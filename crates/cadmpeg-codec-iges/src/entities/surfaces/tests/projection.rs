@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::unwrap_used)]
 use cadmpeg_test_support::edit;
 
 use std::io::Cursor;

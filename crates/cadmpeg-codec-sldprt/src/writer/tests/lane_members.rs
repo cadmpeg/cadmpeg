@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A semantic write puts each feature-input lane back in the member it was
 //! decoded from, and the decode of the output reads the source's lanes.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 const EPS_RELATION_VALUE: f64 = 1.0e-12;
 
 use crate::curve::evaluate_creo_math_function;

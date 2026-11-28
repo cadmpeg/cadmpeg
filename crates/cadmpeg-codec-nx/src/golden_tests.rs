@@ -3,7 +3,6 @@
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
 //! A package-only build can select a different flate2 backend and change the zlib bytes.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use cadmpeg_core::serde_erase::json;

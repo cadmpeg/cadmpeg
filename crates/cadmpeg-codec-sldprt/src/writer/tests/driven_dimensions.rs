@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A driven (reference) dimension through a full write that generates the
 //! sketch lanes, read back.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

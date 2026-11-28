@@ -138,7 +138,6 @@ pub(crate) fn operation_reference_fields(
 #[cfg(test)]
 mod tests {
     // Preserve the fixture suite's existing unwrap lint policy.
-    #![allow(clippy::unwrap_used)]
     mod operation_data_block_references;
     mod tagged_references;
     use super::super::reference_index::CanonicalFeatureReferenceToken;

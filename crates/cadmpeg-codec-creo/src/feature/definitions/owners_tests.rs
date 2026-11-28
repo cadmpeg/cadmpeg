@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use crate::feature::definitions::bind_definition_owners;
 use crate::feature::definitions::bind_replay_definition_owners;

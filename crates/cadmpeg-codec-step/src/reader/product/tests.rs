@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product, occurrence, and assembly tests.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 mod assembly_bodies;

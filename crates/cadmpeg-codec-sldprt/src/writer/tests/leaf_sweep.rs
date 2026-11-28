@@ -3,7 +3,6 @@
 //! two public NIST parts, edited alone and written: the full decoder reads the
 //! edit back, or a loss names it and the feature reads back as stored, and no
 //! other feature or parameter changes.
-#![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};

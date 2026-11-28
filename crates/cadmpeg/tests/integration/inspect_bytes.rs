@@ -4,8 +4,6 @@
 //! Every fixture is built here from literal bytes, so each expected value is
 //! derived from the construction rather than read back from a run.
 
-#![allow(clippy::unwrap_used)]
-
 use cadmpeg_core::serde_erase::json;
 use std::fs;
 use std::io::Write;

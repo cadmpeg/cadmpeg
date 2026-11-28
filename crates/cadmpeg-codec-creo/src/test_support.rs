@@ -3,7 +3,6 @@
 //!
 //! Helpers hand-build `.prt` byte images. They construct raw bytes only;
 //! decode and owner tests own the assertions.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::Exactness;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Formula unit tests over synthetic CATPart streams.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use super::{
     evaluate_formula_expression, evaluate_formula_expression_with_mode, outer_container_in_scope,

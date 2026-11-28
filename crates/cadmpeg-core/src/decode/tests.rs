@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(clippy::unwrap_used)]
-
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::CodecError;

@@ -192,7 +192,7 @@ fn names_decode_sidecar(path: &Path) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::default_trait_access, clippy::unwrap_used)]
+#[allow(clippy::default_trait_access)]
 mod tests {
     use super::load_artifact;
     use crate::application::document::LoadOrigin;

@@ -497,7 +497,6 @@ impl<'de> de::Visitor<'de> for Key {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::emit;
     use crate::native::MAX_NATIVE_NESTING_DEPTH;

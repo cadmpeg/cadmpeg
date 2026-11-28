@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Card, directory, and parameter byte builders for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use std::fmt::Write as _;
 

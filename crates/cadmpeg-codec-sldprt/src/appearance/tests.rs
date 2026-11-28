@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Material and face-color decode tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

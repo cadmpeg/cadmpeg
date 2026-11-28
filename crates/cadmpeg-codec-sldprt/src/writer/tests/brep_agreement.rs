@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edits that shape the solid are written over the stored B-rep and named.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 

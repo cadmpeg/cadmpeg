@@ -9,8 +9,6 @@
 //! declaration table below carries the versioned-row coverage instead, over
 //! containers built by [`crate::test_support::container`].
 
-#![allow(clippy::unwrap_used)]
-
 use super::registry_ids::FORMAT;
 use super::{dialect_loss, SldprtDialect, DECLARED_SW_VERSION, PARASOLID_FORMAT};
 use crate::loss::SldprtLossCode;

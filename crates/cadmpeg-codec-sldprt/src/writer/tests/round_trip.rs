@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spatial-sketch write-back and semantic-write round-trip pins.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;

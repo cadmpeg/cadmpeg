@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! XREF and BREP-less document tests.
-#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,

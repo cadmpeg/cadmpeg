@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
 
 use super::{NativeDisposition, NativeDispositions};
 use crate::codec::write::target::{DialectFree, TargetRequest};

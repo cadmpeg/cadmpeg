@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hand-built Parasolid transmit-stream fixtures for unit and host-codec tests.
 
-#![allow(clippy::unwrap_used)]
-
 pub mod owned_deltas;
 pub mod replay;
 pub mod test_pmarks;

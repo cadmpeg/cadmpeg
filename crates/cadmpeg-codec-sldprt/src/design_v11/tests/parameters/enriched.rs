@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Dimensions that only the decoder's readings of other records state, and
 //! what a CADIR write of them keeps.
-#![allow(clippy::unwrap_used)]
 
 use super::*;
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic outer-container byte builders for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use std::io::Write;
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP geometry, pcurve, NURBS, unit, replica, and trim tests.
 
-#![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use crate::ids::kind;

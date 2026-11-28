@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg(test)]
+
 //! Integration tests for the cadmpeg CLI.
-#![allow(clippy::unwrap_used)]
 
 mod binary_support;
 mod codec_conformance;

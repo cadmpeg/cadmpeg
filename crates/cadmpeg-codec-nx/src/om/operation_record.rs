@@ -149,7 +149,6 @@ impl<'a> OperationRecord<'a> {
 #[cfg(test)]
 mod tests {
     // Fixture constructors deliberately require valid checked spans.
-    #![allow(clippy::unwrap_used)]
 
     use super::{OperationBodyInput, OperationPayload, OperationRecord};
     use crate::om::header_references::{HeaderReferences, OperationHeader};

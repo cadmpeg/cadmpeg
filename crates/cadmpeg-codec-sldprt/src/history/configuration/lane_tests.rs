@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration-lane membership and inherited-state tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::history::bind::bind_unique_sketch_feature;
 use crate::history::configuration::align_configuration_parameter_kinds;

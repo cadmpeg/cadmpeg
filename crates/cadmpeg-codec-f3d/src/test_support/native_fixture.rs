@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed F3D native-namespace helpers for crate tests.
-#![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
 use serde::de::DeserializeOwned;

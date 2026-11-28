@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Custom `FeatureScript` features keep a named loss at their stop.
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 
 use super::bundle::{changed, read, timeline};
 use crate::test_support::*;

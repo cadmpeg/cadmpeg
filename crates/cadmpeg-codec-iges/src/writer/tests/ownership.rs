@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact domains and source dependencies at semantic export.
-#![allow(clippy::unwrap_used)]
 use crate::{IgesCodec, IgesVersion};
 use cadmpeg_ir::codec::{
     write::{target::TargetRequest, EncodeInput, Encoder},

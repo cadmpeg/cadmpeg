@@ -1690,7 +1690,6 @@ mod tests {
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.
-    #[allow(clippy::unwrap_used)]
     fn closed_wire_reverses_helix_construction_and_clones_mixed_orientation() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);

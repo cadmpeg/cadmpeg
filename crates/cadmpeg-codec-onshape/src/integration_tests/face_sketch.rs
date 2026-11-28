@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(clippy::indexing_slicing, clippy::panic)]
 use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 

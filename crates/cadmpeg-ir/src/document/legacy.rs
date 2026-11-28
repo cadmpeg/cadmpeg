@@ -70,7 +70,6 @@ pub(super) fn unsupported_version(version: Option<&serde_json::Value>) -> String
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
 
     use super::super::CadIr;
 

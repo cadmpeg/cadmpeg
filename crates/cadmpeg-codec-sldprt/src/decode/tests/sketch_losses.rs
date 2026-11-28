@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-constraint and native-operand design-loss tests.
-#![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
 use crate::decode::sketch_constraint_has_complete_neutral_semantics;
