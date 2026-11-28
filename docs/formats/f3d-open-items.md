@@ -4315,6 +4315,16 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The mesh graph requires a Scene node in that slot. The decoder gives up the `.paramesh` entries of such a design with `record.undecoded`.
 
+### DR-1095. Manifest reference to a changed member version
+
+**Question.** Which archive member does a manifest reference name when the member's design object states the reference's lineage URN and a different version URN?
+
+**Known.** `f3d.md` §1.5 resolves a reference without `RedirectionsStream.dat` only to the one member that states both the reference's `LineageUrn` and its `URL`. A reference whose pair has no such member, or has more than one, keeps its target path.
+
+**Need.** A bundle whose referencing member stores an earlier version URN than the version URN that the design object of the referenced member states, with the `RedirectionsStream.dat` of a Fusion-written archive of the same designs for comparison.
+
+**Conflict.** None.
+
 ### DR-1079. Document body of a keyless pattern copy
 
 **Question.** Does the document list a pattern or Mirror copy body whose ASM body record stores no body key?

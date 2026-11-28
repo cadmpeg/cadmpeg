@@ -8,6 +8,7 @@
 //! a BREP-less placement assembly.
 
 pub(crate) mod api_export;
+pub(crate) mod lineage;
 pub(crate) mod operation_pose;
 
 use cadmpeg_core::container::ContainerRole;
@@ -404,7 +405,18 @@ fn reference_data(
         Err(_) => {
             let source = XrefSource::ManifestReferences;
             api_export::decode(ctx, scan)
-                .map(|table| table.map(|table| (table, source.clone())))
+                .map(|table| {
+                    table.map(|mut table| {
+                        // Only an absent table is replaced by identity; a listed but
+                        // unreadable table keeps the manifest paths.
+                        if !scan.lists_entry(REDIRECTIONS_ENTRY) {
+                            if let Some(index) = &scan.lineage_members {
+                                lineage::resolve(&mut table, index);
+                            }
+                        }
+                        (table, source.clone())
+                    })
+                })
                 .map_err(XrefFailure::of(source))
         }
     }
@@ -1874,11 +1886,6 @@ fn legacy_attributed_placement_generation(
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
     let leading_len = if leading_placement {
-        if attributes_len
-            != crate::layout::legacy_attributed_external_placement_empty_attributes::LEN
-        {
-            return None;
-        }
         let flag_at = members_start + legacy_members::METADATA_GUID_LENGTH;
         match *body.get(flag_at)? {
             1 => 1,

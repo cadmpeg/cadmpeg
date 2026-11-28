@@ -277,6 +277,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
     pub(crate) manifest_reference_extension: Option<View<'a>>,
     pub(crate) manifest_lineage_urn: Option<String>,
+    /// Archive members by document identity, set on an F3Z member scan.
+    pub(crate) lineage_members: Option<Arc<crate::xref::lineage::LineageMembers>>,
     /// Optional archive entries the scan could not open.
     pub(crate) given_up: Vec<GivenUpPart>,
     /// The stream of the outer document that holds this archive, for a
@@ -344,6 +346,7 @@ impl<'a> ContainerScan<'a> {
             manifest_diagnostics: self.manifest_diagnostics.clone(),
             manifest_reference_extension: self.manifest_reference_extension,
             manifest_lineage_urn: self.manifest_lineage_urn.clone(),
+            lineage_members: self.lineage_members.clone(),
             given_up: self.given_up.clone(),
             stream: self.stream.clone(),
             stored_ranges: self.stored_ranges.clone(),
@@ -446,6 +449,11 @@ impl<'a> ContainerScan<'a> {
 
     pub(crate) fn declared_working_bytes(&self) -> Option<u64> {
         self.working_bytes
+    }
+
+    /// Whether the archive lists `name`, whether or not its payload is readable.
+    pub(crate) fn lists_entry(&self, name: &str) -> bool {
+        self.entries.iter().any(|entry| entry.name == name)
     }
 
     pub(crate) fn has_entry(&self, name: &str) -> bool {
@@ -1102,6 +1110,7 @@ fn scan_in<'a>(
         manifest_diagnostics,
         manifest_reference_extension,
         manifest_lineage_urn,
+        lineage_members: None,
         given_up,
         stream: stream.cloned(),
         stored_ranges,

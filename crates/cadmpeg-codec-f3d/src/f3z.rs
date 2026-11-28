@@ -41,7 +41,8 @@ pub(crate) fn inspect<'a>(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let classified = archive::classify_members(ctx, scan, false)?;
+    let classified =
+        archive::classify_members(ctx, scan, &std::collections::BTreeMap::new(), false)?;
     let member_count = scan
         .entries
         .iter()
