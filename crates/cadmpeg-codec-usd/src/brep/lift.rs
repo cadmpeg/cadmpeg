@@ -20,10 +20,13 @@ use super::nurbs::Nurbs;
 use super::{Form, NurbsCurveRecord, NurbsSurfaceRecord};
 
 /// The highest degree of a lifted curve.
+// resource-cap: MAX_DEGREE = 4
 const MAX_DEGREE: usize = 30;
 /// The most pieces of one lifted curve.
+// resource-cap: MAX_PIECES = 4
 const MAX_PIECES: usize = 4096;
 /// The most piece fits, over all degrees and weight powers, for one curve.
+// resource-cap: MAX_FITS = 4
 const MAX_FITS: usize = 100_000;
 /// Halvings of a Bézier segment that isolate a knot-line crossing.
 const CROSSING_DEPTH: usize = 52;

@@ -11,10 +11,10 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
 use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::test_support::assembly_fixture::{f3d_without_brep, XREF_ROLE};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 fn design_archive() -> Vec<u8> {
@@ -400,7 +400,7 @@ fn with_unread_primary_header() -> Vec<u8> {
     let sibling_start = bulk.len();
     crate::test_support::lp_ascii(&mut bulk, "256");
     bulk.extend_from_slice(&42u32.to_le_bytes());
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "00000000-0000-0000-0000-000000000001",
             "",
@@ -646,8 +646,8 @@ fn a_design_intent_failure_gives_up_the_design_streams() {
 
 #[test]
 fn generated_feature_designs_give_up_no_record() {
-    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-    use crate::test_support::zip_test::{
+    use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+    use crate::test_support::zip_fixture::{
         f3d_with_smbh_and_protein_with_generated_copy_paste,
         f3d_with_smbh_and_protein_with_generated_copy_paste_bodies,
         f3d_with_smbh_and_protein_with_generated_form,

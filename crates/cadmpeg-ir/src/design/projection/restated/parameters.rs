@@ -62,20 +62,37 @@ pub(super) fn parameter_cuts<'ir>(
         .filter(|model| compared(model.id.as_str()))
         .filter_map(|model| Some((model, *design.get(model.id.as_str())?)))
         .collect::<Vec<_>>();
-    let cells = ir
-        .design
-        .spreadsheets
-        .iter()
-        .filter(|sheet| written.contains(sheet.id.as_str()))
-        .flat_map(|sheet| {
-            sheet
-                .cells()
-                .iter()
-                .enumerate()
-                .map(move |(at, cell)| (cell.parameter.as_str(), (sheet.id.as_str(), at)))
+    let mut places = design
+        .values()
+        .filter(|parameter| written.contains(parameter.id.as_str()))
+        .filter_map(|parameter| {
+            Some((
+                parameter.id.as_str(),
+                Place {
+                    list: List::Owner(&parameter.scope, parameter.owner.as_ref()),
+                    index: usize::try_from(parameter.position?).ok()?,
+                },
+            ))
         })
         .collect::<HashMap<_, _>>();
-    let misplaced = misplaced(&ir.model.parameters, &cells);
+    places.extend(
+        ir.design
+            .spreadsheets
+            .iter()
+            .filter(|sheet| written.contains(sheet.id.as_str()))
+            .flat_map(|sheet| {
+                sheet.cells().iter().enumerate().map(move |(index, cell)| {
+                    (
+                        cell.parameter.as_str(),
+                        Place {
+                            list: List::Sheet(sheet.id.as_str()),
+                            index,
+                        },
+                    )
+                })
+            }),
+    );
+    let misplaced = misplaced(&ir.model.parameters, &places);
     let tables = user_tables(ir);
     let measured = measured(ir, written);
     let evaluated = if pairs.iter().any(|(model, design)| {
@@ -133,6 +150,18 @@ pub(super) fn parameter_cuts<'ir>(
             (id, parameter_cut(model, design, &held))
         })
         .collect()
+}
+
+#[derive(Clone, Copy)]
+struct Place<'ir> {
+    list: List<'ir>,
+    index: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum List<'ir> {
+    Sheet(&'ir str),
+    Owner(&'ir ProductDefinitionId, Option<&'ir ParameterOwner>),
 }
 
 /// What the design holds of a model parameter besides its design parameter.
@@ -235,14 +264,14 @@ fn design_display(display: ModelDisplay) -> DimensionDisplay {
 }
 
 /// The parameters of `models` whose position by `ordinal` among the
-/// parameters of their definition and owner the design does not hold. Only
-/// a spreadsheet orders design parameters (§2.2): `cells` holds the sheet
-/// and the position among its cells of each cell parameter. A group of one
-/// parameter holds its position; a larger group holds it where each member
-/// is a cell, and its order by `ordinal` is its order by cell.
+/// parameters of their definition and owner the design does not hold.
+/// `places` holds the place of each design parameter the design orders. A
+/// group of one parameter holds its position; a larger group holds it where
+/// every member has a distinct place in the same list and its order by
+/// `ordinal` is its order in that list.
 fn misplaced<'ir>(
     models: &'ir [ModelParameter],
-    cells: &HashMap<&str, (&str, usize)>,
+    places: &HashMap<&str, Place<'_>>,
 ) -> HashSet<&'ir str> {
     let mut groups = BTreeMap::<_, Vec<&ModelParameter>>::new();
     for model in models {
@@ -259,20 +288,29 @@ fn misplaced<'ir>(
     for members in groups.into_values().filter(|members| members.len() > 1) {
         let Some(placed) = members
             .iter()
-            .map(|model| Some((*model, *cells.get(model.id.as_str())?)))
+            .map(|model| Some((*model, *places.get(model.id.as_str())?)))
             .collect::<Option<Vec<_>>>()
+            .filter(|placed| {
+                placed
+                    .iter()
+                    .all(|(_, place)| place.list == placed[0].1.list)
+            })
         else {
             misplaced.extend(members.iter().map(|model| model.id.as_str()));
             continue;
         };
         let mut in_design = placed
             .iter()
-            .map(|(model, at)| (*at, model.id.as_str()))
+            .map(|(model, place)| (place.index, model.id.as_str()))
             .collect::<Vec<_>>();
         in_design.sort_unstable();
+        if in_design.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            misplaced.extend(members.iter().map(|model| model.id.as_str()));
+            continue;
+        }
         let mut by_ordinal = placed
             .iter()
-            .map(|(model, at)| (model.ordinal, *at, model.id.as_str()))
+            .map(|(model, place)| (model.ordinal, place.index, model.id.as_str()))
             .collect::<Vec<_>>();
         by_ordinal.sort_unstable();
         for ((_, _, at_ordinal), (_, at_design)) in by_ordinal.iter().zip(&in_design) {
@@ -316,6 +354,11 @@ pub(super) fn parameter_cut(
     leave(
         ModelParameterField::Name,
         model.name.trim().is_empty()
+            || (model
+                .properties
+                .get("generated_name")
+                .is_some_and(|value| value == "1")
+                && design.name.is_none())
             || design.name.as_ref().is_some_and(|name| {
                 name.as_str() == model.name || Some(name.as_str()) == source_name
             }),
@@ -338,6 +381,7 @@ pub(super) fn parameter_cut(
                 .as_ref()
                 .or(held.evaluated)
                 .is_some_and(|stated| value_carried(value, &design.kind, stated))
+                || scalar_carried(model, value, design)
                 || driven_literal(design)
                     .is_some_and(|stated| value_carried(value, &design.kind, &stated))
         }),
@@ -388,6 +432,24 @@ fn value_carried(value: &ModelValue, kind: &ValueKind, stated: &ParameterValue) 
     }
 }
 
+fn scalar_carried(model: &ModelParameter, value: &ModelValue, design: &DesignParameter) -> bool {
+    let (Some(native), ModelValue::Real(raw), Some(ParameterValue::Number(stated))) =
+        (&model.native_ref, value, &design.value)
+    else {
+        return false;
+    };
+    if !native.starts_with("sldprt:feature-input:scalar#")
+        || design.native_ref.as_ref() != Some(native)
+    {
+        return false;
+    }
+    match design.kind {
+        ValueKind::Quantity(Quantity::LENGTH) => same_number(raw.get() * 1000.0, stated.get()),
+        ValueKind::Quantity(Quantity::ANGLE) => same_number(raw.get(), stated.get()),
+        _ => false,
+    }
+}
+
 fn driven_literal(design: &DesignParameter) -> Option<ParameterValue> {
     if !matches!(design.definition, ParameterDefinition::Driven) {
         return None;
@@ -432,7 +494,29 @@ fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool 
     match &design.definition {
         ParameterDefinition::Expression(Expression::Source { tokens, .. }) => spells(tokens, text),
         ParameterDefinition::Expression(Expression::Neutral(neutral)) => {
-            match (literal(&neutral.0), literal_number(text)) {
+            let number_text = match (&model.display, design.display) {
+                (Some(ModelDisplay::Diameter), Some(DimensionDisplay::Diameter)) => text
+                    .strip_prefix("<MOD-DIAM>")
+                    .or_else(|| text.strip_prefix("&lt;MOD-DIAM&gt;")),
+                (Some(ModelDisplay::Radius), Some(DimensionDisplay::Radius)) => text
+                    .strip_prefix("<MOD-RHO>")
+                    .or_else(|| text.strip_prefix("&lt;MOD-RHO&gt;")),
+                _ => None,
+            };
+            if let Some(operand) = text
+                .strip_prefix("-(")
+                .and_then(|text| text.strip_suffix(')'))
+            {
+                return negated_literal_carried(operand, &neutral.0);
+            }
+            let literal = literal(&neutral.0);
+            if let (Some(number), Some(Literal::Number(stated))) = (number_text, &literal) {
+                return number
+                    .trim()
+                    .parse::<f64>()
+                    .is_ok_and(|number| number.is_finite() && same_number(*stated, number));
+            }
+            match (literal, literal_number(text)) {
                 (Some(Literal::Number(stated)), Some(number)) => same_number(stated, number),
                 (Some(Literal::Flag(stated)), _) => text.eq_ignore_ascii_case(&stated.to_string()),
                 (Some(Literal::Text(stated)), _) => {
@@ -491,6 +575,30 @@ fn literal<R>(node: &Node<R>) -> Option<Literal<'_>> {
         Node::Text(text) => Some(Literal::Text(text)),
         _ => None,
     }
+}
+
+fn negated_literal_carried<R>(text: &str, tree: &Node<R>) -> bool {
+    let Node::Unary {
+        op: UnaryOp::Negate,
+        operand,
+    } = tree
+    else {
+        return false;
+    };
+    let Node::Number { value, unit } = operand.as_ref() else {
+        return false;
+    };
+    let mut words = text.split_whitespace();
+    let Some(number) = words.next().and_then(|word| word.parse::<f64>().ok()) else {
+        return false;
+    };
+    let symbol = words.next().unwrap_or("");
+    let unit_matches = match unit.0.as_slice() {
+        [] => matches!(symbol, "" | "ul"),
+        [factor] => factor.power.get() == 1 && factor.symbol.name() == symbol,
+        _ => false,
+    };
+    number.is_finite() && same_number(number, value.get()) && unit_matches && words.next().is_none()
 }
 
 /// The number of a literal's text: a number with an optional unit after

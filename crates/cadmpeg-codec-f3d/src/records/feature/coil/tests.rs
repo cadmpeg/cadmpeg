@@ -57,7 +57,7 @@ fn coil_placement_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:coil-placement#0",
         value: &placement,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::COIL_PLACEMENT_CLONE_COUNT.with(|count| count.set(0)),
@@ -99,7 +99,7 @@ fn coil_scope_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:coil-scope#0",
         value: &scope,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::COIL_SCOPE_CLONE_COUNT.with(|count| count.set(0)),

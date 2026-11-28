@@ -15,6 +15,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
@@ -35,11 +36,9 @@ use cadmpeg_asm::{acis_header, asm_header};
 use crate::dialect::F3dDialect;
 use crate::manifest;
 
-/// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
-/// Decode opens nested archives through `ArchiveSnapshot` / `begin_expand`, so
-/// session `ResourceLimits` bind there instead of these constants.
+// resource-cap: MAX_ARCHIVE_BYTES = N
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
-/// Write-path per-entry inflate cap for `read_entry_bounded`.
+// resource-cap: MAX_INFLATED_ENTRY_BYTES = N
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// The f3d marker substrings used for confident detection from a byte prefix
@@ -57,6 +56,7 @@ pub(crate) const ENTRY_PART: &str = "archive-entry";
 pub(crate) const F3Z_DETECT_MARKERS: &[&[u8]] =
     &[b"Manifest.json", b"DesignDescription.json", b".f3d"];
 
+#[cfg(test)]
 pub(crate) fn read_entry_bounded(
     entry: &mut impl Read,
     declared_size: u64,
@@ -294,6 +294,8 @@ pub(crate) struct ContainerScan<'a> {
     )>,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
+    full_bulk_streams: BTreeMap<String, View<'a>>,
+    protein_sources: Option<std::sync::Mutex<ProteinSources>>,
     archive: Option<Arc<ArchiveSnapshot<'a>>>,
     working_bytes: Option<u64>,
     deferred_members: BTreeMap<String, DecodeCheckpoint>,
@@ -328,6 +330,8 @@ pub(crate) enum TextBrepFraming {
     UnsupportedLength(cadmpeg_asm::stream_error::StreamError),
 }
 
+type ProteinSources = BTreeMap<String, Arc<crate::materials::ProteinReads>>;
+
 impl<'a> ContainerScan<'a> {
     pub(crate) fn fork(&self) -> Self {
         Self {
@@ -345,6 +349,11 @@ impl<'a> ContainerScan<'a> {
             stored_ranges: self.stored_ranges.clone(),
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
+            full_bulk_streams: self.full_bulk_streams.clone(),
+            protein_sources: self
+                .protein_sources
+                .as_ref()
+                .map(|_| std::sync::Mutex::default()),
             archive: self.archive.clone(),
             working_bytes: self.working_bytes,
             deferred_members: self.deferred_members.clone(),
@@ -365,6 +374,64 @@ impl<'a> ContainerScan<'a> {
     /// Returns an entry's payload view.
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
+    }
+
+    pub(crate) fn protein_source(
+        &self,
+        ctx: &DecodeContext<'a>,
+        name: &str,
+    ) -> Result<crate::materials::ProteinArchive<'a>, CodecError> {
+        let view = self.entry_view(name).ok_or_else(|| {
+            CodecError::malformed(format_args!("Protein ZIP entry {name} is absent"))
+        })?;
+        let reads = self
+            .protein_sources
+            .as_ref()
+            .map(|sources| {
+                let mut sources = sources.lock().map_err(CodecError::malformed)?;
+                Ok::<_, CodecError>(Arc::clone(sources.entry(name.to_owned()).or_default()))
+            })
+            .transpose()?;
+        crate::materials::ProteinArchive::read(ctx, view, reads)
+    }
+
+    pub(crate) fn rewrite_member<R: std::io::Read>(
+        &self,
+        name: &str,
+        entry: &zip::read::ZipFile<'_, R>,
+        allowance: u64,
+    ) -> Result<&'a [u8], CodecError> {
+        let size = entry.size();
+        if size > MAX_INFLATED_ENTRY_BYTES {
+            return Err(CodecError::malformed(format_args!(
+                "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+            )));
+        }
+        if entry.compression() != zip::CompressionMethod::Stored && size > allowance {
+            return Err(CodecError::NotImplemented(format!(
+                "ZIP entry {name} declares {size} expanded bytes, past the                  {allowance}-byte per-expansion allowance of the session"
+            )));
+        }
+        let expected = entry.data_start().and_then(|start| {
+            start
+                .checked_add(entry.compressed_size())
+                .map(|end| cadmpeg_core::decode::ByteRange { start, end })
+        });
+        if expected.as_ref() != self.stored_ranges.get(name) || expected.is_none() {
+            return Err(CodecError::malformed(format_args!(
+                "ZIP entry {name}: its stored span differs from the admitted archive"
+            )));
+        }
+        self.full_bulk_streams
+            .get(name)
+            .copied()
+            .or_else(|| self.entry_view(name))
+            .map(View::window)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "ZIP entry {name}: its payload could not be read"
+                ))
+            })
     }
 
     #[cfg(test)]
@@ -698,7 +765,7 @@ pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    scan_in(ctx, root, None, false)
+    scan_in(ctx, root, None, ScanScope::Full)
 }
 
 /// [`scan`] of the F3Z member stored at `path`, whose given-up parts are
@@ -710,7 +777,7 @@ pub(crate) fn scan_member<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     let stream = StreamName::try_from(path.to_owned())
         .map_err(|_| CodecError::malformed("F3Z member path is empty"))?;
-    scan_in(ctx, root, Some(&stream), false)
+    scan_in(ctx, root, Some(&stream), ScanScope::Full)
 }
 
 /// Read only the container members needed by the configuration decoder.
@@ -718,24 +785,39 @@ pub(crate) fn scan_configurations<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    scan_in(ctx, root, None, true)
+    scan_in(ctx, root, None, ScanScope::Configurations)
 }
 
 fn is_design_segment(segment: &str) -> bool {
     segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScanScope {
+    Full,
+    Write,
+    Configurations,
+}
+
+pub(crate) fn scan_for_write<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
+    scan_in(ctx, root, None, ScanScope::Write)
+}
+
 fn scan_in<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
     stream: Option<&StreamName>,
-    configurations_only: bool,
+    scope: ScanScope,
 ) -> Result<ContainerScan<'a>, CodecError> {
     #[cfg(test)]
     crate::test_support::scan_counts::record(root);
     let source_image = root.window();
     let archive = Arc::new(ArchiveSnapshot::new(ctx, root)?);
-    let defer_members = archive.entry("Manifest.dat").is_none()
+    let defer_members = scope != ScanScope::Write
+        && archive.entry("Manifest.dat").is_none()
         && archive.entry("Manifest.json").is_some()
         && archive.entry("DesignDescription.json").is_some();
     let mut deferred_members = BTreeMap::new();
@@ -748,7 +830,7 @@ fn scan_in<'a>(
 
     for file in archive.entries() {
         let role = classify(&file.name);
-        if configurations_only
+        if scope == ScanScope::Configurations
             && !matches!(role, ContainerRole::Manifest | ContainerRole::DesignConfig)
             && !(matches!(role, ContainerRole::Bulkstream | ContainerRole::Metastream)
                 && file.name.rsplit('/').nth(1).is_some_and(is_design_segment))
@@ -1025,6 +1107,8 @@ fn scan_in<'a>(
         stored_ranges,
         unindexed_record_runs: Vec::new(),
         inflated_entries,
+        full_bulk_streams: BTreeMap::new(),
+        protein_sources: (scope == ScanScope::Write).then(std::sync::Mutex::default),
         archive,
         working_bytes,
         deferred_members,
@@ -1093,6 +1177,7 @@ fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
             continue;
         };
         let stored = view.window().len();
+        scan.full_bulk_streams.insert(name.clone(), view);
         scan.inflated_entries.insert(name.clone(), bounded);
         scan.unindexed_record_runs.push((name, run, stored));
     }

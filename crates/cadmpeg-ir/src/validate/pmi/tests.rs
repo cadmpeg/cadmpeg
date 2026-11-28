@@ -30,6 +30,7 @@ fn design_parameter(key: &str, kind: ValueKind) -> DesignParameter {
         id: parameter_id(key),
         scope: ProductDefinitionId::mint("test:model:definition#part").expect("valid identity"),
         owner: None,
+        position: None,
         name: Some(NonBlankString::new(key).expect("nonblank name")),
         kind,
         unit: None,

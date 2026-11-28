@@ -8,7 +8,7 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::TargetDescriptor;
 
-use crate::dialect::{
+use crate::dialect::registry_ids::{
     STEP_AP203_E1, STEP_AP203_E2, STEP_AP214, STEP_AP242_E1, STEP_AP242_E2, STEP_AP242_E3,
 };
 

@@ -758,6 +758,9 @@ fn check_target_order<'a>(
     }
     let at = site.holder.record();
     let cycle = holder.is_some_and(|feature| index.depends_on(target, feature));
+    if !cycle && holder.is_some_and(|holder| attached(index, site, holder, target)) {
+        return;
+    }
     let severity = if cycle {
         Severity::Warning
     } else {
@@ -778,6 +781,39 @@ fn check_target_order<'a>(
             }
         ),
     );
+}
+
+/// Whether `target` is a stateless feature (§5.4), in every configuration
+/// of its scope, that `holder`, a member of an unordered container, picks
+/// from a selection anchored `Current`: the attachment depend-orders
+/// `target` before the member's `Current` selections (§5.3). The pick itself
+/// makes `holder` depend on `target`.
+fn attached(index: &DesignIndex<'_>, site: Site<'_>, holder: &str, target: &str) -> bool {
+    use crate::design::container::Container;
+    matches!(site.anchor, Anchor::Current)
+        && matches!(
+            index.place(MemberKey::Feature(holder)),
+            Some((Container::Unordered { .. }, _))
+        )
+        && stateless_everywhere(index, target)
+}
+
+/// Whether `feature` is stateless (§5.4) in every configuration of its
+/// scope.
+fn stateless_everywhere(index: &DesignIndex<'_>, feature: &str) -> bool {
+    let records = &index.records;
+    let Some(record) = records.features.get(feature) else {
+        return false;
+    };
+    match records
+        .scope_of(MemberKey::Feature(feature))
+        .and_then(|scope| records.scope_configurations.get(scope))
+    {
+        Some(configurations) => configurations.iter().all(|configuration| {
+            super::evaluations::is_stateless(records, record, Some(configuration.id.as_str()))
+        }),
+        None => super::evaluations::is_stateless(records, record, None),
+    }
 }
 
 /// A datum part names a part the datum has.

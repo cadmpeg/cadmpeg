@@ -84,8 +84,6 @@ fixtures. `tests/golden/encode/` freezes 4 of them (`ap203_sheet`,
 `ap214_sheet`, `ap242_geometry`, `ap242_minimal`); the remaining 15, including
 the assembly, mapped-assembly, occurrence, presentation, PMI, tessellation,
 geometric-set, and vertex-loop populations, have no frozen export artifact.
-`docs/golden-coverage-floors.toml` records floors without mapping frozen
-goldens to exercised export branches.
 
 **Need.** An export drop or carrier change on an uncovered fixture alters
 emitted files without breaking a golden. The answer records which export

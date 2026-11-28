@@ -1832,6 +1832,7 @@ fn advance_compact_boundary_domains<'a>(
     mut states: Vec<MeshQuotientGaugeState>,
     budget: &WorkBudget,
 ) -> Result<CompactBoundaryAdvanceOutcome, CodecError> {
+    // resource-cap: MAX_QUOTIENT_STATES = 4
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -3160,6 +3161,7 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
+        // resource-cap: MAX_SOLUTIONS = 4
         const MAX_SOLUTIONS: usize = 256;
         if self.state != IncidenceSearchState::Open {
             return Ok(());
@@ -4852,6 +4854,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     face_count: usize,
     budget: &WorkBudget,
 ) -> Result<Option<StandardTopologyDraft>, CodecError> {
+    // resource-cap: MAX_TOPOLOGY_ASSIGNMENTS = 4
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
     let IncidenceEndpointDomains {

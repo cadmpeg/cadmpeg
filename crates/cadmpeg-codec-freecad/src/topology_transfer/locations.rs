@@ -9,6 +9,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::brep::location_identity::{LocationIdentity, LocationIdentityError};
 use crate::brep::{LocationRef, Tables};
 
+// resource-cap: MAX_TOPOLOGY_LOCATION_WORK = 4
 const MAX_TOPOLOGY_LOCATION_WORK: usize = 16_777_216;
 
 #[derive(Clone, Copy, Debug)]

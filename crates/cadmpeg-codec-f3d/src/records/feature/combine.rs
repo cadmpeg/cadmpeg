@@ -902,7 +902,7 @@ mod tests {
             id: "f3d:native:combine-external-identity#0",
             value: &identity,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
@@ -984,7 +984,7 @@ mod tests {
             id: "f3d:native:combine-operation#0",
             value: &operation,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || COMBINE_OPERATION_CLONE_COUNT.with(|count| count.set(0)),

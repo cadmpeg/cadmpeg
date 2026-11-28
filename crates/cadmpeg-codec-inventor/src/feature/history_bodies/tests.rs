@@ -374,6 +374,27 @@ fn the_state_before_a_split_gives_the_consumed_body() {
             panic!("one nest at {width:?}");
         };
         assert_eq!((body.state.ordinal, body.state.identifier), (0, 12));
+        // The decode keeps the whole state that holds the nest, with the
+        // nest's body under its state identity.
+        let ordinals: Vec<_> = built.states.keys().copied().collect();
+        assert_eq!(ordinals, [0], "{width:?}");
+        let state = &built.states[&0].geometry;
+        let key = body
+            .topology
+            .body
+            .id
+            .as_str()
+            .rsplit_once("#h0000-")
+            .expect("nest key")
+            .1;
+        assert!(
+            state
+                .bodies
+                .iter()
+                .any(|held| held.id.as_str().rsplit_once('#').map(|(_, k)| k) == Some(key)),
+            "{:?}",
+            state.bodies
+        );
         assert_eq!(
             body.consumed_by.as_ref().map(cadmpeg_ir::FeatureId::as_str),
             Some("inventor:model:feature#split")
@@ -511,6 +532,10 @@ fn a_base_reads_the_state_after_it() {
         Some("inventor:model:feature#base")
     );
     assert!(body.consumed_by.is_none());
+    let state = &built.states[&body.state.ordinal];
+    let slot = &state.body_slots[&body.id];
+    assert_eq!(state.geometry.bodies[0].id, *slot);
+    assert_eq!(original_body_slot(body).as_ref(), Some(slot));
 }
 
 #[test]

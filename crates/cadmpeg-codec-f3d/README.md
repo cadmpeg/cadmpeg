@@ -95,6 +95,18 @@ it excludes parsed records and output. These deterministic estimates are not
 RSS bounds. Callers can gate later parallel decode by the working estimate plus
 retained result estimates.
 
+### Assembly joints
+
+A joint connector holds its solved frame in the target's coordinates. In an
+F3Z member, a member-root connector names the member definition. An in-context
+connector includes the owner's path when the assembly places it once.
+
+Rigid groups keep locator ordinals in source order, starting at zero.
+`f3d:locator.<ordinal>` contains a slash-separated path, a colon, and
+twelve space-separated affine coefficients in row order. The translation
+column uses millimetres. `f3d:unresolved_member.<ordinal>` contains the path
+for a locator without a corresponding held occurrence.
+
 ## Pipe source properties
 
 Pipe features project as neutral Sweeps. Existing circular projections keep

@@ -294,7 +294,7 @@ impl crate::F3dCodec {
 
     /// Scans with a meter shared by detection and nested readers.
     pub fn scan_design_with_budget(input: View<'_>, budget: &ScanBudget<'_>) -> DesignScan {
-        let mut scan = DesignScan::new(Some(crate::dialect::FORMAT));
+        let mut scan = DesignScan::new(Some(crate::dialect::registry_ids::FORMAT));
         let mut unread = false;
         let result = document(input, budget, &mut scan, 1, true, &mut unread).and_then(|found| {
             if unread {
