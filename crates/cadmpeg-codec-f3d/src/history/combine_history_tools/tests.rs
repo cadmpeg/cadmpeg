@@ -552,7 +552,7 @@ fn a_live_tool_of_another_history_selects_its_model_body() {
 }
 
 #[test]
-fn a_live_tool_that_a_later_transition_changes_stays_native() {
+fn a_live_tool_changed_without_a_modifier_scope_stays_native() {
     let history = updating_history();
     let (features, losses) = bind_component_tool(&history);
     assert_eq!(losses.len(), 1, "{losses:?}");
@@ -628,10 +628,7 @@ fn bind_tool_in_history(
 fn a_live_tool_changed_only_by_features_before_the_combine_selects_its_model_body() {
     let (features, losses) = bind_modified_tool(2);
     assert!(losses.is_empty(), "{losses:?}");
-    assert!(matches!(
-        tools_of(&features[2]),
-        BodySelection::Resolved { .. }
-    ));
+    assert_live_tool(&features);
 }
 
 #[test]
@@ -916,4 +913,104 @@ fn a_tool_listed_by_a_several_body_result_state_keeps_its_identity() {
     };
     assert_eq!(bodies[0].local_id.as_str(), pair(150, true).id());
     assert_eq!(bodies[1].local_id.as_str(), pair(250, true).id());
+}
+
+fn assert_live_tool(features: &[Feature]) {
+    let combine = features.last().unwrap();
+    let BodySelection::Resolved { bodies, .. } = tools_of(combine) else {
+        panic!("model-body tools");
+    };
+    assert_eq!(
+        bodies
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect::<Vec<_>>(),
+        ["f3d:brep:body#7"]
+    );
+    assert!(combine.dependencies.contains(&features[0].id));
+}
+
+#[test]
+fn a_live_tool_change_without_a_projected_feature_stays_native() {
+    let history = updating_history();
+    let scopes = vec![
+        component_scope(),
+        modifier_scope(200, 2),
+        combine_scope(&[(150, 100)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bound = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(200), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (&[history], &bound),
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("belongs to no projected feature"));
+    assert!(matches!(
+        tools_of(&features[1]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_of_the_combine_history_charges_a_loss() {
+    let history = tool_history(&[]);
+    let scopes = vec![component_scope(), combine_scope(&[(150, 100)])];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bound = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(400), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (&[history], &bound),
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("body of the Combine history"));
+    assert!(matches!(
+        tools_of(&features[1]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_change_in_an_intermediate_feature_state_selects_its_model_body() {
+    let history = versioned_history(&[(3, &[(7, 2)]), (2, &[(7, 2)]), (1, &[(7, 1)]), (0, &[])]);
+    let scopes = vec![
+        component_scope(),
+        state_scope(DesignFeatureKind::Fillet, 200, 3, 1),
+        combine_scope(&[(150, 100)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("modifier", 2, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bound = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(200), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (&[history], &bound),
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_live_tool(&features);
 }

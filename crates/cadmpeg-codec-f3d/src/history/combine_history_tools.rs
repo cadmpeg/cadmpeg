@@ -5,7 +5,7 @@
 //! of the history that holds the `Combine` state. Its browser node still names
 //! the body-map entity of the tool and the scope that creates it, and the
 //! body-map pair of that entity is a history-only pair, or a live pair when
-//! that history keeps the body unchanged after its creation.
+//! later changes belong to features between its generator and the Combine.
 
 use std::collections::HashMap;
 
@@ -196,10 +196,36 @@ fn state_feature<'a>(
     inputs.by_native.get(scope.id.as_str()).copied()
 }
 
+fn owns_transition(
+    scope: &DesignParameterScope,
+    history: &AsmHistory,
+    state: i64,
+    inputs: &Inputs<'_>,
+) -> bool {
+    let Some(current) = scope.history_state_id() else {
+        return false;
+    };
+    if current == state {
+        return true;
+    }
+    let Some(previous) =
+        super::history_states::effective_scope_previous_history_state_id(scope, inputs.histories)
+    else {
+        return false;
+    };
+    super::output_chain::OutputChain::resolve(
+        inputs.histories,
+        current,
+        previous,
+        Some(&history.id),
+    )
+    .is_some_and(|chain| chain.states.contains(&state))
+}
+
 /// The solved body of a live pair whose creating scope reads a history other
 /// than `combine_history`, when the creating state inserts one body slot and
-/// every later transition of that history that updates or deletes the slot
-/// belongs to a feature that precedes the Combine. The solved body is then
+/// every later update belongs to a feature between its generator and the
+/// Combine, and later transitions preserve the slot. The solved body is then
 /// the body that the Combine reads.
 fn live_tool_body(
     pair: &DesignBodyBinding,
@@ -244,7 +270,7 @@ fn live_tool_body(
     }
     for (changed, _) in later {
         let mut owners = inputs.scopes.iter().filter(|candidate| {
-            candidate.history_state_id() == Some(changed)
+            owns_transition(candidate, history, changed, inputs)
                 && crate::ids::native_stream(&candidate.id) == stream
                 && inputs.scope_histories.get(&candidate.id) == Some(&history.id)
         });
@@ -379,18 +405,16 @@ pub(crate) fn bind(
                 })
             });
             let combine_history = combine_history(scope, &inputs);
-            let names_other_history = operation.tools.iter().any(|tool| {
+            let names_bound_history = operation.tools.iter().any(|tool| {
                 tool.body_node.is_some_and(|node| {
                     scopes.iter().any(|candidate| {
                         candidate.record_index == node.creating_scope_record_index
                             && crate::ids::native_stream(&candidate.id) == stream
-                            && scope_histories
-                                .get(&candidate.id)
-                                .is_some_and(|bound| Some(bound.as_str()) != combine_history)
+                            && scope_histories.contains_key(&candidate.id)
                     })
                 })
             });
-            if !names_history_only_pair && !names_other_history {
+            if !names_history_only_pair && !names_bound_history {
                 continue;
             }
             updates.push((
@@ -462,7 +486,7 @@ pub(crate) fn bind(
         };
         let Some(selection) = tool_selection(tools, native) else {
             let reason = if mixed {
-                "tools mix live and history-only bodies"
+                "tools mix generated and live bodies"
             } else {
                 "the generated-body selection is not admitted"
             };
