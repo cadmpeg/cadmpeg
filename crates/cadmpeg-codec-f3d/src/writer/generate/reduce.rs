@@ -1736,20 +1736,10 @@ impl<'a> Reduction<'a> {
         self.design_dropped = true;
     }
 
-    /// Write a timeline from the neutral records (W2). A configured scope
-    /// with no root containers keeps its native tables and parameter bindings.
+    /// Write a timeline from the neutral records (W2). A scope that states
+    /// no timeline keeps its native Design records.
     fn drop_native_design_beside_neutral_timeline(&mut self) {
-        if !self.writes_design() {
-            return;
-        }
-        if super::design::root_scope(&self.ir).is_some_and(|scope| scope.roots.is_empty())
-            && self
-                .ir
-                .native
-                .namespace("f3d")
-                .and_then(|namespace| namespace.arenas().get("design_configurations"))
-                .is_some_and(|tables| !tables.is_empty())
-        {
+        if !self.writes_design() || !super::design::states_timeline(&self.ir) {
             return;
         }
         let timeline = super::design::plan(&self.ir, self.missing_states, &self.fallback)

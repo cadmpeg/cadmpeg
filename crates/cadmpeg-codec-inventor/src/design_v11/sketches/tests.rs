@@ -15,7 +15,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::scalar::{Angle, Length};
-use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId, SketchPlacement};
 
 fn feature(operation: LegacyOperation, name: &str) -> Feature {
     Feature {

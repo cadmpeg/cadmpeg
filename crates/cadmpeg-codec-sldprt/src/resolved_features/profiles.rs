@@ -1162,6 +1162,32 @@ const DEGENERATE_LINE_PLACEHOLDER: &str = "sldprt:marker-geometry:degenerate-lin
 /// its sketch in [`finalize_unread_marker_entities`].
 const ARC_POINTS_PLACEHOLDER: &str = "sldprt:marker-geometry:arc-points";
 
+#[derive(Debug)]
+struct HeldListedEntity {
+    record: ListedEntity,
+    endpoint_refs: Vec<String>,
+    center_ref: Option<String>,
+    charges: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+impl HeldListedEntity {
+    fn new(
+        record: ListedEntity,
+        marker_at: impl Fn(usize) -> Option<String>,
+        charges: Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Self {
+        Self {
+            endpoint_refs: record
+                .endpoints
+                .and_then(|[start, end]| Some(vec![marker_at(start)?, marker_at(end)?]))
+                .unwrap_or_default(),
+            center_ref: record.center.and_then(marker_at),
+            record,
+            charges,
+        }
+    }
+}
+
 /// Marker geometry that waits for the last sketch-geometry pass.
 #[derive(Debug, Default)]
 pub(crate) struct HeldMarkerGeometry {
@@ -1173,7 +1199,7 @@ pub(crate) struct HeldMarkerGeometry {
     /// marker reference: a point record the record indexes is no marker of the
     /// marker's feature object, or the record's arc ends off its endpoint
     /// point records.
-    listed: HashMap<(SketchId, String), (ListedEntity, Vec<cadmpeg_ir::report::loss::LossNote>)>,
+    listed: HashMap<(SketchId, String), HeldListedEntity>,
     /// Why the `sgSketch` curve record of a line's marker gives no entity
     /// although it states another form, by sketch and marker reference.
     chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
@@ -1265,20 +1291,22 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
-        if let Some((read, charges)) = entity
+        if let Some(read) = entity
             .native_ref
             .clone()
             .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
         {
-            entity.geometry = read.geometry;
-            entity.construction = read.construction.unwrap_or(false);
-            if let Some(construction) = read.construction {
+            entity.geometry = read.record.geometry;
+            entity.construction = read.record.construction.unwrap_or(false);
+            if let Some(construction) = read.record.construction {
                 entity.read_construction(construction);
             }
-            if read.outside_profile {
+            entity.endpoint_refs = read.endpoint_refs;
+            entity.center_ref = read.center_ref;
+            if read.record.outside_profile {
                 outside_profile.insert(entity.id().clone());
             }
-            losses.extend(charges);
+            losses.extend(read.charges);
             continue;
         }
         let (role, code) = match placeholder {
@@ -1607,6 +1635,7 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
     let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
         let cached = cache.and_then(|cache| cache.get(lane));
+        let lane_marker_ids = std::cell::OnceCell::new();
         let owned_plane_frames;
         let plane_frames =
             if let Some(frames) = resolved_plane_frames.get(&std::ptr::from_ref(lane).addr()) {
@@ -2703,7 +2732,22 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                                     )),
                                 );
                             }
-                            listed_elsewhere.push((marker.id().to_owned(), read, charges));
+                            let marker_ids = lane_marker_ids.get_or_init(|| {
+                                lane.sketch_entities
+                                    .iter()
+                                    .map(|marker| (marker.offset(), marker.id()))
+                                    .collect::<HashMap<_, _>>()
+                            });
+                            let held = HeldListedEntity::new(
+                                read,
+                                |offset| {
+                                    marker_ids
+                                        .get(&u64_from_index(offset))
+                                        .map(|id| (*id).to_owned())
+                                },
+                                charges,
+                            );
+                            listed_elsewhere.push((marker.id().to_owned(), held));
                         }
                     }
                     let construction =
@@ -2774,10 +2818,16 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                             ),
                         );
                     }
+                    let center_ref = listed
+                        .as_ref()
+                        .and_then(|listed| listed.center)
+                        .and_then(|at| object_marker_ids.get(&u64_from_index(at)))
+                        .map(|id| (*id).to_owned());
                     let mut entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
-                        .with_endpoint_refs(endpoint_refs);
+                        .with_endpoint_refs(endpoint_refs)
+                        .with_center_ref(center_ref);
                     if read {
                         entity.read_construction(construction);
                     }
@@ -2794,7 +2844,11 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                         }
                         listed_entities.insert(
                             entity.id().clone(),
-                            (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                            (
+                                entity.geometry.clone(),
+                                entity.endpoint_refs.clone(),
+                                entity.center_ref.clone(),
+                            ),
                         );
                     }
                     if held_handle {
@@ -2833,6 +2887,10 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                 let Some(bit) = listed.construction else {
                     continue;
                 };
+                let center_ref = listed
+                    .center
+                    .and_then(|at| object_marker_ids.get(&u64_from_index(at)))
+                    .map(|id| (*id).to_owned());
                 let (construction, assumed) = marker_is_construction(
                     &lane.native_payload,
                     record_lists,
@@ -2852,7 +2910,8 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                 }
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
                     .with_read_construction(construction)
-                    .with_endpoint_refs(endpoint_refs);
+                    .with_endpoint_refs(endpoint_refs)
+                    .with_center_ref(center_ref);
                 if listed.outside_profile {
                     outside_profile.insert(entity.id().clone());
                 }
@@ -2862,11 +2921,15 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                 }
                 listed_entities.insert(
                     entity.id().clone(),
-                    (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                    (
+                        entity.geometry.clone(),
+                        entity.endpoint_refs.clone(),
+                        entity.center_ref.clone(),
+                    ),
                 );
                 projected.push(entity);
             }
-            let listed_curves = listed_entities.values().any(|(geometry, _)| {
+            let listed_curves = listed_entities.values().any(|(geometry, _, _)| {
                 !matches!(
                     geometry.definition(),
                     SketchGeometryDefinition::Point { .. }
@@ -3052,9 +3115,12 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
             );
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             for entity in &mut projected {
-                if let Some((geometry, endpoint_refs)) = listed_entities.get(entity.id()) {
+                if let Some((geometry, endpoint_refs, center_ref)) =
+                    listed_entities.get(entity.id())
+                {
                     entity.geometry = geometry.clone();
                     entity.endpoint_refs = endpoint_refs.clone();
+                    entity.center_ref = center_ref.clone();
                 }
             }
             let closed = marker_sketch_profiles(
@@ -3080,9 +3146,7 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                         ),
                     );
                     let planar = finalizes_planar(projected.iter().chain(&held), |marker| {
-                        listed_elsewhere
-                            .iter()
-                            .any(|(listed, _, _)| listed == marker)
+                        listed_elsewhere.iter().any(|(listed, _)| listed == marker)
                     });
                     let revolve_profile =
                         is_revolve_profile(features, &features[feature_index], stream);
@@ -3116,7 +3180,7 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
             held_geometry.listed.extend(
                 listed_elsewhere
                     .into_iter()
-                    .map(|(marker, read, charges)| ((sketch_id.clone(), marker), (read, charges))),
+                    .map(|(marker, read)| ((sketch_id.clone(), marker), read)),
             );
             held_geometry
                 .index_basis_assumptions
@@ -3514,13 +3578,12 @@ fn assemble_sketch_block_profile(
                 placement,
                 rotation,
             )?;
-            let native_ref = format!(
-                "{}:{}",
-                instance.feature_id,
+            let instance_ref = |source: &str| format!("{}:{source}", instance.feature_id);
+            let native_ref = instance_ref(
                 source_entity
                     .native_ref
                     .as_deref()
-                    .unwrap_or(source_entity.id().as_str())
+                    .unwrap_or(source_entity.id().as_str()),
             );
             let mut entity = SketchEntity::new(id.clone(), input.sketch_id.clone(), geometry)
                 .with_construction(source_entity.construction)
@@ -3530,9 +3593,10 @@ fn assemble_sketch_block_profile(
                     source_entity
                         .endpoint_refs
                         .iter()
-                        .map(|endpoint| format!("{}:{endpoint}", instance.feature_id))
+                        .map(|source| instance_ref(source))
                         .collect(),
-                );
+                )
+                .with_center_ref(source_entity.center_ref.as_deref().map(instance_ref));
             if source_entity.construction_read() {
                 entity.read_construction(source_entity.construction);
             }
@@ -5934,7 +5998,8 @@ mod detached_legacy_sketch_tests {
                 })
                 .unwrap(),
             )
-            .with_native_ref(Some("circle".into())),
+            .with_native_ref(Some("circle".into()))
+            .with_center_ref(Some("center".into())),
             SketchEntity::new(
                 block_line_id,
                 block_sketch_id.clone(),
@@ -5946,6 +6011,15 @@ mod detached_legacy_sketch_tests {
             )
             .with_construction(true)
             .with_native_ref(Some("line".into())),
+            SketchEntity::new(
+                SketchEntityId::mint("synthetic:test:id#block-center").unwrap(),
+                block_sketch_id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: Point2::new(1.0, 2.0),
+                })
+                .unwrap(),
+            )
+            .with_native_ref(Some("center".into())),
         ];
         let quarter_turn = Transform::affine([
             [0.0, -1.0, 0.0, 5.0],
@@ -5980,7 +6054,10 @@ mod detached_legacy_sketch_tests {
         .expect("rigid coplanar block placements assemble");
 
         assert_eq!(assembled.sketch.profiles.len(), 2);
-        assert_eq!(assembled.entities.len(), 4);
+        assert_eq!(assembled.entities.len(), 6);
+        for instance in assembled.entities.chunks_exact(3) {
+            assert_eq!(instance[0].center_ref, instance[2].native_ref);
+        }
         assert_eq!(
             assembled.sketch.placement,
             SketchPlacement::try_resolved(
