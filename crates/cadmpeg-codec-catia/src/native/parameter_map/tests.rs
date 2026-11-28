@@ -35,8 +35,14 @@ fn native_a8_sampled_map_retains_exact_payload_and_checked_wire() {
     let mut wrong = wire.clone();
     wrong["data"]["reference_parameters"][0] = cadmpeg_core::json!(0.5);
     assert!(json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
+    let mut equivalent_zero = wire.clone();
+    equivalent_zero["data"]["fit_tolerance"] = cadmpeg_core::json!(-0.0);
+    let normalized = json::from_value::<CatiaSampledParameterMap>(equivalent_zero)
+        .expect("equivalent zero follows the IR zero rule");
+    assert_eq!(normalized.payload, map.payload);
+    assert_eq!(json::to_value(normalized).expect("canonical wire"), wire);
     let mut wrong = wire;
-    wrong["data"]["fit_tolerance"] = cadmpeg_core::json!(0.001);
+    wrong["data"]["fit_tolerance"] = cadmpeg_core::json!(1.0);
     assert!(json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("borrowed store");

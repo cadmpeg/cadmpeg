@@ -200,6 +200,18 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn append(&mut self, mut other: Self) {
+        self.notes.append(&mut other.notes);
+    }
+
+    pub(crate) fn push_governing_support_scope(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyGoverningSupportScopeInferred.note(format!(
+                "Used allocation-end addressing for governing sheet support scope at source offset {source_offset}"
+            )),
+        );
+    }
+
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
         let note = if resolved {
             crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(

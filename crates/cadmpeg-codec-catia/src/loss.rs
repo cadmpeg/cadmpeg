@@ -135,6 +135,8 @@ pub(crate) enum CatiaLossCode {
     TopologyUnselectedBodiesRetained,
     /// Visible body references lack one complete allocation-scope resolution.
     TopologyBodySelectionUnresolved,
+    /// A governing sheet uses inferred allocation-end support addressing.
+    TopologyGoverningSupportScopeInferred,
     /// Non-rolling-ball face sense uses inferred roster and chart parity.
     TopologyOwnedPatchSenseInferred,
     /// An endpoint station admits both first-scalar and final-scalar tag readings.
@@ -271,6 +273,7 @@ impl CatiaLossCode {
         Self::TopologyOwnedPatchSubset,
         Self::TopologyUnselectedBodiesRetained,
         Self::TopologyBodySelectionUnresolved,
+        Self::TopologyGoverningSupportScopeInferred,
         Self::TopologyOwnedPatchSenseInferred,
         Self::TopologyEndpointStationReadingInferred,
         Self::TopologySharedBoundaryReconciled,
@@ -372,6 +375,9 @@ impl CatiaLossCode {
             Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
             Self::TopologyUnselectedBodiesRetained => "topology.unselected-bodies-retained",
             Self::TopologyBodySelectionUnresolved => "topology.body-selection-unresolved",
+            Self::TopologyGoverningSupportScopeInferred => {
+                "topology.governing-support-scope-inferred"
+            }
             Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
             Self::TopologyEndpointStationReadingInferred => {
                 "topology.endpoint-station-reading-inferred"
@@ -460,7 +466,8 @@ impl CatiaLossCode {
             | Self::SourceAnnotationCollision
             | Self::SourceCatalogScanBounded
             | Self::TopologySheetComponentsInferred
-            | Self::HistoryParameterLiteralAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::HistoryParameterLiteralAssumed
+            | Self::TopologyGoverningSupportScopeInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
@@ -618,6 +625,7 @@ mod tests {
                 "topology.owned-patch-subset",
                 "topology.unselected-bodies-retained",
                 "topology.body-selection-unresolved",
+                "topology.governing-support-scope-inferred",
                 "topology.owned-patch-sense-inferred",
                 "topology.endpoint-station-reading-inferred",
                 "topology.shared-boundary-reconciled",
