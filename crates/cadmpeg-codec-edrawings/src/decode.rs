@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::decode::DecodeTransfer;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
 use crate::loss::EdrawingsLossCode;
@@ -67,13 +67,14 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 model_body = Some(model.body);
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                losses.push(EdrawingsLossCode::StreamMalformed.note(format!(
-                    "the eModel model stream did not open ({error}); the package carries no \
-                     model data"
-                )));
-                given_up.push(give_up_model(ctx, &package, error)?);
-            }
+            Err(error) => given_up.push(give_up_model(
+                ctx,
+                &package,
+                Cause::Unreadable.of(&error),
+                CodecError::malformed(format_args!(
+                    "the eModel model stream did not open: {error}"
+                )),
+            )?),
         }
     }
     let mut ir = CadIr::decoded(SourceMeta::classified(
@@ -84,7 +85,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     if let Some(body) = model_body {
         match crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses, &mut given_up)? {
             Ok(transferred) => geometry_transferred = transferred,
-            Err(error) => given_up.push(give_up_model(ctx, &package, error)?),
+            Err((cause, error)) => given_up.push(give_up_model(ctx, &package, cause, error)?),
         }
     }
     let mut source_fidelity = SourceFidelity::for_root(root);
@@ -105,6 +106,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 fn give_up_model(
     ctx: &DecodeContext<'_>,
     package: &Package<'_>,
+    cause: Cause,
     error: CodecError,
 ) -> Result<GivenUpPart, CodecError> {
     let part = Part::new(
@@ -114,5 +116,5 @@ fn give_up_model(
         [ArenaClass::Model],
     )
     .named(crate::package::MODEL_MEMBER);
-    ctx.give_up_part(part, error)
+    ctx.give_up_part(part, cause, error)
 }

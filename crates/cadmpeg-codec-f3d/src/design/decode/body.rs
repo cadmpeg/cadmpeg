@@ -107,7 +107,6 @@ pub(crate) fn decode_body_members(
 pub(crate) fn decode_body_bounds(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
     let mut out = Vec::new();
@@ -212,9 +211,8 @@ pub(crate) fn decode_body_bounds(
                 values,
                 value_offsets,
             ),
-            losses,
             given_up,
-            crate::loss::F3dLossCode::DesignBodyBoundsUndecoded,
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
             super::record::RecordFrame::new(&entry.name, first, third_end),
             format_args!(
                 "Body bounds for Design entity {}",
@@ -1224,7 +1222,7 @@ pub(crate) fn decode_design_body_bindings(
             typed_browser_node_hidden_flags_from_scan(scan, &entry.name, bytes, &metadata)?;
         let consumed = match scan.entry_view(&entry.name) {
             Some(root) => super::body_consumers::consumed_body_entities(root, &metadata)?,
-            None => std::collections::HashSet::new(),
+            None => std::collections::HashMap::new(),
         };
         for record in selected_body_map_records(bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
@@ -1248,10 +1246,10 @@ pub(crate) fn decode_design_body_bindings(
                 let hidden = hidden_by_entity
                     .get(&binding.entity_suffix)
                     .is_some_and(|node| node.hidden);
+                let consumers = consumed.get(&binding.entity_suffix);
                 let history_only = memberships.complete
                     && owner.is_none()
-                    && (consumed.contains(&binding.entity_suffix)
-                        || (hidden && cluster_owner.is_none()));
+                    && (consumers.is_some() || (hidden && cluster_owner.is_none()));
                 let body = if history_only {
                     None
                 } else {
@@ -1284,6 +1282,10 @@ pub(crate) fn decode_design_body_bindings(
                         component_owner_unresolved: owner
                             .is_some_and(|owner| owner.admitted().is_none()),
                         history_only,
+                        consumers: consumers
+                            .filter(|_| history_only)
+                            .map(|consumers| consumers.iter().copied().collect())
+                            .unwrap_or_default(),
                     })
                     .map_err(CodecError::Malformed)?;
 
@@ -2791,6 +2793,7 @@ mod tests {
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
+            consumers: Vec::new(),
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
             stream: STREAM.into(),
             pair_count: 1,
@@ -2861,13 +2864,9 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let bounds = super::decode_body_bounds(
-                scan,
-                std::slice::from_ref(&entity),
-                &mut Vec::new(),
-                &mut Vec::new(),
-            )
-            .unwrap();
+            let bounds =
+                super::decode_body_bounds(scan, std::slice::from_ref(&entity), &mut Vec::new())
+                    .unwrap();
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 7);
         });
@@ -2930,19 +2929,17 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let mut losses = Vec::new();
             let mut given_up = Vec::new();
             let bounds =
-                super::decode_body_bounds(scan, &[entity, sibling], &mut losses, &mut given_up)
-                    .unwrap();
-            assert_eq!(
-                crate::test_support::loss_codes(&losses),
-                [crate::loss::F3dLossCode::DesignBodyBoundsUndecoded.kind()]
-            );
+                super::decode_body_bounds(scan, &[entity, sibling], &mut given_up).unwrap();
             let [frame] = given_up.as_slice() else {
                 panic!("one given-up bounds frame: {given_up:?}");
             };
             assert_eq!(frame.span().0, ENTRY);
+            assert_eq!(
+                frame.reason().0,
+                cadmpeg_ir::unknown::part::Cause::Undecoded
+            );
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 107);
         });

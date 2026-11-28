@@ -3720,7 +3720,9 @@ fn finish_decode(
             "catia",
             &mut ir,
             &mut report.losses,
-            |ir, losses| crate::design_v11::project(ctx, ir, losses),
+            |ir, losses| {
+                crate::design_v11::project(ctx, ir, &native, &modeling_graph_scope, losses)
+            },
         )?;
         let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
         crate::design_v11::restate_exactness(&ir, &mut restated)?;

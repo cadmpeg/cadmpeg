@@ -1,17 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::decode::{DecodeContext, View};
+use std::rc::Rc;
 
-use crate::feature::base::{current_body, entry, reference_counts, unique_link_header, wrappers};
+use cadmpeg_container::compound::CompoundSnapshot;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossKind;
+
+use crate::feature::base::{
+    current_body, history_candidate, inspect_source_body, reference_counts, unique_link_header,
+    wrappers, SourceBody,
+};
+use crate::feature::history_views::{ResultStates, StateLimit, StateModel};
 use crate::feature::tests::{reference, test_feature, test_header};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcKernelEntityLink,
     PmDcKernelEntityLinkPayload, KERNEL_ENTITY_LINK_TYPE, SURFACE_BODY_TYPE,
 };
 use crate::layout::{meta_external_reference as external, meta_external_revision as revision};
+use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
-use crate::records::MetaSection;
+use crate::records::{MetaSection, ReferenceTable};
+use crate::rse::RseInventory;
+use crate::test_support::base_envelope::{
+    decode, derived_at_version, fixtures, state_model, SyntheticRecords, RESULT_KEY, SOURCE_INDEX,
+};
+use crate::test_support::test_fixtures::{
+    acis_sphere_kernel_stream_with_body_key, base_envelope_fixture, BaseEnvelopeRecords,
+};
 
 fn wrapper(body: u32) -> PmDcFeatureProperty {
     Located::new(
@@ -120,18 +139,28 @@ fn external_entries_require_exact_count_width_and_bounds() {
         discriminator: 2,
         payload: View::over_retained(&bytes),
     };
-    assert!(entry(&section, 1, 8).is_some());
-    assert!(entry(&section, 2, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(1)
+        .is_some());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(2)
+        .is_none());
     section.discriminator = 1;
-    assert!(entry(&section, 0, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(0)
+        .is_none());
     section.discriminator = u32::MAX;
-    assert!(entry(&section, 0, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(0)
+        .is_none());
 }
 
 #[test]
 fn external_reference_counts_reject_dangling_revision_indices() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
@@ -153,7 +182,14 @@ fn external_reference_counts_reject_dangling_revision_indices() {
         payload: View::over_retained(&reference_bytes),
     };
     assert_eq!(
-        reference_counts(&ctx, &revisions, &references).expect("reference counts"),
+        reference_counts(
+            &ctx,
+            &ReferenceTable::read(None, &revisions, revision::LEN)
+                .expect("locate the reference table"),
+            &ReferenceTable::read(None, &references, external::LEN)
+                .expect("locate the reference table")
+        )
+        .expect("reference counts"),
         Some(vec![2, 1])
     );
     let mut inconsistent_bytes = revision_bytes;
@@ -163,18 +199,29 @@ fn external_reference_counts_reject_dangling_revision_indices() {
         payload: View::over_retained(&inconsistent_bytes),
         ..revisions
     };
-    assert!(reference_counts(&ctx, &inconsistent_revisions, &references)
-        .expect("inconsistent reference count")
-        .is_none());
+    assert!(reference_counts(
+        &ctx,
+        &ReferenceTable::read(None, &inconsistent_revisions, revision::LEN)
+            .expect("locate the reference table"),
+        &ReferenceTable::read(None, &references, external::LEN)
+            .expect("locate the reference table")
+    )
+    .expect("inconsistent reference count")
+    .is_none());
     let mut invalid_bytes = reference_bytes;
     invalid_bytes[external::LEN..external::LEN + 4].copy_from_slice(&2_u32.to_le_bytes());
     let references = MetaSection {
         payload: View::over_retained(&invalid_bytes),
         ..references
     };
-    assert!(reference_counts(&ctx, &revisions, &references)
-        .expect("invalid references")
-        .is_none());
+    assert!(reference_counts(
+        &ctx,
+        &ReferenceTable::read(None, &revisions, revision::LEN).expect("locate the reference table"),
+        &ReferenceTable::read(None, &references, external::LEN)
+            .expect("locate the reference table")
+    )
+    .expect("invalid references")
+    .is_none());
 }
 
 #[test]
@@ -196,5 +243,283 @@ fn base_slots_require_two_distinct_surface_wrappers_and_null_tail() {
         test_feature(1, 3, &[(0, 2), (1, 3), (2, 4)]),
     ] {
         assert!(wrappers(&invalid, crate::feature::BASE_CLASS_ID, |_| Some(&first)).is_none());
+    }
+}
+
+#[test]
+fn a_base_source_inspection_contains_its_entity_limit() {
+    use cadmpeg_asm::kernel_header::RefWidth;
+
+    use crate::kernel::parse_carrier;
+    use crate::test_support::history_carrier::{carrier_bytes, framed_carrier, CURRENT_BODY_KEY};
+
+    let bytes = framed_carrier(&carrier_bytes(RefWidth::Eight, false));
+    let entity = u32::try_from(CURRENT_BODY_KEY).expect("fixture body key");
+    let arena = DecodeArena::new();
+    let (ordinary, view) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("input");
+    let carrier =
+        parse_carrier(view, &cadmpeg_ir::identity_key!("seg"), 0, 0, 18).expect("carrier");
+    assert!(matches!(
+        inspect_source_body(&ordinary, &carrier, entity).expect("source check"),
+        SourceBody::Present
+    ));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (bounded, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+    let SourceBody::Bounded(limit) =
+        inspect_source_body(&bounded, &carrier, entity).expect("source check")
+    else {
+        panic!("source entity cap");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert!(bounded.resource_refusal().is_none());
+}
+
+#[test]
+fn history_candidate_requires_the_carrier_link_and_no_final_body_with_the_key() {
+    let output = wrapper(1);
+    let link = link();
+    let key = body_key();
+    assert!(history_candidate(&output, &link, "seg", 0, &[]));
+    // A final body that carries the key is not a candidate.
+    assert!(!history_candidate(
+        &output,
+        &link,
+        "seg",
+        0,
+        std::slice::from_ref(&key)
+    ));
+    // Duplicate final keys are still final bodies.
+    assert!(!history_candidate(
+        &output,
+        &link,
+        "seg",
+        0,
+        &[key.clone(), key.clone()]
+    ));
+    // A body of another carrier or another key does not hold the key.
+    let mut other = key.clone();
+    other.source_brep = Some("Bother:record:0".into());
+    assert!(history_candidate(&output, &link, "seg", 0, &[other]));
+    let mut other = key;
+    other.asm_body_key = Some(8);
+    assert!(history_candidate(&output, &link, "seg", 0, &[other]));
+}
+
+#[test]
+fn history_candidate_refuses_a_link_that_does_not_select_the_carrier() {
+    let output = wrapper(1);
+    let link = link();
+    assert!(!history_candidate(&output, &link, "other", 0, &[]));
+    assert!(!history_candidate(&output, &link, "seg", 1, &[]));
+    for output in [wrapper(0), wrapper(0x8000_0001)] {
+        assert!(!history_candidate(&output, &link, "seg", 0, &[]));
+    }
+    let mut payload = (*link).clone();
+    payload.state = 1;
+    let changed = Located::new(
+        payload,
+        RecordTypeId::from_bytes(KERNEL_ENTITY_LINK_TYPE),
+        cadmpeg_ir::identity_key!("seg"),
+        1,
+    );
+    assert!(!history_candidate(&output, &changed, "seg", 0, &[]));
+}
+
+/// States of a fixed answer.
+struct Fixed {
+    introduces: bool,
+    outcome: fn(&CadIr) -> StateModel,
+    model: CadIr,
+}
+
+impl ResultStates for Fixed {
+    fn after(
+        &self,
+        _: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        assert_eq!(source_index, SOURCE_INDEX);
+        Ok(Rc::new((self.outcome)(&self.model)))
+    }
+
+    fn introduces(&self, source_index: u32, key: i64) -> bool {
+        self.introduces && source_index == SOURCE_INDEX && key == RESULT_KEY
+    }
+}
+
+fn holding(model: &CadIr) -> StateModel {
+    StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
+}
+
+/// Projects the two Base features of the fixture with a final model that
+/// holds no body key, and returns the transferred count and the losses.
+fn project_without_final_body(states: &Fixed) -> (usize, Vec<LossKind>) {
+    project_records_without_final_body(fixtures(), states)
+}
+
+/// As `project_without_final_body`, for the given synthetic records.
+fn project_records_without_final_body(
+    (design_recs, base_recs): (SyntheticRecords, BaseEnvelopeRecords),
+    states: &Fixed,
+) -> (usize, Vec<LossKind>) {
+    let bytes = base_envelope_fixture(
+        &acis_sphere_kernel_stream_with_body_key(21_800, 7),
+        &design_recs,
+        &base_recs,
+    );
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
+    let snapshot = CompoundSnapshot::new(&ctx, root).expect("compound");
+    let document = RseInventory::build(
+        &ctx,
+        &snapshot,
+        &mut crate::container::streams::Streams::default(),
+    )
+    .expect("RSe inventory");
+    let features = crate::feature::inventory(&ctx, &document).expect("feature inventory");
+    let design = crate::design::inventory(&ctx, &document).expect("design inventory");
+    let sketches = crate::sketch::inventory(&ctx, &document).expect("sketch inventory");
+    let mut ir = decode(&design_recs, &base_recs);
+    ir.model.feature_result_topologies.clear();
+    for feature in &mut ir.model.features {
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
+                parameters: std::collections::BTreeMap::new(),
+            }));
+    }
+    let keys: Vec<BodyNativeKey> = Vec::new();
+    let projection = crate::feature::base::project(
+        &ctx,
+        &crate::feature::base::Inputs {
+            document: &document,
+            inventory: &features,
+            design: &design,
+            transforms: &sketches.transforms,
+            keys: &keys,
+            states: Some(states),
+        },
+        &mut ir,
+    )
+    .expect("Base projection");
+    let codes = projection
+        .losses
+        .iter()
+        .map(|note| note.code.clone())
+        .collect();
+    if projection.transferred == 2 {
+        assert_eq!(ir.model.feature_result_topologies.len(), 2);
+        for result in &ir.model.feature_result_topologies {
+            assert_eq!(result.bodies().len(), 1);
+            assert!(result.bodies()[0].as_str().ends_with("-3"));
+        }
+        for feature in &ir.model.features {
+            assert!(matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+            ));
+            assert!(feature.source_properties.contains_key("result_body_link"));
+        }
+    } else {
+        assert!(ir.model.feature_result_topologies.is_empty());
+    }
+    (projection.transferred, codes)
+}
+
+#[test]
+fn a_result_body_that_its_state_introduces_types_the_base() {
+    let states = Fixed {
+        introduces: true,
+        outcome: holding,
+        model: state_model(),
+    };
+    assert_eq!(project_without_final_body(&states), (2, Vec::new()));
+}
+
+#[test]
+fn a_result_key_that_no_state_introduces_stays_native_without_a_loss() {
+    let states = Fixed {
+        introduces: false,
+        outcome: holding,
+        model: state_model(),
+    };
+    assert_eq!(project_without_final_body(&states), (0, Vec::new()));
+}
+
+#[test]
+fn a_state_without_a_body_of_the_result_key_stays_native_with_its_loss() {
+    let mut model = state_model();
+    model
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
+        .arenas_mut()
+        .remove("body_native_keys");
+    let states = Fixed {
+        introduces: true,
+        outcome: holding,
+        model,
+    };
+    let (transferred, codes) = project_without_final_body(&states);
+    assert_eq!(transferred, 0);
+    assert_eq!(codes, vec![state_loss(); 2]);
+}
+
+#[test]
+fn a_state_that_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
+    for outcome in [
+        |_: &CadIr| StateModel::Failed,
+        |_: &CadIr| StateModel::Bounded(StateLimit::Work),
+    ] {
+        let states = Fixed {
+            introduces: true,
+            outcome,
+            model: CadIr::empty(),
+        };
+        let (transferred, codes) = project_without_final_body(&states);
+        assert_eq!(transferred, 0);
+        assert_eq!(codes, vec![state_loss(); 2]);
+    }
+    let states = Fixed {
+        introduces: true,
+        outcome: |_| StateModel::Unavailable,
+        model: CadIr::empty(),
+    };
+    let (transferred, codes) = project_without_final_body(&states);
+    assert_eq!(transferred, 0);
+    assert_eq!(codes, vec![state_loss(); 2]);
+}
+
+fn state_loss() -> LossKind {
+    InventorLossCode::FeatureBaseResultStateNative
+        .note("state")
+        .code
+}
+
+#[test]
+fn a_derived_result_whose_state_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
+    let loss = InventorLossCode::FeatureDerivedResultNative
+        .note("state")
+        .code;
+    for outcome in [
+        |_: &CadIr| StateModel::Failed,
+        |_: &CadIr| StateModel::Bounded(StateLimit::Work),
+        |_: &CadIr| StateModel::Unavailable,
+    ] {
+        let states = Fixed {
+            introduces: true,
+            outcome,
+            model: CadIr::empty(),
+        };
+        let (transferred, codes) =
+            project_records_without_final_body(derived_at_version(false, 19), &states);
+        assert_eq!(transferred, 0);
+        assert_eq!(codes, vec![loss.clone()]);
     }
 }

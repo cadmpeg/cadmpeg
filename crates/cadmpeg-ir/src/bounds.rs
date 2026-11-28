@@ -191,6 +191,21 @@ pub(crate) fn take_expression_past() -> bool {
     EXPRESSION_PAST.with(|past| past.replace(false))
 }
 
+thread_local! {
+    static EXPRESSION_REFUSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Notes that the text of an expression deeper than
+/// [`MAX_EXPRESSION_DEPTH`] was refused. The CADIR reader gives up the record
+/// that holds it as undecoded (§3.3).
+pub(crate) fn note_expression_refused() {
+    EXPRESSION_REFUSED.with(|refused| refused.set(true));
+}
+
+pub(crate) fn take_expression_refused() -> bool {
+    EXPRESSION_REFUSED.with(|refused| refused.replace(false))
+}
+
 /// The depth bound of §2.5 that a record or a document passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bound {

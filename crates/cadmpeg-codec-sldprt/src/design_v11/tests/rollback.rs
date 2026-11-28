@@ -299,3 +299,426 @@ fn a_mark_class_the_class_map_does_not_name_is_noted_as_inferred() {
     );
     assert_eq!(timeline_rollback(&marked.ir), None);
 }
+
+#[derive(Clone, Copy)]
+enum SphereTip {
+    Changed,
+    Deleted,
+    Alternate,
+    AlternateSplit,
+    AlternateWithoutFeatureLane,
+    LocalBody,
+}
+
+/// The partition before the last feature contains a loopless sphere. The
+/// current partition either changes its radius or removes its nodes.
+fn part_with_earlier_sphere(tip_kind: SphereTip) -> cadmpeg_ir::codec::DecodeResult {
+    SldprtCodec
+        .decode(
+            &mut Cursor::new(earlier_sphere_fixture(tip_kind)),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+}
+
+fn earlier_sphere_fixture(tip_kind: SphereTip) -> Vec<u8> {
+    use cadmpeg_parasolid::test_support::replay::{DeltasStream, Mark};
+
+    use crate::test_support::carchive::config_object_stream_declaring;
+    use crate::test_support::container::outer_header;
+    use crate::test_support::parasolid::sequence::{loopless_nodes, sequence_of, status_node, F};
+
+    let alternate = matches!(
+        tip_kind,
+        SphereTip::Alternate | SphereTip::AlternateSplit | SphereTip::AlternateWithoutFeatureLane
+    );
+    let delete_body = matches!(tip_kind, SphereTip::Deleted | SphereTip::LocalBody);
+    let tip = Mark {
+        xmt: 100,
+        identifier: 43,
+        preceding: 101,
+    };
+    let earlier = Mark {
+        xmt: 101,
+        identifier: 17,
+        preceding: 1,
+    };
+    let mut nodes = loopless_nodes(53);
+    let mut prefix = DeltasStream::embedded(tip).finish();
+    let mut deltas = DeltasStream::embedded(tip);
+    let prefix_len = prefix.len();
+    let (mut partition, _) = if delete_body {
+        for (kind, index, fields) in &nodes {
+            status_node(&mut prefix, *kind, *index, fields);
+        }
+        sequence_of(&[])
+    } else {
+        let (kind, index, fields) = &mut nodes[4];
+        let original = fields.clone();
+        fields[8] = F::R(0.011);
+        deltas = deltas.terminator().map(&[]);
+        prefix = deltas.finish();
+        status_node(&mut prefix, *kind, *index, &original);
+        deltas = DeltasStream::embedded(tip);
+        sequence_of(&nodes)
+    };
+    let mut tail = if delete_body {
+        deltas.terminator().map(&[]).terminator()
+    } else {
+        deltas.terminator()
+    }
+    .marks(&[earlier])
+    .terminator()
+    .finish();
+    prefix.extend(tail.drain(prefix_len..));
+    partition.extend(prefix);
+
+    let mut resolved = 9_u32.to_le_bytes().to_vec();
+    resolved.extend([0, 0]);
+    for (name, id, mark) in [("Boss", 7, earlier), ("Later", 9, tip)] {
+        resolved.extend(resolved_feature_classes_with_ids(&[(
+            "moExtrusion_c",
+            name,
+            id,
+        )]));
+        resolved.extend(0x8007_u16.to_le_bytes());
+        for word in [mark.identifier, 1, 0] {
+            resolved.extend(word.to_le_bytes());
+        }
+    }
+    let mut source = if alternate {
+        sldprt_with_body(&triangle_body())
+    } else {
+        outer_header()
+    };
+    if alternate {
+        source.extend(make_block(
+            0x43, "Contents/SolidWorks",
+            br#"<swSolidWorks><swModel swConfigurationName="Default"/><swConfigurationList><swConfiguration swName="Default" swID="0"/><swConfiguration swName="Alternate" swID="1"/></swConfigurationList></swSolidWorks>"#,
+        ));
+    }
+    if matches!(tip_kind, SphereTip::LocalBody) {
+        let local = crate::test_support::parasolid::parasolid_with_body(
+            ": TRANSMIT FILE created by modeller",
+            "SCH_SW_33103_11000",
+            &triangle_body(),
+        );
+        source.extend(make_block(
+            0x22,
+            "Contents/Config-0-FeatureBodies/LocalBodies",
+            &local,
+        ));
+    }
+    let configuration = format!("Contents/Config-{}", usize::from(alternate));
+    source.extend(make_block(
+        0x20,
+        &format!("{configuration}-Partition"),
+        &partition,
+    ));
+    if matches!(tip_kind, SphereTip::AlternateSplit) {
+        let (other, _) = sequence_of(&loopless_nodes(53));
+        source.extend(make_block(
+            0x20,
+            &format!("{configuration}-Partition"),
+            &other,
+        ));
+    }
+    let rows = if alternate {
+        r#"<Configuration Name="Default" SourceIndex="0"/><Configuration Name="Alternate" SourceIndex="1"/>"#
+    } else {
+        ""
+    };
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        format!(
+            r#"<Keywords Name="Marked">{rows}
+            <Extrusion Name="Later" Type="BossExtrude" id="9"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#
+        )
+        .as_bytes(),
+    ));
+    source.extend(make_block(
+        0x20,
+        &configuration,
+        &config_object_stream_declaring("moPMarkRecord_c"),
+    ));
+    if !matches!(tip_kind, SphereTip::AlternateWithoutFeatureLane) {
+        source.extend(make_block(
+            0x21,
+            &format!("{configuration}-ResolvedFeatures"),
+            &resolved,
+        ));
+    }
+    native_envelope_fixture(&source)
+}
+
+#[test]
+fn serialized_marks_order_the_timeline_and_replay_a_nonempty_earlier_brep() {
+    use cadmpeg_ir::design::evaluation::StateBase;
+    use cadmpeg_ir::design::refs::Evaluated;
+
+    let result = part_with_earlier_sphere(SphereTip::Changed);
+    let ir = result.ir();
+    let boss = feature_named(ir, "Boss").id.clone();
+    let later = feature_named(ir, "Later").id.clone();
+    let [Container::Ordered { members, .. }] = ir.design.containers.as_slice() else {
+        panic!("expected the part timeline");
+    };
+    assert_eq!(
+        *members,
+        [Member::Feature(boss.clone()), Member::Feature(later)]
+    );
+    let [current] = ir.design.scopes[0].current.as_slice() else {
+        panic!("expected Current to hold the newer sphere");
+    };
+    assert_eq!(current.native_ref.as_deref(), Some("PMARK 43"));
+    let [earlier] = ir.design.evaluations.as_slice() else {
+        panic!(
+            "expected the boss evaluation: {:#?}",
+            result.report().losses
+        );
+    };
+    assert_eq!(
+        earlier.of,
+        Evaluated::State(Position::After(Member::Feature(boss)))
+    );
+    assert_eq!(earlier.native_ref.as_deref(), Some("PMARK 17"));
+    let content = earlier.content.as_ref().unwrap();
+    assert_eq!(content.base, StateBase::Current(current.at.clone()));
+    assert_eq!(current.bodies.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(content.delta.records.surfaces.len(), 1);
+    assert_ne!(content.delta.records.surfaces, ir.geometry.surfaces);
+}
+
+#[test]
+fn an_empty_current_partition_replays_the_deleted_body_from_empty() {
+    use cadmpeg_ir::design::evaluation::StateBase;
+    use cadmpeg_ir::design::refs::Evaluated;
+
+    let result = part_with_earlier_sphere(SphereTip::Deleted);
+    let ir = result.ir();
+    assert!(ir.design.scopes[0].current.is_empty());
+    let [earlier] = ir.design.evaluations.as_slice() else {
+        panic!("expected the deleted body: {:#?}", result.report().losses);
+    };
+    let boss = feature_named(ir, "Boss").id.clone();
+    assert_eq!(
+        earlier.of,
+        Evaluated::State(Position::After(Member::Feature(boss)))
+    );
+    let content = earlier.content.as_ref().unwrap();
+    assert_eq!(content.base, StateBase::Empty);
+    assert_eq!(content.delta.records.bodies.len(), 1);
+    assert_eq!(content.delta.records.faces.len(), 1);
+}
+
+#[test]
+fn a_nonactive_configuration_tip_keeps_its_mark_and_bases_its_earlier_state() {
+    use cadmpeg_ir::design::evaluation::StateBase;
+
+    let result = part_with_earlier_sphere(SphereTip::Alternate);
+    let [tip, earlier] = result.ir().design.evaluations.as_slice() else {
+        panic!(
+            "expected the alternate partition's tip and earlier state: {:#?}",
+            result.report().losses
+        );
+    };
+    assert_eq!(tip.native_ref.as_deref(), Some("PMARK 43"));
+    assert_eq!(earlier.native_ref.as_deref(), Some("PMARK 17"));
+    assert_eq!(tip.configuration, earlier.configuration);
+    let content = earlier.content.as_ref().unwrap();
+    assert_eq!(content.base, StateBase::Evaluation(tip.id.clone()));
+    assert_eq!(content.delta.records.surfaces.len(), 1);
+}
+
+#[test]
+fn the_state_chain_ceiling_refuses_the_decode_session() {
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::DecodeFailure;
+
+    for (tip, depth) in [(SphereTip::Changed, 1), (SphereTip::Alternate, 2)] {
+        let bytes = earlier_sphere_fixture(tip);
+        let decode =
+            |options: &DecodeOptions| SldprtCodec.decode(&mut Cursor::new(&bytes), options);
+        let result = decode(&DecodeOptions::default()).unwrap();
+        assert_eq!(result.ir().design.evaluations.len(), depth);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code != SldprtLossCode::HistoryStatesUnread.kind()
+                && loss.code != SldprtLossCode::ConfigStateUnstated.kind()
+        }));
+
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_state_chain_depth = u64::try_from(depth).unwrap();
+        assert_eq!(decode(&options).unwrap(), result);
+        for limit in 0..options.policy.limits.max_state_chain_depth {
+            options.policy.limits.max_state_chain_depth = limit;
+            let Err(failure) = decode(&options) else {
+                panic!("the decode returned a document at state chain limit {limit}");
+            };
+            assert!(
+                matches!(
+                    failure,
+                    DecodeFailure::Codec(CodecError::ResourceLimit(ResourceLimit {
+                        scope: LimitScope::Session,
+                        dimension: ResourceDimension::RecursionDepth,
+                        reason: ResourceFailure::BudgetExceeded,
+                        limit: maximum,
+                        used,
+                        additional: 1,
+                        ..
+                    })) if maximum == limit && used == limit
+                ),
+                "{failure:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn geometry_depth_leaves_saved_states_outside_the_decode_budget() {
+    use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
+
+    let bytes = earlier_sphere_fixture(SphereTip::Alternate);
+    let decode = |options: &DecodeOptions| SldprtCodec.decode(&mut Cursor::new(&bytes), options);
+    let full = decode(&DecodeOptions::default()).unwrap();
+    let mut options = DecodeOptions {
+        depth: DecodeDepth::Geometry,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_state_chain_depth = 0;
+    let geometry = decode(&options).unwrap();
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().geometry, full.ir().geometry);
+    assert_eq!(
+        geometry.ir().model.product_definitions,
+        full.ir().model.product_definitions,
+    );
+    assert!(geometry.ir().scope_violations().is_empty());
+    assert!(geometry
+        .source_fidelity()
+        .unrepresented()
+        .contains(&ArenaClass::Design));
+    assert!(geometry
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.to_string() != "decode/depth.not-delivered"));
+}
+
+fn assert_alternate_states_unread(tip: SphereTip, reason: &str) {
+    let result = part_with_earlier_sphere(tip);
+    let [evaluation] = result.ir().design.evaluations.as_slice() else {
+        panic!("expected the alternate configuration tip");
+    };
+    assert!(evaluation.content.is_some());
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::HistoryStatesUnread.kind())
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!(
+            "expected a history.states-unread loss: {:#?}",
+            result.report().losses
+        );
+    };
+    assert!(loss.message.contains("Alternate"), "{loss:?}");
+    assert!(loss.message.contains(reason), "{loss:?}");
+}
+
+#[test]
+fn an_alternate_configuration_without_a_unique_partition_site_is_reported() {
+    assert_alternate_states_unread(SphereTip::AlternateSplit, "partition site");
+}
+
+#[test]
+fn an_alternate_configuration_without_a_feature_lane_is_reported() {
+    assert_alternate_states_unread(SphereTip::AlternateWithoutFeatureLane, "feature records");
+}
+
+#[test]
+fn an_unclaimed_empty_bookkeeping_mark_is_not_a_missing_feature_state() {
+    use crate::test_support::container::outer_header;
+    use crate::test_support::parasolid::sequence::{loopless_nodes, sequence_of};
+    use cadmpeg_parasolid::test_support::replay::{DeltasStream, Mark};
+
+    let nodes = loopless_nodes(53);
+    let (mut partition, _) = sequence_of(&nodes);
+    let created = nodes
+        .iter()
+        .map(|(kind, index, _)| (u32::from(*index), *kind))
+        .collect::<Vec<_>>();
+    let tip = Mark {
+        xmt: 100,
+        identifier: 43,
+        preceding: 101,
+    };
+    let bookkeeping = Mark {
+        xmt: 101,
+        identifier: 17,
+        preceding: 102,
+    };
+    let initial = Mark {
+        xmt: 102,
+        identifier: 3,
+        preceding: 1,
+    };
+    partition.extend(
+        DeltasStream::embedded(tip)
+            .delta(&[], &created, &[])
+            .marks(&[bookkeeping])
+            .delta(&[], &[], &[])
+            .marks(&[initial])
+            .terminator()
+            .finish(),
+    );
+    let mut source = outer_header();
+    source.extend(make_block(0x20, "Contents/Config-0-Partition", &partition));
+    source.extend(make_block(0x42, "Contents/Keywords", MARKED_KEYWORDS));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(native_envelope_fixture(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().design.evaluations.is_empty());
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != SldprtLossCode::HistoryStatesUnread.kind()),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn an_imported_current_body_is_outside_the_empty_partitions_index_space() {
+    use cadmpeg_ir::design::evaluation::StateBase;
+    let result = part_with_earlier_sphere(SphereTip::LocalBody);
+    let ir = result.ir();
+    let [current] = ir.design.scopes[0].current.as_slice() else {
+        panic!(
+            "expected the local body in Current: {:#?}",
+            result.report().losses
+        );
+    };
+    assert_eq!(current.bodies.len(), 1);
+    let [earlier] = ir.design.evaluations.as_slice() else {
+        panic!(
+            "expected the earlier partition body: {:#?}",
+            result.report().losses
+        );
+    };
+    let content = earlier.content.as_ref().unwrap();
+    assert_eq!(content.base, StateBase::Empty);
+    assert_eq!(content.delta.records.bodies.len(), 1);
+    assert_ne!(current.bodies[0], content.delta.records.bodies[0].id);
+}

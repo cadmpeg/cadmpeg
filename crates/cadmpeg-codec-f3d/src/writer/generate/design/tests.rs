@@ -83,6 +83,7 @@ fn parameter(
         id: parameter_id(key),
         scope: root(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -344,6 +345,141 @@ fn every_feature_not_written_is_charged_evaluation_missing() {
     .is_empty());
 }
 
+/// A rigid group of the timeline is charged by name with the reason the
+/// writer leaves it out.
+#[test]
+fn a_rigid_group_is_charged_evaluation_missing_as_no_joint_written() {
+    const GROUP: &str = "test:design:feature#group";
+    let mut ir = scoped_cube();
+    let path = |name: &str| {
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(
+                OccurrenceId::mint(format!("test:model:occurrence#{name}"))
+                    .expect("identity grammar"),
+            ),
+            configuration: None,
+        }])
+    };
+    let mut group = feature(GROUP, OperationFamily::Joint);
+    group.definition.operation =
+        FeatureOperation::RigidGroup(Box::new(cadmpeg_ir::design::ops::assembly::RigidGroup {
+            members: [path("a"), path("b")].into(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }));
+    ir.design.features.push(group);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        panic!("the timeline")
+    };
+    members.push(Member::Feature(
+        FeatureId::mint(GROUP).expect("identity grammar"),
+    ));
+    let (report, _) = write(&ir);
+    let missing = loss(&report, "export/evaluation.missing");
+    assert!(
+        missing.iter().any(|message| message.contains(GROUP)
+            && message.contains("the writer writes no joint or rigid group")),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// The `writer.joint-omitted` messages of writing a rigid group that restates
+/// joint `grouped` without `cut`, beside a joint `alone` that no feature
+/// restates.
+fn grouped_joint_losses(cut: &[&'static str]) -> Vec<String> {
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
+    };
+
+    const GROUP: &str = "test:design:feature#group";
+    let mut ir = scoped_cube();
+    let mut group = feature(GROUP, OperationFamily::Joint);
+    let path = |name: &str| {
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(
+                OccurrenceId::mint(format!("test:model:occurrence#{name}"))
+                    .expect("identity grammar"),
+            ),
+            configuration: None,
+        }])
+    };
+    group.definition.operation =
+        FeatureOperation::RigidGroup(Box::new(cadmpeg_ir::design::ops::assembly::RigidGroup {
+            members: [path("a"), path("b")].into(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }));
+    ir.design.features.push(group);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        panic!("the timeline")
+    };
+    members.push(Member::Feature(
+        FeatureId::mint(GROUP).expect("identity grammar"),
+    ));
+    let joint = |name: &str| {
+        let connector = || JointConnector {
+            operand: JointOperand::root(format!("{name}-origin"), Vec::new()),
+            frame: Transform::identity(),
+            detached: false,
+        };
+        AssemblyJoint::paired(
+            JointId::mint(format!("test:model:joint#{name}")).expect("identity grammar"),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [connector(), connector()],
+            None,
+        )
+    };
+    ir.model.assembly_joints = vec![joint("grouped"), joint("alone")];
+    ir.model.restated_mut().record(
+        "test:model:joint#grouped",
+        Restater::Record(GROUP.to_owned()),
+        cut.iter().copied(),
+    );
+    let (report, _) = write(&ir);
+    loss(&report, &F3dLossCode::WriterJointOmitted.kind().to_string())
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A joint that a written rigid group restates is charged with the group
+/// alone; a joint no design feature restates is charged as omitted.
+#[test]
+fn a_joint_its_written_group_restates_is_charged_once() {
+    let omitted = grouped_joint_losses(&[]);
+    assert_eq!(omitted.len(), 1, "{omitted:#?}");
+    assert!(
+        omitted[0].contains("test:model:joint#alone"),
+        "{}",
+        omitted[0]
+    );
+    assert!(
+        !omitted[0].contains("test:model:joint#grouped"),
+        "{}",
+        omitted[0]
+    );
+}
+
+/// A joint that a written rigid group restates without some of its fields is
+/// charged with those fields.
+#[test]
+fn a_joint_its_written_group_restates_in_part_is_charged_with_its_cut() {
+    let losses = grouped_joint_losses(&["operands"]);
+    assert_eq!(losses.len(), 2, "{losses:#?}");
+    assert!(
+        losses.iter().any(|message| message
+            .ends_with("stated in part by the design features that restate them: test:model:joint#grouped (operands)")),
+        "{losses:#?}"
+    );
+}
+
 #[test]
 fn an_illegal_name_is_renamed() {
     let mut ir = scoped_cube();
@@ -365,6 +501,26 @@ fn an_illegal_name_is_renamed() {
     assert!(renamed
         .message
         .contains("`wall thickness` -> `wall_thickness`"));
+}
+
+/// The parameters of one owner take their names in the order of their
+/// stated positions.
+#[test]
+fn parameters_are_named_in_the_order_of_their_positions() {
+    let mut ir = scoped_cube();
+    for (key, position, millimetres) in [("a", 1, 3.0), ("b", 0, 4.0)] {
+        let mut parameter = parameter(
+            key,
+            "x y",
+            neutral(number(millimetres, Some(UnitSymbol::Mm))),
+            Some(millimetres),
+        );
+        parameter.position = Some(position);
+        ir.design.parameters.push(parameter);
+    }
+    let (_, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "x_y", "4 mm", 4.0);
+    assert_length(&decoded_ir, "x_y_2", "3 mm", 3.0);
 }
 
 #[test]
@@ -569,10 +725,13 @@ fn edited_design_parameters_replace_the_native_records() {
     });
     ir.design.parameters[0].definition = neutral(number(70.0, Some(UnitSymbol::Mm)));
     ir.design.parameters[0].value = Some(ParameterValue::Number(crate::test_support::real(70.0)));
+    let record = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0";
+    // The design parameter restates the native record.
+    ir.design.parameters[0].id = crate::ids::neutral_parameter_id_of(record, 700);
     f3d_native_mut(&mut ir).design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
-                id: "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0".into(),
+                id: record.into(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .expect("class tag"),
@@ -1405,6 +1564,53 @@ fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
             .any(|message| message.contains("as visible") && message.contains(&body));
         assert_eq!(named, charged, "{visible:?}: {:#?}", report.losses);
     }
+}
+
+/// A Base Feature design written beside native B-rep records checks a body
+/// visibility against the key its body has before the history stream keys
+/// the bodies from `0`.
+#[test]
+fn a_base_feature_design_checks_a_body_visibility_before_it_rekeys_the_bodies() {
+    let mut ir = scoped_cube();
+    ir.geometry.bodies[0].visible = Some(true);
+    let body = ir.geometry.bodies[0].id.clone();
+    f3d_native_mut(&mut ir).body_visibilities =
+        vec![crate::records::bodies::BodyVisibility::try_from(
+            crate::records::bodies::BodyVisibilityWire {
+                id: "f3d:design:body-visibility#1".into(),
+                body,
+                stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
+                byte_offset: 0,
+                asm_body_key_offset: 0,
+                asm_body_key: 1,
+                entity_suffix: 42,
+                browser_node_entity: 43,
+                visible: true,
+            },
+        )
+        .unwrap()];
+    let mut bytes = Cursor::new(Vec::new());
+    super::super::attempt(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &super::super::AttemptForm {
+            write_design: false,
+            write_neutral: true,
+            missing_states: MissingStateForm::GeometryTrue,
+            fallback: &super::Fallback::default(),
+            dropped: &super::super::reduce::DroppedRecords::default(),
+            rebased: None,
+        },
+        &mut bytes,
+    )
+    .expect("the Base Feature design is written with the native visibility");
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(bytes.into_inner()),
+            &DecodeOptions::default(),
+        )
+        .expect("the written file decodes");
+    assert!(!decoded.ir().design.features.is_empty());
 }
 
 mod dimensions;

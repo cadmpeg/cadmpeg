@@ -13,6 +13,7 @@ use cadmpeg_ir::ids::{AttributeId, Identity, ProceduralCurveId, ProceduralSurfac
 use std::collections::{HashMap, HashSet};
 
 /// Provenance tag for a source record or a synthetic procedural entity.
+#[derive(Debug)]
 pub enum AnnotationTag {
     /// The full name stored by a source SAB record.
     Record(String),
@@ -41,6 +42,7 @@ impl AnnotationTag {
 }
 
 /// One sparse v1 annotation produced while SAB record offsets are available.
+#[derive(Debug)]
 pub struct AnnotationRecord {
     /// Globally unique IR entity id.
     pub id: Identity,

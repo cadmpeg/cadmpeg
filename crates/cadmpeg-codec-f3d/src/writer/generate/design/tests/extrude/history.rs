@@ -8,12 +8,13 @@ use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::sketch::PlanarCurve;
 use cadmpeg_ir::design::options::{Boolean, BooleanOp};
 use cadmpeg_ir::design::parameter::ParameterOwner;
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::design::selection::{Members, PickTarget, Picked, Picks, PrincipalEntity};
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
@@ -370,7 +371,7 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
         .iter()
         .filter_map(|feature| feature.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["Sketch 1", "Extrude 1", "Extrude 2"]);
+    assert_eq!(names, ["Sketch1", "Extrude1", "Extrude2"]);
     let missing = loss(&report, EVALUATION_MISSING);
     let rolled = missing
         .iter()
@@ -484,29 +485,38 @@ fn every_kind_with_a_definition_writer_follows_the_marker_with_the_no_state_tail
     );
 }
 
-/// `ir` with an `f3d` namespace whose one native Design record is a Fusion
-/// Design type row: the writer writes the Design stream from its native
-/// records.
+/// `ir` with an `f3d` namespace whose native Design records are a Fusion
+/// Design type row and a record header: the writer writes the Design stream
+/// from its native records.
 fn with_a_native_design(mut ir: CadIr) -> CadIr {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
-    crate::test_support::native_test::f3d_native_mut(&mut ir).design_types =
-        vec![SegmentType::try_new(
-            "f3d:generated/MetaStream.dat:design-type#0".into(),
-            SegmentTypeData {
-                byte_offset: 0,
-                module: "Fusion".to_owned(),
-                entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
-                type_guid: "11111111-2222-3333-4444-555555555555"
-                    .to_owned()
-                    .try_into()
-                    .expect("type GUID"),
-                type_guid_offset: 0,
-                base_type_guid: BaseTypeGuid::Absent,
-                version: 7,
-                version_offset: 0,
-            },
-        )
-        .expect("a Design type row")];
+    let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+    native.design_record_headers = vec![DesignRecordHeader {
+        id: "f3d:generated:record-header#1".into(),
+        record_index: 584,
+        class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+    }];
+    native.design_types = vec![SegmentType::try_new(
+        "f3d:generated/MetaStream.dat:design-type#0".into(),
+        SegmentTypeData {
+            byte_offset: 0,
+            module: "Fusion".to_owned(),
+            entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
+            type_guid: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version: 7,
+            version_offset: 0,
+        },
+    )
+    .expect("a Design type row")];
+    drop(native);
     ir
 }
 
@@ -522,6 +532,7 @@ fn a_native_design_rolled_back_writes_the_chosen_form() {
             )),
             "{omitted}"
         );
+        assert!(!omitted.contains("arena `design_types`"), "{omitted}");
     };
 
     let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
@@ -892,6 +903,240 @@ fn each_board_inserts_the_records_of_its_body(decoded: &CadIr, bytes: &[u8]) {
     );
 }
 
+/// The extrudes of the decoded timeline before the member at the root
+/// scope's current position, latest first.
+fn built_extrudes(decoded: &CadIr) -> Vec<FeatureId> {
+    let (_, members) = decoded_rollback(decoded);
+    let Position::After(last) = &decoded.design.scopes[0].current[0].at else {
+        panic!("a current state after a member");
+    };
+    let at = members
+        .iter()
+        .position(|member| member == last)
+        .expect("the member at the current position");
+    members[..at]
+        .iter()
+        .rev()
+        .filter_map(|member| {
+            let Member::Feature(id) = member else {
+                return None;
+            };
+            let feature = decoded
+                .design
+                .features
+                .iter()
+                .find(|found| &found.id == id)?;
+            matches!(
+                feature.definition.operation,
+                FeatureOperation::Extrude(_)
+                    | FeatureOperation::Unresolved {
+                        family: OperationFamily::Extrude
+                    }
+            )
+            .then(|| id.clone())
+        })
+        .collect()
+}
+
+#[test]
+fn a_history_true_write_decodes_each_stored_state_and_a_base_feature_rewrite_charges_it() {
+    use cadmpeg_core::decode::ResourceLimits;
+    let (ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    let extrudes = built_extrudes(&decoded);
+    let evaluations = &decoded.design.evaluations;
+    assert_eq!(
+        evaluations
+            .iter()
+            .map(|evaluation| evaluation.of.clone())
+            .collect::<Vec<_>>(),
+        extrudes
+            .iter()
+            .map(|id| Evaluated::State(Position::After(Member::Feature(id.clone()))))
+            .collect::<Vec<_>>(),
+        "{:#?}",
+        report.losses
+    );
+    let mut base = StateBase::Current(decoded.design.scopes[0].current[0].at.clone());
+    for evaluation in evaluations {
+        assert_eq!(evaluation.status, EvaluationStatus::Current);
+        assert_eq!(evaluation.scope, decoded.design.scopes[0].definition);
+        assert!(evaluation.native_ref.is_some());
+        let content = evaluation.content.as_ref().expect("the state's content");
+        assert_eq!(content.base, base);
+        base = StateBase::Evaluation(evaluation.id.clone());
+    }
+
+    let first = evaluations
+        .last()
+        .expect("the state after the first extrude");
+    let state = decoded
+        .resolved_evaluation_state(&first.id, &ResourceLimits::default())
+        .expect("the state after the first extrude resolves");
+    let records = state.records();
+    assert_eq!(records.bodies.len(), 1);
+    assert_eq!(records.faces.len(), 6);
+    assert!(records
+        .faces
+        .iter()
+        .all(|face| decoded.geometry.faces.contains(face)));
+    let removed = decoded
+        .geometry
+        .bodies
+        .iter()
+        .filter(|body| !records.bodies.contains(body))
+        .map(|body| RecordRef::Body(body.id.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(removed.len(), 1);
+    let content = first.content.as_ref().expect("the state's content");
+    assert!(removed
+        .iter()
+        .all(|body| content.delta.removed.contains(body)));
+
+    let (again, _, _) = write_bytes_as(&decoded, MissingStateForm::HistoryTrue);
+    let omitted = loss(
+        &again,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(omitted.contains(first.id.as_str()), "{omitted}");
+}
+
+#[test]
+fn a_design_whose_stored_states_overrun_the_retained_allowance_decodes_without_them() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let (ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let (_, full, bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(!full.design.evaluations.is_empty());
+    let decode = |limit: u64| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_retained_bytes = limit;
+        crate::F3dCodec
+            .decode(&mut std::io::Cursor::new(bytes.clone()), &options)
+            .ok()
+    };
+    let mut refused = 0_u64;
+    let mut decodes = DecodeOptions::default().policy.limits.max_retained_bytes;
+    assert!(decode(refused).is_none() && decode(decodes).is_some());
+    while decodes - refused > 1 {
+        let limit = refused + (decodes - refused) / 2;
+        if decode(limit).is_some() {
+            decodes = limit;
+        } else {
+            refused = limit;
+        }
+    }
+    let decoded = decode(decodes).expect("the design decodes at the least allowance");
+    let losses = &decoded.report().losses;
+    assert!(decoded.ir().design.evaluations.is_empty(), "{losses:#?}");
+    assert!(
+        losses.iter().any(|loss| {
+            [
+                F3dLossCode::HistoryStatesUnread.kind(),
+                F3dLossCode::HistoryStateUnread.kind(),
+            ]
+            .contains(&loss.code)
+                && (loss.message.contains("resource limits")
+                    || loss.message.contains("retained-byte allowance"))
+        }),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_history_true_write_charges_no_evaluation_that_its_history_restates() {
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let cube = cube_evaluation(&ir);
+    let id = cube.id.clone();
+    ir.design.evaluations.push(cube);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(id.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(
+        decoded
+            .design
+            .evaluations
+            .iter()
+            .map(|evaluation| evaluation.of.clone())
+            .collect::<Vec<_>>(),
+        built_extrudes(&decoded)
+            .into_iter()
+            .map(|id| Evaluated::State(Position::After(Member::Feature(id))))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_patched_write_keeps_the_stored_states_and_charges_no_evaluation() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::report::export::WritePath;
+    use std::io::Cursor;
+
+    let (ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let (_, _, bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    let decode = |bytes: Vec<u8>| {
+        crate::F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("the file decodes")
+    };
+    let source = decode(bytes);
+    let mut edited = source.ir().clone();
+    assert!(!edited.design.evaluations.is_empty());
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
+        FinitePoint3::new(Point3::new(moved.x + 1.0, moved.y, moved.z))
+            .expect("a finite position is a point"),
+    );
+
+    let plan = crate::F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(source.source_fidelity()))
+                .with_target(TargetRequest::Inherit),
+        )
+        .expect("the edited document writes");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Patched { .. }
+    ));
+    assert!(
+        !plan.report().losses.iter().any(|loss| edited
+            .design
+            .evaluations
+            .iter()
+            .any(|evaluation| loss.message.contains(evaluation.id.as_str()))),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written)
+        .expect("the patched file writes");
+    let patched = decode(written);
+    assert_eq!(
+        patched
+            .ir()
+            .design
+            .evaluations
+            .iter()
+            .map(|evaluation| (&evaluation.of, &evaluation.native_ref))
+            .collect::<Vec<_>>(),
+        edited
+            .design
+            .evaluations
+            .iter()
+            .map(|evaluation| (&evaluation.of, &evaluation.native_ref))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
     let (ir, second) = with_a_second_extrude(Boolean::Apply {
@@ -924,36 +1169,39 @@ fn an_extrude_that_changes_an_earlier_body_stays_in_the_base_feature() {
 /// state after the first extrude, the cube alone, held by an evaluation
 /// where `held`.
 fn joined_after_the_cube(held: bool) -> (CadIr, FeatureId) {
-    use cadmpeg_ir::design::evaluation::{
-        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
-    };
-    use cadmpeg_ir::design::ids::EvaluationId;
-    use cadmpeg_ir::design::refs::Evaluated;
     let (mut ir, second) = with_a_second_extrude(Boolean::Apply {
         op: BooleanOp::Join,
         targets: None,
     });
     if held {
-        let cube = sketch_and_extrude(blind(), false).geometry;
-        ir.design.evaluations.push(Evaluation {
-            id: EvaluationId::mint("test:design:evaluation#cube").expect("identity grammar"),
-            scope: ir.design.scopes[0].definition.clone(),
-            configuration: None,
-            of: Evaluated::State(Position::After(Member::Feature(
-                FeatureId::mint(EXTRUDE).expect("identity grammar"),
-            ))),
-            status: EvaluationStatus::Current,
-            content: Some(StateContent {
-                base: StateBase::Empty,
-                delta: StateDelta {
-                    records: cube,
-                    ..StateDelta::default()
-                },
-            }),
-            native_ref: None,
-        });
+        let cube = cube_evaluation(&ir);
+        ir.design.evaluations.push(cube);
     }
     (ir, second)
+}
+
+/// The evaluation of the state after the first extrude of `ir`: the cube
+/// alone.
+fn cube_evaluation(ir: &CadIr) -> Evaluation {
+    use cadmpeg_ir::design::evaluation::StateContent;
+    use cadmpeg_ir::design::ids::EvaluationId;
+    Evaluation {
+        id: EvaluationId::mint("test:design:evaluation#cube").expect("identity grammar"),
+        scope: ir.design.scopes[0].definition.clone(),
+        configuration: None,
+        of: Evaluated::State(Position::After(Member::Feature(
+            FeatureId::mint(EXTRUDE).expect("identity grammar"),
+        ))),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta: StateDelta {
+                records: sketch_and_extrude(blind(), false).geometry,
+                ..StateDelta::default()
+            },
+        }),
+        native_ref: None,
+    }
 }
 
 #[test]
@@ -1280,4 +1528,84 @@ fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
             }
         }
     }
+}
+
+#[test]
+fn a_history_true_write_reports_an_evaluations_unwritten_name() {
+    use cadmpeg_ir::design::names::{NameEntry, NativeName, NativeNameValue};
+    use cadmpeg_ir::design::refs::EntityRef;
+
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let mut cube = cube_evaluation(&ir);
+    let id = cube.id.clone();
+    let delta = &mut cube.content.as_mut().expect("stored state").delta;
+    let face = delta.records.faces[0].id.clone();
+    delta.names.insert(
+        EntityRef::Face(face.clone()),
+        Some(NameEntry {
+            name: None,
+            native: Some(NativeName {
+                codec: cadmpeg_ir::codec_id!("f3d"),
+                value: NativeNameValue::Integers(vec![9876]),
+            }),
+        }),
+    );
+    ir.design.evaluations.push(cube);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(!decoded.design.evaluations.is_empty());
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == F3dLossCode::WriterDesignRecordOmitted.kind()
+                && loss.message.contains(id.as_str())
+                && loss.message.contains(face.as_str())
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+#[test]
+fn a_history_true_write_keeps_a_name_carried_by_its_cap_group() {
+    use cadmpeg_ir::design::names::{GenerationRole, NameEntry, NameKind, TopoName};
+    use cadmpeg_ir::design::refs::EntityRef;
+
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let mut cube = cube_evaluation(&ir);
+    let id = cube.id.clone();
+    let delta = &mut cube.content.as_mut().expect("stored state").delta;
+    let face = delta
+        .records
+        .faces
+        .iter()
+        .find(|face| face.id.as_str().ends_with("#bottom"))
+        .expect("start cap")
+        .id
+        .clone();
+    delta.names.insert(
+        EntityRef::Face(face.clone()),
+        Some(NameEntry {
+            name: Some(TopoName::Generated {
+                kind: NameKind::Face,
+                feature: FeatureId::mint(EXTRUDE).expect("identity grammar"),
+                role: Some(GenerationRole::Start),
+                generator: None,
+                index: None,
+            }),
+            native: None,
+        }),
+    );
+    ir.design.evaluations.push(cube);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(!decoded.design.evaluations.is_empty());
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.message.contains(id.as_str()) && loss.message.contains(face.as_str())
+        }),
+        "{:#?}",
+        report.losses
+    );
+    let native = f3d_native(&decoded);
+    assert!(native
+        .persistent_subentity_tags
+        .iter()
+        .any(|tag| { tag.token.as_str() == "1" && tag.design_references == [301] }));
 }
