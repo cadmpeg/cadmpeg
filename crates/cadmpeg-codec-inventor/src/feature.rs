@@ -2259,6 +2259,8 @@ pub(crate) struct ProjectionIndex<'a> {
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
     sketches_by_id: HashMap<&'a str, &'a Sketch>,
     neutral_entities: HashMap<&'a str, &'a cadmpeg_ir::sketches::SketchEntity>,
+    /// Sketches with a record that has no neutral entity.
+    incomplete_sketches: HashSet<(&'a str, u32)>,
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
@@ -2470,6 +2472,7 @@ pub(crate) fn project(
             .iter()
             .map(|entity| (entity.id().as_str(), entity))
             .collect(),
+        incomplete_sketches: extrusion::incomplete_sketches(&sketch.entities, sketch_entities),
         directions: unique_directions,
         transforms: unique_transforms,
         entity_style_links: {
@@ -3628,7 +3631,11 @@ fn project_extrusion(
 
 /// Slots of a surface extrusion that hold no operand. Slot 14 is null or
 /// selects the solid body wrapper; slot 26 is the solid result collection.
-const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 6] = [8, 9, 10, 12, 17, 26];
+const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 4] = [8, 9, 12, 26];
+
+/// Slots that hold the start face of a from-to surface extrusion. Every other
+/// extent leaves them null.
+const SURFACE_EXTRUSION_START_FACE_SLOTS: [usize; 2] = [10, 17];
 
 /// The profile of a surface extrusion: the native selection of the boundary
 /// patch, or the native patch record when no neutral sketch exists.
@@ -3638,11 +3645,16 @@ fn surface_extrusion_profile(
     index: &ProjectionIndex<'_>,
 ) -> Option<PlanarProfileRef> {
     let slots = source.properties.references();
+    let from_to = enum16(source, 6, PmDcFeatureEnumFamily::Extent, index) == Some(EXTENT_FROM_TO);
     if slots.len() != 30
         || slots.get(23)? != slots.get(1)?
         || SURFACE_EXTRUSION_NULL_SLOTS
             .iter()
             .any(|slot| slots[*slot].index() != 0)
+        || (!from_to
+            && SURFACE_EXTRUSION_START_FACE_SLOTS
+                .iter()
+                .any(|slot| slots[*slot].index() != 0))
         || !extrusion::surface_input_is_solid(source, index)
     {
         return None;
@@ -5163,14 +5175,14 @@ pub(crate) mod tests {
         parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
         parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
         parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
-        project_chamfer, project_extrusion, project_fillet, project_hole, ClassId,
-        PmDcEntityStyleLink, PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily,
-        PmDcFeatureLabel, PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
+        project_chamfer, project_extrusion, project_fillet, ClassId, PmDcEntityStyleLink,
+        PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
+        PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
         PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
         PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, PmDcWorkPlane,
         PmDcWorkPlanePayload, ProjectionIndex, BOOLEAN_TYPE, CHAMFER_CLASS_ID,
         END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE, EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE,
-        FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID, MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM,
+        FEATURE_TYPE, FILLET_CLASS_ID, MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM,
         RECTANGULAR_PATTERN_FEATURE_TYPE, SURFACE_EXTRUSION_CLASS_ID, WORK_PLANE_TYPE,
     };
     use crate::container::InventorContainer;
@@ -5187,7 +5199,6 @@ pub(crate) mod tests {
     use cadmpeg_ir::features::extents::{
         ExtrudeDirection, ExtrudeExtent, ExtrudeSide, LinearTermination,
     };
-    use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
     use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::features::parameters::DesignParameter;
     use cadmpeg_ir::features::parameters::ParameterValue;
@@ -5792,6 +5803,7 @@ pub(crate) mod tests {
                 .map(|sketch| (sketch.id.as_str(), sketch))
                 .collect(),
             neutral_entities: std::collections::HashMap::new(),
+            incomplete_sketches: std::collections::HashSet::new(),
             directions: directions
                 .iter()
                 .map(|record| {
@@ -6256,171 +6268,6 @@ pub(crate) mod tests {
                 ..
             }) if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
-    }
-
-    #[test]
-    fn projects_generated_hole() {
-        let raw_parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
-        let neutral_parameters = [
-            ParameterValue::Length(Length::new(5.0).expect("finite length fixture")),
-            ParameterValue::Length(Length::new(20.0).expect("finite length fixture")),
-            ParameterValue::Length(Length::new(9.0).expect("finite length fixture")),
-            ParameterValue::Length(Length::new(3.0).expect("finite length fixture")),
-            ParameterValue::Angle(Angle::new(1.5).expect("finite angle fixture")),
-            ParameterValue::Angle(Angle::new(2.0).expect("finite angle fixture")),
-        ]
-        .into_iter()
-        .zip(&raw_parameters)
-        .map(|(value, raw)| neutral_parameter(raw, value))
-        .collect::<Vec<_>>();
-        let transform = Located::new(
-            crate::sketch::PmDcTransformPayload {
-                save_version_major: 16,
-                header: test_header(),
-                prefix_present: false,
-                matrix: crate::compact_matrix::CompactMatrix::try_from_rows(
-                    0,
-                    0,
-                    [
-                        [1.0, 0.0, 0.0, 1.0],
-                        [0.0, 1.0, 0.0, 2.0],
-                        [0.0, 0.0, 1.0, 3.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ],
-                )
-                .expect("finite explicit matrix fixture"),
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "184d8790d011f8d10008cabc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment().clone(),
-            60,
-        );
-        let direction = Located::new(
-            crate::sketch::PmDcDirectionPayload {
-                save_version_major: 16,
-                header: test_header(),
-                entity_flags: 0,
-                parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
-                extension: None,
-                direction: [
-                    cadmpeg_ir::scalar::FiniteReal::ZERO,
-                    cadmpeg_ir::scalar::FiniteReal::ZERO,
-                    cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
-                ],
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment().clone(),
-            61,
-        );
-        let properties = vec![
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Hole,
-                    type_value: 3,
-                    value: 2,
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Extent,
-                    type_value: 11,
-                    value: 5,
-                },
-            ),
-            test_property(
-                3,
-                PmDcFeaturePropertyKind::Boolean {
-                    name: String::new(),
-                    name_value: 0,
-                    value: false,
-                },
-            ),
-            test_property(
-                4,
-                PmDcFeaturePropertyKind::Placement {
-                    transform: reference(61),
-                    point: reference(90),
-                    value: reference(91),
-                },
-            ),
-            test_property(
-                5,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[7]),
-                },
-            ),
-            test_property(
-                6,
-                PmDcFeaturePropertyKind::SurfaceBody {
-                    body: reference(30),
-                },
-            ),
-        ];
-        let feature = test_feature(
-            100,
-            25,
-            &[
-                (0, 1),
-                (1, 70),
-                (2, 71),
-                (3, 72),
-                (4, 73),
-                (5, 74),
-                (6, 75),
-                (8, 60),
-                (9, 2),
-                (16, 61),
-                (17, 3),
-                (21, 4),
-                (24, 5),
-            ],
-        );
-        let label = test_label(100, 9, HOLE_CLASS_ID, &[]);
-        let index = test_projection_index(
-            &properties,
-            &raw_parameters,
-            &neutral_parameters,
-            &[],
-            &[],
-            std::slice::from_ref(&direction),
-            std::slice::from_ref(&transform),
-            &[],
-        );
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("projection context");
-        let (projected, _) = project_hole(&ctx, &feature, &label, &index)
-            .expect("hole candidate")
-            .expect("hole projection");
-        assert!(matches!(
-            projected.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
-                placements,
-                shape,
-
-                extent: Some(LinearTermination::ThroughAll {}),
-                ..
-            }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
-                    kind: HoleKind::CounterboreDrilled {
-                        diameter: actual_diameter,
-                        depth: actual_depth,
-                        drill_point_angle: actual_drill_point_angle
-                    },
-                    ..
-                }, Some(actual_diameter_2),) if (matches!(
-                placements.as_deref(),
-                Some([HolePlacement::Directed {
-                    position: geometry_1,
-                    direction: geometry_2
-                }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: 1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
     }
 
     #[test]

@@ -1921,6 +1921,7 @@ fn validate_features_with_raw(
             directions: &data.pm_dc_directions,
             transforms: &data.pm_dc_transforms,
             planes: &data.pm_dc_work_planes,
+            sketch_entities: &data.pm_dc_sketch_entities,
             entity_links: &data.pm_dc_entity_style_links,
             kernel_links: &data.pm_dc_kernel_entity_links,
             model: &ir.model,

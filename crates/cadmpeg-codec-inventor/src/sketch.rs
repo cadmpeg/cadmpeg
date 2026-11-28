@@ -3513,6 +3513,38 @@ impl RecordPayload for PmDcSketchEntityPayload {
     const KIND: &'static str = "sketch-entity";
 }
 
+/// A sketch entity record of the given kind. A construction record is a line
+/// with the construction flags.
+#[cfg(test)]
+pub(crate) fn test_entity(
+    header: PmDcContentHeader,
+    sketch: PmDcReference,
+    kind: PmDcSketchEntityKind,
+    construction: bool,
+    segment: cadmpeg_ir::ids::IdentityKey,
+    ordinal: u32,
+) -> PmDcSketchEntity {
+    Located::new(
+        PmDcSketchEntityPayload {
+            save_version_major: 19,
+            header,
+            entity_flags: if construction {
+                LINE_CONSTRUCTION_FLAGS
+            } else {
+                0
+            },
+            sketch,
+            kind,
+        },
+        crate::record_identity::RecordTypeId::try_from(
+            "b4d4fe0e1a1d11d0b94000a0c9a7bd4e".to_owned(),
+        )
+        .expect("test GUID"),
+        segment,
+        ordinal,
+    )
+}
+
 pub(crate) type PmDcTransform = Located<PmDcTransformPayload>;
 
 impl RecordPayload for PmDcTransformPayload {

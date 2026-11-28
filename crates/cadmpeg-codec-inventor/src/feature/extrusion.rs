@@ -168,6 +168,15 @@ const SURFACE_OPERATION: u16 = 5;
 /// Largest departure of the travel direction from the profile-plane normal,
 /// as a cosine deficit, that still counts as perpendicular to the profile plane.
 const EPS_TRAVEL_NORMAL: f64 = 1e-9;
+/// Smallest cosine between the travel direction and a face-plane normal for
+/// the travel to cross the plane. It is a cosine bound, not a distance.
+const EPS_TRAVEL_CROSSING: f64 = 1e-6;
+/// Largest departure of the cosine between two face-plane normals from 1, in
+/// absolute value, that still counts as parallel planes.
+const EPS_PLANE_PARALLEL: f64 = 1e-9;
+/// Smallest distance in millimetres, along the travel direction, between the
+/// start face plane and the end face plane.
+const EPS_FACE_GAP: f64 = 1e-6;
 /// Smallest distance in millimetres by which a work point lies ahead of the
 /// profile plane.
 const EPS_POINT_AHEAD: f64 = 1e-6;
@@ -383,7 +392,11 @@ pub(super) fn indexed_operands(
         }
         (_, false, false) => ExtrudeExtent::OneSided { side: first },
     };
-    if output == Output::Surface && !surface_extent(&start, &extent) {
+    if output == Output::Surface
+        && !surface_extent(&start, &extent, &direction, || {
+            profile_corners(source, label, index)
+        })
+    {
         return None;
     }
     // The solid body of slot 14 bounds a through-all extent; no other extent
@@ -414,24 +427,161 @@ pub(super) fn indexed_operands(
     })
 }
 
-/// The surface extrusion extents that the format model defines: one side from
-/// the profile plane, through all or to a plane face.
-fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent) -> bool {
-    use cadmpeg_ir::features::extents::PlaneTargetSource;
-    matches!(start, ExtrudeStart::ProfilePlane {})
-        && matches!(
-            extent,
-            ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::extents::ExtrudeSide {
-                    termination: LinearTermination::ThroughAll {}
-                        | LinearTermination::ToPlane {
-                            source: Some(PlaneTargetSource::FaceSurface),
-                            ..
-                        },
-                    ..
-                },
+/// The sketches, by record key, that hold a record which is not a construction
+/// line and has no neutral entity: a native line, a block instance, an arc
+/// whose end is off its circle or an entity whose id cannot be minted. The
+/// neutral curves of such a sketch do not bound its profile.
+pub(crate) fn incomplete_sketches<'a>(
+    raw: &'a [crate::sketch::PmDcSketchEntity],
+    neutral: &[cadmpeg_ir::sketches::SketchEntity],
+) -> HashSet<(&'a str, u32)> {
+    let projected = neutral
+        .iter()
+        .filter_map(|entity| entity.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    raw.iter()
+        .filter(|entity| {
+            !crate::sketch::marks_construction(entity) && !projected.contains(entity.id().as_str())
+        })
+        .filter_map(|entity| {
+            Some((
+                entity.identity.segment_token.as_str(),
+                entity.sketch.index().checked_sub(1)?,
+            ))
+        })
+        .collect()
+}
+
+/// The model-space corners of the bounding boxes of the non-construction
+/// curves of the profile sketch. Every point of the profile lies inside the
+/// hull of these corners. `None` when the sketch is unplaced, holds a record
+/// without a neutral entity (see [`incomplete_sketches`]), or holds a curve
+/// kind whose box this function does not evaluate (points, lines, circles and
+/// arcs).
+fn profile_corners(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Vec<Vector3>> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Curve;
+    let [participant] = label.participants.references() else {
+        return None;
+    };
+    let token = source.identity.segment_token.as_str();
+    let sketch = index
+        .sketches
+        .get(&(token, participant.record_ordinal()?))?
+        .as_ref()?;
+    let sketch_key = (token, participant.record_ordinal()?);
+    if index.incomplete_sketches.contains(&sketch_key) {
+        return None;
+    }
+    let neutral = index.sketch_ids.get(sketch.id().as_str())?;
+    let (origin, normal, u_axis) =
+        crate::sketch::project_placement(sketch, &index.transforms, &index.directions)?
+            .resolved()?;
+    let (origin, normal, u_axis) = (origin.get(), normal.get(), u_axis.get());
+    let v_axis = normal.cross(u_axis);
+    let at = |u: f64, v: f64| {
+        let point = origin.translated(u_axis, u).translated(v_axis, v);
+        Vector3::new(point.x, point.y, point.z)
+    };
+    let mut corners = Vec::new();
+    for entity in index.neutral_entities.values() {
+        if entity.sketch != *neutral || entity.construction {
+            continue;
+        }
+        match entity.geometry.definition().to_raw() {
+            Curve::Point { position } => corners.push(at(position.u, position.v)),
+            Curve::Line { start, end } => {
+                corners.push(at(start.u, start.v));
+                corners.push(at(end.u, end.v));
             }
-        )
+            // The box of the full circle contains every arc of it.
+            Curve::Circle { center, radius } | Curve::Arc { center, radius, .. } => {
+                let reach = radius.get();
+                for (du, dv) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
+                    corners.push(at(center.u + du * reach, center.v + dv * reach));
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(corners)
+}
+
+/// The surface extrusion extents that the format model defines: one side from
+/// the profile plane, through all or to a plane face; or from a start face to
+/// an end face, where the travel direction crosses both planes and the travel
+/// line through every profile point meets the start plane before the end
+/// plane by more than [`EPS_FACE_GAP`]. The distance between the two meeting
+/// points is affine in the profile point, so the corners of the profile
+/// curve boxes bound it. Without profile corners, parallel planes are ordered
+/// at the start plane origin, where their point-independent gap is exact.
+fn surface_extent(
+    start: &ExtrudeStart,
+    extent: &ExtrudeExtent,
+    travel: &UnitVector3,
+    profile_corners: impl FnOnce() -> Option<Vec<Vector3>>,
+) -> bool {
+    use cadmpeg_ir::features::extents::{ExtrudeSide, PlaneTargetSource};
+    let ExtrudeExtent::OneSided {
+        side: ExtrudeSide { termination, .. },
+    } = extent
+    else {
+        return false;
+    };
+    match (start, termination) {
+        (
+            ExtrudeStart::ProfilePlane {},
+            LinearTermination::ThroughAll {}
+            | LinearTermination::ToPlane {
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            },
+        ) => true,
+        (
+            ExtrudeStart::FromPlane {
+                plane: from,
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            },
+            LinearTermination::ToPlane {
+                plane: to,
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            },
+        ) => {
+            let travel = *travel.as_raw();
+            let (from_normal, to_normal) = (from.normal().get(), to.normal().get());
+            let (from_origin, to_origin) = (from.origin().get(), to.origin().get());
+            let (from_toward, to_toward) = (from_normal.dot(travel), to_normal.dot(travel));
+            if from_toward.abs() <= EPS_TRAVEL_CROSSING || to_toward.abs() <= EPS_TRAVEL_CROSSING {
+                return false;
+            }
+            let parallel = from_normal.dot(to_normal).abs() >= 1.0 - EPS_PLANE_PARALLEL;
+            let points = match profile_corners() {
+                Some(corners) if !corners.is_empty() => corners,
+                _ if parallel => {
+                    vec![Vector3::new(from_origin.x, from_origin.y, from_origin.z)]
+                }
+                _ => return false,
+            };
+            // Travel from the point to each plane; the planes are met in the
+            // order start, end when the end distance exceeds the start distance.
+            let meets =
+                |origin: cadmpeg_ir::math::Point3, normal: Vector3, toward: f64, p: Vector3| {
+                    Vector3::new(origin.x - p.x, origin.y - p.y, origin.z - p.z).dot(normal)
+                        / toward
+                };
+            points.iter().all(|point| {
+                meets(to_origin, to_normal, to_toward, *point)
+                    - meets(from_origin, from_normal, from_toward, *point)
+                    > EPS_FACE_GAP
+            })
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn native_profile(
@@ -541,6 +691,7 @@ pub(crate) struct ValidationRecords<'a> {
     pub(crate) directions: &'a [crate::sketch::PmDcDirection],
     pub(crate) transforms: &'a [crate::sketch::PmDcTransform],
     pub(crate) planes: &'a [super::PmDcWorkPlane],
+    pub(crate) sketch_entities: &'a [crate::sketch::PmDcSketchEntity],
     pub(crate) entity_links: &'a [super::PmDcEntityStyleLink],
     pub(crate) kernel_links: &'a [super::PmDcKernelEntityLink],
     pub(crate) model: &'a cadmpeg_ir::document::Model,
@@ -606,6 +757,16 @@ impl<'a> ValidationIndex<'a> {
                 .iter()
                 .filter_map(|r| Some((r.native_ref.as_deref()?, r.id.clone())))
                 .collect(),
+            neutral_entities: records
+                .model
+                .sketch_entities
+                .iter()
+                .map(|entity| (entity.id().as_str(), entity))
+                .collect(),
+            incomplete_sketches: incomplete_sketches(
+                records.sketch_entities,
+                &records.model.sketch_entities,
+            ),
             entity_style_links: records
                 .entity_links
                 .iter()
