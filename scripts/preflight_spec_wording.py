@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 
 PROGRESS = re.compile(r"\b(?:not yet|do not yet|for now|currently|TODO)\b", re.IGNORECASE)
-FORMAT_DOC = re.compile(r"^docs/formats/[^/]+\.md$")
-FORMAT_SPEC = re.compile(r"^docs/formats/(?!.*-open-items\.md$)[^/]+\.md$")
+FORMAT_DOC = re.compile(r"^docs/formats/(?!README\.md$)[^/]+\.md$")
+FORMAT_SPEC = re.compile(r"^docs/formats/(?!README\.md$)(?!.*-open-items\.md$)[^/]+\.md$")
 CADIR_SPEC = re.compile(r"^docs/(?:cad-ir|cadir-v\d+)\.md$")
 
 NAME = "spec-wording"
