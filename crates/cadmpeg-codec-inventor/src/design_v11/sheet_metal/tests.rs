@@ -458,6 +458,7 @@ fn sheet_metal_binds_projected_length_parameters() {
         id: id.clone(),
         scope: ir.model.product_definitions[0].id.clone(),
         owner: None,
+        position: None,
         name: cadmpeg_core::text::NonBlankString::new("Thickness"),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -592,8 +593,7 @@ fn native_validation_rejects_a_changed_relief_form() {
         &mut ir,
         &inventory,
         &sketches,
-        &[],
-        &[],
+        crate::design_v11::ParameterRecords::default(),
         &mut Vec::new(),
     )
     .expect("projection");
@@ -645,6 +645,7 @@ fn style_factor_fallback_binds_the_decoded_unitless_parameter() {
         id: id.clone(),
         scope: ir.model.product_definitions[0].id.clone(),
         owner: None,
+        position: None,
         name: cadmpeg_core::text::NonBlankString::new("KFactor"),
         kind: ValueKind::Quantity(Quantity::REAL),
         unit: None,

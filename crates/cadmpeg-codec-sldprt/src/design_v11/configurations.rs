@@ -36,7 +36,8 @@ pub(super) struct Configurations {
 
 /// The configurations of the histories, or none where the document's active
 /// configuration does not resolve to one of them: a scope with
-/// configurations names its active one (part 10).
+/// configurations names its active one (part 10). Each takes its place in
+/// the one history that lists configurations.
 pub(super) fn configurations(
     histories: &[FeatureHistory],
     source: Option<&SourceMeta>,
@@ -58,6 +59,11 @@ pub(super) fn configurations(
     let Some(active) = crate::decode::active_configuration_position(source, &selectors) else {
         return Ok(Configurations::default());
     };
+    let listed = histories
+        .iter()
+        .filter(|history| !history.configurations.is_empty())
+        .count()
+        == 1;
     let base_material = native[active].material.as_deref();
     let mut records = Vec::with_capacity(native.len());
     for configuration in &native {
@@ -76,6 +82,7 @@ pub(super) fn configurations(
             id: neutral_configuration_id(&configuration.id)?,
             scope: scope.clone(),
             name: configuration.name.clone(),
+            position: listed.then_some(configuration.ordinal),
             parent: None,
             comment: None,
             overrides: Overrides::default(),
@@ -97,11 +104,11 @@ pub(super) fn configurations(
 /// `expression` that is the stored text, a feature's suppression through
 /// `suppressed`, and its definition and dependencies through `definition`.
 /// Its bodies are those of its stated state. The active configuration's
-/// bodies are the current bodies `current`. No design record orders the
-/// configurations (§2.2), so each leaves out `ordinal` where the model holds
-/// more than one. The native record its `native_ref` names holds the native
-/// slot. Each compared configuration is recorded, also where it
-/// leaves out no field.
+/// bodies are the current bodies `current`. Each leaves out `ordinal` where
+/// the model holds more than one configuration and their order by `ordinal`
+/// is not the order by `position` of their design configurations (§2.2).
+/// The native record its `native_ref` names holds the native slot. Each
+/// compared configuration is recorded, also where it leaves out no field.
 pub(super) fn restate(
     ir: &mut CadIr,
     configurations: &Configurations,
@@ -123,7 +130,23 @@ pub(super) fn restate(
         .filter(|evaluation| evaluation.content.is_some())
         .filter_map(|evaluation| evaluation.configuration.as_ref())
         .collect::<HashSet<_>>();
-    let ordered = ir.model.configurations.len() < 2;
+    let ordered = ir.model.configurations.len() < 2 || {
+        let positions = configurations
+            .records
+            .iter()
+            .filter_map(|design| Some((design.id.as_str(), design.position?)))
+            .collect::<HashMap<_, _>>();
+        let mut placed = ir
+            .model
+            .configurations
+            .iter()
+            .map(|model| Some((model.ordinal, *positions.get(model.id.as_str())?)))
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default();
+        placed.sort_unstable();
+        placed.len() == ir.model.configurations.len()
+            && placed.windows(2).all(|pair| pair[0].1 < pair[1].1)
+    };
     let mut restated = Vec::new();
     for design in &configurations.records {
         let Some(own) = model.get(design.id.as_str()).copied() else {

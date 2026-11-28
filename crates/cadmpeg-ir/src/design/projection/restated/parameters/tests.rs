@@ -55,6 +55,7 @@ fn design(definition: ParameterDefinition) -> DesignParameter {
         id: id(DEPTH),
         scope: scope(),
         owner: None,
+        position: None,
         name: NonBlankString::new("depth".to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,

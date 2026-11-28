@@ -1162,6 +1162,7 @@ impl Relations<'_> {
                 id: parameter.clone(),
                 scope: self.context.scope.clone(),
                 owner: Some(ParameterOwner::Feature(self.owner.clone())),
+                position: None,
                 name: NonBlankString::new(source.name.clone()),
                 kind: ValueKind::Quantity(quantity),
                 unit: None,

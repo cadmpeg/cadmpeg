@@ -639,6 +639,30 @@ pub(super) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64
     }
 }
 
+/// The place, from 0, of each expression of `namespace` in the record order
+/// of its expression table: by stored offset, ties by id. Empty where the
+/// expressions come from more than one table, since then no one list holds
+/// them all.
+pub(crate) fn expression_places(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<BTreeMap<String, u32>, cadmpeg_ir::native::NativeConvertError> {
+    let mut expressions = namespace.arena_as::<ParameterFormula>("expressions")?;
+    if expressions
+        .iter()
+        .any(|expression| expression.source_table != expressions[0].source_table)
+    {
+        return Ok(BTreeMap::new());
+    }
+    expressions.sort_by(|left, right| {
+        (left.source_offset, &left.id).cmp(&(right.source_offset, &right.id))
+    });
+    Ok(expressions
+        .into_iter()
+        .zip(0..)
+        .map(|(expression, place)| (expression.id, place))
+        .collect())
+}
+
 pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> {
     match unit {
         "millimeter" => Some(value),

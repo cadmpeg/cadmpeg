@@ -831,6 +831,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#AdditiveCylinder"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -867,6 +868,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#AdditiveCylinder"
           },
+          "position": 17,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -903,6 +905,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#DatumPlane"
           },
+          "position": 7,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -939,6 +942,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -975,6 +979,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
