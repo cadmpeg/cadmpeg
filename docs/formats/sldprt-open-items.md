@@ -1259,6 +1259,14 @@ In the first form, reverse byte `0` gives the right-handed turn about the stored
 
 **Need.** Save a weldment part with two structural members of different profiles. Save it again after each change of one cut-list control: automatic update, automatic sort, and the folder's item grouping. Compare the word at offset 8 of each folder tail.
 
+### EV-41. The word of a cut-list sort head
+
+**Question.** What does the u32 that a body folder with a cut list writes before its `moCutListSortOptions_c` select?
+
+**Known.** A `moSolidBodyFolder_c` that holds a cut list writes, after its feature, u32 `0` or `1`, six zero bytes and a `moCutListSortOptions_c` (`sldprt.md` §2.3). The decoder stores the u32 with the folder.
+
+**Need.** Save a weldment part with a cut list. Save it again after each change of one cut-list control: automatic update, automatic sort, and the sort options. Compare the u32 before `moCutListSortOptions_c`.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?

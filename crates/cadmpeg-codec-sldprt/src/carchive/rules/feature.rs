@@ -7,6 +7,7 @@ use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, St
 use super::{ctx, sketch};
 use crate::layout::axis_tail_version_15000_prefix as tail_prefix;
 use crate::layout::cut_list_folder_tail as cut_tail;
+use crate::layout::cut_list_sort_head as sort_head;
 use crate::layout::revolution_line_reference_record_tail as record_tail;
 use crate::layout::revolution_turn_block as turn;
 
@@ -922,12 +923,11 @@ pub(crate) fn zero12(r: &mut Reader<'_>, _c: Option<&str>) -> Res<V> {
 
 /// `moSolidBodyFolder_c`.
 pub(crate) fn solidfolder(r: &mut Reader<'_>) -> Res<V> {
-    let n = feature(r, "moSolidBodyFolder_c")?;
-    if r.eq(r.p, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        && isclass(r, r.p + 10, &["moCutListSortOptions_c"])?
-    {
-        r.skip(10);
+    let mut n = feature(r, "moSolidBodyFolder_c")?;
+    if let Some(word) = cut_list_sort_head(r) {
+        r.skip(sort_head::LEN);
         r.ptr(None)?;
+        n.set("sort_word", V::from(word));
         return Ok(n);
     }
     r.expect_zeros(12, "twelve zero bytes")?;
@@ -936,6 +936,19 @@ pub(crate) fn solidfolder(r: &mut Reader<'_>) -> Res<V> {
         r.u16()?;
     }
     Ok(n)
+}
+
+/// The word of the cut-list sort head at the reader's position, when the head and its
+/// `moCutListSortOptions_c` stand there.
+fn cut_list_sort_head(r: &Reader<'_>) -> Option<u32> {
+    let word = r
+        .pu32(r.p + sort_head::WORD)
+        .ok()
+        .filter(|word| *word <= 1)?;
+    let sort = r.p + sort_head::LEN;
+    (r.eq(r.p + sort_head::ZEROS, &sort_head::ZEROS_VALUE)
+        && matches!(isclass(r, sort, &["moCutListSortOptions_c"]), Ok(true)))
+    .then_some(word)
 }
 
 /// `moInkMarkupFolder_c`.
