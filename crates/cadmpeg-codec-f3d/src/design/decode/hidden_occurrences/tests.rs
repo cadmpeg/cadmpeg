@@ -297,7 +297,7 @@ fn an_unbound_root_carrier_retains_its_hidden_path_as_native_data() {
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].target, 50);
     assert!(decoded[0].ancestors.is_empty());
-    let json = serde_json::to_value(&decoded).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&decoded).unwrap();
     let restored: Vec<DesignHiddenOccurrence> =
         cadmpeg_core::serde_erase::json::from_value(json).unwrap();
     assert_eq!(restored, decoded);

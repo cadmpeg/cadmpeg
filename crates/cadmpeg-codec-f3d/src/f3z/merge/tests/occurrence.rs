@@ -917,7 +917,7 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
 
 #[test]
 fn hidden_occurrence_native_stream_is_scoped_with_its_member() {
-    let mut fields = serde_json::json!({
+    let mut fields = cadmpeg_core::json!({
         "stream": "f3d:Design/BulkStream.dat",
         "record_index": 11,
         "target": 30,
@@ -941,7 +941,7 @@ fn hidden_occurrence_native_stream_is_scoped_with_its_member() {
     );
     assert_eq!(fields["record_index"], 11);
     assert_eq!(fields["target"], 30);
-    assert_eq!(fields["ancestors"], serde_json::json!([10, 20]));
+    assert_eq!(fields["ancestors"], cadmpeg_core::json!([10, 20]));
 }
 
 #[test]

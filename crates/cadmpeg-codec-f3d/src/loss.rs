@@ -3593,7 +3593,7 @@ impl F3dLossCode {
             Self::SceneOverrideRefused
             | Self::SettingsUpAxisUnrecognized
             | Self::SettingsUpAxisRecordUnreadable => Severity::Warning,
-            Self::SceneOverrideRefused | Self::SceneVisibilityNative => Severity::Warning,
+            Self::SceneVisibilityNative => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
             | Self::BendRadiusFirstAssumed
@@ -4448,9 +4448,7 @@ impl F3dLossCode {
             | Self::SettingsUpAxisUnrecognized
             | Self::SettingsUpAxisRecordUnreadable => LossTaxonomy::RecordNotTyped,
             Self::OccurrenceVisibilityNative => LossTaxonomy::AttributesNotTransferred,
-            Self::SceneOverrideRefused | Self::SceneVisibilityNative => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::SceneVisibilityNative => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
             | Self::BendRadiusFirstAssumed
