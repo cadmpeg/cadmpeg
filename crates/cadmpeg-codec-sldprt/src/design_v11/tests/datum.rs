@@ -85,7 +85,7 @@ fn part() -> (CadIr, SldprtNative) {
             ("moRefPlane_c", "Plane5", 37),
         ],
     );
-    let native = SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -200,8 +200,12 @@ fn typed_with_lanes(
     native: &SldprtNative,
 ) -> (super::super::tree::Timeline, super::super::typed::Typed) {
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let entries =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let typed = super::super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -209,12 +213,15 @@ fn typed_with_lanes(
         &mut timeline,
         &entries,
         &super::super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &ir.design.scopes[0].definition,
             outside_profile: &HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, typed)
 }
 

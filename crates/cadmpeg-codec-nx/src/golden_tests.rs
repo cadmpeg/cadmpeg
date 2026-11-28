@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
-//! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
+//! A package-only build can select a different flate2 backend and change the zlib bytes.
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]

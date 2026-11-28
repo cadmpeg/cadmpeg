@@ -157,6 +157,7 @@ pub(crate) struct ScopeGrammar {
     additional_owner_count: Located<u32>,
     additional_owner_start: usize,
     additional_tail_reference: Option<Located<u32>>,
+    tail_links: Option<DesignAssemblyOwnerRun>,
     pub(crate) locator_offsets: [usize; 2],
     pub(crate) stride: usize,
     pub(crate) facing: DesignJointFrameSense,
@@ -375,7 +376,38 @@ pub(crate) fn parse(
     {
         return None;
     }
-    fields.zero(15)?;
+    // Eight zero bytes, a counted run of references (empty in most scopes) and
+    // three zero bytes precede the tail reference.
+    fields.zero(8)?;
+    let tail_link_count = Located {
+        offset: u64_from_index(fields.view.position()),
+        value: fields.view.u32_le()?,
+    };
+    fields
+        .view
+        .counted(u64::from(tail_link_count.value), stride)?;
+    let mut tail_link_references = Vec::new();
+    for _ in 0..tail_link_count.value {
+        let offset = u64_from_index(fields.view.position());
+        tail_link_references.push(Located {
+            value: fields.reference()?,
+            offset,
+        });
+    }
+    // The associated references name the scope itself and the record that
+    // carries the second connector's frame, in that order.
+    if tail_link_count.value != 0
+        && (tail_link_references.len() != 2
+            || tail_link_references[0].value != scope.record_index
+            || tail_link_references[1].value != frames[1].reference_record_index)
+    {
+        return None;
+    }
+    let tail_links = (tail_link_count.value != 0).then_some(DesignAssemblyOwnerRun {
+        count: tail_link_count,
+        references: tail_link_references,
+    });
+    fields.zero(3)?;
     fields.reference()?;
     if layout.tail_reference {
         fields.reference()?;
@@ -420,7 +452,18 @@ pub(crate) fn parse(
                 }
                 fields.zero(layout.tail_zeros)?;
                 fields.reference()?;
-                fields.zero(2)?;
+                // Two zero bytes, or a closing reference to the scope itself and
+                // one zero byte.
+                let closing = if fields.view.position().checked_add(2) == Some(end) {
+                    fields.zero(2)?;
+                    0
+                } else {
+                    if fields.reference()? != scope.record_index {
+                        return None;
+                    }
+                    fields.zero(1)?;
+                    stride - 1
+                };
                 let matrices = frames
                     .iter()
                     .filter(|frame| {
@@ -434,6 +477,7 @@ pub(crate) fn parse(
                             .ok()?
                             .checked_add(12)?
                             .checked_add(usize::try_from(additional_owner_count.value).ok()?)?
+                            .checked_add(usize::try_from(tail_link_count.value).ok()?)?
                             .checked_mul(stride)?,
                     )?
                     .checked_add(128 * matrices)?
@@ -442,6 +486,7 @@ pub(crate) fn parse(
                     .checked_add(layout.extra_span(stride))?
                     .checked_add(extra.checked_mul(stride)?)?
                     .checked_add(2 * name.len())?
+                    .checked_add(closing)?
                     .checked_sub(2 * ASSEMBLE_NAME_UNITS)?;
                 (fields.view.position() == end && span == end.checked_sub(start)?)
                     .then_some((state, reference))
@@ -459,6 +504,7 @@ pub(crate) fn parse(
         additional_owner_count,
         additional_owner_start,
         additional_tail_reference,
+        tail_links,
         locator_offsets: [first, second],
         stride,
         facing,
@@ -582,6 +628,7 @@ pub(super) fn alignment(
         let mut alignment = alignment.with_frame_sense(Some(grammar.facing));
         alignment.additional_owner_run = additional_owner_run;
         alignment.additional_tail_reference = grammar.additional_tail_reference;
+        alignment.tail_links.clone_from(&grammar.tail_links);
         alignment
     })
     .ok()
@@ -696,6 +743,42 @@ pub(crate) fn alignment_layout(
     if scope.reference_count_offset() != start.checked_add(u64_from_index(reference_count))? {
         return None;
     }
+    // A closing reference to the scope replaces one of the two closing zero
+    // bytes; the tail length says whether it is there.
+    let tail_length = usize::try_from(
+        scope
+            .paired_byte_offset()
+            .checked_sub(scope.feature_ordinal_offset())?,
+    )
+    .ok()?;
+    let closing = match super::parameter_scope::assemble_extended_tail(tail_length) {
+        Some((_, true)) => stride - 1,
+        _ => 0,
+    };
+    let tail_links = match &alignment.tail_links {
+        None => 0,
+        Some(run) => {
+            let count = usize::try_from(run.count.value).ok()?;
+            let first_link = scope.feature_ordinal_offset().checked_add(16)?;
+            if count == 0
+                || run.references.len() != count
+                || run.count.offset != scope.feature_ordinal_offset().checked_add(12)?
+                || !run
+                    .references
+                    .iter()
+                    .enumerate()
+                    .all(|(ordinal, reference)| {
+                        u64_from_index(ordinal)
+                            .checked_mul(u64_from_index(stride))
+                            .and_then(|span| first_link.checked_add(span))
+                            == Some(reference.offset)
+                    })
+            {
+                return None;
+            }
+            count
+        }
+    };
     let extra_tail = match &alignment.additional_tail_reference {
         None => 0,
         Some(reference) => {
@@ -704,7 +787,7 @@ pub(crate) fn alignment_layout(
                     != scope
                         .feature_ordinal_offset()
                         .checked_add(19)?
-                        .checked_add(u64_from_index(stride))?
+                        .checked_add(u64_from_index(stride.checked_mul(tail_links + 1)?))?
                 || !types
                     .get(&u64::from(reference.value))
                     .is_some_and(|(guid, version)| {
@@ -723,12 +806,14 @@ pub(crate) fn alignment_layout(
                 .len()
                 .checked_add(12)?
                 .checked_add(additional)?
+                .checked_add(tail_links)?
                 .checked_mul(stride)?,
         )?
         .checked_add(128 * matrices)?
         .checked_add(4 * expanded)?
         .checked_add(layout.extra_span(stride))?
         .checked_add(extra_tail)?
+        .checked_add(closing)?
         .checked_add(2 * scope.source_kind_name().encode_utf16().count())?
         .checked_sub(2 * ASSEMBLE_NAME_UNITS)?;
     if !(span..=span.checked_add(usize::from(!layout.tail_reference && extra_tail == 0))?)

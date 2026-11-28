@@ -530,6 +530,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
+          "nx:s0:surface-curve-record#25": {
+            "offset": 609,
+            "stream": "nx:s0",
+            "tag": "SP_CURVE"
+          },
           "nx:s0:vertex#10": {
             "offset": 389,
             "stream": "nx:parasolid#0:partition",

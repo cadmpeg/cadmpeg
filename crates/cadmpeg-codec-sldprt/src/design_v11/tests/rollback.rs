@@ -578,6 +578,37 @@ fn the_state_chain_ceiling_refuses_the_decode_session() {
     }
 }
 
+#[test]
+fn geometry_depth_leaves_saved_states_outside_the_decode_budget() {
+    use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
+
+    let bytes = earlier_sphere_fixture(SphereTip::Alternate);
+    let decode = |options: &DecodeOptions| SldprtCodec.decode(&mut Cursor::new(&bytes), options);
+    let full = decode(&DecodeOptions::default()).unwrap();
+    let mut options = DecodeOptions {
+        depth: DecodeDepth::Geometry,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_state_chain_depth = 0;
+    let geometry = decode(&options).unwrap();
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().geometry, full.ir().geometry);
+    assert_eq!(
+        geometry.ir().model.product_definitions,
+        full.ir().model.product_definitions,
+    );
+    assert!(geometry.ir().scope_violations().is_empty());
+    assert!(geometry
+        .source_fidelity()
+        .unrepresented()
+        .contains(&ArenaClass::Design));
+    assert!(geometry
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.to_string() != "decode/depth.not-delivered"));
+}
+
 fn assert_alternate_states_unread(tip: SphereTip, reason: &str) {
     let result = part_with_earlier_sphere(tip);
     let [evaluation] = result.ir().design.evaluations.as_slice() else {

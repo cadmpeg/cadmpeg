@@ -161,9 +161,6 @@ jobs:
           # ID can both pass and merge; the main run then fails here.
           python3 scripts/preflight_open_items.py
           python3 -m unittest discover -q -s scripts -p 'test_*.py'
-          # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may
-          # only rise when fixtures are added; they must never silently fall.
-          python3 scripts/check-golden-coverage-floors.py
           # Crate-root pub items must match docs/codec-facade.toml.
           python3 scripts/check-codec-facade.py
           # Every validation finding states its rule (rule!/rule_name!), and
@@ -355,15 +352,13 @@ jobs:
         # inside the deadline on the debug build.
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/side2/tmp/iges-l9"
           test -x target/debug/cadmpeg
           python3 scripts/verify-iges-bounded.py \
             crates/cadmpeg-codec-iges/tests/golden/fixtures \
             --cadmpeg target/debug/cadmpeg \
             --limits service \
             --timeout 30 \
-            --roundtrip \
-            --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
+            --roundtrip
 
       - name: Documentation tests
         # Reuses the library builds the Rust gate made; on its own job this

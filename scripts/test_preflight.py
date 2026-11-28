@@ -7,13 +7,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -30,6 +33,76 @@ def load(name: str):
 
 
 preflight = load("preflight")
+
+
+class CheckLoadingTests(unittest.TestCase):
+    def test_loads_site_checks_and_orders_them_with_builtin_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            builtin = root / "builtin"
+            site = root / "site"
+            builtin.mkdir()
+            site.mkdir()
+            (builtin / "preflight_builtin.py").write_text(
+                'NAME = "builtin"\nORDER = 20\ndef run(context): pass\n')
+            (site / "local.py").write_text(
+                'NAME = "local"\nORDER = 10\ndef run(context): pass\n')
+            with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(site)}):
+                modules = preflight.load_checks(builtin)
+            self.assertEqual([module.NAME for module in modules], ["local", "builtin"])
+
+    def test_site_finding_fails_the_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            site.mkdir()
+            (site / "preflight_local.py").write_text(
+                'NAME = "local"\nORDER = 10\n'
+                'def run(context): return context.failed("finding")\n')
+            with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(site)}):
+                modules = preflight.load_checks(Path(tmp) / "absent")
+            context = preflight.Context(Path("."), "upstream", "0" * 40)
+            results = preflight.run_checks(context, modules, {"local"})
+            self.assertEqual([(result.check, result.status) for result in results],
+                             [("local", "FAIL")])
+
+    def test_duplicate_names_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            builtin, site = root / "builtin", root / "site"
+            builtin.mkdir()
+            site.mkdir()
+            for directory in (builtin, site):
+                (directory / "preflight_check.py").write_text(
+                    'NAME = "same"\nORDER = 10\ndef run(context): pass\n')
+            with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(site)}):
+                with self.assertRaisesRegex(ValueError, "duplicate check name"):
+                    preflight.load_checks(builtin)
+
+    def test_explicit_missing_site_directory_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing"
+            with mock.patch.dict(os.environ, {"CADMPEG_PREFLIGHT_DIR": str(missing)}):
+                with self.assertRaises(FileNotFoundError):
+                    preflight.load_checks(Path(tmp))
+
+    def test_list_accepts_a_check_without_a_docstring(self) -> None:
+        class Check:
+            NAME = "local"
+            ORDER = 1
+            def run(self, context):
+                return None
+
+        output = io.StringIO()
+        with mock.patch.object(preflight, "load_checks", return_value=[Check()]):
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(preflight.main(["--list"]), 0)
+        self.assertIn("local:", output.getvalue())
+
+    def test_unknown_check_fails(self) -> None:
+        with mock.patch.object(preflight, "load_checks", return_value=[]):
+            with self.assertRaises(SystemExit) as error:
+                preflight.main(["--only", "missing"])
+            self.assertEqual(error.exception.code, 2)
 
 
 class GitFixture:

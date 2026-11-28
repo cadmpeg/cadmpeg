@@ -162,7 +162,7 @@ Each codec owns a decode route. Depth cuts skip design projection below `Design`
 | STEP | parser exchange HEADER→DATA→graph omission | Syntax omits a statement; resource/lex refuse. No retry. |
 | IGES | section order `S<G<D<P<T`; `EntityStatus`; `TransferLedger.verify` | Ledger failure is `CodecError::malformed`. |
 | SAT | host framing + kernel save-format band | Unframed host → `UnsupportedDialect`. |
-| SLDPRT | carchive `End`/`Stop`; tessellation token agreement; write path | `SurfaceTokenStatus::Invalid` is dropped before storage. |
+| SLDPRT | carchive `End`/`Stop`; tessellation token agreement; design and saved-state skip below Design; write path | `SurfaceTokenStatus::Invalid` is dropped before storage. |
 | NX | OM payload classify; `BodyCensusEvaluation`; `nx_profile` CLI dual-worker | CLI statuses are tooling. |
 | CATIA | variant identify → dialect → ordered routes → metadata fallback | V5 only. `Unknown` is residual. |
 | Creo | layout/dialect; `PcurveCarrierStatus` | Residual layout recovers. |
