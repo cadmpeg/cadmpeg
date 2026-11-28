@@ -10735,6 +10735,29 @@ Parsed by:
 | 45 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 56 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 
+## `assembly_typed_alternate_rigid_group_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 187 B
+
+The typed alternate prologue through its first two member references. Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `0` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `0` |
+| 25 | 1 | `zero_separator` | `u8` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed · value `0` |
+| 26 | 51 | `pathless_locator_reference` | `bytes[51]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 77 | 4 | `zero_run_77` | `bytes[4]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 81 | 4 | `locator_count` | `u32` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 85 | 51 | `first_locator_reference` | `bytes[51]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+| 136 | 51 | `second_locator_reference` | `bytes[51]` | little | spec | The typed rigid-group scope also takes the alternate prologue. Its typed |
+
 ## `assembly_compact_rigid_group_identity_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 52 B

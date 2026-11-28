@@ -197,7 +197,29 @@ impl DecodeContext<'_> {
         arena: &'b DecodeArena,
         work: impl FnOnce(&DecodeContext<'b>) -> T,
     ) -> T {
-        let local = self.checkpoint().resume(arena);
+        self.lend(&self.checkpoint(), arena, work)
+    }
+
+    /// Runs `work` as [`Self::with_arena`] does, with nesting held to
+    /// `max_recursion_depth` in place of the policy's ceiling.
+    pub fn with_arena_nesting<'b, T>(
+        &self,
+        arena: &'b DecodeArena,
+        max_recursion_depth: u64,
+        work: impl FnOnce(&DecodeContext<'b>) -> T,
+    ) -> T {
+        let mut checkpoint = self.checkpoint();
+        checkpoint.state.policy.limits.max_recursion_depth = max_recursion_depth;
+        self.lend(&checkpoint, arena, work)
+    }
+
+    fn lend<'b, T>(
+        &self,
+        checkpoint: &DecodeCheckpoint,
+        arena: &'b DecodeArena,
+        work: impl FnOnce(&DecodeContext<'b>) -> T,
+    ) -> T {
+        let local = checkpoint.resume(arena);
         *local.budget.trace.borrow_mut() = self.budget.trace.borrow_mut().take();
         let result = work(&local);
         self.budget.restore(&local.budget.state());

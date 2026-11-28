@@ -72,6 +72,7 @@ fn resolved_body_binding(
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
+            consumers: Vec::new(),
             id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
             stream: stream.into(),
             pair_count: 1,
@@ -143,7 +144,7 @@ fn protein_rejections_preserve_valid_records_and_give_up_the_rejected_record() {
         &protein,
         &edits,
         &mut notes,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(
@@ -241,7 +242,7 @@ fn a_zstandard_protein_archive_decodes_and_patches() {
         &protein,
         &edits,
         &mut notes,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect("patch a Zstandard Protein archive");
     assert_eq!(
@@ -1802,7 +1803,7 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
         &protein,
         &edits,
         &mut Vec::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(

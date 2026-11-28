@@ -644,6 +644,9 @@ fn decode_container<'a>(
     let mut carrier_cause = Cause::Unreadable;
     let mut carrier_given_up = false;
     let mut history_chain = None;
+    let mut decoded_states = std::collections::BTreeMap::new();
+    let mut feature_history_states = Vec::new();
+    let mut state_unknowns = Vec::new();
     let mut empty_kernel_stream = false;
     let mut kernel_withheld = Vec::new();
     let kernel_brep = match &container.rse.active_carrier {
@@ -701,6 +704,7 @@ fn decode_container<'a>(
         }
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
     };
+    let active_geometry = kernel_brep.is_some();
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
     let body_keys = kernel_brep.body_native_keys.clone();
     let face_keys = kernel_brep
@@ -914,7 +918,14 @@ fn decode_container<'a>(
                         ));
                     }
                 }
+                feature_history_states = history.records;
                 ir.model.history_bodies = history.bodies.bodies;
+                decoded_states = history.bodies.states;
+                crate::feature::body_selection::name_states(
+                    &mut decoded_states,
+                    &joined,
+                    &feature_inventory,
+                );
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
@@ -978,11 +989,7 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    for face in &mut ir.geometry.faces {
-        if face.color.is_none() {
-            face.color = face_colors.get(&face.id).copied();
-        }
-    }
+    colour_faces(&mut ir.geometry, &mut decoded_states, &face_colors);
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     if let Some((part, cause, error)) = history_chain {
@@ -1534,27 +1541,7 @@ fn decode_container<'a>(
             }
         }
     }
-    if !kernel_unknowns.is_empty() {
-        // Topology-only vertex and edge records carry nothing the arenas lack.
-        let untyped = kernel_unknowns
-            .iter()
-            .filter(|record| {
-                let id = record.id().as_str();
-                !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
-            })
-            .map(|record| record.id().clone())
-            .collect::<Vec<_>>();
-        source_fidelity
-            .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "Inventor kernel unknown retention failed: {error}"
-                ))
-            })?;
-        for id in untyped {
-            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
-        }
-    }
+    retain_kernel_unknowns(ctx, &mut ir, &mut source_fidelity, kernel_unknowns)?;
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     for part in given_up {
         losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
@@ -1764,10 +1751,6 @@ fn decode_container<'a>(
             )),
         ),
         (
-            crate::coverage::KERNEL_UNKNOWN_RECORDS,
-            kernel_unknown_record_count,
-        ),
-        (
             crate::coverage::KERNEL_UNKNOWN_SURFACE_FACES,
             kernel_stats.unknown_surface_faces(),
         ),
@@ -1782,7 +1765,7 @@ fn decode_container<'a>(
             feature_inventory.sheet_metal_flanges.len(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+    let mut coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
         .into_iter()
         .chain(
             sheet_metal_coverage
@@ -1818,9 +1801,37 @@ fn decode_container<'a>(
                     tables: &design_inventory.parameter_tables,
                 },
                 losses,
+            )?;
+            crate::design_v11::evaluations::project(
+                ctx,
+                ir,
+                crate::design_v11::evaluations::Evidence {
+                    active: if active_geometry {
+                        history_read.active_state()
+                    } else {
+                        None
+                    },
+                    features: &feature_history_states,
+                    states: &decoded_states,
+                },
+                &source_fidelity,
+                &mut state_unknowns,
+                losses,
             )
         })?;
     }
+    let state_unknown_record_count = state_unknowns.len();
+    retain_history_unknowns(
+        ctx,
+        &mut ir,
+        &mut source_fidelity,
+        &decoded_states,
+        state_unknowns,
+    )?;
+    coverage.record(
+        crate::coverage::KERNEL_UNKNOWN_RECORDS,
+        kernel_unknown_record_count + state_unknown_record_count,
+    );
     let mut body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -2186,6 +2197,89 @@ fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {
         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
         carrier.segment_token.clone().dash(carrier.record_ordinal),
     )
+}
+
+/// Give each face of the current geometry and of the decoded history states
+/// that holds no colour the colour bound to its id.
+fn colour_faces(
+    geometry: &mut Topology,
+    states: &mut BTreeMap<u32, crate::feature::history_bodies::StateRecords>,
+    colours: &HashMap<cadmpeg_ir::ids::FaceId, cadmpeg_ir::topology::Color>,
+) {
+    let state_faces = states
+        .values_mut()
+        .flat_map(|state| state.geometry.faces.iter_mut());
+    for face in geometry.faces.iter_mut().chain(state_faces) {
+        if face.color.is_none() {
+            face.color = colours.get(&face.id).copied();
+        }
+    }
+}
+
+/// Retain the undecoded kernel records `records` in the document's unknown
+/// arena.
+fn retain_kernel_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    source_fidelity: &mut SourceFidelity,
+    records: Vec<UnknownRecord>,
+) -> Result<(), CodecError> {
+    if records.is_empty() {
+        return Ok(());
+    }
+    // Topology-only vertex and edge records carry nothing the arenas lack.
+    let untyped = records
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
+    source_fidelity
+        .attach_native_unknown_records(ir, "inventor", records, ctx)
+        .map_err(|error| {
+            CodecError::malformed(format_args!(
+                "Inventor kernel unknown retention failed: {error}"
+            ))
+        })?;
+    for id in untyped {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+    }
+    Ok(())
+}
+
+pub(crate) fn retain_history_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    source_fidelity: &mut SourceFidelity,
+    decoded_states: &BTreeMap<u32, crate::feature::history_bodies::StateRecords>,
+    state_unknowns: Vec<(u32, UnknownRecord)>,
+) -> Result<(), CodecError> {
+    if state_unknowns.is_empty() {
+        return Ok(());
+    }
+    let mut provenance = AnnotationBuilder::new();
+    for (ordinal, record) in &state_unknowns {
+        let located = decoded_states
+            .get(ordinal)
+            .into_iter()
+            .flat_map(|state| &state.provenance)
+            .filter(|located| located.id.as_str() == record.id().as_str());
+        for located in located {
+            admit_kernel_annotation(&mut provenance, located)?;
+        }
+    }
+    source_fidelity
+        .annotations
+        .provenance
+        .extend(provenance.build().provenance);
+    let records = state_unknowns
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect();
+    retain_kernel_unknowns(ctx, ir, source_fidelity, records)?;
+    Ok(())
 }
 
 fn admit_kernel_annotation(

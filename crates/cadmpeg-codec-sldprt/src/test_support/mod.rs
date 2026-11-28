@@ -45,15 +45,16 @@ impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
         Ok(body)
     }
 
-    fn restore(
+    fn plan_prepared(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
-        target: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
-        crate::writer::saved::restore(ctx, input, target, notes, losses)
+        target: cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+    ) -> Result<(cadmpeg_ir::codec::write::ExportBody, Option<CadIr>), CodecError> {
+        let (body, restored, read_back) =
+            crate::writer::target::plan_prepared(ctx, input, &target, self.session)?;
+        self.read_back.set(read_back);
+        Ok((body, restored))
     }
 }
 
@@ -492,6 +493,8 @@ pub(crate) fn write_in_native_envelope(
         &policy,
         cadmpeg_core::decode::DecodeDepth::Full,
     );
+    let input = crate::writer::SourceInput::of(&records);
+    let source = input.as_ref().map(|input| input.image(&ctx)).transpose()?;
     crate::writer::write_semantic_with_records_cached(
         &ir,
         &fidelity.annotations,
@@ -501,6 +504,7 @@ pub(crate) fn write_in_native_envelope(
             withheld: &[],
             shaped: &[],
             ctx: &ctx,
+            source,
         },
         &mut crate::writer::SemanticWriteCache::default(),
         writer,
@@ -543,6 +547,7 @@ pub(crate) fn make_retained_record_unavailable(fidelity: &mut SourceFidelity, id
 
 pub(crate) mod allocation;
 pub(crate) mod appearance;
+pub(crate) mod cadir;
 pub(crate) mod carchive;
 pub(crate) mod container;
 pub(crate) mod history;

@@ -148,13 +148,25 @@ impl SchemaCatalog {
         protein: View<'a>,
     ) -> Result<Option<Self>, CodecError> {
         let archive = ArchiveSnapshot::new(ctx, protein)?;
+        Self::load_indexed(ctx, &archive, |name| {
+            archive.open(ctx, name).map(View::window)
+        })
+    }
+
+    /// Parse schemas using the admitted member names and a loader for their
+    /// validated views.
+    pub fn load_indexed<'a, Payload: AsRef<[u8]>>(
+        ctx: &DecodeContext<'a>,
+        archive: &ArchiveSnapshot<'a>,
+        mut open: impl FnMut(&str) -> Result<Payload, CodecError>,
+    ) -> Result<Option<Self>, CodecError> {
         let mut catalog = Self::default();
         for entry in archive
             .entries()
             .iter()
             .filter(|entry| is_schema_entry(&entry.name))
         {
-            ctx.run_part(|| catalog.read_member(ctx, &archive, entry))??;
+            ctx.run_part(|| catalog.admit_member(ctx, archive, entry, &mut open))??;
         }
         Ok((!catalog.is_empty()).then_some(catalog))
     }
@@ -172,12 +184,24 @@ impl SchemaCatalog {
         archive: &ArchiveSnapshot<'a>,
         entry: &EntryRecord,
     ) -> Result<(), CodecError> {
+        self.admit_member(ctx, archive, entry, |name| {
+            archive.open(ctx, name).map(View::window)
+        })
+    }
+
+    fn admit_member<Payload: AsRef<[u8]>>(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        archive: &ArchiveSnapshot<'_>,
+        entry: &EntryRecord,
+        mut open: impl FnMut(&str) -> Result<Payload, CodecError>,
+    ) -> Result<(), CodecError> {
         archive.validate_member(&entry.name)?;
         if entry.uncompressed_size > MAX_SCHEMA_BYTES {
             return Err(schema_too_large(entry.uncompressed_size));
         }
-        let xml = archive.open(ctx, &entry.name)?;
-        parse_schema_document(ctx, &entry.name, xml.window(), &mut self.schemas)
+        let xml = open(&entry.name)?;
+        parse_schema_document(ctx, &entry.name, xml.as_ref(), &mut self.schemas)
     }
 
     /// Parse schemas for source-retaining export edits.
