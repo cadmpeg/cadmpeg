@@ -14,7 +14,7 @@ use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::curve::TwoChartPcurveSamples;
 use crate::decode::analytic::vertices::{finite_model_point, model_points_agree};
-use crate::vecmath::{add, cross, dot, normalize, scale};
+use crate::vecmath::{add, dot, normalize, scale};
 
 const EPS_AXIS: f64 = 1.0e-9;
 const EPS_POSITION: f64 = 1.0e-9;
@@ -100,7 +100,9 @@ fn bounded_curve(
     let small_origin: [f64; 3] = small.origin().get().into();
     let big_origin: [f64; 3] = large.origin().get().into();
     let displacement = subtract(small_origin, big_origin);
-    let mut normal = normalize(cross(axis, transverse))?;
+    let mut normal = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(transverse)),
+    ))?;
     let signed_offset = dot(displacement, normal);
     if signed_offset < 0.0 {
         normal = scale(normal, -1.0);
@@ -233,7 +235,10 @@ fn equal_cylinder_curve(
     let axis_dot = dot(first_axis, second_axis);
     let denominator = 1.0 - axis_dot * axis_dot;
     (denominator > EPS_AXIS).then_some(())?;
-    let normal = normalize(cross(first_axis, second_axis))?;
+    let normal = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(first_axis)
+            .cross(cadmpeg_ir::math::Vector3::from(second_axis)),
+    ))?;
     let first_origin: [f64; 3] = first.origin().get().into();
     let second_origin: [f64; 3] = second.origin().get().into();
     let displacement = subtract(second_origin, first_origin);
@@ -334,7 +339,9 @@ pub(super) fn projected_pcurve(
     let origin: [f64; 3] = cylinder.origin().get().into();
     let axis: [f64; 3] = (*cylinder.frame().axis().as_raw()).into();
     let reference: [f64; 3] = (*cylinder.frame().reference().as_raw()).into();
-    let transverse = cross(axis, reference);
+    let transverse = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(reference)),
+    );
     let poles: Vec<_> = curve
         .control_points()
         .into_iter()

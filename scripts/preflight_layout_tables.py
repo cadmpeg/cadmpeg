@@ -60,7 +60,7 @@ def run(context):
     problems = []
     for name in sorted(tables - pages):
         problems.append(f"docs/layouts/{name}.toml changed but docs/layouts/{name}.md did not")
-    for name in sorted((pages | sources) - tables):
+    for name in sorted((pages | sources) - tables if GENERATOR not in changed else set()):
         edited = [path for path in (f"docs/layouts/{name}.md", code.get(name))
                   if path in changed]
         problems.append(f"{', '.join(edited)} changed without docs/layouts/{name}.toml; "
@@ -76,7 +76,7 @@ def run(context):
         return [disagree, context.skipped("--run-layout needs the working tree, not --rev")]
     if not context.options.run_layout:
         return context.warned(
-            f"layout table(s) changed: {', '.join(sorted(tables))}; regeneration not verified",
+            f"layout inputs changed: {', '.join(sorted(tables | pages | sources))}; regeneration not verified",
             f"verify: {REGENERATE}, then git diff, then {' '.join(TEST)}",
             "or rerun preflight with --run-layout",
         )

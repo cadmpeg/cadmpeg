@@ -2354,12 +2354,15 @@ struct FormulaExpressionParser<'a, 'b> {
     static_check: bool,
 }
 
+// resource-cap: MAX_FORMULA_EXPRESSION_DEPTH = 2
 const MAX_FORMULA_EXPRESSION_DEPTH: usize = 128;
+// resource-cap: MAX_FORMULA_FUNCTION_ARGUMENTS = 2
 const MAX_FORMULA_FUNCTION_ARGUMENTS: usize = 128;
 /// Longest string a formula operator may produce. Nested operators inside one
 /// expression feed one result into the next, so repeated concatenation or
 /// replacement grows a string geometrically; a longer result leaves the
 /// formula unevaluated.
+// resource-cap: MAX_FORMULA_STRING_BYTES = 4
 const MAX_FORMULA_STRING_BYTES: usize = 1 << 20;
 
 /// Whether an operator result of at most `bytes` bytes fits the string cap.

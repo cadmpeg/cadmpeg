@@ -21,14 +21,14 @@ SPEC.loader.exec_module(MODULE)
 class EditedFixtureTests(unittest.TestCase):
     def test_edits_the_single_point(self) -> None:
         golden = SCRIPT.parent.parent / "crates/cadmpeg-codec-iges/tests/golden/decode/point.json"
-        document = json.loads(golden.read_text(encoding="utf-8"))
+        document = json.loads(golden.read_text(encoding="utf-8"))["ir"]
 
         MODULE.edit_point(document)
 
-        self.assertEqual(document["ir"]["geometry"]["points"][0]["position"], MODULE.EDITED_POSITION)
+        self.assertEqual(document["geometry"]["points"][0]["position"], MODULE.EDITED_POSITION)
 
     def test_rejects_a_document_with_multiple_points(self) -> None:
-        document = {"ir": {"geometry": {"points": [{}, {}]}}}
+        document = {"geometry": {"points": [{}, {}]}}
 
         with self.assertRaises(SystemExit):
             MODULE.edit_point(document)

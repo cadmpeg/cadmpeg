@@ -427,6 +427,7 @@ pub(super) fn unit(symbol: UnitSymbol) -> Option<Unit> {
     NonZeroI8::new(1).map(|power| Unit(vec![UnitFactor { symbol, power }]))
 }
 
+// resource-cap: MAX_DEPTH = 2
 const MAX_DEPTH: usize = 64;
 
 /// Translate the syntax and dimensions of a quantity independently of its evaluation.

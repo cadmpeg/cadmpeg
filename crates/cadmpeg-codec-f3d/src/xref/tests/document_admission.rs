@@ -4,7 +4,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
-use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
+use crate::test_support::assembly_fixture::{f3d_without_brep, XREF_ROLE};
 
 use crate::F3dCodec;
 
@@ -30,8 +30,10 @@ fn single_type_metadata(
         ordinal
     ];
     types.push((type_guid, "", version, module, entities.as_slice()));
-    let bytes =
-        crate::test_support::streams_test::design_metastream_with_records(&types, &[(entity, 0)]);
+    let bytes = crate::test_support::streams_fixture::design_metastream_with_records(
+        &types,
+        &[(entity, 0)],
+    );
     crate::metastream::parse(&bytes, "Design/MetaStream.dat").unwrap()
 }
 
@@ -88,7 +90,7 @@ fn three_property_control_one_identity_requires_the_complete_registered_form() {
         .decode(&mut Cursor::new(document), &DecodeOptions::default())
         .unwrap();
     let mut reference =
-        crate::test_support::native_test::f3d_native(result.ir()).xref_references[0].clone();
+        crate::test_support::native_fixture::f3d_native(result.ir()).xref_references[0].clone();
     assert_eq!(reference.id, "f3d:xref:reference#0");
     assert_eq!(
         result.ir().model.occurrences[0].native_ref.as_deref(),
@@ -295,7 +297,7 @@ fn missing_metadata_does_not_infer_an_external_transform_from_record_shape() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
     assert_eq!(native.xref_references.len(), 1);
     assert_eq!(native.xref_references[0].transform, None);
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -386,8 +388,8 @@ fn part_without_brep_keeps_blocking_losses() {
 
 #[test]
 fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct() {
-    let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
-    let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(
+    let snapshot = crate::test_support::smbh_geometry_fixture::synthetic_wire_body_smbh();
+    let archive = crate::test_support::body_map_fixture::f3d_with_empty_model_maps(
         &snapshot,
         &[("part.f3d", XREF_ROLE)],
     );

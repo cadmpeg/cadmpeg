@@ -17,6 +17,7 @@ use cadmpeg_ir::report::{
     Severity,
 };
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -571,6 +572,36 @@ pub(crate) enum SldprtLossCode {
     /// value: no record types the dimension or binds it to a stored value,
     /// or the part's length unit is not read.
     DesignParameterValueUnread,
+    /// Model parameters whose owner is a feature-tree node outside the
+    /// timeline (the annotations node, a detail folder), which no design
+    /// feature restates, state no design parameter.
+    DesignParameterOwnerOutsideTimeline,
+    /// Configurations of a part whose active configuration does not resolve
+    /// to one of them state no design configuration: a scope with
+    /// configurations names its active one.
+    DesignConfigurationActiveUnread,
+    /// Bodies that the geometry of a part whose feature tree holds no
+    /// feature holds outside the active configuration's bodies are unproduced
+    /// bodies of its scope: a scope with no root container has no position
+    /// for the stored state of a configuration that is not active.
+    DesignConfigurationStateUnplaced,
+    /// Configurations that are not active state no suppression of their
+    /// own: the decoder reads one suppression per feature, from the feature
+    /// tree, which every configuration shares (DI-110).
+    DesignConfigurationSuppressionUnread,
+    /// Features whose definition in a configuration that is not active
+    /// differs from the active configuration's state no definition override:
+    /// a dimension alone also makes the decoded definitions differ.
+    DesignConfigurationDefinitionUnstated,
+    /// A configuration parameter sample lacks a stated expression or identity.
+    DesignConfigurationParameterUnread,
+    /// Features under a feature-tree node outside the timeline (the
+    /// annotations node, a lights folder) state no design feature.
+    DesignFeatureOutsideTimeline,
+    /// Reference-dimension parameters of the model that no sketch dimension
+    /// of the design binds state no design parameter: a `Driven` parameter
+    /// is bound by its dimension (§5.12).
+    DesignParameterReferenceUnbound,
     /// Parameters whose text is one reference to a parameter whose kind
     /// differs or is not read, and whose unit-blind tree does not type or is
     /// not confirmed by the document's values, hold the text and state no
@@ -665,249 +696,9 @@ pub(crate) enum SldprtLossCode {
     /// the datum states the active configuration's geometry.
     DesignDatumConfigurationDropped,
 }
+}
 
 impl SldprtLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [SldprtLossCode] = &[
-        Self::MetadataPartRootUnsupported,
-        Self::MetadataConfigurationManagerOpaque,
-        Self::MetadataDefaultCarrierUnsupported,
-        Self::MetadataDefaultOwnerAmbiguous,
-        Self::MetadataDefaultAliasAmbiguous,
-        Self::MetadataDefaultValueUnsupported,
-        Self::MetadataMassPropertiesNotCompared,
-        Self::MetadataConfigurationPropertyOwnerAmbiguous,
-        Self::MetadataConfigurationPropertyCarrierUnsupported,
-        Self::MetadataConfigurationPropertyValueUnsupported,
-        Self::ConfigActiveIdentityUnresolved,
-        Self::ConfigActivePartitionMismatch,
-        Self::ConfigActivePartitionUnread,
-        Self::ConfigInferredWithoutNative,
-        Self::ConfigLaneIdentityUnresolved,
-        Self::ConfigAmbiguousPartition,
-        Self::ConfigAmbiguousNaming,
-        Self::ConfigIncoherentBodyRefs,
-        Self::ConfigIncompleteSnapshot,
-        Self::ConfigProjectionWorkCapped,
-        Self::ConfigStateUnstated,
-        Self::ConfigStateNotStored,
-        Self::ConfigStatePresentationUnstated,
-        Self::ConfigStateImportedBodiesNotTransferred,
-        Self::ConfigStateOutputsUnstated,
-        Self::ParameterUnevaluated,
-        Self::ParameterAmbiguousIdentity,
-        Self::PmiDimensionUnbound,
-        Self::PmiSemanticParseCapped,
-        Self::PmiSwiftAnnotationUnsupported,
-        Self::PmiSwiftFeatureWalkCapped,
-        Self::PmiSwiftImplicitNominalUnresolved,
-        Self::PmiSwiftPositionTargetUnresolved,
-        Self::PmiSwiftSphericalDiameterTargetCountTextEqualRadiusAssumed,
-        Self::PmiSwiftSphericalDiameterTargetUnresolved,
-        Self::PmiSwiftPresentationUnresolved,
-        Self::PmiSwiftInternalFlatnessSymbolAssumed,
-        Self::PmiSwiftPresentationUnframed,
-        Self::PmiSwiftFaceDocumentLayoutAssumed,
-        Self::PmiSwiftFaceDocumentTailAssumed,
-        Self::HistoryIncompleteReferences,
-        Self::HistoryRollbackUnread,
-        Self::HistoryStatesUnread,
-        Self::HistoryRollbackMarkClassInferred,
-        Self::HistoryApplicationNotTransferred,
-        Self::HistoryApplicationNestingCut,
-        Self::HistoryXmlNormalised,
-        Self::FeatureIncoherentEdges,
-        Self::FeatureIncoherentContent,
-        Self::FeatureUnresolvedOutputScope,
-        Self::FeatureIncoherentOutputs,
-        Self::SketchNativeConstraint,
-        Self::SketchNativeGeometry,
-        Self::SketchHandleUnresolved,
-        Self::SketchLineDegenerate,
-        Self::SketchArcRecordConflict,
-        Self::SketchMarkerRecordUnread,
-        Self::SketchSecondReading,
-        Self::SketchMarkerReadingUnbound,
-        Self::SketchPointCoordinatesSubnormal,
-        Self::SketchRelationPointPlaceUnsettled,
-        Self::SketchPlaneBindingAssumed,
-        Self::SketchPointRecordIndexBasisAssumed,
-        Self::SketchArcRecordOffChord,
-        Self::SketchProfileRejected,
-        Self::SketchListedLineConstructionAssumed,
-        Self::SketchListedCurveRelationDropped,
-        Self::SketchRelationUnprojected,
-        Self::SketchRelationMultiplyProjected,
-        Self::SketchDimensionClassUnknown,
-        Self::SketchDimensionRepeated,
-        Self::FeatureNativeKindRetained,
-        Self::FeatureInputObjectUnbound,
-        Self::FeatureInputSolidBodyRetained,
-        Self::FeatureInputArchiveWalkStopped,
-        Self::FeatureBlendEdgeGeneratorUnstated,
-        Self::FeatureBlendMarkReferencesAssumed,
-        Self::FeatureTypedOperandIncomplete,
-        Self::FeatureSweepPathRetained,
-        Self::FeatureSweepPathRosterAssumed,
-        Self::FeatureSweepPathHeaderAssumed,
-        Self::FeatureSweepMergeAssumed,
-        Self::FeatureProfileCurvesUnavailable,
-        Self::FeatureExtrudeDirectionUnresolved,
-        Self::FeatureExtrudeReversalContradicted,
-        Self::FeatureExtrudeReversalAssumed,
-        Self::FeatureExtrudeStartUnresolved,
-        Self::FeatureOffsetPlaneSideAssumed,
-        Self::FeatureOffsetPlaneFrameConflict,
-        Self::FeatureOffsetPlaneDistanceDisplayed,
-        Self::FeatureRevolveAxisOffProfilePlane,
-        Self::FeatureRevolveAxisRecordPrefixUnread,
-        Self::FeatureThinOperationAmbiguous,
-        Self::FeatureEdgeTerminalUnresolved,
-        Self::FeatureBodyPathAmbiguous,
-        Self::FeatureBodyRetentionUnresolved,
-        Self::GeometryFaceSupportSurfaceUntyped,
-        Self::GeometrySurfaceCarrierAmbiguous,
-        Self::GeometryOffsetValidityUnresolved,
-        Self::GeometrySpunProfileIntervalIgnored,
-        Self::GeometryBlendCacheUnsolved,
-        Self::GeometryEdgeSupportCurveUntyped,
-        Self::GeometryTolerantEdgeCurveUnread,
-        Self::GeometryPointRecordAmbiguous,
-        Self::GeometryCurveMarkerConflict,
-        Self::GeometryPcurveAmbiguous,
-        Self::GeometrySurfaceSolverWorkCapped,
-        Self::GeometrySplineLanesUnpaired,
-        Self::GeometrySplineWeightNonpositive,
-        Self::GeometrySplineFieldsInconsistent,
-        Self::GeometryConeHalfAngleSignUnresolved,
-        Self::GeometryConeHalfAngleIdentityRefused,
-        Self::GeometryIntersectionLayoutUnknown,
-        Self::GeometryCarrierApproximated,
-        Self::AppearanceFaceColorUnresolved,
-        Self::AppearanceAssignmentUnresolved,
-        Self::NativeAppearanceScopeUnresolved,
-        Self::TessellationFaceOwnershipUnresolved,
-        Self::TessellationOwnerWorkCapped,
-        Self::TessellationReusedTagAmbiguous,
-        Self::TessellationDisplayWithoutGeometry,
-        Self::TopologyBodyHierarchyDerived,
-        Self::TopologyLoopChainCut,
-        Self::TopologyOwnershipWithheld,
-        Self::TopologyShellRoleUnstated,
-        Self::TopologyFinRecordAmbiguous,
-        Self::TopologyFinPartnerUnresolved,
-        Self::TopologyLoopRecordAmbiguous,
-        Self::TopologyVertexRecordUnresolved,
-        Self::TopologyPcurveCarrierOffSurface,
-        Self::GeometryParasolidNotTransferred,
-        Self::GeometryMeshBodyNotTransferred,
-        Self::GeometryImportedBodiesNotTransferred,
-        Self::BodyResolutionInvalid,
-        Self::BodyResolutionUnread,
-        Self::TopologyGraphNotTransferred,
-        Self::MaterialMetadataNotTransferred,
-        Self::ContainerNoParasolidStream,
-        Self::ContainerParasolidProbeCapped,
-        Self::ContainerNoncanonical,
-        Self::SourcePreservedImageUnavailable,
-        Self::SourceDialectUnverified,
-        Self::KernelDialectUnverified,
-        Self::DialectLayerCollision,
-        Self::WriterShellWireTopologyOmitted,
-        Self::WriterCoedgePcurveUsesOmitted,
-        Self::WriterSphereSeamCurvesOmitted,
-        Self::WriterAppearanceBindingsOmitted,
-        Self::WriterAttributesOmitted,
-        Self::WriterDrivenDimensionsOmitted,
-        Self::WriterUnboundAppearancesOmitted,
-        Self::WriterMaterialsOmitted,
-        Self::WriterTessellationMetadataOmitted,
-        Self::WriterNativeEnvelopeAuxiliaryOmitted,
-        Self::WriterUnitsMemberGenerated,
-        Self::WriterNativeHistorySummary,
-        Self::WriterNativeSkeletonUnlaidRuns,
-        Self::WriterNativeSkeletonOmitted,
-        Self::WriterNativeStreamsOmitted,
-        Self::WriterNativeSketchLaneOrphan,
-        Self::WriterNativeBodyIdentityOmitted,
-        Self::WriterProducerAttributesOmitted,
-        Self::WriterNativeSketchProfileBodyKept,
-        Self::WriterNativeSketchOriginRelationAdded,
-        Self::WriterConfigurationIdentityAssigned,
-        Self::WriterBodiesOmitted,
-        Self::WriterFaceNamesOmitted,
-        Self::WriterBodyNamesOmitted,
-        Self::WriterAppearanceFieldsOmitted,
-        Self::WriterSubdOmitted,
-        Self::WriterActiveConfigurationAssumed,
-        Self::WriterFeaturesOmitted,
-        Self::WriterFeatureResultAbsent,
-        Self::WriterSketchConstraintsOmitted,
-        Self::WriterEdgeRangesOmitted,
-        Self::WriterPmiOmitted,
-        Self::WriterParameterExpressionsOmitted,
-        Self::WriterCacheTolerancesOmitted,
-        Self::WriterFaceLoopsUnchained,
-        Self::WriterSelectionIdentitiesOmitted,
-        Self::WriterFeatureFieldsOmitted,
-        Self::WriterParametersRenamed,
-        Self::WriterKeywordsCharactersReplaced,
-        Self::WriterKeywordsTextTrimmed,
-        Self::WriterHistoryKeywordsOnly,
-        Self::WriterHistoryNameNotWritten,
-        Self::WriterHistoryRegenerationRefused,
-        Self::WriterSolidStaleAfterEdit,
-        Self::WriterConfigurationSnapshotEditUnwritten,
-        Self::WriterFeatureRecordReshaped,
-        Self::WriterReadBackDiffers,
-        Self::WriterReadBackUnread,
-        Self::WriterExtrudeReversalUnwritten,
-        Self::WriterExtrudeReversalConfigurationCleared,
-        Self::SourcePropertyKeyBlank,
-        Self::AssemblyStructureNotTransferred,
-        Self::AssemblyMatesNotTransferred,
-        Self::AssemblyComponentsExternal,
-        Self::AssemblyVirtualComponentsNotTransferred,
-        Self::AssemblySuppressedComponentsOmitted,
-        Self::AssemblyPlacementUnresolved,
-        Self::AssemblyConfigurationsNotTransferred,
-        Self::AssemblyEmbeddedDocumentsNotTransferred,
-        Self::AssemblyBomExclusionNotTransferred,
-        Self::DesignFeatureUnresolved,
-        Self::DesignDatumUnresolved,
-        Self::DesignFolderDropped,
-        Self::DesignStateNameNative,
-        Self::DesignParameterDisplayRounded,
-        Self::DesignParameterValueUnread,
-        Self::DesignParameterReferenceAsText,
-        Self::DesignExtrudeDepthAssumed,
-        Self::DesignParameterClassAssumed,
-        Self::DesignParameterClassesDisagree,
-        Self::DesignEquationUnread,
-        Self::DesignEquationSource,
-        Self::DesignSketchConstructionAssumed,
-        Self::DesignExtrudeProfileDiffers,
-        Self::DesignExtrudeSketchEmpty,
-        Self::DesignExtrudeProfileUnchecked,
-        Self::DesignSketchDimensionCircle,
-        Self::DesignSketchLocusUnplaced,
-        Self::DesignSketchLocusAmbiguous,
-        Self::DesignSketchRelationSinglePoint,
-        Self::DesignSketchRelationNative,
-        Self::DesignSketchEntityNative,
-        Self::DesignSketchDimensionUnbound,
-        Self::DesignRevolveAxisLineInferred,
-        Self::DesignRevolveAxisDerived,
-        Self::DesignRevolveBooleanUnstated,
-        Self::DesignRevolveProfileDiffers,
-        Self::DesignRevolveProfileUnchecked,
-        Self::DesignRevolveSenseAssumed,
-        Self::DesignDatumPlaneAxisConstructed,
-        Self::DesignDatumPlaneAxisAngled,
-        Self::DesignDatumConfigurationDropped,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
@@ -1154,6 +945,16 @@ impl SldprtLossCode {
             Self::DesignStateNameNative => "design.state-name-native",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
+            Self::DesignParameterOwnerOutsideTimeline => "design.parameter-owner-outside-timeline",
+            Self::DesignConfigurationActiveUnread => "design.configuration-active-unread",
+            Self::DesignConfigurationStateUnplaced => "design.configuration-state-unplaced",
+            Self::DesignConfigurationSuppressionUnread => "design.configuration-suppression-unread",
+            Self::DesignConfigurationParameterUnread => "design.configuration-parameter-unread",
+            Self::DesignConfigurationDefinitionUnstated => {
+                "design.configuration-definition-unstated"
+            }
+            Self::DesignFeatureOutsideTimeline => "design.feature-outside-timeline",
+            Self::DesignParameterReferenceUnbound => "design.parameter-reference-unbound",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
@@ -1385,6 +1186,14 @@ impl SldprtLossCode {
             | Self::DesignStateNameNative
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
+            | Self::DesignParameterOwnerOutsideTimeline
+            | Self::DesignConfigurationActiveUnread
+            | Self::DesignConfigurationStateUnplaced
+            | Self::DesignConfigurationSuppressionUnread
+            | Self::DesignConfigurationDefinitionUnstated
+            | Self::DesignConfigurationParameterUnread
+            | Self::DesignFeatureOutsideTimeline
+            | Self::DesignParameterReferenceUnbound
             | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
@@ -1517,7 +1326,15 @@ impl SldprtLossCode {
             | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::DesignStateNameNative => LossTaxonomy::AttributesNotTransferred,
-            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::DesignParameterReferenceAsText
+            | Self::DesignParameterOwnerOutsideTimeline
+            | Self::DesignConfigurationActiveUnread
+            | Self::DesignConfigurationStateUnplaced
+            | Self::DesignConfigurationSuppressionUnread
+            | Self::DesignConfigurationDefinitionUnstated
+            | Self::DesignConfigurationParameterUnread
+            | Self::DesignFeatureOutsideTimeline
+            | Self::DesignParameterReferenceUnbound => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
@@ -1844,22 +1661,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn all_covers_every_declared_variant() {
-        let source = include_str!("loss.rs");
-        let declaration = source
-            .split_once("pub(crate) enum SldprtLossCode {")
-            .unwrap()
-            .1;
-        let body = declaration.split_once("\n}").unwrap().0;
-        let variant_count = body
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.starts_with("//") && line.ends_with(','))
-            .count();
-        assert_eq!(SldprtLossCode::ALL.len(), variant_count);
-    }
-
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
@@ -2077,6 +1878,14 @@ mod tests {
                 "design.state-name-native",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
+                "design.parameter-owner-outside-timeline",
+                "design.configuration-active-unread",
+                "design.configuration-state-unplaced",
+                "design.configuration-suppression-unread",
+                "design.configuration-definition-unstated",
+                "design.configuration-parameter-unread",
+                "design.feature-outside-timeline",
+                "design.parameter-reference-unbound",
                 "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
                 "design.parameter-class-assumed",

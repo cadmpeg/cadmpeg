@@ -11,7 +11,7 @@ use cadmpeg_ir::math::Point3;
 
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::quadratic::{real_roots, Coefficient};
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 const EPS_CUBIC_PARAM: f64 = 1.0e-11;
 const EPS_BOUNDARY_EXTENT: f64 = 1.0e-9;
@@ -402,10 +402,15 @@ fn generator_separates_control_nets(
     } else {
         [0.0, 1.0, 0.0]
     };
-    let Some(first_axis) = normalize(cross(generator, seed)) else {
+    let Some(first_axis) = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(generator).cross(cadmpeg_ir::math::Vector3::from(seed)),
+    )) else {
         return false;
     };
-    let second_axis = cross(generator, first_axis);
+    let second_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(generator)
+            .cross(cadmpeg_ir::math::Vector3::from(first_axis)),
+    );
     let first_poles = || surface_poles(first);
     let second_poles = || surface_poles(second);
     let first_outside = || {

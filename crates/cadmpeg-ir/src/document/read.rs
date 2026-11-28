@@ -39,9 +39,11 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::part::{gives_up, Cause, DecodeParts, GivenUpPart, Part};
 
 /// The refusals one record's repairs may take before the record is given up.
+// resource-cap: MAX_REPAIRS = 2
 const MAX_REPAIRS: usize = 64;
 
 /// The objects of a record tried as the home of one omitted collection.
+// resource-cap: MAX_COLLECTION_SITES = 2
 const MAX_COLLECTION_SITES: usize = 16;
 
 /// The root's members.

@@ -224,7 +224,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             let message = diagnostic.message.clone();
             let loss = code.note(message).with_provenance(
                 cadmpeg_ir::SourceProvenance::root(
-                    crate::dialect::FORMAT,
+                    crate::dialect::registry_ids::FORMAT,
                     u64_from_index(diagnostic.offset),
                 )
                 .with_tag(tag),
@@ -788,9 +788,11 @@ fn decode_exchange_mode(
             "preserved {} {name} instance(s) as named opaque STEP records",
             kind.count
         );
-        let provenance =
-            cadmpeg_ir::SourceProvenance::root(crate::dialect::FORMAT, u64_from_index(kind.first))
-                .with_tag(name);
+        let provenance = cadmpeg_ir::SourceProvenance::root(
+            crate::dialect::registry_ids::FORMAT,
+            u64_from_index(kind.first),
+        )
+        .with_tag(name);
         session.body.losses.push(
             StepLossCode::OpaqueRecordPreserved
                 .note(message)
@@ -817,7 +819,7 @@ fn give_up_statements(
             .get(statement.span.clone())
             .ok_or_else(|| CodecError::malformed("given-up STEP statement escapes the exchange"))?;
         let part = Part::at(
-            crate::dialect::FORMAT,
+            crate::dialect::registry_ids::FORMAT,
             statement.kind,
             u64_from_index(statement.span.start),
             bytes,
@@ -1023,7 +1025,7 @@ fn give_up_instances(
             .get(instance.span.clone())
             .ok_or_else(|| CodecError::malformed("given-up STEP instance escapes the exchange"))?;
         let mut part = Part::at(
-            crate::dialect::FORMAT,
+            crate::dialect::registry_ids::FORMAT,
             "data_record",
             u64_from_index(instance.span.start),
             bytes,
@@ -1379,7 +1381,7 @@ fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
 fn step_source_association(id: u64) -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+        format: cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
         object_id: step_source_id(id),
         instance_path: Vec::new(),
     }

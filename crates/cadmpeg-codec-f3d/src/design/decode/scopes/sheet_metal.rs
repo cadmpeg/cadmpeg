@@ -88,6 +88,7 @@ const SHEET_METAL_HEADER_SHIFTS: [usize; 2] = [0, 4];
 ///
 /// The full-edge mode adds none, the symmetric mode one, and the two-sided mode
 /// two. A higher count belongs to a frame form this reader does not account for.
+// resource-cap: MAX_EDGE_WIDTH_DISTANCE_OWNERS = 1
 const MAX_EDGE_WIDTH_DISTANCE_OWNERS: usize = 2;
 
 pub(super) fn exact_edge_flange_operation(

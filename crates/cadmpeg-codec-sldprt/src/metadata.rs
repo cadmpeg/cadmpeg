@@ -467,7 +467,7 @@ fn attribute(
 ) -> Result<SourceAttribute, CodecError> {
     let id = AttributeId::compose(
         &cadmpeg_ir::ids::IdentityNamespace::from_components(
-            cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT),
+            cadmpeg_ir::codec::FormatId::new(crate::dialect::registry_ids::FORMAT),
             &cadmpeg_ir::identity_component!("metadata"),
             name,
         ),

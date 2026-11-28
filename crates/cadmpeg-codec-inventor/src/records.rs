@@ -179,6 +179,7 @@ pub(crate) struct RseRecordTable<'a> {
     pub(crate) stream_trailer: View<'a>,
 }
 
+// resource-cap: MAX_METADATA_SECTION_ENTRIES = 2
 pub(crate) const MAX_METADATA_SECTION_ENTRIES: u32 = 1_000_000;
 
 /// Section index and row width for the fixed-width reference join.

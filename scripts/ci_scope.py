@@ -25,7 +25,7 @@ PYTHON_ONLY = {
     'check-dialects.py', 'check-doc-anchors.py', 'check-fuzz-seeds.py',
     'check-resource-caps.py',
     'check-source-policy.py', 'census-panic-calls.py', 'dialect_support_data.py',
-    'render-format-support.py',
+    'render-format-support.py', 'generate-annex-a.py',
 }
 PYTHON_ONLY |= {'test_' + name.replace('-', '_') for name in PYTHON_ONLY}
 # The pre-PR checker, its per-check modules and their tests read no Rust build
@@ -47,9 +47,6 @@ SINGLE_CODEC_GATES = {'sldprt_cli': 'cadmpeg-codec-sldprt', 'step_cli': 'cadmpeg
 # Read by the layout-table test.
 LAYOUT_TABLE_INPUTS = ('docs/formats/', 'docs/layouts/')
 LAYOUT_TEST_INPUTS = ('crates/cadmpeg-layout-tables/',)
-
-# Read with the schema by the Annex A check of the schema gate.
-ANNEX_INPUTS = {'docs/cadir-v11.md', 'scripts/generate-annex-a.py', 'scripts/test_generate_annex_a.py'}
 
 # Files outside every package whose only Rust readers are found by `readers`.
 EMBEDDED_ONLY = {'docs/dialect-id-conformance.toml'}
@@ -195,7 +192,6 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     affected = set()
     tested_only = set()
     layout = False
-    annex = False
     fuzz = False
     audit = full
     for path in paths:
@@ -224,8 +220,6 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             affected.add(members[owner]['package']['name'])
         elif path in EMBEDDED_ONLY:
             continue
-        elif path in ANNEX_INPUTS:
-            annex = True
         elif path.startswith(LAYOUT_TABLE_INPUTS):
             layout = True
         elif path == 'corpus/manifest.toml':
@@ -282,7 +276,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             and all(name.startswith('cadmpeg-codec-') for name in changed)
             and all(name.startswith('cadmpeg-codec-') for name in affected & fuzz_inputs)) else [],
         **gates,
-        'schema': full or annex or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
+        'schema': full or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
         'inventor_cli': full or 'cadmpeg-codec-inventor' in affected or cli_changed,
         # `test (stable)` runs the layout test whenever it selects the crate.

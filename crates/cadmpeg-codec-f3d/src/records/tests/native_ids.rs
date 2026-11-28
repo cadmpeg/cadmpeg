@@ -2,7 +2,7 @@
 
 use crate::records::entity_header::{DesignFeatureTimeline, DesignTimelineFrame};
 use crate::records::identity::Located;
-use crate::test_support::native_test::reject_changed_id;
+use crate::test_support::native_fixture::reject_changed_id;
 use std::num::NonZeroU64;
 
 #[test]

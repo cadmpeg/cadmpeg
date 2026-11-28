@@ -1235,7 +1235,7 @@ fn identity_insert_scopes_join_relation_and_external_carrier() {
     for (class, frame) in [("357", 272), ("357", 276), ("360", 276), ("362", 276)] {
         let delta = usize::from(frame == 276) * 4;
         let mut bytes =
-            crate::test_support::component_insert_test::identity_insert_carrier(role, 10);
+            crate::test_support::component_insert_fixture::identity_insert_carrier(role, 10);
         let relation_at = bytes.len();
         let header = |bytes: &mut Vec<u8>, class: &str, record: u32| {
             bytes.extend_from_slice(&3_u32.to_le_bytes());

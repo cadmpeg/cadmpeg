@@ -35,7 +35,9 @@ use super::{
 };
 
 const EDGE_SAMPLES: u32 = 40;
+// resource-cap: MAX_SHARED_EDGE_SEED_GAP_MM = N
 const MAX_SHARED_EDGE_SEED_GAP_MM: f64 = 0.005;
+// resource-cap: MAX_CORROBORATED_VERTEX_GAP_MM = N
 const MAX_CORROBORATED_VERTEX_GAP_MM: f64 = 0.005;
 type AdmittedEdges = BTreeMap<usize, (usize, usize, usize)>;
 

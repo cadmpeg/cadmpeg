@@ -8,8 +8,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::assembly_test::redirections_json;
-use crate::test_support::native_test::f3d_native;
+use crate::test_support::assembly_fixture::redirections_json;
+use crate::test_support::native_fixture::f3d_native;
 use crate::F3dCodec;
 
 /// A malformed `ComponentReferenceData.json` gives up that entry alone, and
@@ -18,7 +18,7 @@ use crate::F3dCodec;
 fn malformed_component_reference_data_gives_up_its_own_entry() {
     let part = [("part.f3d", "aaaabbbb-cccc-dddd-eeee-ffff00001111")];
     let redirections = redirections_json("root.f3d", &part);
-    let document = crate::test_support::assembly_test::f3d_with_reference_entries(
+    let document = crate::test_support::assembly_fixture::f3d_with_reference_entries(
         "assembly-design",
         b"[1, 2",
         redirections.as_bytes(),

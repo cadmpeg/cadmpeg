@@ -7,13 +7,13 @@
 //! feature of the scope that the stream's authored order places at the item's
 //! position: an object's owned `Base Feature` scope takes the object's
 //! position, and a `JointOrigin` scope takes the position of the `Assemble`
-//! envelope bound to it. Else the feature at the item's position in the
-//! stream's item run, counted from the stream's first feature ordinal, which
-//! the archive merge renumbers; a loss names that match. A feature goes to one
-//! item. A reverse-normal linked scope that is no item is a member of its own
-//! before the item that follows it. An item with no feature is a feature of
-//! the family its record type establishes, or a native feature named by that
-//! type.
+//! envelope bound to it. Else, as a guess that a loss names, the feature at
+//! the item's ordinal in the stream order, which numbers linked followers
+//! with the items, counted from the stream's first feature ordinal, which the
+//! archive merge renumbers. A feature goes to one item. A reverse-normal
+//! linked scope that is no item is a member of its own before the item that
+//! follows it. An item with no feature is a feature of the family its record
+//! type establishes, or a native feature named by that type.
 //!
 //! The rolled-back flags of the items' scope tails place the rollback marker
 //! of a timeline before its first rolled-back item. A timeline whose items
@@ -68,6 +68,8 @@ pub(super) struct Projected {
     pub(super) containers: Vec<Container>,
     /// The features of the items, in member order.
     pub(super) features: Vec<Feature>,
+    /// The stream and scope record of the item of each feature.
+    pub(super) items: BTreeMap<FeatureId, (String, u64)>,
 }
 
 /// The timeline containers and item features of every document of the
@@ -223,6 +225,7 @@ pub(super) fn project_ordered(
                         let exact = take(record, &consumed)
                             .or_else(|| owned.iter().find_map(|owned| take(*owned, &consumed)));
                         let matched = exact.or_else(|| {
+                            let position = order.records.get(&record).copied().unwrap_or(position);
                             let ordinal = ordinal_base.get(stream)?.checked_add(position)?;
                             let feature = positioned
                                 .get(&(stream, ordinal))?
@@ -263,6 +266,9 @@ pub(super) fn project_ordered(
                 };
                 rolled_back.push(flags.map(|flags| flags.rolled_back));
                 members.push(Member::Feature(feature.id.clone()));
+                projected
+                    .items
+                    .insert(feature.id.clone(), (stream.to_owned(), record));
                 projected.features.push(feature);
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;

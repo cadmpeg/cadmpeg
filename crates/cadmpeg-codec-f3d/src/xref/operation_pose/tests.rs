@@ -488,10 +488,10 @@ fn operation_pose_reads_typed_local_tables_without_a_redirections_entry() {
     for version in [0, 3, 4] {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, options);
         let mut body = frame(2, true);
         body[4..7].copy_from_slice(if version == 0 { b"256" } else { b"bad" });
-        let meta = crate::test_support::streams_test::design_metastream_with_records(
+        let meta = crate::test_support::streams_fixture::design_metastream_with_records(
             &[(TYPE_GUID, "", version, "Fusion", &[20])],
             &[(20, 0)],
         );
@@ -620,7 +620,7 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
     let mut reference = refs[0].clone();
     reference.id = key;
     refs.push(reference);
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         native.xref_references = refs;
     });
     let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);

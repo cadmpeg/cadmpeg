@@ -288,3 +288,37 @@ fn only_a_feature_of_the_root_document_names_its_owner_as_component() {
         Some(root.clone())
     );
 }
+
+#[test]
+fn timeline_position_fallback_uses_the_stream_ordinal_with_followers() {
+    for stream in [MEMBER, STREAM] {
+        for follower in [false, true] {
+            let ordinal = if follower { 2 } else { 1 };
+            let mut features = vec![keyed(stream, "Extrude", 10, 40)];
+            if follower {
+                features.push(keyed(stream, "ReverseNormal", 20, 41));
+            }
+            let target = keyed(stream, "Extrude", 90, 40 + ordinal);
+            features.push(target.clone());
+            let order = || {
+                let mut records = [(10, 0), (30, ordinal)]
+                    .into_iter()
+                    .collect::<std::collections::HashMap<_, _>>();
+                if follower {
+                    records.insert(20, 1);
+                }
+                projection::StreamOrder::from_positions(records, [(80, ordinal)])
+            };
+            let (got, losses) = items_ordered(
+                stream,
+                &features,
+                &[10, 30],
+                &projection::TailFlags::new(),
+                &order,
+            );
+            assert_eq!(got.last().unwrap().id, target.id, "{stream}, {follower}");
+            assert_eq!(got.len(), features.len());
+            assert_eq!(by_position(&losses), 1);
+        }
+    }
+}

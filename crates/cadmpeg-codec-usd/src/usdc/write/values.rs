@@ -15,6 +15,7 @@ const ARRAY_BIT: u64 = 1 << 63;
 const INLINED_BIT: u64 = 1 << 62;
 const TYPE_SHIFT: u32 = 48;
 /// The most distinct values of a real array stored as a table.
+// resource-cap: MAX_REAL_TABLE = N
 const MAX_REAL_TABLE: usize = 1024;
 /// A real array is stored as a table when its element count exceeds its
 /// distinct values this many times.

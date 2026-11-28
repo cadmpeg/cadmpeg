@@ -50,12 +50,15 @@ const CERTIFIED_SWEEP_BOUNDS_SLACK: f64 = 1.0e-9;
 
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
+// resource-cap: MAX_ARRANGEMENT_WALK_WORK = 4
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 50_000_000;
 
+// resource-cap: MAX_CROSSING_RUN_MATCH_WORK = 4
 const MAX_CROSSING_RUN_MATCH_WORK: usize = 50_000_000;
 
 /// Local cap on the certified tubes of one NURBS span. A span that needs
 /// more skips the certification that uses it.
+// resource-cap: MAX_SUBDIVISIONS = 4
 const MAX_SUBDIVISIONS: f64 = 100_000.0;
 
 /// Local work caps of the sketch-profile geometry that binds extrude profile
@@ -2166,6 +2169,7 @@ pub(super) fn atomic_sketch_regions(
 
 /// Most atomic regions whose boundaries lie in one stored loop that the
 /// subset search weighs.
+// resource-cap: MAX_CROSSING_LOOP_CANDIDATES = 4
 const MAX_CROSSING_LOOP_CANDIDATES: usize = 16;
 
 /// The regions a self-crossing stored loop bounds.

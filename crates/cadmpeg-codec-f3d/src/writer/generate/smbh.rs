@@ -2146,10 +2146,10 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
-    use crate::test_support::smbh_geometry_test::{
+    use crate::test_support::smbh_geometry_fixture::{
         synthetic_free_vertex_body_smbh, synthetic_wire_body_smbh,
     };
-    use crate::test_support::zip_test::f3d_with_smbh;
+    use crate::test_support::zip_fixture::f3d_with_smbh;
     use crate::writer::generate::write_new;
 
     mod closed_edge_range;
@@ -2201,8 +2201,8 @@ mod tests {
     /// source carrier was reversed reads back with the sense of the neutral face.
     #[test]
     fn a_face_from_a_reversed_source_carrier_reads_back_with_its_sense() {
-        use crate::test_support::native_test::f3d_native_mut;
-        use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+        use crate::test_support::native_fixture::f3d_native_mut;
+        use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
         use cadmpeg_ir::topology::Sense;
 
         let decoded = crate::F3dCodec
