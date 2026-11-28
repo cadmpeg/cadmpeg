@@ -68,6 +68,7 @@ pub(super) fn projection(
 pub(super) fn reconciled(
     projection: Projection,
     features: &mut [Feature],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
 ) -> Result<Projection, CodecError> {
     if !projection
         .configurations
@@ -78,11 +79,11 @@ pub(super) fn reconciled(
     }
     let mut configurations = projection.configurations.clone();
     let mut reconciled = features.to_vec();
-    let undecided = features
-        .iter()
-        .filter(|feature| feature.suppressed.is_none())
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
+    let undecided = crate::design::configurations::undecided_suppression(
+        features,
+        scopes,
+        &crate::design::configurations::body_producers(features),
+    );
     match crate::design::configurations::reconcile_active_configurations(
         &mut reconciled,
         &mut configurations,
@@ -109,6 +110,7 @@ pub(super) fn decoded_configurations(
     reconciled(
         projection(documents, targets)?,
         &mut targets.neutral_features.to_vec(),
+        targets.scopes,
     )
 }
 

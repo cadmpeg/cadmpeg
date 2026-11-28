@@ -725,7 +725,18 @@ impl ParameterPlan {
         self.written
             .iter()
             .zip(indices)
-            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .map(|(parameter, &index)| {
+                (
+                    parameter.source.clone(),
+                    super::super::configuration_table::DestinationParameter {
+                        index,
+                        owner: None,
+                        name: &parameter.name,
+                        expression: &parameter.expression,
+                        evaluated: parameter.evaluated,
+                    },
+                )
+            })
             .collect()
     }
 

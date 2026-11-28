@@ -766,12 +766,20 @@ impl Context<'_> {
         &'s self,
         plan: &'s super::parameters::ParameterPlan,
     ) -> crate::writer::generate::configuration_table::DestinationParameters<'s> {
+        use crate::writer::generate::configuration_table::DestinationParameter;
+
         let mut destinations = plan.destinations(&self.roster.parameters);
-        for (parameter, record, _) in self.owned_parameters() {
+        for (parameter, index, owner) in self.owned_parameters() {
             if let Some(source) = &parameter.source {
                 destinations
                     .entry(source.clone())
-                    .or_insert((record, parameter.name.as_str()));
+                    .or_insert(DestinationParameter {
+                        index,
+                        owner: Some(owner),
+                        name: &parameter.name,
+                        expression: &parameter.expression,
+                        evaluated: parameter.value,
+                    });
             }
         }
         destinations
@@ -800,13 +808,6 @@ impl Context<'_> {
             }
         }
         parameters
-    }
-
-    pub(super) fn configuration_owners(&self) -> std::collections::BTreeMap<u32, u32> {
-        self.owned_parameters()
-            .into_iter()
-            .map(|(_, parameter, owner)| (parameter, owner))
-            .collect()
     }
 
     pub(super) fn configuration_features(

@@ -31,7 +31,7 @@
 
 mod base_feature;
 pub(super) mod configurations;
-mod expression;
+pub(super) mod expression;
 mod extrude;
 pub(super) mod frames;
 pub(super) mod history;

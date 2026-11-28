@@ -80,6 +80,7 @@ pub(crate) struct Inputs<'a> {
     body_features: Vec<usize>,
     provenance: std::cell::RefCell<Provenance<'a>>,
     pub(super) regions: std::cell::RefCell<super::regions::Recovery>,
+    pub(super) profiles: std::cell::RefCell<BTreeMap<(String, String), Mapping<Value>>>,
     pub(super) sampling_report: std::cell::RefCell<super::Report>,
 }
 
@@ -174,6 +175,7 @@ impl<'a> Inputs<'a> {
                 .collect(),
             provenance: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
+            profiles: std::cell::RefCell::default(),
             sampling_report: std::cell::RefCell::default(),
         }
     }

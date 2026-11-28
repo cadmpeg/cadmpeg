@@ -62,8 +62,8 @@ mod grouping;
 mod prune;
 
 use grouping::{
-    body_records_of, chain_cut_note, first_lost_face, mark_derived_shells, note_body_precision,
-    region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
+    body_records_of, chain_cut_note, classify_native_shells, first_lost_face, mark_derived_shells,
+    note_body_precision, region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
     unclassified_body_kind, withheld_counts,
 };
 use prune::{prune_rejected_topology, RingLoss};
@@ -621,9 +621,18 @@ fn pcurve_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
     cadmpeg_ir::identity_namespace!("sldprt", "brep", "pcurve")
 }
 
+const SHELL_COMPONENT_TAG: &str = ".component-";
+
+fn shell_source_id(shell: &ShellId) -> &str {
+    shell
+        .as_str()
+        .split_once(SHELL_COMPONENT_TAG)
+        .map_or(shell.as_str(), |(id, _)| id)
+}
+
 /// The component split of one native shell: `<shell>.component-<ordinal>`.
 fn shell_component(shell: &ShellId, component: usize) -> Result<ShellId, cadmpeg_core::CodecError> {
-    let text = format!("{shell}.component-{component}");
+    let text = format!("{shell}{SHELL_COMPONENT_TAG}{component}");
     ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -2735,6 +2744,7 @@ pub(crate) fn decode_bodies(
 }
 
 /// The merged record state of one site.
+#[derive(Default)]
 struct SiteState {
     mesh_bodies: HashSet<u32>,
     carriers: CarrierIndex,
@@ -2806,54 +2816,55 @@ fn scan_site(
     for (((payload, header), stream), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
-        let node_stream = (!stream.prefixed)
+        let primary = (!stream.prefixed)
             .then(|| topology::nodes::sequence(payload))
-            .flatten()
-            .and_then(|records| {
-                mesh_bodies.extend(super::mesh::bodies(&records));
-                let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let mut lane_refusals = Vec::new();
-                let splines = super::spline::nodes::carriers(
-                    &records,
-                    header.body_offset,
-                    &mut lane_refusals,
-                );
-                if splines.is_none() {
-                    lane_refusals.clear();
-                }
-                let analytic = super::carrier_nodes::analytic(
-                    &records,
-                    header.body_offset,
-                    &mut lane_refusals,
-                );
-                let sp_curves = splines.as_ref().and_then(|splines| {
-                    super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
-                });
-                Some((
-                    typed::nodes::facts(&records, header.body_offset)?,
-                    (
-                        attrib::Records::from_nodes(&records),
-                        entity::NodeEntities::from_nodes(&records, header.body_offset),
-                    ),
-                    (
-                        tables,
-                        Some(NodeCarriers {
-                            analytic,
-                            splines,
-                            offsets: super::offset::from_nodes(&records, header.body_offset),
-                            blends: super::blend::from_nodes(&records, header.body_offset),
-                            sweeps: super::sweep::from_nodes(&records, header.body_offset),
-                            sp_curves,
-                            bounded: super::subset::from_nodes(&records, header.body_offset),
-                            intersections: super::intersection::from_nodes(
-                                &records,
-                                header.body_offset,
-                            ),
-                            lane_refusals,
-                        }),
-                    ),
-                ))
+            .flatten();
+        if primary
+            .as_ref()
+            .is_some_and(|records| records.is_terminated() && records.records().is_empty())
+            && empty_backward_partition(&entity_streams, &deltas_records)
+        {
+            return Ok(SiteState::default());
+        }
+        let node_stream = primary.and_then(|records| {
+            mesh_bodies.extend(super::mesh::bodies(&records));
+            let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
+            let mut lane_refusals = Vec::new();
+            let splines =
+                super::spline::nodes::carriers(&records, header.body_offset, &mut lane_refusals);
+            if splines.is_none() {
+                lane_refusals.clear();
+            }
+            let analytic =
+                super::carrier_nodes::analytic(&records, header.body_offset, &mut lane_refusals);
+            let sp_curves = splines.as_ref().and_then(|splines| {
+                super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
             });
+            Some((
+                typed::nodes::facts(&records, header.body_offset)?,
+                (
+                    attrib::Records::from_nodes(&records),
+                    entity::NodeEntities::from_nodes(&records, header.body_offset),
+                ),
+                (
+                    tables,
+                    Some(NodeCarriers {
+                        analytic,
+                        splines,
+                        offsets: super::offset::from_nodes(&records, header.body_offset),
+                        blends: super::blend::from_nodes(&records, header.body_offset),
+                        sweeps: super::sweep::from_nodes(&records, header.body_offset),
+                        sp_curves,
+                        bounded: super::subset::from_nodes(&records, header.body_offset),
+                        intersections: super::intersection::from_nodes(
+                            &records,
+                            header.body_offset,
+                        ),
+                        lane_refusals,
+                    }),
+                ),
+            ))
+        });
         let deltas_stream = deltas
             .filter(|_| node_stream.is_none())
             .and_then(|records| {
@@ -3079,6 +3090,27 @@ fn scan_site(
         facts,
         typed_facts: evidence.typed,
     })
+}
+
+/// A backward delta from an empty partition can only restore earlier nodes.
+fn empty_backward_partition(
+    streams: &[topology::ScopedBody<'_>],
+    deltas: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
+) -> bool {
+    let [_, deltas @ ..] = deltas else {
+        return false;
+    };
+    !deltas.is_empty()
+        && streams.iter().skip(1).all(|stream| stream.prefixed)
+        && deltas.iter().all(|frame| {
+            frame.is_some_and(|frame| {
+                cadmpeg_parasolid::deltas::replay::MainLine::read(frame).is_ok_and(|line| {
+                    line.deltas()
+                        .first()
+                        .is_none_or(|delta| delta.created().is_empty() && delta.older().is_empty())
+                })
+            })
+        })
 }
 
 /// Read the streams of one site as [`decode_bodies`] does, without building
@@ -3628,6 +3660,7 @@ fn decode_graph(
     out.losses.extend(out.approximations.take_notes());
     let typed_face_unstated = report_withheld_ownership(ctx, &mut out, typed_facts, stream)?;
     mark_derived_shells(&mut out, typed_face_unstated);
+    classify_native_shells(&mut out, typed_facts);
     // The bodies `report_withheld_ownership` states keep their facts too.
     bind_body_facts(&mut out, body_payloads);
     Ok(out)
@@ -5474,21 +5507,9 @@ fn decode_graph_inner(
             admit_brep_entity(ctx)?;
             // No record states the region or its shells, so nothing states
             // which piece bounds the outside.
-            out.regions.push(region_of(
-                region_id.clone(),
-                body_id.clone(),
-                region_shells,
-                None,
-            ));
+            out.regions
+                .push(region_of(region_id.clone(), body_id.clone(), region_shells));
         } else {
-            let exteriors = body_record
-                .filter(|_| native_regions.iter().any(|region| region.shells.len() > 1))
-                .and_then(|record| {
-                    typed_facts.containing_shells(record.attr, |attr| {
-                        stated_faces.contains(id_face(attr).as_str())
-                    })
-                })
-                .unwrap_or_default();
             for region in native_regions {
                 let region_id = RegionId::compose(&region_namespace(), region.attr);
                 annotate_group(
@@ -5496,11 +5517,9 @@ fn decode_graph_inner(
                     Some((region.offset, "00_51_region")),
                 )?;
                 let mut region_shells = Vec::new();
-                let mut exterior_unknown = false;
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
                     let lost_face = first_lost_face(&shell.refs, &stated_faces);
-                    exterior_unknown |= lost_face.is_some();
                     let mut pieces = 0_usize;
                     for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                         .into_iter()
@@ -5534,9 +5553,6 @@ fn decode_graph_inner(
                         pieces += 1;
                         region_shells.push(shell_id);
                     }
-                    // One stored SHELL stated as several pieces does not say
-                    // which piece bounds the outside.
-                    exterior_unknown |= pieces > 1;
                     // A shell none of whose faces is stated holds no face and
                     // says so; its region and body stay stated (§3.3).
                     if pieces == 0 && lost_face.is_some() {
@@ -5551,20 +5567,9 @@ fn decode_graph_inner(
                         region_shells.push(native_shell_id);
                     }
                 }
-                let exterior = exteriors
-                    .get(&region.attr)
-                    .filter(|(_, count)| !exterior_unknown && *count == region_shells.len())
-                    .and_then(|(attr, _)| {
-                        let exterior = ShellId::compose(&shell_namespace(), *attr);
-                        region_shells.iter().position(|shell| *shell == exterior)
-                    });
                 admit_brep_entity(ctx)?;
-                out.regions.push(region_of(
-                    region_id,
-                    body_id.clone(),
-                    region_shells,
-                    exterior,
-                ));
+                out.regions
+                    .push(region_of(region_id, body_id.clone(), region_shells));
             }
         }
         admit_brep_entity(ctx)?;

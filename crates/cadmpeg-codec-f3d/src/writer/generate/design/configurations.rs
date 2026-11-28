@@ -22,7 +22,7 @@ use crate::native::F3dNative;
 use crate::records::configuration::table::ColumnTarget;
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::records::parameters::DesignParameterOwner;
-use crate::writer::generate::configuration_table::{self, read_back::Witness};
+use crate::writer::generate::configuration_table::{self, read_back::Destination};
 use crate::writer::generate::{configuration_entry_names, DESIGN_FOLDER};
 use crate::writer::primitives::decoded_configurations;
 
@@ -133,7 +133,7 @@ impl Source {
 
 pub(in crate::writer::generate) struct Configurations {
     pub(in crate::writer::generate) members: Vec<(String, Vec<u8>)>,
-    pub(in crate::writer::generate) witness: Witness,
+    pub(in crate::writer::generate) destination: Option<Destination<'static>>,
     pub(in crate::writer::generate) expected: CadIr,
 }
 
@@ -159,13 +159,12 @@ pub(super) fn write(
     {
         return Ok(Configurations {
             members: Vec::new(),
-            witness: Witness::default(),
+            destination: None,
             expected: CadIr::empty(),
         });
     }
     let destinations = ctx.configuration_parameters(parameters);
     let features = ctx.configuration_features();
-    let owners = ctx.configuration_owners();
     let stream = crate::ids::native_scope(DESIGN_BULK);
     let mut occupied = source
         .design_parameters
@@ -235,7 +234,7 @@ pub(super) fn write(
         let placeholder = temporary()?;
         let record = destinations
             .get(&id)
-            .map_or(placeholder, |(record, _)| *record);
+            .map_or(placeholder, |destination| destination.index);
         let placed = crate::ids::neutral_parameter_id_parts(&stream, record);
         identities.insert(id.to_string(), placed.to_string());
         bindings.parameters.insert(placeholder, placed);
@@ -487,14 +486,6 @@ pub(super) fn write(
                 .map(|parameter| parameter.id.clone())
         })
         .collect::<BTreeSet<_>>();
-    let stated = configuration_table::stated_rows(
-        &expected,
-        &decoded.configurations,
-        &targets,
-        &rebased,
-        ActiveRows::Design,
-        losses,
-    );
     let destinations = destinations
         .into_iter()
         .filter_map(|(id, place)| {
@@ -503,6 +494,16 @@ pub(super) fn write(
             Some(((*parameter).clone(), place))
         })
         .collect();
+    let mut stated = configuration_table::stated_rows(
+        &expected,
+        &decoded.configurations,
+        &targets,
+        &rebased,
+        ActiveRows::Design,
+        losses,
+    );
+    stated.place_expressions(&expected, targets.neutral_parameters, &destinations, losses);
+    let part_numbers = std::mem::take(&mut stated.part_numbers);
     let feature_destinations = features
         .values()
         .map(|(record, id)| (id.clone(), *record))
@@ -517,13 +518,8 @@ pub(super) fn write(
         losses,
     )?;
     written.bind_features(&targets, &feature_destinations, losses)?;
-    written.bind_owners(&owners, losses)?;
-    let mut witness = Witness::new(&destinations);
-    witness.expect_root(plan.active_ids());
-    let mut members = Vec::new();
-    let mut table_name = None;
-    let mut rule_name = None;
     let names = configuration_entry_names(&written.documents);
+    let mut placed = Vec::with_capacity(names.len());
     for (index, (document, (name, fault))) in written.documents.iter().zip(names).enumerate() {
         if let Some(fault) = fault {
             losses.extend(cadmpeg_ir::codec::write::value_unwritable(
@@ -533,8 +529,29 @@ pub(super) fn write(
             ));
         }
         let payload = plan.payload(index, document);
-        let bytes = crate::records::configuration::encode_configuration_payload(&name, &payload)?;
-        witness.add(&written, index, &name, payload.into_owned())?;
+        placed.push(DesignConfiguration::try_new(
+            name,
+            document.kind(),
+            payload.into_owned(),
+        )?);
+    }
+    let destination = Destination::synthesized(
+        written,
+        placed,
+        &plan,
+        part_numbers,
+        &destinations,
+        super::root_scope(&expected).map(|scope| scope.definition.clone()),
+        DESIGN_BULK,
+    )?
+    .into_owned();
+    let mut members = Vec::with_capacity(destination.documents.len());
+    let mut table_name = None;
+    let mut rule_name = None;
+    for document in &*destination.documents {
+        let name = document.entry_name();
+        let bytes =
+            crate::records::configuration::encode_configuration_payload(name, document.payload())?;
         let relative = name
             .strip_prefix(DESIGN_FOLDER)
             .and_then(|name| name.strip_prefix('/'))
@@ -555,7 +572,7 @@ pub(super) fn write(
     losses.extend(ctx.table.write_configuration_root(plan, records)?);
     Ok(Configurations {
         members,
-        witness,
+        destination: Some(destination),
         expected,
     })
 }

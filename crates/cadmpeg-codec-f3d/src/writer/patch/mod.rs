@@ -284,12 +284,7 @@ pub(crate) fn write_semantic(
             .map_or(&[][..], |native| native.design_configurations.as_slice()),
         tables
             .as_ref()
-            .and_then(|tables| tables.documents.as_deref())
-            .unwrap_or_else(|| {
-                target_native
-                    .as_ref()
-                    .map_or(&[][..], |native| native.design_configurations.as_slice())
-            }),
+            .map_or(&[][..], |tables| tables.destination.documents.as_ref()),
     )?;
     validate_act_appearance_bindings(natives, baseline.ir(), target)?;
     let body_transform_edits =
@@ -892,13 +887,16 @@ pub(crate) fn write_semantic(
         .into_inner();
     parameter_edits.verify(ctx, &output, table_target, &mut table_losses)?;
     if let Some(tables) = tables {
-        tables.witness.read_back(
-            ctx,
+        tables.destination.read_back(
+            ctx.policy(),
             &output,
             table_target,
             &parameter_edits.own,
+            target_native
+                .as_ref()
+                .map_or(&[], |native| native.design_parameter_scopes.as_slice()),
             &mut table_losses,
-        )?;
+        );
     }
     writer.write_all(&output)?;
     losses.extend(table_losses);
