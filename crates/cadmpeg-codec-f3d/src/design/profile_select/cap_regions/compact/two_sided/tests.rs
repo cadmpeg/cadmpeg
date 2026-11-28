@@ -56,6 +56,24 @@ fn select_with_ambiguity(
     direction: &ExtrudeDirection,
     ambiguous: bool,
 ) -> Option<PlanarProfileRef> {
+    select_from(
+        before,
+        after,
+        extent,
+        direction,
+        ambiguous,
+        &ExtrudeStart::ProfilePlane {},
+    )
+}
+
+fn select_from(
+    before: AsmHistoricalTopology,
+    after: AsmHistoricalTopology,
+    extent: &ExtrudeExtent,
+    direction: &ExtrudeDirection,
+    ambiguous: bool,
+    start: &ExtrudeStart,
+) -> Option<PlanarProfileRef> {
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:sketch#two-sided").unwrap(),
         name: None,
@@ -165,7 +183,7 @@ fn select_with_ambiguity(
             (2, 1),
             Sweep {
                 operation: &BooleanOp::Join,
-                start: &ExtrudeStart::ProfilePlane {},
+                start,
                 direction,
                 extent,
             },
@@ -375,4 +393,48 @@ fn updated_face_membership_requires_unchanged_analytic_boundaries() {
     let mut revised_edge = transition;
     revised_edge.records.updated.push(308);
     assert!(!unchanged_face(&before, &before, &revised_edge, 2));
+}
+
+#[test]
+fn extrude_offset_start_resolves_regions_between_both_end_caps() {
+    let extent = ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: LinearTermination::Blind {
+                length: NonZeroLength::new(1.0).unwrap(),
+            },
+            draft: None,
+        },
+    };
+    for sign in [1.0, -1.0] {
+        let start = ExtrudeStart::OffsetProfilePlane {
+            offset: cadmpeg_ir::scalar::Length::new(sign * 2.0).unwrap(),
+        };
+        let direction = if sign > 0.0 {
+            ExtrudeDirection::ProfileNormal {}
+        } else {
+            ExtrudeDirection::ReversedProfileNormal {}
+        };
+        let selected = select_from(
+            AsmHistoricalTopology::default(),
+            prism((sign * 2.0).min(sign * 3.0), (sign * 2.0).max(sign * 3.0)),
+            &extent,
+            &direction,
+            false,
+            &start,
+        )
+        .unwrap();
+        let PlanarProfileRef::SketchRegions { regions, .. } = selected else {
+            panic!("sketch regions")
+        };
+        assert_eq!(regions.len(), 2);
+        assert!(select_from(
+            AsmHistoricalTopology::default(),
+            prism(0.0, 3.0),
+            &extent,
+            &direction,
+            false,
+            &start
+        )
+        .is_none());
+    }
 }
