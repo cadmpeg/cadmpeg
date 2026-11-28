@@ -145,7 +145,6 @@ fn the_writer_projects_configuration_states_with_the_decoded_profile_bodies() {
     };
     write(&projected, Some(exact.clone())).unwrap();
 
-    // A configuration value edited against a changed native state.
     let mut edited = projected.clone();
     let value = edited.model.configurations[0]
         .parameter_values
@@ -155,13 +154,12 @@ fn the_writer_projects_configuration_states_with_the_decoded_profile_bodies() {
     *value = cadmpeg_ir::features::parameters::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(30.0).unwrap(),
     );
-    assert!(matches!(
-        write(&edited, None),
-        Err(cadmpeg_core::CodecError::NotImplemented(message))
-            if message.contains("retained source image")
-    ));
-    assert!(matches!(
-        write(&edited, Some(exact)),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    for notes in [
+        write(&edited, None).unwrap(),
+        write(&edited, Some(exact)).unwrap(),
+    ] {
+        assert!(notes
+            .iter()
+            .any(|note| note.code.local_code() == "edit.dropped"));
+    }
 }

@@ -1786,10 +1786,12 @@ fn semantic_writer_applies_neutral_configuration_edits() {
 }
 
 #[test]
-fn semantic_writer_patch_declines_conflicting_configuration_edits() {
+fn semantic_writer_writes_neutral_configuration_over_conflicting_native_edit() {
     let decoded = SldprtCodec
         .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &sldprt_with_body_and_history(&triangle_body()),
+            )),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -1798,10 +1800,70 @@ fn semantic_writer_patch_declines_conflicting_configuration_edits() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].configurations[0].name = "Native".to_string();
     });
+    let native_id = sldprt_native(decoded.ir()).feature_histories[0].configurations[0]
+        .id
+        .clone();
+    let mut output = Vec::new();
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Unnamed,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        written.ir().model.configurations[0].name.as_deref(),
+        Some("Neutral")
+    );
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "edit.dropped" && loss.message.contains(&native_id)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
 
-    let error =
-        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
-    assert!(error.contains("conflicting neutral and native SLDPRT configuration edits"));
+#[test]
+fn semantic_writer_writes_unchanged_neutral_configuration_over_native_edit() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &sldprt_with_body_and_history(&triangle_body()),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let expected = decoded.ir().model.configurations[0].name.clone();
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
+        native.feature_histories[0].configurations[0].name = "Native".to_string();
+    });
+    let native_id = sldprt_native(decoded.ir()).feature_histories[0].configurations[0]
+        .id
+        .clone();
+    let mut output = Vec::new();
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Unnamed,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().model.configurations[0].name, expected);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "edit.dropped" && loss.message.contains(&native_id)
+        }),
+        "{:#?}",
+        report.losses
+    );
 }
 
 #[test]

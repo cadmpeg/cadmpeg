@@ -880,12 +880,47 @@ fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_writte
         let offset = usize::try_from(scalar.offset).unwrap();
         lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
     });
-    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
-        &conflicting,
-        decoded.source_fidelity(),
+    let scalar_id = sldprt_native(&conflicting)
+        .feature_input_lanes
+        .iter()
+        .find(|lane| lane.configuration.as_deref() == Some("1"))
+        .unwrap()
+        .scalars[0]
+        .id
+        .clone();
+    let mut conflicting_output = Vec::new();
+    let conflicting_report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&conflicting, Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
+    )
+    .unwrap()
+    .write_to(&mut conflicting_output)
+    .unwrap();
+    let conflicting_written = SldprtCodec
+        .decode(
+            &mut Cursor::new(conflicting_output),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let written_parameter = conflicting_written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    assert_eq!(
+        conflicting_written.ir().model.configurations[1]
+            .parameter_values
+            .get(&written_parameter.id),
+        Some(&ParameterValue::Length(Length::new(75.0).unwrap()))
     );
     assert!(
-        error.contains("conflicting neutral and native SLDPRT configuration design-state edits")
+        conflicting_report.losses.iter().any(|loss| {
+            loss.code.local_code() == "edit.dropped" && loss.message.contains(&scalar_id)
+        }),
+        "{:#?}",
+        conflicting_report.losses
     );
 
     let mut unavailable_fidelity = decoded.source_fidelity().clone();

@@ -706,7 +706,7 @@ fn semantic_writer_applies_neutral_parameter_order() {
 }
 
 #[test]
-fn semantic_writer_patch_declines_conflicting_parameter_edits() {
+fn semantic_writer_writes_neutral_parameter_over_conflicting_native_edit() {
     use cadmpeg_ir::features::parameters::ParameterValue;
     use cadmpeg_ir::scalar::Length;
 
@@ -734,9 +734,93 @@ fn semantic_writer_patch_declines_conflicting_parameter_edits() {
         });
     }
 
-    let error =
-        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
-    assert!(error.contains("conflicting neutral and native SLDPRT parameter edits"));
+    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
+        .id
+        .clone();
+    let mut output = Vec::new();
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let parameter = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    assert_eq!(parameter.expression, "20mm");
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(20.0).unwrap()))
+    );
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "edit.dropped" && loss.message.contains(&native_id)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn semantic_writer_writes_unchanged_neutral_parameter_over_native_edit() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let expected = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap()
+        .expression
+        .clone();
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
+        native.feature_histories[0].features[0]
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("Depth"), "30mm".into());
+    });
+    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
+        .id
+        .clone();
+    let mut output = Vec::new();
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let parameter = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    assert_eq!(parameter.expression, expected);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "edit.dropped" && loss.message.contains(&native_id)
+        }),
+        "{:#?}",
+        report.losses
+    );
 }
 
 /// The patch declines the edited part, and the synthesis writes the edited
@@ -817,7 +901,7 @@ fn a_synthesized_edit_marks_its_configuration_stale() {
 }
 
 #[test]
-fn semantic_writer_patch_declines_conflicting_dimension_property_edits() {
+fn semantic_writer_writes_neutral_dimension_property_over_conflicting_native_edit() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -839,9 +923,34 @@ fn semantic_writer_patch_declines_conflicting_dimension_property_edits() {
             .insert(cadmpeg_core::nonblank_literal!("Driven"), "native".into());
     });
 
-    let error =
-        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
-    assert!(error.contains("conflicting neutral and native SLDPRT parameter edits"));
+    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
+        .id
+        .clone();
+    let mut output = Vec::new();
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        written.ir().model.parameters[0]
+            .properties
+            .get("Driven")
+            .map(String::as_str),
+        Some("neutral")
+    );
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "edit.dropped" && loss.message.contains(&native_id)
+        }),
+        "{:#?}",
+        report.losses
+    );
 }
 
 #[test]

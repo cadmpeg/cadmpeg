@@ -14,7 +14,6 @@ use crate::history::configuration::{
 use crate::history::extrude_direction::settle_projected_configurations;
 use crate::history::hash::{
     configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
-    native_configuration_hash,
 };
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
@@ -29,9 +28,6 @@ use crate::resolved_features::scalars::FeatureObjectNames;
 /// Resolve neutral/native configuration edit authority before writing, and
 /// return the relation point charges of the configuration states projected
 /// again for the write.
-///
-/// Bitwise comparison against the codec digests the decode recorded in
-/// `digests`. Absent digest: sync lanes from the neutral side.
 pub(crate) fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     digests: &cadmpeg_ir::source_fidelity::CodecDigests,
@@ -44,7 +40,6 @@ pub(crate) fn prepare_configurations_for_write(
         -> Result<Option<crate::resolved_features::profiles::ExactProfiles>, CodecError>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let hash_ctx = edits.ctx();
-
     let feature_state_hash = configuration_feature_state_hash(hash_ctx, &ir.model.configurations)?;
     let baseline_feature_states =
         crate::codec_digests::baseline(digests, "sldprt_configuration_feature_states_local_sha256");
@@ -70,59 +65,60 @@ pub(crate) fn prepare_configurations_for_write(
                 .configurations
                 .iter()
                 .any(|configuration| !configuration.parameter_values.is_empty());
-    let neutral_hash = configuration_hash(hash_ctx, &ir.model.configurations)?;
-    let native_hash = native
+    let projected = native
         .as_ref()
-        .map(|value| native_configuration_hash(hash_ctx, &value.feature_histories))
-        .transpose()?;
-    let baseline_neutral =
+        .map(|value| project_configurations(&value.feature_histories))
+        .transpose()?
+        .unwrap_or_default();
+    let mut differing = Vec::new();
+    let neutral_hash = configuration_hash(hash_ctx, &ir.model.configurations)?;
+    let baseline =
         crate::codec_digests::baseline(digests, "sldprt_neutral_configuration_local_sha256");
-    let baseline_native =
-        crate::codec_digests::baseline(digests, "sldprt_native_configuration_sha256");
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != neutral_hash);
-    let native_changed = !edits.native_unedited()
-        && match (&native_hash, baseline_native) {
-            (Some(current), Some(baseline)) => current != baseline,
-            (Some(_), None) | (None, Some(_)) => true,
-            (None, None) => false,
+    let neutral_changed = baseline.is_none_or(|hash| hash != neutral_hash);
+    let mut regenerate = neutral_changed && projected.len() != ir.model.configurations.len();
+    for desired in &ir.model.configurations {
+        let Some(current) = projected.iter().find(|current| {
+            desired.native_ref.is_some() && current.native_ref == desired.native_ref
+        }) else {
+            regenerate |= neutral_changed;
+            continue;
         };
-    if baseline_neutral.is_none() && baseline_native.is_none() {
-        sync_neutral_configurations(&ir.model.configurations, native);
-    } else {
-        match (neutral_changed, native_changed) {
-            (false, _) => {}
-            (true, true) => {
-                let projected = native
-                    .as_ref()
-                    .map(|value| project_configurations(&value.feature_histories))
-                    .transpose()?
-                    .unwrap_or_default();
-                if configuration_hash(hash_ctx, &projected)? != neutral_hash {
-                    return Err(CodecError::Malformed(
-                        "conflicting neutral and native SLDPRT configuration edits".into(),
-                    ));
-                }
-            }
-            (true, false) => {
-                sync_neutral_configurations(&ir.model.configurations, native);
+        if current.ordinal != desired.ordinal
+            || current.source_index != desired.source_index
+            || current.name != desired.name
+            || current.material != desired.material
+            || current.properties != desired.properties
+        {
+            regenerate = true;
+            if let Some(id) = &current.native_ref {
+                differing.push(id.as_str());
             }
         }
+    }
+    let mut losses = Vec::new();
+    if regenerate {
+        losses.extend(cadmpeg_ir::codec::write::edit_dropped(
+            cadmpeg_ir::schema::EntityKind::DesignConfiguration,
+            "SLDPRT",
+            "writes these configurations from their neutral records instead of their differing native records",
+            differing,
+        ));
+        sync_neutral_configurations(&ir.model.configurations, native);
     }
     if feature_states_changed || parameter_values_changed {
         let lanes = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_input_lanes.as_slice());
         let exact = exact(lanes)?;
-        return sync_configuration_design_state(
+        losses.extend(sync_configuration_design_state(
             ir,
-            digests,
             native,
             annotations,
             exact.as_ref(),
             edits,
-        );
+        )?);
     }
-    Ok(Vec::new())
+    Ok(losses)
 }
 
 /// The notes of the relation points a configuration projection of the
@@ -146,7 +142,6 @@ fn relation_point_charges(
 
 fn sync_configuration_design_state(
     ir: &cadmpeg_ir::CadIr,
-    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
     exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
@@ -234,31 +229,6 @@ fn sync_configuration_design_state(
     if current_matches {
         return Ok(relation_point_charges(relation_points));
     }
-    // With the caller's native records unedited, a projection that differs
-    // from the baseline shows the writer's own synchronization so far.
-    let native_design_state_changed = !edits.native_unedited()
-        && (crate::codec_digests::baseline(
-            digests,
-            "sldprt_configuration_parameter_values_local_sha256",
-        )
-        .is_some_and(|baseline| baseline != current_parameter_hash)
-            || crate::codec_digests::baseline(
-                digests,
-                "sldprt_configuration_feature_states_local_sha256",
-            )
-            .is_some_and(|baseline| baseline != current_feature_hash));
-    if native_design_state_changed {
-        if exact.is_none() {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT configuration design-state edits need the retained source image to bind \
-                 sketch profiles"
-                    .into(),
-            ));
-        }
-        return Err(CodecError::Malformed(
-            "conflicting neutral and native SLDPRT configuration design-state edits".into(),
-        ));
-    }
     let reference_parameters = ir
         .model
         .parameters
@@ -293,7 +263,7 @@ fn sync_configuration_design_state(
             }
         }
     }
-    patch_configuration_parameter_scalars(ir, native)?;
+    let overwritten = patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
     let projection = project_configuration_design_states(
@@ -337,13 +307,21 @@ fn sync_configuration_design_state(
             "SLDPRT configuration design-state edit has no complete native lane encoding".into(),
         ));
     }
-    Ok(relation_point_charges(relation_points))
+    let mut losses = relation_point_charges(relation_points);
+    losses.extend(cadmpeg_ir::codec::write::edit_dropped(
+        cadmpeg_ir::schema::EntityKind::Parameter,
+        "SLDPRT",
+        "writes these native scalars from their neutral configuration values",
+        overwritten,
+    ));
+    Ok(losses)
 }
 
 fn patch_configuration_parameter_scalars(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
-) -> Result<(), CodecError> {
+) -> Result<Vec<String>, CodecError> {
+    let mut overwritten = Vec::new();
     let parameters = ir
         .model
         .parameters
@@ -456,6 +434,9 @@ fn patch_configuration_parameter_scalars(
             let checked = cadmpeg_ir::scalar::FiniteReal::new(encoded).ok_or_else(|| {
                 CodecError::malformed("SLDPRT configuration scalar update is non-finite")
             })?;
+            if scalar.value != checked {
+                overwritten.push(scalar.id.clone());
+            }
             lane.native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
@@ -468,7 +449,7 @@ fn patch_configuration_parameter_scalars(
             scalar.value = checked;
         }
     }
-    Ok(())
+    Ok(overwritten)
 }
 
 /// Resolve neutral/native parameter edit authority before writing.
