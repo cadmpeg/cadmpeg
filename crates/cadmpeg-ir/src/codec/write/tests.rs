@@ -28,6 +28,7 @@ use cadmpeg_core::CodecError;
 
 mod dropped_records;
 mod restated_records;
+mod session;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
