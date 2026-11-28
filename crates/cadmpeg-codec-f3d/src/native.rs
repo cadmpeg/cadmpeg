@@ -176,6 +176,9 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "asm_history_records",
     "body_native_keys",
     "body_visibilities",
+    "cam_operations",
+    "cam_setups",
+    "cam_tools",
     "construction_recipes",
     "creation_timestamps",
     "derived_references",
@@ -782,6 +785,48 @@ fn emit_asm_history_records(
 }
 
 const F3D_FAMILIES: &[F3dFamilyRow] = &[
+    F3dFamilyRow {
+        arena: "cam_setups",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            if model.cam_setups.is_empty() {
+                Ok(())
+            } else {
+                namespace.set_arena(ctx, row.arena, &model.cam_setups)
+            }
+        },
+        len: |model| model.cam_setups.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "cam_operations",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            if model.cam_operations.is_empty() {
+                Ok(())
+            } else {
+                namespace.set_arena(ctx, row.arena, &model.cam_operations)
+            }
+        },
+        len: |model| model.cam_operations.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "cam_tools",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            if model.cam_tools.is_empty() {
+                Ok(())
+            } else {
+                namespace.set_arena(ctx, row.arena, &model.cam_tools)
+            }
+        },
+        len: |model| model.cam_tools.len(),
+        counts_toward_emptiness: true,
+    },
     F3dFamilyRow {
         arena: "act_entities",
         exactness: (),
@@ -1679,6 +1724,13 @@ const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespa
 /// Autodesk Fusion records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct F3dNative {
+    #[serde(default)]
+    pub(crate) cam_setups: Vec<crate::cam::records::ManufacturingSetup>,
+    #[serde(default)]
+    pub(crate) cam_operations: Vec<crate::cam::records::ManufacturingOperation>,
+    #[serde(default)]
+    pub(crate) cam_tools: Vec<crate::cam::records::ManufacturingTool>,
+
     /// Fusion ACT change-tracking table entities.
     #[serde(default)]
     pub(crate) act_entities: Vec<ActEntity>,
@@ -2289,6 +2341,9 @@ impl F3dNative {
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         Ok(Self {
+            cam_setups: read_arena!("cam_setups"),
+            cam_operations: read_arena!("cam_operations"),
+            cam_tools: read_arena!("cam_tools"),
             act_entities: read_arena!("act_entities"),
             act_guids: read_arena!("act_guids"),
             act_registry_channels: read_arena!("act_registry_channels"),

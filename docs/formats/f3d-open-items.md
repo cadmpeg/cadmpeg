@@ -4315,6 +4315,14 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The mesh graph requires a Scene node in that slot. The decoder gives up the `.paramesh` entries of such a design with `record.undecoded`.
 
+### DR-1084. Numbered stock-box origin selectors
+
+**Question.** Which stock-box point does each numbered `wcs_origin_boxPoint` selector identify?
+
+**Known.** A setup object has `strategy="setup"` and a `Parameters` collection. Its `wcs_origin_mode` parameter stores `stockPoint`; its `wcs_origin_boxPoint` parameter stores a numbered selector. `job_stockMode` selects the stock rule, and `job_stockOffsetSides`, `job_stockOffsetTop`, and `job_stockOffsetBottom` store relative box offsets. The stock rule and model bounds determine the box extents.
+
+**Need.** Save a box-shaped model with a relative stock box. Select each stock-box point as the WCS origin in successive saves. Compare `wcs_origin_boxPoint`, stock parameters, and resolved setup frames.
+
 ### DR-1079. Document body of a keyless pattern copy
 
 **Question.** Does the document list a pattern or Mirror copy body whose ASM body record stores no body key?

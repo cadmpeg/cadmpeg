@@ -249,6 +249,9 @@ impl MemberKeys {
         ir.geometry.extend_rewritten(geometry, &mut rewrite)?;
         let model = std::mem::take(&mut ir.model);
         ir.model.extend_rewritten(model, &mut rewrite)?;
+        for setup in &mut ir.process.setups {
+            setup.scope = rewrite.rewrite(setup.scope.clone())?;
+        }
         crate::scene::rename_bound(ctx, ir, &occurrences)?;
 
         let files = ir

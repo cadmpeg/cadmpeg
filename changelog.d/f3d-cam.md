@@ -1,0 +1,1 @@
+Read Fusion Manufacture setups, tools, holders, and ordered operation parameters from plain and bracketed workspace paths. Retain source XML, selections, expressions, and validity in native records, and project definitions into the existing process model.

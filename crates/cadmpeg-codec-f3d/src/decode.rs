@@ -4529,6 +4529,7 @@ pub(crate) fn decode_scanned(
                 carried,
                 ctx,
             )?;
+            crate::cam::project::ensure_scopes(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             Ok(decoded.into_decoded())
         }
@@ -5877,6 +5878,7 @@ fn decode_result(
             .losses
             .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
+    crate::cam::project::collect(ctx, scan, &mut ir, &mut report.losses)?;
     let source = crate::report::classify_document(
         scan,
         report_scope,

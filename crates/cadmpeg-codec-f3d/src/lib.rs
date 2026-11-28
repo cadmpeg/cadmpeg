@@ -84,6 +84,7 @@
 mod act;
 mod brep;
 mod bytes;
+mod cam;
 mod clock;
 mod container;
 mod decode;
