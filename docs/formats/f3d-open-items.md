@@ -2632,11 +2632,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
 
-**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361- or 379-byte referenced-angle frame name?
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-, 379-, or 383-byte referenced-angle frame name?
 
-**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361- and 379-byte frames the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and the 379-byte frame with the 369-byte fields, and records `feature.revolve-layout-assumed` with the target.
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-, 379-, and 383-byte frames the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields, the 379-byte frame with the 369-byte fields, and the 383-byte frame with the 373-byte fields, and records `feature.revolve-layout-assumed` with the target.
 
-**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and 361- and 379-byte referenced-angle scopes with the records that their second tail references name.
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and 361-, 379-, and 383-byte referenced-angle scopes with the records that their second tail references name.
 
 **Conflict.** None.
 

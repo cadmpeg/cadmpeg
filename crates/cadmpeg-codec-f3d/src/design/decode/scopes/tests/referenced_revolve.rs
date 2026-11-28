@@ -424,6 +424,72 @@ fn a_361_byte_frame_carries_a_second_tail_reference() {
 }
 
 #[test]
+fn a_383_byte_boolean_frame_carries_a_second_tail_reference() {
+    for (operation, expected) in [
+        (1, DesignExtrudeOperation::Join),
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+    ] {
+        let fixture = Fixture {
+            references: 8,
+            operation,
+            payload_length: Some(383),
+            second_reference: Some(60),
+            ..Fixture::marked()
+        };
+        let (construction, loss) = fixture.decode_with_loss();
+        let construction = construction.expect("383-byte referenced-angle Revolve");
+        assert_eq!(construction.operation, expected);
+        assert_eq!(construction.operation_offset, 25);
+        assert_eq!(construction.angle_record_index, ANGLE);
+        assert_eq!(construction.solid, Some(true));
+        assert!(!construction.reversed);
+        let loss = loss.expect("second tail reference loss");
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.kind()
+        );
+        assert!(loss.message.contains("target 60"));
+        assert!(loss.message.contains("383-byte"));
+        let full_turn = Fixture {
+            direction_kind: 1,
+            angle: std::f64::consts::TAU,
+            ..fixture.clone()
+        };
+        assert!(full_turn.decode().is_some());
+        for invalid in [
+            Fixture {
+                direction_kind: 1,
+                ..fixture.clone()
+            },
+            Fixture {
+                second_reference: None,
+                ..fixture.clone()
+            },
+            Fixture {
+                references: 6,
+                payload_length: Some(361),
+                ..fixture.clone()
+            },
+            Fixture {
+                angle_marker: 0,
+                ..fixture.clone()
+            },
+        ] {
+            assert!(invalid.decode().is_none());
+        }
+    }
+    let new_body = Fixture {
+        references: 8,
+        operation: 4,
+        payload_length: Some(383),
+        second_reference: Some(60),
+        ..Fixture::marked()
+    };
+    assert!(new_body.decode().is_none());
+}
+
+#[test]
 fn an_unmarked_379_byte_frame_preserves_the_angle_and_second_tail_reference() {
     for (operation, expected) in [
         (1, DesignExtrudeOperation::Join),
