@@ -1401,7 +1401,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
         &record.parent,
         &mut payload,
         &|_| true,
-        cadmpeg_core::decode::ResourceLimits::default(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
@@ -1471,7 +1471,7 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
         &parent,
         &mut patched,
         &|_| true,
-        cadmpeg_core::decode::ResourceLimits::default(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(patched, payload);
@@ -1541,7 +1541,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
-    if let Err(error) = crate::native::SldprtNative::load_under(
+    if let Err(error) = crate::test_support::native::load_under(
         namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -1557,7 +1557,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
             "block",
             &mut [],
             &|_| true,
-            cadmpeg_core::decode::ResourceLimits::default()
+            &cadmpeg_core::decode::test_support::desktop_decode_context()
         ),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));

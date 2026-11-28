@@ -33,6 +33,7 @@ const OPENNURBS5_APPLICATION: Uuid = Uuid::from_canonical([
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
+// resource-cap: MAX_MEMBERS = 2
 const MAX_MEMBERS: usize = 1 << 20;
 const UNSET_POSITIVE_VALUE: f64 = 1.234_321_012_343_21e308;
 

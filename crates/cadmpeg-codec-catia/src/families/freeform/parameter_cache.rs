@@ -3,6 +3,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
+// resource-cap: MAX_CACHED_PARAMETERS = N
 const MAX_CACHED_PARAMETERS: usize = 32_768;
 
 pub(super) fn memoize<T: Copy>(evaluate: impl Fn(f64) -> Option<T>) -> impl Fn(f64) -> Option<T> {

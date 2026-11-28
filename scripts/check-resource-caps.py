@@ -1,25 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Check docs/decode-resource-caps.md against production ``const MAX_*`` items.
-
-Each production constant has exactly one table row, and each row names a
-production constant. The document stores no counts: on success the checker
-prints the overall, per-kind, and per-crate counts, so pull requests that
-add constants to different crates edit different lines. Test source is
-excluded the same way as ``check-source-policy.py``: path filters (``tests/`` trees,
-``tests.rs``, and other test files) plus ``production_source``, which masks
-``#[cfg(test)]`` modules and ``#[cfg(test)]`` / ``#[test]`` items.
-
-Exit 0 prints ``resource-caps census: ok`` and the counts. Any mismatch prints
-the findings and exits 1.
-"""
+"""Check classifications beside production resource-cap constants."""
 
 from __future__ import annotations
 
 import importlib.util
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,99 +34,84 @@ SESSION_CEILING = "3"
 
 @dataclass(frozen=True)
 class Constant:
-    crate: str
-    file: str
-    name: str
-    line: int
     relative: str
-
-
-@dataclass(frozen=True)
-class TableRow:
-    crate: str
-    file: str
     name: str
-    kind: str
     line: int
+    kind: str | None
 
 
-def unwrap(cell: str) -> str:
-    cell = cell.strip()
-    if cell.startswith("`") and cell.endswith("`") and len(cell) >= 2:
-        return cell[1:-1]
-    return cell
+MARKER = re.compile(r"// resource-cap: (MAX_[A-Z0-9_]+) = ([124N3])\s*$")
 
 
-def production_constants(root: Path) -> list[Constant]:
-    """Every production ``const MAX_*`` under ``crates/**/*.rs``."""
-    found: list[Constant] = []
+def scan_markers(relative: str, source: str) -> tuple[list[Constant], list[str]]:
+    code, _ = SOURCE_POLICY.production_source(source)
+    masked = SOURCE_POLICY.mask_rust_non_code(source)
+    test_spans = SOURCE_POLICY.test_only_spans(masked)
+    markers: dict[int, str] = {}
+    findings: list[str] = []
+    for start, end in SOURCE_POLICY.rust_non_code_spans(source):
+        comment = source[start:end]
+        if not comment.startswith("// resource-cap:"):
+            continue
+        if any(a <= start < b for a, b in test_spans):
+            continue
+        line = source.count("\n", 0, start) + 1
+        line_start = source.rfind("\n", 0, start) + 1
+        if source[line_start:start].strip():
+            findings.append(f"{relative}:{line}: resource-cap marker must be standalone")
+            continue
+        markers[line] = comment
+
+    declarations = []
+    consumed: set[int] = set()
+    for match in CONST_MAX.finditer(code):
+        name = match.group(1)
+        line = code.count("\n", 0, match.start()) + 1
+        line_start = code.rfind("\n", 0, match.start()) + 1
+        if code[line_start:match.start()].strip():
+            findings.append(f"{relative}:{line}: {name} must start its own line")
+        marker_lines = []
+        previous = line - 1
+        while previous in markers:
+            marker_lines.append(previous)
+            previous -= 1
+        kind = None
+        if any(marker_line in consumed for marker_line in marker_lines):
+            findings.append(f"{relative}:{line}: resource-cap marker reused for {name}")
+        elif len(marker_lines) != 1:
+            detail = "missing" if not marker_lines else "duplicate"
+            findings.append(f"{relative}:{line}: {detail} resource-cap marker for {name}")
+        else:
+            marker_line = marker_lines[0]
+            marker = MARKER.fullmatch(markers[marker_line])
+            if marker is None or marker.group(1) != name:
+                findings.append(f"{relative}:{marker_line}: invalid resource-cap marker for {name}")
+            elif marker.group(2) == SESSION_CEILING:
+                findings.append(f"{relative}:{marker_line}: {name} is kind 3; only ResourceLimits fields are session ceilings")
+            else:
+                kind = marker.group(2)
+        consumed.update(marker_lines)
+        declarations.append(Constant(relative, name, line, kind))
+    for line in sorted(markers.keys() - consumed):
+        findings.append(f"{relative}:{line}: stale resource-cap marker")
+    return declarations, findings
+
+
+def census(root: Path) -> tuple[list[Constant], list[str]]:
+    constants: list[Constant] = []
+    findings: list[str] = []
     for path in sorted(root.glob("crates/**/*.rs")):
-        relative_path = path.relative_to(root)
-        if not SOURCE_POLICY.is_production_rs(relative_path):
-            continue
-        code, _ = SOURCE_POLICY.production_source(
-            path.read_text(encoding="utf-8")
-        )
-        relative = relative_path.as_posix()
-        parts = relative_path.parts
-        crate = parts[1]
-        file = Path(*parts[2:]).as_posix()
-        for match in CONST_MAX.finditer(code):
-            found.append(
-                Constant(
-                    crate=crate,
-                    file=file,
-                    name=match.group(1),
-                    line=code.count("\n", 0, match.start()) + 1,
-                    relative=relative,
-                )
-            )
-    return found
-
-
-def section(text: str, start_heading: str, *end_headings: str) -> tuple[str, int]:
-    start = text.find(start_heading)
-    if start < 0:
-        return "", 0
-    end = len(text)
-    for heading in end_headings:
-        at = text.find(heading, start + len(start_heading))
-        if at >= 0:
-            end = min(end, at)
-    prefix_lines = text[:start].count("\n")
-    return text[start:end], prefix_lines
-
-
-def parse_census_rows(text: str) -> tuple[list[TableRow], list[str]]:
-    body, offset = section(
-        text, "## Production census", "### Work budgets", "## Routing"
-    )
-    if not body:
-        return [], [f"{DOC_REL.as_posix()}: missing Production census section"]
-    rows: list[TableRow] = []
-    for index, line in enumerate(body.splitlines(), offset + 1):
-        if not line.startswith("|"):
-            continue
-        cols = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cols) < 5:
-            continue
-        crate, file, name, _value, kind = (
-            unwrap(cols[0]),
-            unwrap(cols[1]),
-            unwrap(cols[2]),
-            cols[3],
-            cols[4].strip(),
-        )
-        if not name.startswith("MAX_"):
-            continue
-        if kind not in KINDS:
-            return rows, [
-                f"{DOC_REL.as_posix()}:{index}: unknown kind {kind!r} for {name}"
-            ]
-        rows.append(TableRow(crate, file, name, kind, index))
-    if not rows:
-        return [], [f"{DOC_REL.as_posix()}: Production census table has no MAX_* rows"]
-    return rows, []
+        relative = path.relative_to(root)
+        if SOURCE_POLICY.is_production_rs(relative):
+            found, errors = scan_markers(relative.as_posix(), path.read_text(encoding="utf-8"))
+            constants.extend(found)
+            findings.extend(errors)
+    doc = root / DOC_REL
+    if not doc.is_file():
+        findings.append(f"{DOC_REL.as_posix()}: missing")
+    else:
+        findings.extend(stored_totals(doc.read_text(encoding="utf-8")))
+    return constants, findings
 
 
 def stored_totals(text: str) -> list[str]:
@@ -154,58 +127,9 @@ def stored_totals(text: str) -> list[str]:
     return findings
 
 
-def compare(constants: list[Constant], rows: list[TableRow]) -> list[str]:
-    findings: list[str] = []
-    src_by_key: dict[tuple[str, str, str], list[Constant]] = defaultdict(list)
-    doc_by_key: dict[tuple[str, str, str], list[TableRow]] = defaultdict(list)
-    for constant in constants:
-        src_by_key[(constant.crate, constant.file, constant.name)].append(constant)
-    for row in rows:
-        doc_by_key[(row.crate, row.file, row.name)].append(row)
-
-    for key in sorted(set(src_by_key) | set(doc_by_key)):
-        source_hits = src_by_key.get(key, [])
-        table_hits = doc_by_key.get(key, [])
-        crate, file, name = key
-        for constant in source_hits[len(table_hits) :]:
-            findings.append(
-                f"source constant missing from table: {constant.relative}:"
-                f"{constant.line} {name}"
-            )
-        for row in table_hits[len(source_hits) :]:
-            findings.append(
-                f"table row with no source constant: {DOC_REL.as_posix()}:"
-                f"{row.line} {crate} {file} {name}"
-            )
-
-    for row in rows:
-        if row.kind == SESSION_CEILING:
-            findings.append(
-                f"{DOC_REL.as_posix()}:{row.line}: {row.name} is kind 3; only "
-                "ResourceLimits fields are session ceilings"
-            )
-    return findings
-
-
-def census(root: Path) -> tuple[list[Constant], list[TableRow], list[str]]:
-    """The production constants, the table rows, and their mismatches."""
-    constants = production_constants(root)
-    doc = root / DOC_REL
-    if not doc.is_file():
-        return constants, [], [f"{DOC_REL.as_posix()}: missing"]
-    text = doc.read_text(encoding="utf-8")
-    rows, errors = parse_census_rows(text)
-    return constants, rows, errors + stored_totals(text) + compare(constants, rows)
-
-
-def check_tree(root: Path) -> list[str]:
-    return census(root)[2]
-
-
-def counts(constants: list[Constant], rows: list[TableRow]) -> list[str]:
-    """The overall, per-kind, and per-crate counts of a census that matches."""
-    kinds = Counter(row.kind for row in rows)
-    crates = Counter(constant.crate for constant in constants)
+def counts(constants: list[Constant]) -> list[str]:
+    kinds = Counter(c.kind for c in constants)
+    crates = Counter(Path(c.relative).parts[1] for c in constants)
     return [
         f"production MAX_* constants: {len(constants)}",
         "by kind: " + ", ".join(f"{kind} {kinds.get(kind, 0)}" for kind in KINDS),
@@ -215,17 +139,14 @@ def counts(constants: list[Constant], rows: list[TableRow]) -> list[str]:
 
 @SOURCE_POLICY.analysis_session
 def main() -> int:
-    constants, rows, findings = census(ROOT)
+    constants, findings = census(ROOT)
     if findings:
         for line in findings:
             print(line, file=sys.stderr)
-        print(
-            f"resource-caps census: {len(findings)} mismatch(es)",
-            file=sys.stderr,
-        )
+        print(f"resource-caps census: {len(findings)} mismatch(es)", file=sys.stderr)
         return 1
     print("resource-caps census: ok")
-    for line in counts(constants, rows):
+    for line in counts(constants):
         print(f"  {line}")
     return 0
 

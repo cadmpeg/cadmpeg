@@ -60,6 +60,13 @@ pub(crate) struct ActiveCarrier<'a> {
 }
 
 impl ActiveCarrier<'_> {
+    pub(crate) fn record_stream(&self) -> String {
+        format!(
+            "RSeStorage/B{}:record:{}",
+            self.segment_token, self.record_ordinal
+        )
+    }
+
     /// The offset in the expanded bulk stream of the carrier byte at
     /// `within`.
     pub(crate) fn stream_offset(&self, within: usize) -> Result<u64, CodecError> {
@@ -141,7 +148,7 @@ pub(crate) fn decode_kernel_carrier(
         &records,
         carrier.bytes.window(),
         Some(&header.metadata),
-        &carrier_stream(carrier),
+        &carrier.record_stream(),
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
     )
@@ -176,15 +183,8 @@ pub(crate) fn inspect_kernel_carrier(
         scratch,
         &records,
         Some(&header.metadata),
-        &carrier_stream(carrier),
+        &carrier.record_stream(),
         cadmpeg_asm::asm_format!("inventor"),
-    )
-}
-
-fn carrier_stream(carrier: &ActiveCarrier<'_>) -> String {
-    format!(
-        "RSeStorage/B{}:record:{}",
-        carrier.segment_token, carrier.record_ordinal
     )
 }
 

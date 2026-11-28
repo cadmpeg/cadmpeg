@@ -8,11 +8,12 @@ fn the_repeated_key_is_the_first_key_of_the_named_object_only() {
     write_repeating(
         &value,
         &[Step::Key("a".to_owned()), Step::Index(1)],
+        "b",
         &mut text,
     );
     assert_eq!(text, r#"{"a":[{"b":1,"c":2},{"b":3,"b":3}],"d":{"e":4}}"#);
     let mut text = String::new();
-    write_repeating(&value, &[], &mut text);
+    write_repeating(&value, &[], "a", &mut text);
     assert_eq!(
         text,
         r#"{"a":[{"b":1,"c":2},{"b":3}],"a":[{"b":1,"c":2},{"b":3}],"d":{"e":4}}"#

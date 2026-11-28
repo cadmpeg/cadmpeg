@@ -28,7 +28,9 @@ use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
+// resource-cap: MAX_HISTORY_BODIES = 4
 const MAX_HISTORY_BODIES: usize = 64;
+// resource-cap: MAX_HISTORY_BODY_WORK = 4
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 
 /// A body slot of one history state that a feature produces or consumes.
@@ -1138,7 +1140,7 @@ fn fill_history(
     Ok(())
 }
 
-fn archive_subtypes(
+pub(super) fn archive_subtypes(
     archive: &super::HistoricalRecordArchive,
     version: Option<u32>,
 ) -> cadmpeg_asm::nurbs::toks::SubtypeTable {
@@ -1149,7 +1151,7 @@ fn archive_subtypes(
 }
 
 /// Materialize the sorted full record table from a hashed slot-to-revision map.
-fn materialize_hashed_table(
+pub(super) fn materialize_hashed_table(
     versions: &super::binding::FastMap<i64, i64>,
     archive: &super::HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {

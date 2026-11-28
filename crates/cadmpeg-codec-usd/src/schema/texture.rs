@@ -8,6 +8,7 @@ use crate::stage::{Prim, Stage};
 
 /// Longest chain of connections followed from a shader input to its
 /// texture, its coordinates, or a value.
+// resource-cap: MAX_NETWORK_HOPS = 4
 const MAX_NETWORK_HOPS: usize = 16;
 
 /// What a texture slot receives.

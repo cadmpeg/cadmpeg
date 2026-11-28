@@ -326,7 +326,8 @@ impl FeatureOperation {
     /// own, a template instance, a decal, a mesh section, and an
     /// `Unresolved` operation of a family whose every operation is one of
     /// these.
-    pub(crate) fn cannot_change_state(&self) -> bool {
+    #[must_use]
+    pub fn cannot_change_state(&self) -> bool {
         match self {
             Self::Sketch(_)
             | Self::SpatialSketch(_)
@@ -352,6 +353,32 @@ impl FeatureOperation {
             ),
             _ => false,
         }
+    }
+
+    /// Whether the operation places or connects occurrences: a `Place`,
+    /// `PlaceSet`, `Joint`, `RigidGroup`, `ComponentPattern`, or
+    /// `MirrorComponents`, or an `Unresolved` operation of one of these
+    /// families. A member of an unordered container with such an operation
+    /// has no result of its own (§5.3).
+    #[must_use]
+    pub fn places_occurrences(&self) -> bool {
+        matches!(
+            self,
+            Self::Place(_)
+                | Self::PlaceSet(_)
+                | Self::Joint(_)
+                | Self::RigidGroup(_)
+                | Self::ComponentPattern(_)
+                | Self::MirrorComponents(_)
+                | Self::Unresolved {
+                    family: OperationFamily::Place
+                        | OperationFamily::PlaceSet
+                        | OperationFamily::Joint
+                        | OperationFamily::RigidGroup
+                        | OperationFamily::ComponentPattern
+                        | OperationFamily::MirrorComponents
+                }
+        )
     }
 
     /// The operation's family: the [`OperationFamily`] whose wire name is

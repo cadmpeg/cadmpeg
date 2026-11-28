@@ -27,7 +27,7 @@ A donated file must meet all of these requirements:
 3. Add an entry to the corpus manifest describing it (format below), using [`manifest.example.toml`](manifest.example.toml) as a template.
 4. Open a pull request (or an issue, if the file is large and you need guidance on how to attach it) with the file and its manifest entry. Confirm explicitly in the PR/issue text: the CC0 dedication, that every included part is your own work, and that your CAD license permits sharing it.
 
-The first accepted donation creates `corpus/manifest.toml`. Each later donation adds a `[[file]]` entry. Manifest and donation verification is manual until verification tooling lands. Maintainers verify the manifest fields and declarations before merge.
+Add a `[[file]]` entry to `corpus/manifest.toml`. The `corpus_manifest` integration tests verify manifest entries and specimens. Maintainers verify donation declarations before merge.
 
 ## Manifest format
 

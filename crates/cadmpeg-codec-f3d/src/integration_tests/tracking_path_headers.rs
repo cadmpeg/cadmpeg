@@ -2,10 +2,10 @@
 //! A construction-operand identity whose entity-tracking path does not follow
 //! its identity wrapper's record index.
 
-use crate::test_support::lost_edge_test::{TRACKING_IDENTITY_WRAPPER, TRACKING_WRAPPER};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::lost_edge_fixture::{TRACKING_IDENTITY_WRAPPER, TRACKING_WRAPPER};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
 use crate::test_support::step_conversion::convert_to_step;
-use crate::test_support::zip_test::f3d_with_smbh_and_remove_body_tracking_path;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_remove_body_tracking_path;
 
 const INVALID_NESTED_FRAME: &str =
     "Fusion Design construction operand identity has an invalid nested frame";

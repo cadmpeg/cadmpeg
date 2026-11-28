@@ -27,9 +27,12 @@ use cadmpeg_ir::topology::{IncreasingParameterInterval, ParameterInterval};
 use boundary::BoundaryIndex;
 use speed::FiniteSpeed;
 
+// resource-cap: MAX_CURVE_PARAMETER_INTERVALS = 4
 const MAX_CURVE_PARAMETER_INTERVALS: usize = 512;
+// resource-cap: MAX_CURVE_PARAMETER_NEWTON_ITERATIONS = 4
 const MAX_CURVE_PARAMETER_NEWTON_ITERATIONS: usize = 12;
 
+// resource-cap: MAX_CACHED_CURVE_POINTS = N
 const MAX_CACHED_CURVE_POINTS: usize = 1 << 12;
 
 #[derive(Default)]

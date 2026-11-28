@@ -661,6 +661,7 @@ where
         }
     }
     if state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
+        // resource-cap: MAX_GAUGE_STATE_ALTERNATIVES = N
         const MAX_GAUGE_STATE_ALTERNATIVES: usize = 512;
         let alternative_count = domains.iter().map(Vec::len).sum::<usize>();
         let signature =

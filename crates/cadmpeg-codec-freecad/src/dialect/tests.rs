@@ -4,8 +4,9 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::registry_ids::FORMAT;
 use super::{
-    FcstdDialect, DECLARED_FILE_VERSION, DECLARED_PROGRAM_VERSION, DECLARED_SCHEMA_VERSION, FORMAT,
+    FcstdDialect, DECLARED_FILE_VERSION, DECLARED_PROGRAM_VERSION, DECLARED_SCHEMA_VERSION,
 };
 use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;

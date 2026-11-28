@@ -63,7 +63,9 @@ fn agrees(envelope: &Envelope, frame: PositionalCylinderFrame) -> Option<()> {
     let origin = frame.frame().origin();
     let axis = frame.frame().axis();
     let u = frame.frame().ref_direction();
-    let v = crate::vecmath::cross(axis, u);
+    let v = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(u)),
+    );
     u.into_iter()
         .chain(v)
         .chain(axis)
@@ -119,7 +121,9 @@ pub(super) fn inline_body(
         view.seek(close)?;
         (view.u8() == Some(psb::token::COMPOUND_CLOSE)).then_some(())?;
         let [u, _, v, origin] = crate::vecmath::local_system_lanes(slots);
-        let axis = crate::vecmath::cross(u, v);
+        let axis = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(u).cross(cadmpeg_ir::math::Vector3::from(v)),
+        );
         let frame = PositionalCylinderFrame::new(
             origin,
             axis,

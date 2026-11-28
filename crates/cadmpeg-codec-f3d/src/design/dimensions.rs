@@ -512,9 +512,7 @@ fn project_all_dimension_constraints(
             },
             field: Some(NativeOperandField { name: field, role }),
             object_index: Some(record_index),
-            native_ref: geometry
-                .filter(|_| !projected.contains_key(&(scope, record_index)))
-                .map(|(_, _, native_ref)| (*native_ref).to_owned()),
+            native_ref: geometry.map(|(_, _, native_ref)| (*native_ref).to_owned()),
         }
     };
     let native_definition =

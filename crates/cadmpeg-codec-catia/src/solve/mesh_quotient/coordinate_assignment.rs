@@ -230,6 +230,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     ctx: &DecodeContext<'_>,
     inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
+    // resource-cap: MAX_COORDINATE_CLOSURE_STATES = 4
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
     struct LocalIncidence<'a> {
         edge_faces: Vec<[usize; 2]>,

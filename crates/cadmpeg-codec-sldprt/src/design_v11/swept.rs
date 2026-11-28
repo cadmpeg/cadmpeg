@@ -8,11 +8,13 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::sketch::{Planar, SketchEntity};
+use cadmpeg_ir::design::selection::{OrderedSelection, PickTarget};
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 
 use super::parameters::Entries;
 use super::profile_check::{self, Difference, Unchecked};
+use super::sketch::{pick, selection};
 
 /// What the projections read besides the feature.
 pub(super) struct Context<'a> {
@@ -23,6 +25,7 @@ pub(super) struct Context<'a> {
     pub(super) sketches: &'a HashSet<SketchId>,
     /// The entities of those sketches.
     pub(super) entities: &'a [SketchEntity<Planar>],
+    pub(super) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// What the timeline holds before a feature.
@@ -90,17 +93,57 @@ fn suppressed(feature: &Feature) -> bool {
     matches!(feature.suppressed, Some(Dimension::Literal(true)))
 }
 
-/// How the closed regions of `sketch` differ from the profile loops the
-/// decoder resolved for it.
-pub(super) fn differences(
+pub(super) struct Profile {
+    pub(super) picks: OrderedSelection,
+    pub(super) differences: Result<Vec<Difference>, Unchecked>,
+}
+
+pub(super) fn profile(
     sketch: &SketchId,
     context: &Context<'_>,
-) -> Result<Vec<Difference>, Unchecked> {
+    solid: bool,
+) -> Result<Profile, &'static str> {
     let loops = context
         .model
         .sketches
         .iter()
         .find(|record| &record.id == sketch)
         .map_or(&[][..], |record| &record.profiles[..]);
-    profile_check::check(loops, &profile_check::curves(sketch, context.entities)?)
+    let inspection = (|| {
+        let mut curves = profile_check::curves(sketch, context.entities)?;
+        let differences = profile_check::check(loops, &curves)?;
+        if !solid || differences.is_empty() || context.outside_profile.is_empty() {
+            return Ok((differences, None));
+        }
+        let count = curves.len();
+        curves.retain(|id, _| !context.outside_profile.contains(id));
+        if curves.len() == count
+            || !profile_check::check(loops, &curves).is_ok_and(|after| after.is_empty())
+        {
+            return Ok((differences, None));
+        }
+        Ok((differences, profile_check::stored_regions(loops, &curves)))
+    })();
+    let (picks, differences) = match inspection {
+        Ok((_, Some(regions))) => (
+            regions
+                .into_iter()
+                .map(|region| {
+                    pick(PickTarget::SketchRegion {
+                        sketch: sketch.clone(),
+                        region,
+                    })
+                })
+                .collect(),
+            Ok(Vec::new()),
+        ),
+        other => (
+            vec![pick(PickTarget::Sketch(sketch.clone()))],
+            other.map(|(differences, _)| differences),
+        ),
+    };
+    Ok(Profile {
+        picks: selection(picks)?,
+        differences,
+    })
 }

@@ -5328,6 +5328,7 @@ fn unique_by_key<T: Copy, K: Eq + Hash>(
 /// shape node. Shared parents make the path count exponential in graph depth;
 /// a graph that exceeds the bound yields no tessellations and a
 /// `source.scan-bounded` loss.
+// resource-cap: MAX_JT_NODE_PATH_VISITS = 4
 const MAX_JT_NODE_PATH_VISITS: usize = 1 << 16;
 
 fn resolve_display_jt_node_paths(

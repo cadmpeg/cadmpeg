@@ -518,9 +518,13 @@ pub(super) fn hole_sketch_construction(
         Angle(cadmpeg_ir::scalar::InteriorAngle),
     }
 
+    // resource-cap: MAX_DIMENSIONS = 1
     const MAX_DIMENSIONS: usize = 7;
+    // resource-cap: MAX_DIAMETERS = 1
     const MAX_DIAMETERS: usize = 3;
+    // resource-cap: MAX_LENGTHS = 1
     const MAX_LENGTHS: usize = 2;
+    // resource-cap: MAX_ANGLES = 1
     const MAX_ANGLES: usize = 2;
     let Some(initial_length) = PositiveLength::new(1.0) else {
         return Ok(None);

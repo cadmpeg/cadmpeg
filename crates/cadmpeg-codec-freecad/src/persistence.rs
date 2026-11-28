@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
@@ -10,7 +11,9 @@ use crate::native::{
     PropertyRecord, ValueRecord,
 };
 
+// resource-cap: MAX_OBJECTS = 2
 const MAX_OBJECTS: usize = 1_000_000;
+// resource-cap: MAX_PROPERTY_VALUE_XML_BYTES = 2
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 /// Persistence vocabulary follows the numeric schema value, independently of
@@ -179,10 +182,9 @@ pub(crate) fn names_side_entry(type_name: &str, attribute: &str) -> bool {
 
 /// Recover the persistence graph from an already admitted document.
 pub(crate) fn parse_document(
-    xml: &roxmltree::Document<'_>,
+    xml: &XmlDocument<'_>,
     schema: Vocabulary,
 ) -> Result<Graph, CodecError> {
-    let text = xml.input_text();
     let root = xml.root_element();
     let mut losses = Vec::new();
     // Schema 2 is its own element vocabulary. Every other declared schema, and
@@ -326,14 +328,7 @@ pub(crate) fn parse_document(
             dependencies,
             dependency_allow_partial,
             order,
-            data: data_node
-                .map(|data| {
-                    crate::native::RetainedXml::from_source(
-                        &text[data.range()],
-                        cadmpeg_core::decode::u64_from_index(data.range().start),
-                    )
-                })
-                .transpose()?,
+            data: data_node.map(|data| retained_xml(xml, *data)).transpose()?,
         });
     }
 
@@ -369,7 +364,7 @@ pub(crate) fn parse_document(
         [] => {}
         [document_properties] => {
             parse_properties(
-                text,
+                xml,
                 *document_properties,
                 &crate::native::native_id("document", "0"),
                 &mut properties,
@@ -455,12 +450,12 @@ pub(crate) fn parse_document(
                     name,
                     type_name,
                     order,
-                    raw_xml: text[node.range()].to_owned(),
+                    raw_xml: source_xml(xml, node).to_owned(),
                 });
             }
         }
         if let Some(container) = property_container {
-            parse_properties(text, container, object.id(), &mut properties, &mut losses)?;
+            parse_properties(xml, container, object.id(), &mut properties, &mut losses)?;
         }
         if let Some(extensions_node) = extension_container {
             for extension in extensions_node
@@ -479,7 +474,7 @@ pub(crate) fn parse_document(
                     .children()
                     .filter(|node| node.has_tag_name("Properties"))
                 {
-                    parse_properties(text, container, extension_id, &mut properties, &mut losses)?;
+                    parse_properties(xml, container, extension_id, &mut properties, &mut losses)?;
                 }
             }
         }
@@ -534,7 +529,7 @@ fn check_count(
 }
 
 fn parse_properties(
-    text: &str,
+    xml: &XmlDocument<'_>,
     container: roxmltree::Node<'_, '_>,
     owner: &str,
     output: &mut Vec<PropertyRecord>,
@@ -613,10 +608,7 @@ fn parse_properties(
                 .and_then(|value| value.parse().ok()),
             body: crate::native::PropertyBody::Transient,
             order,
-            xml: crate::native::RetainedXml::from_source(
-                &text[node.range()],
-                cadmpeg_core::decode::u64_from_index(node.range().start),
-            )?,
+            xml: retained_xml(xml, node)?,
         });
     }
     for (order, node) in property_nodes.into_iter().enumerate() {
@@ -646,7 +638,7 @@ fn parse_properties(
             .descendants()
             .filter(|value| payload_error.is_none() && value.is_element() && *value != node)
             .try_fold(0_usize, |total, value| {
-                total.checked_add(value.range().len())
+                total.checked_add(xml.source_range(value.range()).len())
             });
         if value_xml_bytes.is_none_or(|bytes| bytes > MAX_PROPERTY_VALUE_XML_BYTES) {
             let detail = format!(
@@ -673,7 +665,7 @@ fn parse_properties(
                     .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
                     .collect(),
                 text: value.text().map(str::to_owned),
-                raw_xml: text[value.range()].to_owned(),
+                raw_xml: source_xml(xml, value).to_owned(),
             });
         }
         let mut side_entries = Vec::new();
@@ -710,13 +702,26 @@ fn parse_properties(
                 }
             },
             order,
-            xml: crate::native::RetainedXml::from_source(
-                &text[node.range()],
-                cadmpeg_core::decode::u64_from_index(node.range().start),
-            )?,
+            xml: retained_xml(xml, node)?,
         });
     }
     Ok(())
+}
+
+pub(crate) fn source_xml<'input>(
+    xml: &XmlDocument<'input>,
+    node: roxmltree::Node<'_, '_>,
+) -> &'input str {
+    &xml.source()[xml.source_range(node.range())]
+}
+
+pub(crate) fn retained_xml(
+    xml: &XmlDocument<'_>,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<crate::native::RetainedXml, CodecError> {
+    let range = xml.source_range(node.range());
+    let start = cadmpeg_core::decode::u64_from_index(range.start);
+    crate::native::RetainedXml::from_source(&xml.source()[range], start)
 }
 
 pub(crate) fn validate_link_property(

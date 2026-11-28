@@ -95,12 +95,8 @@ pub(crate) fn of_document(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<CodecDi
         .native
         .namespace("sldprt")
         .map(|namespace| {
-            crate::native::SldprtNative::load_under(
-                namespace,
-                ctx.policy().limits,
-                ir.tolerances.linear,
-            )
-            .map_err(CodecError::from)
+            crate::native::SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
+                .map_err(CodecError::from)
         })
         .transpose()
         .or_else(|error| match error {

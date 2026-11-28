@@ -15,12 +15,12 @@ use cadmpeg_ir::topology::{EdgeCarrier, ShellMember};
 
 use crate::loss::F3dLossCode;
 use crate::test_support::assert_written_with_loss;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_two_body_smbh, synthetic_wire_body_smbh,
 };
-use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_pcurve_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_pcurves_fixture::synthetic_geometry_with_pcurve_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 fn source_less(smbh: &[u8]) -> CadIr {
