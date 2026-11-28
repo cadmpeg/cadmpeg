@@ -141,7 +141,16 @@ fn nodes_that_hold_pairs_are_assemblies_numbered_in_closing_order() {
     );
     assert_eq!(
         tree.assemblies,
-        [Assembly { parent: Some(1) }, Assembly { parent: None }]
+        [
+            Assembly {
+                parent: Some(1),
+                end: tree.assemblies[0].end,
+            },
+            Assembly {
+                parent: None,
+                end: tree.assemblies[1].end,
+            }
+        ]
     );
 }
 
@@ -160,6 +169,24 @@ fn a_record_is_selected_by_a_nonzero_marker_of_any_value() {
 }
 
 #[test]
+fn a_pair_in_the_child_node_of_a_pair_belongs_to_that_part() {
+    let mut items = vec![node(&[node(&[])]), record(ACIS, b"feature")];
+    items.extend(pair(b"inner"));
+    let child = node(&items);
+    let payload = node(&[node(&[child, record(ACIS, b"result")])]);
+    let tree = read(View::over_retained(&payload)).unwrap();
+    let results: Vec<_> = tree
+        .records
+        .iter()
+        .filter(|record| record.follows_node)
+        .map(|record| (record.bytes.window(), record.assembly))
+        .collect();
+    assert_eq!(results, [(b"result".as_slice(), Some(0))]);
+    assert_eq!(tree.assemblies.len(), 1);
+    assert_eq!(tree.assemblies[0].parent, None);
+}
+
+#[test]
 fn a_marker_with_another_low_byte_is_read_and_marked_noncanonical() {
     let mut odd = record(PARASOLID, b"odd");
     odd[4..8].copy_from_slice(&0x0009_b402_u32.to_le_bytes());
@@ -167,4 +194,19 @@ fn a_marker_with_another_low_byte_is_read_and_marked_noncanonical() {
     let records = read(View::over_retained(&payload)).unwrap().records;
     assert_eq!(records[0].bytes.window(), b"odd");
     assert!(!records[0].canonical_header);
+}
+
+#[test]
+fn a_node_that_holds_only_an_assembly_node_is_an_assembly() {
+    let inner = node(&[pair(b"a"), pair(b"b")].concat());
+    let outer = node(&[inner]);
+    let payload = node(&[pair(b"root").to_vec(), vec![outer]].concat());
+    let tree = read(View::over_retained(&payload)).unwrap();
+    let parents: Vec<_> = tree
+        .assemblies
+        .iter()
+        .map(|assembly| assembly.parent)
+        .collect();
+    assert_eq!(parents, [Some(1), None]);
+    assert_eq!(tree.assemblies[0].end, tree.assemblies[1].end);
 }

@@ -1,0 +1,1996 @@
+{
+  "ir": {
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "ironcad:brep:body#2",
+          "kind": "solid"
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "ironcad:brep:edge#113",
+          "id": "ironcad:brep:coedge#119",
+          "owner_loop": "ironcad:brep:loop#131",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#119"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#128",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#113",
+          "id": "ironcad:brep:coedge#128",
+          "owner_loop": "ironcad:brep:loop#127",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#128"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#119",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#11",
+          "id": "ironcad:brep:coedge#25",
+          "owner_loop": "ironcad:brep:loop#79",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#25"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#91",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#40",
+          "id": "ironcad:brep:coedge#28",
+          "owner_loop": "ironcad:brep:loop#36",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#28"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#39",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#90",
+          "id": "ironcad:brep:coedge#37",
+          "owner_loop": "ironcad:brep:loop#36",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#37"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#89",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#88",
+          "id": "ironcad:brep:coedge#38",
+          "owner_loop": "ironcad:brep:loop#36",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#38"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#87",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#40",
+          "id": "ironcad:brep:coedge#39",
+          "owner_loop": "ironcad:brep:loop#70",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#39"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#28",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#106",
+          "id": "ironcad:brep:coedge#41",
+          "owner_loop": "ironcad:brep:loop#70",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#41"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#73",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#96",
+          "id": "ironcad:brep:coedge#49",
+          "owner_loop": "ironcad:brep:loop#127",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#49"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#52",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#96",
+          "id": "ironcad:brep:coedge#52",
+          "owner_loop": "ironcad:brep:loop#79",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#52"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#49",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#63",
+          "id": "ironcad:brep:coedge#55",
+          "owner_loop": "ironcad:brep:loop#59",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#55"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#62",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#98",
+          "id": "ironcad:brep:coedge#60",
+          "owner_loop": "ironcad:brep:loop#59",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#60"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#64",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#26",
+          "id": "ironcad:brep:coedge#61",
+          "owner_loop": "ironcad:brep:loop#59",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#61"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#80",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#63",
+          "id": "ironcad:brep:coedge#62",
+          "owner_loop": "ironcad:brep:loop#127",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#62"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#55",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#98",
+          "id": "ironcad:brep:coedge#64",
+          "owner_loop": "ironcad:brep:loop#70",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#64"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#60",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#72",
+          "id": "ironcad:brep:coedge#65",
+          "owner_loop": "ironcad:brep:loop#70",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#65"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#71",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#72",
+          "id": "ironcad:brep:coedge#71",
+          "owner_loop": "ironcad:brep:loop#127",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#71"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#65",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#106",
+          "id": "ironcad:brep:coedge#73",
+          "owner_loop": "ironcad:brep:loop#131",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#73"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#41",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#82",
+          "id": "ironcad:brep:coedge#74",
+          "owner_loop": "ironcad:brep:loop#79",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#74"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#81",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#26",
+          "id": "ironcad:brep:coedge#80",
+          "owner_loop": "ironcad:brep:loop#79",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#80"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#61",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#82",
+          "id": "ironcad:brep:coedge#81",
+          "owner_loop": "ironcad:brep:loop#36",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#81"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#74",
+          "sense": "forward"
+        },
+        {
+          "edge": "ironcad:brep:edge#88",
+          "id": "ironcad:brep:coedge#87",
+          "owner_loop": "ironcad:brep:loop#59",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#87"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#38",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#90",
+          "id": "ironcad:brep:coedge#89",
+          "owner_loop": "ironcad:brep:loop#131",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#89"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#37",
+          "sense": "reversed"
+        },
+        {
+          "edge": "ironcad:brep:edge#11",
+          "id": "ironcad:brep:coedge#91",
+          "owner_loop": "ironcad:brep:loop#131",
+          "pcurves": [
+            {
+              "pcurve": "ironcad:brep:pcurve#91"
+            }
+          ],
+          "radial_next": "ironcad:brep:coedge#25",
+          "sense": "reversed"
+        }
+      ],
+      "curves": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.8,
+                "y": -25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#102"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.8,
+                "y": 25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#107"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.8,
+                "y": 25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#108"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.8,
+                "y": -25.4,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#109"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.8,
+                "y": -25.4,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#111"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.8,
+                "y": 25.4,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#114"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.8,
+                "y": 25.4,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#116"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.8,
+                "y": 25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#118"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.8,
+                "y": 25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#120"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.8,
+                "y": -25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#20"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.8,
+                "y": -25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#8"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -50.8,
+                "y": -25.4,
+                "z": 25.4
+              }
+            }
+          },
+          "id": "ironcad:brep:curve#93"
+        }
+      ],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#118"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#21",
+            "start": "ironcad:brep:vertex#12"
+          },
+          "id": "ironcad:brep:edge#106"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#8"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#46",
+            "start": "ironcad:brep:vertex#66"
+          },
+          "id": "ironcad:brep:edge#11"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#116"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#46",
+            "start": "ironcad:brep:vertex#21"
+          },
+          "id": "ironcad:brep:edge#113"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#20"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#50",
+            "start": "ironcad:brep:vertex#42"
+          },
+          "id": "ironcad:brep:edge#26"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#107"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#12",
+            "start": "ironcad:brep:vertex#29"
+          },
+          "id": "ironcad:brep:edge#40"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#111"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#53",
+            "start": "ironcad:brep:vertex#50"
+          },
+          "id": "ironcad:brep:edge#63"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#114"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#21",
+            "start": "ironcad:brep:vertex#53"
+          },
+          "id": "ironcad:brep:edge#72"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#93"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#42",
+            "start": "ironcad:brep:vertex#66"
+          },
+          "id": "ironcad:brep:edge#82"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#102"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#29",
+            "start": "ironcad:brep:vertex#42"
+          },
+          "id": "ironcad:brep:edge#88"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#108"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#66",
+            "start": "ironcad:brep:vertex#12"
+          },
+          "id": "ironcad:brep:edge#90"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#109"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#50",
+            "start": "ironcad:brep:vertex#46"
+          },
+          "id": "ironcad:brep:edge#96"
+        },
+        {
+          "carrier": {
+            "curve": "ironcad:brep:curve#120"
+          },
+          "ends": {
+            "end": "ironcad:brep:vertex#53",
+            "start": "ironcad:brep:vertex#29"
+          },
+          "id": "ironcad:brep:edge#98"
+        }
+      ],
+      "faces": [
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.7764705882352941,
+            "g": 0.8274509803921568,
+            "r": 0.9019607843137255
+          },
+          "id": "ironcad:brep:face#100",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:loop#59"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "ironcad:brep:shell#6",
+          "surface": "ironcad:brep:surf#100"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.7764705882352941,
+            "g": 0.8274509803921568,
+            "r": 0.9019607843137255
+          },
+          "id": "ironcad:brep:face#126",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:loop#70"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "ironcad:brep:shell#6",
+          "surface": "ironcad:brep:surf#126"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.7764705882352941,
+            "g": 0.8274509803921568,
+            "r": 0.9019607843137255
+          },
+          "id": "ironcad:brep:face#130",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:loop#127"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "ironcad:brep:shell#6",
+          "surface": "ironcad:brep:surf#130"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.7764705882352941,
+            "g": 0.8274509803921568,
+            "r": 0.9019607843137255
+          },
+          "id": "ironcad:brep:face#17",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:loop#131"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "ironcad:brep:shell#6",
+          "surface": "ironcad:brep:surf#17"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.7764705882352941,
+            "g": 0.8274509803921568,
+            "r": 0.9019607843137255
+          },
+          "id": "ironcad:brep:face#86",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:loop#36"
+            ]
+          },
+          "sense": "forward",
+          "shell": "ironcad:brep:shell#6",
+          "surface": "ironcad:brep:surf#86"
+        },
+        {
+          "color": {
+            "a": 1.0,
+            "b": 0.7764705882352941,
+            "g": 0.8274509803921568,
+            "r": 0.9019607843137255
+          },
+          "id": "ironcad:brep:face#95",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "ironcad:brep:loop#79"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "ironcad:brep:shell#6",
+          "surface": "ironcad:brep:surf#95"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:coedge#128",
+              "ironcad:brep:coedge#71",
+              "ironcad:brep:coedge#62",
+              "ironcad:brep:coedge#49"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:face#130",
+          "id": "ironcad:brep:loop#127"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:coedge#119",
+              "ironcad:brep:coedge#91",
+              "ironcad:brep:coedge#89",
+              "ironcad:brep:coedge#73"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:face#17",
+          "id": "ironcad:brep:loop#131"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:coedge#37",
+              "ironcad:brep:coedge#81",
+              "ironcad:brep:coedge#38",
+              "ironcad:brep:coedge#28"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:face#86",
+          "id": "ironcad:brep:loop#36"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:coedge#55",
+              "ironcad:brep:coedge#60",
+              "ironcad:brep:coedge#87",
+              "ironcad:brep:coedge#61"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:face#100",
+          "id": "ironcad:brep:loop#59"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:coedge#65",
+              "ironcad:brep:coedge#41",
+              "ironcad:brep:coedge#39",
+              "ironcad:brep:coedge#64"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:face#126",
+          "id": "ironcad:brep:loop#70"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "ironcad:brep:coedge#52",
+              "ironcad:brep:coedge#80",
+              "ironcad:brep:coedge#74",
+              "ironcad:brep:coedge#25"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "ironcad:brep:face#95",
+          "id": "ironcad:brep:loop#79"
+        }
+      ],
+      "pcurves": [
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 25.4,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#119",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 50.8
+            }
+          },
+          "id": "ironcad:brep:pcurve#128",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#25",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 101.6,
+              "v": 50.8
+            }
+          },
+          "id": "ironcad:brep:pcurve#28",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 50.8
+            }
+          },
+          "id": "ironcad:brep:pcurve#37",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 101.6,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#38",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#39",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": -101.6
+            }
+          },
+          "id": "ironcad:brep:pcurve#41",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#49",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": -25.4,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#52",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": -25.4,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#55",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 50.8
+            }
+          },
+          "id": "ironcad:brep:pcurve#60",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#61",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 101.6,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#62",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#64",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 25.4,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#65",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 101.6,
+              "v": 50.8
+            }
+          },
+          "id": "ironcad:brep:pcurve#71",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#73",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#74",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 101.6
+            }
+          },
+          "id": "ironcad:brep:pcurve#80",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#81",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#87",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "ironcad:brep:pcurve#89",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": -50.8
+            }
+          },
+          "id": "ironcad:brep:pcurve#91",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        }
+      ],
+      "points": [
+        {
+          "id": "ironcad:brep:point#22",
+          "position": {
+            "x": 50.8,
+            "y": 25.4,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "ironcad:brep:point#30",
+          "position": {
+            "x": -50.8,
+            "y": 25.4,
+            "z": 25.4
+          }
+        },
+        {
+          "id": "ironcad:brep:point#43",
+          "position": {
+            "x": 50.8,
+            "y": 25.4,
+            "z": 25.4
+          }
+        },
+        {
+          "id": "ironcad:brep:point#44",
+          "position": {
+            "x": -50.8,
+            "y": -25.4,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "ironcad:brep:point#45",
+          "position": {
+            "x": 50.8,
+            "y": -25.4,
+            "z": 25.4
+          }
+        },
+        {
+          "id": "ironcad:brep:point#47",
+          "position": {
+            "x": 50.8,
+            "y": -25.4,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "ironcad:brep:point#75",
+          "position": {
+            "x": -50.8,
+            "y": -25.4,
+            "z": 25.4
+          }
+        },
+        {
+          "id": "ironcad:brep:point#9",
+          "position": {
+            "x": -50.8,
+            "y": 25.4,
+            "z": 0.0
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "ironcad:brep:body#2",
+          "id": "ironcad:brep:region#18",
+          "shells": [
+            "ironcad:brep:shell#6"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "ironcad:brep:shell#6",
+          "members": [],
+          "region": "ironcad:brep:region#18"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 50.8,
+                "y": -25.4,
+                "z": 25.4
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            }
+          },
+          "id": "ironcad:brep:surf#100"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 50.8,
+                "y": 25.4,
+                "z": 25.4
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              }
+            }
+          },
+          "id": "ironcad:brep:surf#126"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": -50.8,
+                "y": -25.4,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:surf#130"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -50.8,
+                "y": 25.4,
+                "z": 25.4
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              }
+            }
+          },
+          "id": "ironcad:brep:surf#17"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": -50.8,
+                "y": -25.4,
+                "z": 25.4
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "ironcad:brep:surf#86"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -50.8,
+                "y": -25.4,
+                "z": 25.4
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            }
+          },
+          "id": "ironcad:brep:surf#95"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "ironcad:brep:vertex#12",
+          "point": "ironcad:brep:point#30"
+        },
+        {
+          "id": "ironcad:brep:vertex#21",
+          "point": "ironcad:brep:point#9"
+        },
+        {
+          "id": "ironcad:brep:vertex#29",
+          "point": "ironcad:brep:point#43"
+        },
+        {
+          "id": "ironcad:brep:vertex#42",
+          "point": "ironcad:brep:point#45"
+        },
+        {
+          "id": "ironcad:brep:vertex#46",
+          "point": "ironcad:brep:point#44"
+        },
+        {
+          "id": "ironcad:brep:vertex#50",
+          "point": "ironcad:brep:point#47"
+        },
+        {
+          "id": "ironcad:brep:vertex#53",
+          "point": "ironcad:brep:point#22"
+        },
+        {
+          "id": "ironcad:brep:vertex#66",
+          "point": "ironcad:brep:point#75"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "declared_measures": [],
+      "drawings": [],
+      "mass_properties": [
+        {
+          "density": 7.8e-6,
+          "id": "ironcad:model:mass-properties#0",
+          "target": {
+            "entity": {
+              "definition": "ironcad:model:product-definition#0",
+              "kind": "definition"
+            }
+          }
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "ironcad:model:occurrence#0",
+          "name": "Part1",
+          "overrides": [],
+          "prototype": "ironcad:model:product-definition#0",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "ironcad:brep:body#2"
+          ],
+          "bom_properties": {
+            "EndTaper": "0",
+            "SizeboxHeight": "0.0254",
+            "SizeboxLength": "0.1016",
+            "SizeboxWidth": "0.0508",
+            "StartTaper": "0"
+          },
+          "id": "ironcad:model:product-definition#0",
+          "instance_bodies": [],
+          "kind": "part",
+          "label": "Part1",
+          "native_ref": "{611AF958-688C-42FF-9605-637DDF14B0CD}",
+          "occurrences": [],
+          "representations": [],
+          "source_name": "Part1",
+          "storage": {
+            "kind": "embedded"
+          }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "ironcad:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [
+            "ironcad:model:occurrence#0"
+          ],
+          "representations": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "units": {
+            "angle": "deg",
+            "length": "in",
+            "mass": "kg"
+          }
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "solver_settings": [],
+      "tessellations": [],
+      "view_presentations": []
+    },
+    "native": {
+      "ironcad": {
+        "unknowns": [
+          {
+            "id": "ironcad:source:kernel-record#0",
+            "links": []
+          }
+        ]
+      }
+    },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
+    "source": {
+      "attributes": {},
+      "identity": {
+        "dialects": {
+          "extra": [
+            {
+              "admission": {
+                "kind": "admitted"
+              },
+              "declared": {
+                "carrier": "Brep Data/record 0",
+                "schema": "SCH_3401176_34101_13006"
+              },
+              "dialect": "parasolid:format-13006",
+              "instance": "Brep Data/record 0"
+            },
+            {
+              "admission": {
+                "kind": "admitted"
+              },
+              "declared": {
+                "carrier": "Brep Data/record 1",
+                "schema": "SCH_3401176_34101_13006"
+              },
+              "dialect": "parasolid:format-13006",
+              "instance": "Brep Data/record 1"
+            }
+          ],
+          "primary": {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
+            "dialect": "ironcad:cfb"
+          }
+        },
+        "kind": "classified"
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
+    }
+  },
+  "report": {
+    "coverage": {},
+    "identity": {
+      "dialects": {
+        "extra": [
+          {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {
+              "carrier": "Brep Data/record 0",
+              "schema": "SCH_3401176_34101_13006"
+            },
+            "dialect": "parasolid:format-13006",
+            "instance": "Brep Data/record 0"
+          },
+          {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {
+              "carrier": "Brep Data/record 1",
+              "schema": "SCH_3401176_34101_13006"
+            },
+            "dialect": "parasolid:format-13006",
+            "instance": "Brep Data/record 1"
+          }
+        ],
+        "primary": {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
+          "dialect": "ironcad:cfb"
+        }
+      },
+      "kind": "classified"
+    },
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "body.feature-shape-retained",
+            "kind": "feature_history_retained",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "Brep Data/record 0: the record lies in the node before a part result record and is read as a feature shape of that part; the kernel record is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Image Data` of 1188 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Preview` of 66614 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `View` of 98 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `HSF` of 1133 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Animation` of 214 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `MetaInfo` of 20 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Shape Data` of 6673 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `PMIDraftDb` of 8 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Shared Objects` of 2507 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `\u0005SummaryInformation` of 124 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `Public Access Data` of 1907 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "scene.decode-pending",
+            "kind": "object_records_untransferred",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "stream `\u0005DocumentSummaryInformation` of 856 bytes is not decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "placement.bound-by-identity",
+            "kind": "decode_diagnostic",
+            "namespace": "ironcad"
+          }
+        },
+        "message": "each `Public Access` record is bound to the `Shape Contents` object of its name and identifier, taken in stored order where several match, and the object to the part result record or assembly node that ends at its `Brep Data` end; the record matrix places the frame in its parent as a row-vector rotation and a translation in metres",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "codec_digests": {},
+    "content_digest": "415dd5f8b58765be358cd2968b696e7e331f113519915fff23149ec732150529",
+    "decode_digest": "00f3692044d8f6f3f02f56cebb5f70bd728e55a67e08b11ffaec9e20fc9e73e7",
+    "file_digests": {},
+    "retained_records": {
+      "ironcad:source:kernel-record#0": {
+        "bytes": {
+          "data": "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",
+          "kind": "inline"
+        },
+        "offset": 60,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
+  }
+}

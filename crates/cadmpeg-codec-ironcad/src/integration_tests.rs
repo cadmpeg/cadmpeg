@@ -13,6 +13,8 @@ use crate::loss::IronCadLossCode;
 use crate::test_support::corpus;
 use crate::IronCadCodec;
 
+mod step_twins;
+
 const BOX: &str = "Box_50x40x25.ics";
 const CYLINDER: &str = "Cylinder_50x50.ics";
 const SCENE: &str = "Ironcad_2025_simple_test_parts.ics";
@@ -181,6 +183,25 @@ fn parasolid_layers_carry_the_schema_token() {
             .map(|(_, value)| value.as_str());
         assert_eq!(schema, Some("SCH_3401176_34101_13006"));
     }
+}
+
+#[test]
+fn format_13006_parasolid_layers_are_verified() {
+    let result = decode(BOX);
+    let layers = result.report().dialects().unwrap();
+    let parasolid: Vec<_> = layers
+        .iter()
+        .filter(|layer| layer.format() == "parasolid")
+        .collect();
+    assert!(!parasolid.is_empty());
+    for layer in parasolid {
+        assert_eq!(layer.dialect().as_str(), "parasolid:format-13006");
+        assert_eq!(
+            layer.admission(),
+            &cadmpeg_core::dialect::Admission::Admitted
+        );
+    }
+    assert_eq!(count(&result, IronCadLossCode::KernelDialectUnverified), 0);
 }
 
 #[test]
@@ -388,8 +409,9 @@ fn a_brep_data_stream_that_does_not_open_is_one_unreadable_give_up() {
     let mut expected = losses(&decode(BOX));
     expected.retain(|(code, _)| {
         ![
-            IronCadLossCode::KernelUnverified,
+            IronCadLossCode::KernelDialectUnverified,
             IronCadLossCode::PlacementBoundByOrder,
+            IronCadLossCode::PlacementBoundByIdentity,
             IronCadLossCode::FeatureShapeRetained,
             IronCadLossCode::BodyExtensionsRetained,
         ]
@@ -756,9 +778,9 @@ fn parasolid_records_rewrite_into_framed_neutral_transmits() {
 #[test]
 fn scene_parts_are_placed_by_their_public_access_matrices() {
     let result = decode(SCENE);
-    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByIdentity), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 0);
     assert_eq!(count(&result, IronCadLossCode::PlacementUnbound), 0);
-    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
     assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
     let model = &result.ir().model;
     let mut names: Vec<_> = model
@@ -925,7 +947,7 @@ fn a_rotated_block_is_turned_30_degrees_about_z() {
 #[test]
 fn an_assembly_matrix_places_its_member_parts() {
     let result = decode("Assembly_moved.ics");
-    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByIdentity), 1);
     assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
     assert_placement(
         placement(&result, "Assembly1"),
@@ -991,7 +1013,7 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
         ),
     ] {
         let result = decode(name);
-        assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+        assert_eq!(count(&result, IronCadLossCode::PlacementBoundByIdentity), 1);
         assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
         assert_eq!(members(&result, None), ["Outer"]);
         assert_eq!(members(&result, Some("Outer")), ["PartC", "Inner"]);
