@@ -113,6 +113,37 @@ pub(crate) struct BodyConsumer<'a> {
     pub(crate) selection_owner: Option<u32>,
     /// The selected record is registered as a browser node.
     pub(crate) registered_node: bool,
+    /// Registered type version of the scope.
+    pub(crate) scope_version: u32,
+    /// Result operation of a join or cut `Extrude` scope prologue; `None`
+    /// writes nine zero bytes after the scope header.
+    pub(crate) extrude_operation: Option<u32>,
+}
+
+impl<'a> BodyConsumer<'a> {
+    /// A consumer of `scope_type_guid` that selects the hidden browser node of
+    /// entity 350.
+    pub(crate) fn of(scope_type_guid: &'a str) -> Self {
+        Self {
+            scope_type_guid,
+            entity: 350,
+            hidden: 1,
+            flag: 1,
+            selection_owner: Some(BODY_CONSUMER_SCOPE),
+            registered_node: true,
+            scope_version: 1,
+            extrude_operation: None,
+        }
+    }
+
+    /// A join or cut `Extrude` scope with result operation `operation`.
+    pub(crate) fn extrude(operation: u32) -> Self {
+        Self {
+            scope_version: 8,
+            extrude_operation: Some(operation),
+            ..Self::of(crate::design::decode::body_consumers::EXTRUDE_TYPE_GUID)
+        }
+    }
 }
 
 pub(crate) fn history_only_pairs_with_consumer(
@@ -303,10 +334,14 @@ pub(crate) fn history_only_pairs_with_consumer(
         records.push((u64::from(SCOPE), u64_from_index(bulk.len())));
         indexed_header(&mut bulk, class_tag(types.len()), SCOPE);
         bulk.extend_from_slice(&[0; 9]);
+        if let Some(operation) = consumer.extrude_operation {
+            bulk.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 1]);
+            bulk.extend_from_slice(&operation.to_le_bytes());
+        }
         types.push((
             consumer.scope_type_guid,
             "2EDC2536-D95B-4469-8ACA-DC07124D9C43",
-            1,
+            consumer.scope_version,
             "Fusion",
             &scope_registration,
         ));

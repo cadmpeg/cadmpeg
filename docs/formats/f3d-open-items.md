@@ -4294,13 +4294,3 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot. The decoder gives up the `.paramesh` entries of such a design with `record.undecoded`.
-
-### DR-1079. Document body of a keyless pattern copy
-
-**Question.** Does the document list a pattern or Mirror copy body whose ASM body record stores no body key?
-
-**Known.** The active record stream of the `.smbh` member that the modern body map names holds the body record of the copy with ASM body key `-1`, its own lump and shell, and the faces of the copy. The terminal history state holds the slot. The modern body map stores no pair for the slot. The Body container lists more Body entities than the body map stores pairs. A copy body that the body map names stores a nonnegative ASM body key. A feature Mirror of a hidden New Body seed, and a feature Mirror whose New Body copy is coincident with the boss that its Join seed copy adds, each store the copy with a nonnegative key and a body-map pair, and the Fusion browser lists the copy as a body.
-
-**Need.** A save whose copy body stores key `-1`, with a Fusion readback of its body list. The forms above do not give that key, so the save needs another construction of the copy, for example a Mirror edited after a later feature or a design saved by an earlier Fusion version. Compare the body record keys, the body-map pairs, and the Body container entities with the bodies that the Fusion browser lists.
-
-**Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").

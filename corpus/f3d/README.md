@@ -312,3 +312,22 @@ and the saved marker position.
 - `timeline_group_suppressed.f3d`: Sketch3 and Extrude3 cut a 5 mm hole at
   (15, 15) through T inside timeline group HoleGroup, which is suppressed.
   The API reports both items suppressed.
+
+# Fusion API fixtures: Join participant bodies
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design, for a Join whose participant bodies include a
+separate New Body. The plate is 50 x 20 x 4 mm. The block is 5 x 5 x 5 mm and
+stands on the plate top face. The Join boss is 6 x 3 x 3 mm; it overlaps the
+block and sits on the plate. The API read the bodies at the end of the
+timeline.
+
+- `join_absorbs_new_body_base.f3d`: the plate and the block. 2 bodies, 4000 and
+  125 mm³.
+- `join_absorbs_new_body.f3d`: the base design and the Join with the default
+  participant bodies. 1 body, 4161 mm³, 15 faces. Extrude2.bodies is empty.
+- `join_absorbs_new_body_control.f3d`: the Join with participant bodies set to
+  the plate. 2 bodies: the plate, 4054 mm³, and the block, 125 mm³.
+- `join_absorbs_new_body_mirror.f3d`: `join_absorbs_new_body.f3d` and a feature
+  Mirror of Extrude2 and Extrude3 across the plane x = 25 mm. 1 body,
+  4322 mm³, 24 faces. Mirror1.bodies is the plate.

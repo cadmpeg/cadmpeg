@@ -662,21 +662,13 @@ fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
     use crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID;
     use crate::test_support::component_body_test::{
         history_only_pairs_with_consumer, BodyConsumer, HistoryOnlyContainer as Container,
-        BODY_CONSUMER_SCOPE,
     };
     let (bulk, meta) = history_only_pairs_with_consumer(
         "BREP.module.smbh",
         &[(0, 350, None)],
         Container::Lists(&[]),
         true,
-        Some(BodyConsumer {
-            scope_type_guid: REMOVE_BODY_TYPE_GUID,
-            entity: 350,
-            hidden: 1,
-            flag: 1,
-            selection_owner: Some(BODY_CONSUMER_SCOPE),
-            registered_node: true,
-        }),
+        Some(BodyConsumer::of(REMOVE_BODY_TYPE_GUID)),
     );
     let bytes = f3d_with_breps_and_design(
         &[(

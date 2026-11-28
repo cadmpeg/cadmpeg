@@ -5047,6 +5047,8 @@ pub(crate) mod offset_23_extrude_prologue {
 pub(crate) mod current_extrude_operation_fields {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 42;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 0;
     /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
     pub(crate) const DIRECTION: usize = 4;
     /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
@@ -5091,6 +5093,28 @@ pub(crate) mod current_extrude_shape_target_extent_prefix {
     pub(crate) const ZERO_SEPARATOR: usize = 4;
     /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FIRST_SIDE_EXTENT: usize = 5;
+}
+
+/// Byte offsets for the `sketch_extrude_boolean_scope_frame` record.
+///
+/// Spec §Records of a design with several sketch-driven Extrudes. Record length 371 B.
+///
+/// ```text
+/// Offsets are relative to the scope's primary indexed header. The feature item tail of 78 + 2L bytes starts at offset 371.
+/// ```
+pub(crate) mod sketch_extrude_boolean_scope_frame {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §Records of a design with several sketch-driven Extrudes.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §Records of a design with several sketch-driven Extrudes.
+    pub(crate) const FLAG: usize = 20;
+    /// Stated value of `flag` (`u8`). Spec §Records of a design with several sketch-driven Extrudes.
+    pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §Records of a design with several sketch-driven Extrudes.
+    pub(crate) const ZERO_RUN_6: usize = 21;
+    /// Offset of `prologue_byte` (`u8`). Spec §Records of a design with several sketch-driven Extrudes.
+    pub(crate) const PROLOGUE_BYTE: usize = 27;
+    /// Offset of `operation_fields` (`bytes[42]`). Spec §Records of a design with several sketch-driven Extrudes.
+    pub(crate) const OPERATION_FIELDS: usize = 28;
 }
 
 /// Byte offsets for the `early_distance_extrude_absent_prefix` record.

@@ -2353,14 +2353,7 @@ mod tests {
             BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
         };
         const MOVE_TYPE_GUID: &str = "64E40C8E-E564-469C-8690-5C4E77C1B02C";
-        let consumer = |scope_type_guid| BodyConsumer {
-            scope_type_guid,
-            entity: 350,
-            hidden: 1,
-            flag: 1,
-            selection_owner: Some(BODY_CONSUMER_SCOPE),
-            registered_node: true,
-        };
+        let consumer = BodyConsumer::of;
         for (cluster, container, row, selected, expected) in [
             (
                 true,
@@ -2505,24 +2498,60 @@ mod tests {
     fn a_consumer_removes_only_the_pair_it_names() {
         use crate::design::decode::body_consumers::COMBINE_TYPE_GUID;
         use crate::test_support::component_body_test::{
-            BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
+            BodyConsumer, HistoryOnlyContainer as Container,
         };
         assert_eq!(
             bindings_with_consumer(
                 &[(0, 350, None), (1, 351, Some(true))],
                 Container::Lists(&[]),
                 true,
-                Some(BodyConsumer {
-                    scope_type_guid: COMBINE_TYPE_GUID,
-                    entity: 350,
-                    hidden: 1,
-                    flag: 1,
-                    selection_owner: Some(BODY_CONSUMER_SCOPE),
-                    registered_node: true,
-                }),
+                Some(BodyConsumer::of(COMBINE_TYPE_GUID)),
             ),
             [(350, true), (351, false)]
         );
+    }
+
+    #[test]
+    fn a_join_extrude_participant_leaves_the_model_with_a_bound_cluster() {
+        use crate::test_support::component_body_test::{
+            BodyConsumer, HistoryOnlyContainer as Container,
+        };
+        const JOIN: u32 = 1;
+        const CUT: u32 = 2;
+        for (container, selected, expected) in [
+            (Container::Lists(&[]), BodyConsumer::extrude(JOIN), true),
+            (Container::Lists(&[350]), BodyConsumer::extrude(JOIN), false),
+            (Container::Lists(&[]), BodyConsumer::extrude(CUT), false),
+            (
+                Container::Lists(&[]),
+                BodyConsumer {
+                    hidden: 0,
+                    ..BodyConsumer::extrude(JOIN)
+                },
+                false,
+            ),
+            (
+                Container::Lists(&[]),
+                BodyConsumer {
+                    scope_version: 7,
+                    ..BodyConsumer::extrude(JOIN)
+                },
+                false,
+            ),
+            (
+                Container::Lists(&[]),
+                BodyConsumer {
+                    extrude_operation: None,
+                    ..BodyConsumer::extrude(JOIN)
+                },
+                false,
+            ),
+        ] {
+            assert_eq!(
+                bindings_with_consumer(&[(0, 350, None)], container, true, Some(selected)),
+                [(350, expected)],
+            );
+        }
     }
 
     #[test]
