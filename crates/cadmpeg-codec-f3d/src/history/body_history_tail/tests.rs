@@ -591,20 +591,30 @@ fn body_shape_update(key: i64, pattern: i64, lump: i64, wire: i64, transform: i6
 #[test]
 fn an_attribute_only_body_update_has_no_tail() {
     let scope = scope(59);
-    assert!(
-        collect(&[feature(&scope, 1)], &[scope], &[body_update(3, 4)], None)
-            .tails
-            .is_empty()
-    );
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[body_update(3, 4)],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
 fn a_body_lump_update_retains_a_tail() {
     let scope = scope(59);
     assert_eq!(
-        collect(&[feature(&scope, 1)], &[scope], &[body_update(8, 4)], None)
-            .tails
-            .len(),
+        collect(
+            &[feature(&scope, 1)],
+            &[scope],
+            &[body_update(8, 4)],
+            &Default::default(),
+            None
+        )
+        .tails
+        .len(),
         1
     );
 }
@@ -613,9 +623,15 @@ fn a_body_lump_update_retains_a_tail() {
 fn a_body_transform_update_retains_a_tail() {
     let scope = scope(59);
     assert_eq!(
-        collect(&[feature(&scope, 1)], &[scope], &[body_update(3, 8)], None)
-            .tails
-            .len(),
+        collect(
+            &[feature(&scope, 1)],
+            &[scope],
+            &[body_update(3, 8)],
+            &Default::default(),
+            None
+        )
+        .tails
+        .len(),
         1
     );
 }
@@ -629,9 +645,15 @@ fn a_body_key_pattern_or_wire_update_retains_a_tail() {
         body_shape_update(0, -1, 3, 9, 4),
     ] {
         assert_eq!(
-            collect(&[feature(&scope, 1)], &[scope.clone()], &[history], None)
-                .tails
-                .len(),
+            collect(
+                &[feature(&scope, 1)],
+                &[scope.clone()],
+                &[history],
+                &Default::default(),
+                None
+            )
+            .tails
+            .len(),
             1
         );
     }
