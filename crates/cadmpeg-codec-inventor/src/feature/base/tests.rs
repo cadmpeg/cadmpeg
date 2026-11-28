@@ -10,9 +10,10 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossKind;
 
 use crate::feature::base::{
-    current_body, entry, history_candidate, reference_counts, unique_link_header, wrappers,
+    current_body, history_candidate, inspect_source_body, reference_counts, unique_link_header,
+    wrappers, SourceBody,
 };
-use crate::feature::history_views::{ResultStates, StateModel};
+use crate::feature::history_views::{ResultStates, StateLimit, StateModel};
 use crate::feature::tests::{reference, test_feature, test_header};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcKernelEntityLink,
@@ -22,7 +23,7 @@ use crate::layout::{meta_external_reference as external, meta_external_revision 
 use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
-use crate::records::MetaSection;
+use crate::records::{MetaSection, ReferenceTable};
 use crate::rse::RseInventory;
 use crate::test_support::base_envelope::{
     decode, derived_at_version, fixtures, state_model, SyntheticRecords, RESULT_KEY, SOURCE_INDEX,
@@ -138,18 +139,28 @@ fn external_entries_require_exact_count_width_and_bounds() {
         discriminator: 2,
         payload: View::over_retained(&bytes),
     };
-    assert!(entry(&section, 1, 8).is_some());
-    assert!(entry(&section, 2, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(1)
+        .is_some());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(2)
+        .is_none());
     section.discriminator = 1;
-    assert!(entry(&section, 0, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(0)
+        .is_none());
     section.discriminator = u32::MAX;
-    assert!(entry(&section, 0, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(0)
+        .is_none());
 }
 
 #[test]
 fn external_reference_counts_reject_dangling_revision_indices() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
@@ -171,7 +182,14 @@ fn external_reference_counts_reject_dangling_revision_indices() {
         payload: View::over_retained(&reference_bytes),
     };
     assert_eq!(
-        reference_counts(&ctx, &revisions, &references).expect("reference counts"),
+        reference_counts(
+            &ctx,
+            &ReferenceTable::read(None, &revisions, revision::LEN)
+                .expect("locate the reference table"),
+            &ReferenceTable::read(None, &references, external::LEN)
+                .expect("locate the reference table")
+        )
+        .expect("reference counts"),
         Some(vec![2, 1])
     );
     let mut inconsistent_bytes = revision_bytes;
@@ -181,18 +199,29 @@ fn external_reference_counts_reject_dangling_revision_indices() {
         payload: View::over_retained(&inconsistent_bytes),
         ..revisions
     };
-    assert!(reference_counts(&ctx, &inconsistent_revisions, &references)
-        .expect("inconsistent reference count")
-        .is_none());
+    assert!(reference_counts(
+        &ctx,
+        &ReferenceTable::read(None, &inconsistent_revisions, revision::LEN)
+            .expect("locate the reference table"),
+        &ReferenceTable::read(None, &references, external::LEN)
+            .expect("locate the reference table")
+    )
+    .expect("inconsistent reference count")
+    .is_none());
     let mut invalid_bytes = reference_bytes;
     invalid_bytes[external::LEN..external::LEN + 4].copy_from_slice(&2_u32.to_le_bytes());
     let references = MetaSection {
         payload: View::over_retained(&invalid_bytes),
         ..references
     };
-    assert!(reference_counts(&ctx, &revisions, &references)
-        .expect("invalid references")
-        .is_none());
+    assert!(reference_counts(
+        &ctx,
+        &ReferenceTable::read(None, &revisions, revision::LEN).expect("locate the reference table"),
+        &ReferenceTable::read(None, &references, external::LEN)
+            .expect("locate the reference table")
+    )
+    .expect("invalid references")
+    .is_none());
 }
 
 #[test]
@@ -215,6 +244,39 @@ fn base_slots_require_two_distinct_surface_wrappers_and_null_tail() {
     ] {
         assert!(wrappers(&invalid, crate::feature::BASE_CLASS_ID, |_| Some(&first)).is_none());
     }
+}
+
+#[test]
+fn a_base_source_inspection_contains_its_entity_limit() {
+    use cadmpeg_asm::kernel_header::RefWidth;
+
+    use crate::kernel::parse_carrier;
+    use crate::test_support::history_carrier::{carrier_bytes, framed_carrier, CURRENT_BODY_KEY};
+
+    let bytes = framed_carrier(&carrier_bytes(RefWidth::Eight, false));
+    let entity = u32::try_from(CURRENT_BODY_KEY).expect("fixture body key");
+    let arena = DecodeArena::new();
+    let (ordinary, view) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("input");
+    let carrier =
+        parse_carrier(view, &cadmpeg_ir::identity_key!("seg"), 0, 0, 18).expect("carrier");
+    assert!(matches!(
+        inspect_source_body(&ordinary, &carrier, entity).expect("source check"),
+        SourceBody::Present
+    ));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (bounded, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+    let SourceBody::Bounded(limit) =
+        inspect_source_body(&bounded, &carrier, entity).expect("source check")
+    else {
+        panic!("source entity cap");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert!(bounded.resource_refusal().is_none());
 }
 
 #[test]
@@ -291,7 +353,7 @@ impl ResultStates for Fixed {
 }
 
 fn holding(model: &CadIr) -> StateModel {
-    StateModel::Model(Box::new(model.clone()))
+    StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
 }
 
 /// Projects the two Base features of the fixture with a final model that
@@ -314,7 +376,12 @@ fn project_records_without_final_body(
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("compound");
-    let document = RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
+    let document = RseInventory::build(
+        &ctx,
+        &snapshot,
+        &mut crate::container::streams::Streams::default(),
+    )
+    .expect("RSe inventory");
     let features = crate::feature::inventory(&ctx, &document).expect("feature inventory");
     let design = crate::design::inventory(&ctx, &document).expect("design inventory");
     let sketches = crate::sketch::inventory(&ctx, &document).expect("sketch inventory");
@@ -408,7 +475,7 @@ fn a_state_without_a_body_of_the_result_key_stays_native_with_its_loss() {
 fn a_state_that_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
     for outcome in [
         |_: &CadIr| StateModel::Failed,
-        |_: &CadIr| StateModel::Bounded,
+        |_: &CadIr| StateModel::Bounded(StateLimit::Work),
     ] {
         let states = Fixed {
             introduces: true,
@@ -442,7 +509,7 @@ fn a_derived_result_whose_state_does_not_decode_or_passed_its_cap_stays_native_w
         .code;
     for outcome in [
         |_: &CadIr| StateModel::Failed,
-        |_: &CadIr| StateModel::Bounded,
+        |_: &CadIr| StateModel::Bounded(StateLimit::Work),
         |_: &CadIr| StateModel::Unavailable,
     ] {
         let states = Fixed {

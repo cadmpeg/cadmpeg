@@ -26,7 +26,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
 };
-use cadmpeg_ir::unknown::part::GivenUpPart;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
@@ -593,21 +593,24 @@ fn push_v1_record(
     Ok(())
 }
 
-/// Gives up the V1 record `chunk` for the codec loss `code` with `message`.
+/// Gives up the V1 record `chunk` for `cause` with the `code` text `message`.
 fn v1_record_given_up(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
+    cause: Cause,
     code: RhinoLossCode,
     message: std::fmt::Arguments<'_>,
 ) -> Result<GivenUpPart, CodecError> {
-    let why = code
-        .note(message)
-        .with_provenance(cadmpeg_ir::SourceProvenance::root(
-            "rhino",
-            cadmpeg_core::decode::u64_from_index(chunk.header_start),
-        ));
-    give_up_retained(ctx, data, V1_RECORD_PART, chunk.range(), None, &why)
+    give_up_retained(
+        ctx,
+        data,
+        V1_RECORD_PART,
+        chunk.range(),
+        None,
+        cause,
+        format_args!("{}: {message}", code.kind()),
+    )
 }
 
 fn count_v1_omission(omitted: &mut BTreeMap<u32, usize>, typecode: u32) {
@@ -2666,12 +2669,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 &mut tolerance_losses,
             );
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
-            count_v1_omission(&mut omitted, chunk.typecode);
             let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
             given_up.push(v1_record_given_up(
                 ctx,
                 data,
                 &chunk,
+                Cause::Undecoded,
                 RhinoLossCode::PresentationRecordDropped,
                 format_args!(
                     "V1 presentation typecode {:#010x} has no typed reading",
@@ -2807,12 +2810,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         &mut diagnostics,
                         format_args!("V1 direct record at offset {offset}: {error}"),
                     );
-                    count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
                     given_up.push(v1_record_given_up(
                         ctx,
                         data,
                         &chunk,
+                        Cause::Unreadable.of(&error),
                         RhinoLossCode::ObjectFamilyNotTransferred,
                         format_args!("V1 direct record does not decode: {error}"),
                     )?);
@@ -2957,12 +2960,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         &mut diagnostics,
                         format_args!("V1 curve at offset {offset}: {error}"),
                     );
-                    count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
                     given_up.push(v1_record_given_up(
                         ctx,
                         data,
                         &chunk,
+                        Cause::Unreadable.of(&error),
                         RhinoLossCode::ObjectFamilyNotTransferred,
                         format_args!("V1 curve does not decode: {error}"),
                     )?);
@@ -2994,12 +2997,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         &mut diagnostics,
                         format_args!("V1 Brep at offset {offset}: {error}"),
                     );
-                    count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
                     given_up.push(v1_record_given_up(
                         ctx,
                         data,
                         &chunk,
+                        Cause::Unreadable.of(&error),
                         RhinoLossCode::ObjectFamilyNotTransferred,
                         format_args!("V1 Brep does not decode: {error}"),
                     )?);
@@ -3036,12 +3039,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         &mut diagnostics,
                         format_args!("V1 mesh at offset {offset}: {error}"),
                     );
-                    count_v1_omission(&mut omitted, chunk.typecode);
                     let record = retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?;
                     given_up.push(v1_record_given_up(
                         ctx,
                         data,
                         &chunk,
+                        Cause::Unreadable.of(&error),
                         RhinoLossCode::ObjectFamilyNotTransferred,
                         format_args!("V1 mesh does not decode: {error}"),
                     )?);
@@ -3192,6 +3195,7 @@ mod tests {
     use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::unknown::part::Cause;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
 
     fn decode_v1(data: &[u8]) -> Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::CodecError> {
@@ -3292,10 +3296,10 @@ mod tests {
             &decoded.ir,
             &decoded.source_fidelity,
             &decoded.body.losses,
-            "v1-record",
-            record_offset,
+            ("v1-record", record_offset),
             None,
             &holder,
+            Cause::Unreadable,
         );
     }
 
@@ -4111,25 +4115,25 @@ mod tests {
                 .count(),
             3
         );
-        assert_eq!(
-            result
-                .report()
-                .losses
-                .iter()
-                .filter(|loss| { loss.code == RhinoLossCode::PresentationRecordDropped.kind() })
-                .count(),
-            3
-        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != RhinoLossCode::PresentationRecordDropped.kind()));
         let given_up = result
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
             .collect::<Vec<_>>();
         assert_eq!(given_up.len(), 3, "{:?}", result.report().losses);
-        assert!(given_up.iter().all(|loss| loss
-            .message
-            .starts_with("part v1-record stream=\"\" offset=")));
+        assert!(given_up.iter().all(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss
+                    .message
+                    .starts_with("part v1-record stream=\"\" offset=")
+                && loss.message.contains("has no typed reading")
+        }));
         assert!(!result
             .report()
             .losses
@@ -4170,10 +4174,10 @@ mod tests {
             result.ir(),
             result.source_fidelity(),
             &result.report().losses,
-            "v1-record",
-            record_offset,
+            ("v1-record", record_offset),
             None,
             malformed_id.as_str(),
+            Cause::Unreadable,
         );
         assert_eq!(
             malformed.offset(),
@@ -4192,7 +4196,7 @@ mod tests {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind()));
+            .all(|loss| loss.code != RhinoLossCode::ObjectFamilyNotTransferred.kind()));
     }
 
     #[test]

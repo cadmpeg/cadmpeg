@@ -8,6 +8,7 @@
 //! the byte offset of the record.
 
 use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::dialect::Grammar;
 use crate::layout::{
@@ -174,13 +175,17 @@ impl Fixed<'_> {
     }
 }
 
-/// A walk failure: the byte offset of the record and what was wrong.
+/// A walk failure: the byte offset of the record, what was wrong, and
+/// whether the bytes break the grammar or hold a form the walker has no
+/// reading for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct WalkError {
     /// Offset of the first byte of the failing record.
     pub(super) offset: usize,
     /// What the walker could not place.
     pub(super) reason: &'static str,
+    /// How the stream is charged when the walk stops.
+    pub(super) cause: Cause,
 }
 
 impl std::fmt::Display for WalkError {
@@ -316,6 +321,15 @@ impl<'a> Walker<'a> {
         Err(WalkError {
             offset: self.mark,
             reason,
+            cause: Cause::Unreadable,
+        })
+    }
+
+    fn undecoded<T>(&self, reason: &'static str) -> Result<T, WalkError> {
+        Err(WalkError {
+            offset: self.mark,
+            reason,
+            cause: Cause::Undecoded,
         })
     }
 
@@ -430,7 +444,7 @@ impl<'a> Walker<'a> {
                 return Ok(words);
             }
             if words.len() >= MAX_MASK_WORDS {
-                return self.fail("attribute mask has too many words");
+                return self.undecoded("attribute mask has too many words");
             }
         }
     }
@@ -455,7 +469,7 @@ impl<'a> Walker<'a> {
         let table: &[(&[u32], usize)] = if wide { &R_EXTRA } else { &H_EXTRA };
         match table.iter().find(|(mask, _)| *mask == words.as_slice()) {
             Some((_, extra)) => self.skip(*extra),
-            None => self.fail("attribute mask is not in the known table"),
+            None => self.undecoded("attribute mask is not in the known table"),
         }
     }
 
@@ -472,7 +486,7 @@ impl<'a> Walker<'a> {
                 self.skip(V_TEXTURE_SOLIDWORKS.len())?;
                 return Ok(SlotKind::Texture);
             }
-            return self.fail("unknown V payload");
+            return self.undecoded("unknown V payload");
         }
         for template in V_TEMPLATES {
             if rest.starts_with(template) {
@@ -487,7 +501,7 @@ impl<'a> Walker<'a> {
             self.skip(TEXTURE_SUFFIX)?;
             return Ok(SlotKind::Texture);
         }
-        self.fail("unknown V payload")
+        self.undecoded("unknown V payload")
     }
 
     fn shell(&mut self) -> Result<Record<'a>, WalkError> {
@@ -505,8 +519,11 @@ impl<'a> Walker<'a> {
         let Ok(count) = usize::try_from(count) else {
             return self.fail("length exceeds the address space");
         };
-        if count == 0 || count > MAX_SHELL_VERTICES {
-            return self.fail("shell: vertex count is zero or exceeds the cap");
+        if count == 0 {
+            return self.fail("shell: vertex count is zero");
+        }
+        if count > MAX_SHELL_VERTICES {
+            return self.undecoded("shell: vertex count exceeds the cap");
         }
         if self
             .view
@@ -709,7 +726,7 @@ impl<'a> Walker<'a> {
         let name = self.pstr()?;
         self.depth += 1;
         if self.depth > MAX_SEGMENT_DEPTH {
-            return self.fail("segment nesting exceeds the cap");
+            return self.undecoded("segment nesting exceeds the cap");
         }
         Ok(Record::Open(name))
     }
@@ -717,13 +734,15 @@ impl<'a> Walker<'a> {
     fn scope(&mut self, record: Record<'a>) -> Result<Record<'a>, WalkError> {
         self.depth += 1;
         if self.depth > MAX_SEGMENT_DEPTH {
-            return self.fail("segment nesting exceeds the cap");
+            return self.undecoded("segment nesting exceeds the cap");
         }
         Ok(record)
     }
 
     fn line_styles(&mut self) -> Result<Record<'a>, WalkError> {
-        self.require_byte(1, "line style table: unknown version")?;
+        if self.u8()? != 1 {
+            return self.undecoded("line style table: unknown version");
+        }
         self.line_style_run()
     }
 
@@ -745,7 +764,7 @@ impl<'a> Walker<'a> {
         while self.u8()? & COLOUR_MASK_MORE != 0 {
             masks += 1;
             if masks > MAX_COLOUR_MASK_BYTES {
-                return self.fail("colour mask has too many bytes");
+                return self.undecoded("colour mask has too many bytes");
             }
         }
         match self.take(COLOUR_CHANNELS)? {
@@ -879,7 +898,7 @@ impl<'a> Walker<'a> {
             }
             b'S' => {
                 if self.take(4)? != [0x90, 0x02, 0x00, 0x00] {
-                    return self.fail("unknown shell variant");
+                    return self.undecoded("unknown shell variant");
                 }
                 Record::ShellPlaceholder
             }
@@ -900,7 +919,7 @@ impl<'a> Walker<'a> {
             }
             0 => Record::Pad,
             1 => Record::Separator,
-            _ => return self.fail("unknown opcode"),
+            _ => return self.undecoded("unknown opcode"),
         };
         if !matches!(record, Record::Close | Record::Slot(_) | Record::Pad) {
             self.previous = match record {

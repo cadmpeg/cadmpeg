@@ -4,7 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::records::configuration::table::{ConfigurationRow, ConfigurationTable, ConfiguredValue};
+use crate::records::configuration::table::{
+    ColumnTarget, ConfigurationRow, ConfigurationTable, ConfiguredValue,
+};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -36,7 +38,6 @@ pub(crate) struct DecodedConfigurations {
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
@@ -50,13 +51,8 @@ pub(crate) fn decode_configurations(
             Ok(document) => documents.push(document),
             Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
             Err(error) => {
-                losses.push(
-                    crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
-                        "Configuration document {} remains in the source archive because its decoding failed: {error}",
-                        entry.name
-                    )),
-                );
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, cause, error)?);
             }
         }
     }
@@ -197,6 +193,62 @@ impl ConfigurationTargets<'_> {
         self.neutral_features
             .iter()
             .find(|feature| feature.id == id)
+    }
+
+    /// The target of a column that names the neutral parameter `id`: the
+    /// owner record of its parameter record, else the parameter record
+    /// itself (f3d.md §1.2). `None` where no single record names it.
+    pub(crate) fn parameter_column(
+        &self,
+        id: &cadmpeg_ir::features::ParameterId,
+    ) -> Option<ColumnTarget> {
+        let records = self
+            .parameters
+            .iter()
+            .filter(|parameter| crate::ids::neutral_parameter_id(parameter) == *id)
+            .collect::<Vec<_>>();
+        let [record] = records.as_slice() else {
+            return None;
+        };
+        let stream = crate::ids::native_stream(&record.id);
+        let owners = self
+            .owners
+            .iter()
+            .filter(|owner| {
+                owner.parameter_record_index() == record.record_index
+                    && crate::ids::native_stream(owner.id()) == stream
+            })
+            .collect::<Vec<_>>();
+        let (target, named) = match owners.as_slice() {
+            [] => (
+                ColumnTarget::Parameter(record.record_index),
+                self.parameter(record.record_index, None),
+            ),
+            [owner] => (
+                ColumnTarget::OwnedParameter(owner.record_index()),
+                self.owned_parameter(owner.record_index()),
+            ),
+            _ => return None,
+        };
+        (named.as_ref() == Some(id)).then_some(target)
+    }
+
+    /// The target of a column that names the neutral feature `id`: its
+    /// parameter scope record. `None` where no single record names it.
+    pub(crate) fn feature_column(
+        &self,
+        id: &cadmpeg_ir::features::FeatureId,
+    ) -> Option<ColumnTarget> {
+        let scopes = self
+            .scopes
+            .iter()
+            .filter(|scope| crate::ids::neutral_feature_id(scope) == *id)
+            .collect::<Vec<_>>();
+        let [scope] = scopes.as_slice() else {
+            return None;
+        };
+        (self.feature(scope.record_index)?.id == *id)
+            .then_some(ColumnTarget::Feature(scope.record_index))
     }
 
     /// The value of neutral parameter `id` whose evaluation in database
@@ -459,25 +511,31 @@ pub(crate) fn attach(
         "Configuration projection",
     )?
     .unwrap_or_default();
-    let unstored = native
-        .design_parameter_scopes
+    let undecided =
+        undecided_suppression(&model.features, &native.design_parameter_scopes, producers);
+    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
+    model.configurations = configurations;
+    Ok(())
+}
+
+pub(crate) fn undecided_suppression(
+    features: &[cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
+) -> BTreeSet<cadmpeg_ir::features::FeatureId> {
+    let unstored = scopes
         .iter()
         .filter(|scope| scope.stored_suppression().is_none())
         .map(crate::ids::neutral_feature_id)
         .collect::<BTreeSet<_>>();
-    // A feature that produces a body is active in the stored geometry.
-    let undecided = model
-        .features
+    features
         .iter()
         .filter(|feature| {
             !producers.contains(&feature.id)
                 && (feature.suppressed.is_none() || unstored.contains(&feature.id))
         })
         .map(|feature| feature.id.clone())
-        .collect();
-    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
-    model.configurations = configurations;
-    Ok(())
+        .collect()
 }
 
 /// Make the active configurations and the current feature states agree where

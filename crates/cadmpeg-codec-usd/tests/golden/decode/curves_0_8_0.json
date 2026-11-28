@@ -1172,8 +1172,7 @@
     "source": {
       "attributes": {
         "default_prim": "Curves",
-        "meters_per_unit": "1",
-        "up_axis": "Z"
+        "meters_per_unit": "1"
       },
       "identity": {
         "dialects": {
@@ -1200,7 +1199,8 @@
       "length": "millimeter",
       "mass": "kilogram",
       "time": "second"
-    }
+    },
+    "up_axis": "z"
   },
   "report": {
     "coverage": {},
@@ -1238,10 +1238,11 @@
           "value": {
             "code": "curves.rejected",
             "kind": "geometry_not_transferred",
-            "namespace": "usd"
+            "namespace": "usd",
+            "strict_floor": "warning"
           }
         },
-        "message": "1 curves do not satisfy their topology and were not transferred",
+        "message": "1 curves break the curve rules and were not transferred",
         "severity": "warning"
       }
     ],

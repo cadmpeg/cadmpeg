@@ -101,8 +101,8 @@ fn every_compute_option_of_a_circular_pattern_reads_its_payload() {
             .as_array()
             .expect("feature list")
             .iter()
-            .find(|feature| feature["name"] == "C-Pattern 1")
-            .expect("C-Pattern 1");
+            .find(|feature| feature["name"] == "C-Pattern1")
+            .expect("C-Pattern1");
         let pattern = &pattern["definition"]["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "circular", "{pattern}");
         assert_eq!(pattern["count"], 4);
@@ -110,14 +110,14 @@ fn every_compute_option_of_a_circular_pattern_reads_its_payload() {
     }
 }
 
-/// The pattern of the feature named `C-Pattern 1`.
+/// The pattern of the feature named `C-Pattern1`.
 fn circular_pattern(ir: &serde_json::Value) -> &serde_json::Value {
     let feature = ir["model"]["features"]
         .as_array()
         .expect("feature list")
         .iter()
-        .find(|feature| feature["name"] == "C-Pattern 1")
-        .expect("C-Pattern 1");
+        .find(|feature| feature["name"] == "C-Pattern1")
+        .expect("C-Pattern1");
     &feature["definition"]["value"]["value"]["pattern"]
 }
 

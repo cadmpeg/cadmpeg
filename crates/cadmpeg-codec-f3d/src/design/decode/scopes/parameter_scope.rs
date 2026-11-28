@@ -93,7 +93,7 @@ use crate::records::feature::direct_face;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -122,9 +122,19 @@ pub(crate) struct DecodedParameterScopes {
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     sources: &ParameterScopeSources<'_>,
+) -> Result<DecodedParameterScopes, CodecError> {
+    decode_parameter_scopes_for(ctx, scan, sources, None)
+}
+
+/// Decode configuration-linked scopes through the shared scope reader.
+pub(crate) fn decode_parameter_scopes_for(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    sources: &ParameterScopeSources<'_>,
+    selected: Option<&std::collections::BTreeSet<u32>>,
 ) -> Result<DecodedParameterScopes, CodecError> {
     let &ParameterScopeSources {
         entities,
@@ -238,6 +248,9 @@ pub(crate) fn decode_parameter_scopes(
             }
         }
         for header in parameter_scope_candidate_headers(bytes, &records)? {
+            if selected.is_some_and(|selected| !selected.contains(&header.record_index)) {
+                continue;
+            }
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
                 &records,
@@ -264,10 +277,8 @@ pub(crate) fn decode_parameter_scopes(
                     let mut frames = Vec::new();
                     crate::design::decode::record::RecordFrame::new(&entry.name, start, end)
                         .give_up(
-                            crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
-                                format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
-                            ),
-                            &mut losses,
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
+                            format_args!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
                             &mut frames,
                         );
                     given_up.extend(crate::design::decode::record::give_up_frames(
@@ -284,6 +295,9 @@ pub(crate) fn decode_parameter_scopes(
             }
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
+            if scope.companion_suppressed.is_some() {
+                losses.extend(reciprocal_hole_suppression_loss(bytes, &scope));
+            }
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
             if scope.kind() == scope::DesignFeatureKind::BoundaryFill {
                 let construction =
@@ -1740,6 +1754,19 @@ fn scope_reference_table_ends_at(
             .any(|offset| start.checked_add(offset) == Some(count_at))
 }
 
+/// The associated-reference count and closing-reference presence of an
+/// `Assemble` scope tail longer than the 88-byte fixed form: each associated
+/// reference adds eleven bytes, and a closing reference to the scope adds ten
+/// (its eleven bytes replace one of the two closing zero bytes).
+pub(crate) fn assemble_extended_tail(tail_length: usize) -> Option<(usize, bool)> {
+    let extra = tail_length.checked_sub(88)?;
+    match (extra / 11, extra % 11) {
+        (associated @ 1.., 0) => Some((associated, false)),
+        (associated, 10) => Some((associated, true)),
+        _ => None,
+    }
+}
+
 pub(crate) fn parameter_scope_tail_length_is_valid(
     kind: impl AsRef<str>,
     tail_length: usize,
@@ -1749,6 +1776,10 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
         return true;
     }
     match kind {
+        "Assemble" => {
+            matches!(tail_length, 72 | 76 | 77 | 78 | 87)
+                || assemble_extended_tail(tail_length).is_some()
+        }
         "CopyPasteBodies" => tail_length == 110,
         "Hole" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 109 | 119),
         "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
@@ -1999,6 +2030,11 @@ fn fixed_tail_previous_history_offset(
         return crate::design::assembly::OrdinaryRigidGroupTail::for_length(tail_length)
             .map(|tail| tail.previous_history);
     }
+    if kind == "Assemble" {
+        if let Some((associated, _)) = assemble_extended_tail(tail_length) {
+            return associated.checked_mul(11)?.checked_add(41);
+        }
+    }
     match (kind, tail_length) {
         ("As-built", crate::layout::ordinary_rigid_group_tail_88::LEN) => {
             Some(crate::layout::ordinary_rigid_group_tail_88::PREVIOUS_HISTORY_STATE_ID)
@@ -2156,6 +2192,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                         record_index,
                     )
                     .is_some()));
+            // An unlabeled tail can carry associated references and a closing
+            // reference too (a joint whose second connector is its component's
+            // origin); no fixed length describes it.
+            let named_tail = named_tail
+                || (kind == "Assemble"
+                    && label_units == 0
+                    && !fixed_tail
+                    && tail_length <= 590
+                    && plain_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {
+                        tail.references.extra_bytes().is_some_and(|extra| extra > 0)
+                    }));
             if named_tail
                 && named_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Named, label_units))
@@ -2333,12 +2380,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             && tail_form == ScopeTailForm::Fixed)
             .then(|| super::thread::hole_companion_tail(tail, record_index))
             .flatten();
-        let companion_history = match (&kind, tail_form) {
+        let reciprocal_hole_history = match (&kind, tail_form) {
             (scope::DesignFeatureKind::Hole, ScopeTailForm::Named) => {
                 named_reciprocal_hole_history(tail, record_index)
             }
-            _ => thread_companion.map(|companion| companion.previous_history_state),
+            (scope::DesignFeatureKind::Hole, ScopeTailForm::Fixed) => {
+                reciprocal_hole_tail(tail, record_index)
+            }
+            _ => None,
         };
+        let companion_history = reciprocal_hole_history
+            .or_else(|| thread_companion.map(|companion| companion.previous_history_state));
         let previous_history_state_id_offset = companion_history
             .or_else(|| match tail_form {
                 ScopeTailForm::Named => named.as_ref().map(|named| named.previous_history_state_id),
@@ -2609,13 +2661,22 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         .ok()?;
         scope.source_kind = source_kind;
         scope.tail_flags = tail_flags;
-        scope.companion_suppressed = match thread_companion {
-            Some(companion) => Some(crate::records::identity::Located {
+        if let Some(companion) = thread_companion {
+            scope.companion_suppressed = Some(crate::records::identity::Located {
                 value: companion.suppressed,
                 offset: u64_from_index(kind_end.checked_add(thread_companion_tail::FLAGS)?),
-            }),
-            None => None,
-        };
+            });
+        } else if reciprocal_hole_history.is_some() {
+            let [(first_at, first), (second_at, second)] = reciprocal_hole_flags(bytes, &scope)?;
+            scope.companion_suppressed = Some(crate::records::identity::Located {
+                value: first == 1 || second == 1,
+                offset: if first == 0 && second == 1 {
+                    second_at
+                } else {
+                    first_at
+                },
+            });
+        }
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -2757,6 +2818,25 @@ fn reciprocal_hole_members(
         && tail.get(closing_at + REFERENCE) == Some(&0)
         && tail.len() == closing_at + REFERENCE + 1)
         .then_some(history_at)
+}
+
+fn reciprocal_hole_flags(bytes: &[u8], scope: &DesignParameterScope) -> Option<[(u64, u8); 2]> {
+    let [first_at, second_at] = scope.reciprocal_hole_suppression_offsets()?;
+    let flag = |offset| Some((offset, *bytes.get(usize::try_from(offset).ok()?)?));
+    Some([flag(first_at)?, flag(second_at)?])
+}
+
+fn reciprocal_hole_suppression_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let [(first_at, first), (second_at, second)] = reciprocal_hole_flags(bytes, scope)?;
+    (first != second).then(|| {
+        crate::loss::F3dLossCode::FeatureHoleSuppressionConflict.note(format!(
+            "Hole scope {} stores suppression flags {first} at byte {first_at} and {second} at byte {second_at}. Read the Hole as suppressed.",
+            scope.id,
+        ))
+    })
 }
 
 fn exact_typed_canvas_scope_tail(tail: &[u8]) -> bool {

@@ -874,6 +874,14 @@ pub enum NurbsError {
         /// The refused weight.
         weight: f64,
     },
+    /// A source stated a pole coordinate that is not finite.
+    #[error("{field}: pole {index} is not finite")]
+    NonFinitePole {
+        /// The carrier field the pole belongs to.
+        field: String,
+        /// Position of the pole in the lane the source stated.
+        index: usize,
+    },
     /// A knot vector, degree, grid or coordinate the carrier cannot state.
     #[error("{0}")]
     Structure(String),

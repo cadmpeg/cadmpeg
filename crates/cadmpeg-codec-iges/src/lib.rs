@@ -187,8 +187,8 @@ impl CodecBackend for IgesCodec {
                 let (normalized, repeated) = compressed::expand(root.window())?;
                 let mut decoded = reader::decode(&normalized, root.window(), representation, ctx)?;
                 for record in &repeated {
-                    let losses = record.give_up(ctx, root, &mut decoded)?;
-                    decoded.body.losses.extend(losses);
+                    let loss = record.give_up(ctx, root, &mut decoded)?;
+                    decoded.body.losses.push(loss);
                 }
                 Ok(decoded)
             }

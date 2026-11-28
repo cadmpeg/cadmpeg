@@ -2810,6 +2810,24 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `cut_list_folder_tail`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 43 B
+
+The bytes a cut-list folder writes after its last item.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one` | `u32` | little | spec | u32 `1`, i32 `-1`, u32 `2` or `3` · value `1` |
+| 4 | 4 | `minus_one` | `i32` | little | spec | i32 `-1`, u32 `2` or `3` · value `-1` |
+| 8 | 4 | `word` | `u32` | little | spec | u32 `2` or `3` |
+| 12 | 23 | `zeros` | `bytes[23]` | little | spec | 23 zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 35 | 4 | `one_after_zeros` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
+| 39 | 4 | `one_last` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
+
 ## `revolution_turn_block`
 
 Spec §Extrusion feature objects · layout: byte offsets · size: 9 B
