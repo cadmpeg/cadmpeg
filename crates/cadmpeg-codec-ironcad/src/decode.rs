@@ -387,7 +387,8 @@ fn classify<'a>(
                     Ok(matched) => {
                         if let Err(error) = layers.insert(matched) {
                             losses.push(
-                                IronCadLossCode::KernelUnverified.note(collision(&error, &carrier)),
+                                IronCadLossCode::DialectLayerCollision
+                                    .note(collision(&error, &carrier)),
                             );
                         }
                     }
@@ -407,15 +408,18 @@ fn classify<'a>(
     }
     for message in cadmpeg_parasolid::push_extras(
         layers,
-        cadmpeg_parasolid::extra_layers(parasolid, dialect::VERIFIED_PARASOLID_GRAMMARS),
+        cadmpeg_parasolid::extra_layers(
+            parasolid,
+            crate::IronCadCodec::VERIFIED_PARASOLID_GRAMMARS,
+        ),
     ) {
-        losses.push(IronCadLossCode::KernelUnverified.note(message));
+        losses.push(IronCadLossCode::DialectLayerCollision.note(message));
     }
     for matched in layers.iter() {
         let message = cadmpeg_parasolid::unverified_message(matched)
             .or_else(|| cadmpeg_asm::dialect::unverified_message("ACIS record", matched));
         if let Some(message) = message {
-            losses.push(IronCadLossCode::KernelUnverified.note(message));
+            losses.push(IronCadLossCode::KernelDialectUnverified.note(message));
         }
     }
     settle(ctx, &mut bodies, losses)?;

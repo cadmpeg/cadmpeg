@@ -388,6 +388,7 @@ fn check_layer_set(
         if layer.format() == "parasolid" {
             if (primary.format() == "nx" && !cfg!(feature = "nx"))
                 || (primary.format() == "sldprt" && !cfg!(feature = "sldprt"))
+                || (primary.format() == "ironcad" && !cfg!(feature = "ironcad"))
             {
                 continue;
             }
@@ -450,6 +451,8 @@ fn classify_parasolid_layer(
         "nx" => cadmpeg_codec_nx::NxCodec::VERIFIED_PARASOLID_GRAMMARS,
         #[cfg(feature = "sldprt")]
         "sldprt" => cadmpeg_codec_sldprt::SldprtCodec::VERIFIED_PARASOLID_GRAMMARS,
+        #[cfg(feature = "ironcad")]
+        "ironcad" => cadmpeg_codec_ironcad::IronCadCodec::VERIFIED_PARASOLID_GRAMMARS,
         _ => {
             return Err(AdmissionViolation::new(
                 snapshot,
@@ -516,6 +519,11 @@ fn check_parasolid_capabilities(registry: &RegistryRows) -> Result<(), Admission
         (
             "sldprt",
             cadmpeg_codec_sldprt::SldprtCodec::VERIFIED_PARASOLID_GRAMMARS,
+        ),
+        #[cfg(feature = "ironcad")]
+        (
+            "ironcad",
+            cadmpeg_codec_ironcad::IronCadCodec::VERIFIED_PARASOLID_GRAMMARS,
         ),
     ] {
         for dialect in verified {

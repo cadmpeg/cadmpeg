@@ -13,7 +13,8 @@ pub(crate) enum IronCadLossCode {
     RecordHeaderUnrecognized,
     KernelUnrecognized,
     KernelPrologueUnreadable,
-    KernelUnverified,
+    KernelDialectUnverified,
+    DialectLayerCollision,
     BodyUnreadable,
     ParasolidBodyPartial,
     BodyRecordsRetained,
@@ -59,7 +60,14 @@ impl IronCadLossCode {
                 "record.prologue-unreadable",
                 LossTaxonomy::SourceDialectUnverified,
             ),
-            Self::KernelUnverified => ("kernel.unverified", LossTaxonomy::SourceDialectUnverified),
+            Self::KernelDialectUnverified => (
+                "source.kernel-dialect-unverified",
+                LossTaxonomy::SourceDialectUnverified,
+            ),
+            Self::DialectLayerCollision => (
+                "source.dialect-layer-collision",
+                LossTaxonomy::DecodeDiagnostic,
+            ),
             Self::ParasolidBodyPartial => (
                 "body.parasolid-partial",
                 LossTaxonomy::GeometryNotTransferred,
