@@ -414,10 +414,11 @@ fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResu
     inventory
         .refused
         .insert(("generated".to_owned(), ordinal), given_up.to_owned());
-    inventory.refuse_references(&ctx, &sheet, true)?;
+    inventory.refuse_references(&ctx, &sheet, 0x40, true)?;
     let losses = inventory.losses();
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
-    assert!(losses.iter().all(|loss| loss.code != unreadable));
+    assert!(!losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)));
     assert!(losses.contains(&cadmpeg_ir::unknown::part::dropped_with(
         cadmpeg_ir::ids::Identity::new(&sheet.id)?,
         cadmpeg_ir::ids::Identity::new(given_up)?,
@@ -426,24 +427,45 @@ fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResu
 }
 
 #[test]
-fn a_record_refused_for_its_own_references_is_given_up_by_its_own_id() -> TestResult {
+fn a_record_refused_for_its_own_references_gives_up_its_payload() -> TestResult {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let sheet = record(Family::Sheet, SHEET, sheet(6))?;
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let undecoded = cadmpeg_ir::unknown::part::record_undecoded_kind();
     for links in [false, true] {
         let mut inventory = crate::drawing::Inventory::default();
-        inventory.refuse_references(&ctx, &sheet, links)?;
-        let charges = inventory
+        inventory.refuse_references(&ctx, &sheet, 0x40, links)?;
+        assert!(!inventory
             .losses()
-            .into_iter()
-            .filter(|loss| loss.code == unreadable)
-            .collect::<Vec<_>>();
-        assert_eq!(charges.len(), 1);
-        assert!(charges[0]
-            .message
-            .split_whitespace()
-            .any(|token| token == sheet.id));
-        assert!(!charges[0].message.contains("record-issue#"));
+            .iter()
+            .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)));
+        let [part] = inventory.given_up.as_slice() else {
+            return Err("one given-up part".into());
+        };
+        let charge = part.loss();
+        assert_eq!(charge.code, undecoded);
+        assert!(
+            charge.message.starts_with(&format!(
+                "part rse-record stream=\"RSeStorage/Bgenerated:expanded\" offset=64 length={} ",
+                sheet.payload.len()
+            )),
+            "{}",
+            charge.message
+        );
+        assert!(
+            charge
+                .message
+                .contains("does not select the required unique reference targets"),
+            "{}",
+            charge.message
+        );
+        assert!(
+            charge
+                .message
+                .ends_with(&format!("; dropped=[{}]", sheet.id)),
+            "{}",
+            charge.message
+        );
+        assert!(!charge.message.contains("record-issue#"));
         assert_eq!(
             inventory
                 .refused

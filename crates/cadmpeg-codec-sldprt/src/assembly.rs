@@ -23,7 +23,7 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::GivenUpPart;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart};
 
 use cadmpeg_core::bytes::contains;
 
@@ -248,13 +248,16 @@ pub(crate) fn read(
         Some(Some(_)) if trees_differ => NativeAssembly::structure_given_up(
             ctx,
             &trees,
-            format!(
+            Cause::Undecoded,
+            &format!(
                 "The document holds different `{TREE_SECTION}` sections. No occurrence is \
                  transferred."
             ),
         )?,
         Some(Some(text)) => native_project(ctx, &text, &trees, &virtual_sections)?,
-        Some(None) => NativeAssembly::structure_given_up(ctx, &trees, unreadable)?,
+        Some(None) => {
+            NativeAssembly::structure_given_up(ctx, &trees, Cause::Unreadable, &unreadable)?
+        }
         None => NativeAssembly::structure_lost(unreadable),
     };
     if !embedded.is_empty() {
@@ -338,11 +341,23 @@ fn native_project(
     let document = match ctx.parse_xml(text, "parse SolidWorks component instance tree") {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(CodecError::NotImplemented(detail)) => {
+            return NativeAssembly::structure_given_up(
+                ctx,
+                trees,
+                Cause::Undecoded,
+                &format!(
+                    "The `{TREE_SECTION}` section passes a bound of the XML reader: {detail}. \
+                     No occurrence is transferred."
+                ),
+            );
+        }
         Err(_) => {
             return NativeAssembly::structure_given_up(
                 ctx,
                 trees,
-                format!(
+                Cause::Unreadable,
+                &format!(
                     "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
                      transferred."
                 ),
@@ -354,7 +369,8 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
-            format!(
+            Cause::Undecoded,
+            &format!(
                 "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
                 root.tag_name().name()
             ),
@@ -405,7 +421,8 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
-            format!(
+            Cause::Unreadable,
+            &format!(
                 "The component tree repeats the `{element}` id `{id}`. No occurrence is \
                  transferred."
             ),
@@ -421,7 +438,8 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
-            format!(
+            Cause::Undecoded,
+            &format!(
                 "The component tree names {} active configurations. No occurrence is \
                  transferred.",
                 active.len()
@@ -433,7 +451,8 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
-            format!(
+            Cause::Unreadable,
+            &format!(
                 "The active configuration names model `{root_model}`, which the component \
                  tree does not define. No occurrence is transferred."
             ),
@@ -476,7 +495,8 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
-            format!(
+            Cause::Unreadable,
+            &format!(
                 "The active configuration's model `{root_model}` has no valid identity. No \
                  occurrence is transferred."
             ),
@@ -490,11 +510,12 @@ fn native_project(
     Ok(native)
 }
 
-/// A component instance the walk gives up: its occurrence, its name, why,
-/// and the occurrences below it that have no owner without it.
+/// A component instance the walk gives up: its occurrence, its name, the
+/// cause and why, and the occurrences below it that have no owner without it.
 struct GivenUpInstance {
     occurrence: OccurrenceId,
     name: String,
+    cause: Cause,
     why: String,
     below: Vec<OccurrenceId>,
 }
@@ -699,10 +720,11 @@ impl<'a> Walk<'_, 'a> {
         Ok(Some(id))
     }
 
-    fn give_up(&mut self, occurrence: OccurrenceId, name: String, why: String) {
+    fn give_up(&mut self, occurrence: OccurrenceId, name: String, cause: Cause, why: String) {
         self.given_up.push(GivenUpInstance {
             occurrence,
             name,
+            cause,
             why,
             below: Vec::new(),
         });
@@ -791,23 +813,21 @@ impl<'a> Walk<'_, 'a> {
     /// dropped with it.
     fn report_given_up(&mut self) -> Result<(), CodecError> {
         for instance in std::mem::take(&mut self.given_up) {
-            let note = SldprtLossCode::AssemblyPlacementUnresolved.note(format!(
-                "Component instance `{}` {} and is omitted.",
-                instance.name, instance.why
-            ));
             let below = instance
                 .below
                 .into_iter()
                 .filter(|occurrence| !self.claimed.contains(occurrence))
                 .collect::<BTreeSet<_>>();
-            let unreadable =
-                cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(&instance.occurrence, &note)
-                    .dropping(&below)
-                    .loss();
+            let given_up = cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                &instance.occurrence,
+                instance.cause,
+                format!("component instance `{}` {}", instance.name, instance.why),
+            )
+            .dropping(&below)
+            .loss();
             self.ctx
                 .charge_entities(1, "report SolidWorks component instance")?;
-            self.native.push_loss(note);
-            self.native.push_loss(unreadable);
+            self.native.push_loss(given_up);
         }
         Ok(())
     }
@@ -849,13 +869,19 @@ impl<'a> Walk<'_, 'a> {
                 continue;
             }
             let Some(child) = child else {
-                self.give_up(instance.1, name, "names no component model".into());
+                self.give_up(
+                    instance.1,
+                    name,
+                    Cause::Undecoded,
+                    "names no component model".into(),
+                );
                 continue;
             };
             let Some(child_model) = self.models.get(child) else {
                 self.give_up(
                     instance.1,
                     name,
+                    Cause::Unreadable,
                     format!("names model `{child}`, which the component tree does not define"),
                 );
                 continue;
@@ -865,7 +891,12 @@ impl<'a> Walk<'_, 'a> {
                 if text.is_some_and(is_mirrored) {
                     self.tally.mirrored.push(name);
                 } else {
-                    self.give_up(instance.1, name, "has no proper rigid placement".into());
+                    self.give_up(
+                        instance.1,
+                        name,
+                        Cause::Undecoded,
+                        "has no proper rigid placement".into(),
+                    );
                 }
                 self.adopt(Some(child), path)?;
                 continue;
@@ -874,6 +905,7 @@ impl<'a> Walk<'_, 'a> {
                 self.give_up(
                     instance.1,
                     name,
+                    Cause::Unreadable,
                     format!("places model `{child}`, which contains the instance"),
                 );
                 continue;
@@ -886,6 +918,7 @@ impl<'a> Walk<'_, 'a> {
                     self.given_up.push(GivenUpInstance {
                         occurrence: instance.1,
                         name,
+                        cause: Cause::Unreadable,
                         why: format!("places model `{child}`, which has no valid identity"),
                         below,
                     });

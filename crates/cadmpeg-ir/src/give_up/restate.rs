@@ -29,6 +29,11 @@ impl Schema {
         home.get("properties")?.get(field)?.get("items")
     }
 
+    /// Whether the schema holds the arena `field` of `home`.
+    pub(crate) fn holds(&self, home: &str, field: &str) -> bool {
+        self.record(home, field).is_some()
+    }
+
     /// The committed CADIR schema, read once, or `None` where it does not
     /// parse.
     pub(crate) fn cadir() -> Option<&'static Self> {
@@ -73,6 +78,37 @@ impl Schema {
                 Some(stated) => typed(stated),
             })
             .collect()
+    }
+
+    /// Whether a record of the arena `field` of `home` can hold a value of a
+    /// definition of the family `definition`, or `None` where the schema
+    /// holds no record of the arena.
+    pub(crate) fn reaches(&self, home: &str, field: &str, definition: &str) -> Option<bool> {
+        let defs = self.0.get("$defs").and_then(Value::as_object);
+        let mut seen = BTreeSet::new();
+        let mut open = vec![self.record(home, field)?];
+        while let Some(node) = open.pop() {
+            match node {
+                Value::Object(map) => {
+                    let target = map
+                        .get("$ref")
+                        .and_then(Value::as_str)
+                        .and_then(|link| link.strip_prefix("#/$defs/"));
+                    if let Some(target) = target {
+                        if family(target) == definition {
+                            return Some(true);
+                        }
+                        if seen.insert(target) {
+                            open.extend(defs.and_then(|defs| defs.get(target)));
+                        }
+                    }
+                    open.extend(map.values());
+                }
+                Value::Array(items) => open.extend(items),
+                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+            }
+        }
+        Some(false)
     }
 
     /// Each name of an id that `lookup` finds in `record`, a record of the
@@ -211,6 +247,9 @@ impl Schema {
 
 /// The schema definition of an id.
 const IDENTITY: &str = "Identity";
+
+/// The schema definition family of a topology, whose ids are local to it.
+pub(super) const TOPOLOGY: &str = "Topology";
 
 /// The schema definition families the rewrite gives a partial form or a
 /// collection rule, and the one definition it sorts again.

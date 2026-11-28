@@ -3,7 +3,9 @@
 //!
 //! Each feature node of the Keywords tree is a member, in regeneration order:
 //! a node's nested nodes (an absorbed sketch) precede it. A `FeatureManager`
-//! folder is a `Folder` over the run of its members. The other tree nodes
+//! folder is a `Folder` over the run of its members; the run holds the nodes
+//! nested under each of its nodes, so the folder node's children are the
+//! nodes of the run that no other node of the run holds. The other tree nodes
 //! (annotations, lights, body folders, the equations folder) have no design
 //! meaning, so neither they nor the nodes under them are members; the origin
 //! is a datum feature (§6.2).
@@ -14,6 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::Folder;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition};
+use cadmpeg_ir::design::projection::restated::{NodeStatement, Restater};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::FeatureId;
@@ -30,6 +33,10 @@ pub(super) struct Timeline {
     pub(super) features: Vec<Feature>,
     /// The folders over runs of the members.
     pub(super) folders: Vec<Folder>,
+    /// The model feature of each folder node a folder states.
+    pub(super) folder_records: Vec<FeatureId>,
+    /// The children of each folder node a folder states, in tree order.
+    pub(super) folder_children: Vec<Vec<FeatureId>>,
     /// The feature each member node's native record became.
     pub(super) features_by_record: HashMap<String, FeatureId>,
     /// The native records of the equations folders, whose dimensions are the
@@ -52,8 +59,35 @@ enum Step<'a> {
     Enter(&'a records::Feature),
     /// Emit a node after the nodes under it.
     Emit(&'a records::Feature, bool),
-    /// Close the folder whose first member is at `first`.
-    CloseFolder { first: usize, name: &'a str },
+    /// Close the folder whose first member is at `first` and whose node
+    /// holds `children`.
+    CloseFolder {
+        first: usize,
+        name: &'a str,
+        record: &'a str,
+        children: Vec<&'a records::Feature>,
+    },
+}
+
+impl Timeline {
+    /// Each folder node with what its `Folder` states of it, restated by
+    /// `by`: the children of the folder node its run holds as members and its
+    /// name. A `Folder` states no suppression and no result.
+    pub(super) fn folder_nodes(&self, by: &Restater) -> Vec<(FeatureId, Restater, NodeStatement)> {
+        self.folders
+            .iter()
+            .zip(&self.folder_records)
+            .zip(&self.folder_children)
+            .map(|((folder, record), children)| {
+                let statement = NodeStatement {
+                    members: children.clone(),
+                    name: folder.name.clone(),
+                    ..NodeStatement::default()
+                };
+                (record.clone(), by.clone(), statement)
+            })
+            .collect()
+    }
 }
 
 /// The timeline of every history, in history order.
@@ -75,6 +109,8 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                 None => roots.push(feature),
             }
         }
+        let mut emitted_at = HashMap::<&str, usize>::new();
+        let mut closed_at = HashMap::<&str, usize>::new();
         let mut stack = roots
             .iter()
             .rev()
@@ -93,6 +129,8 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                             stack.push(Step::CloseFolder {
                                 first: timeline.features.len(),
                                 name: &feature.name,
+                                record: &feature.id,
+                                children: nested.to_vec(),
                             });
                         }
                         Some(FeatureTreeNodeRole::ModelOrigin) => {
@@ -117,6 +155,7 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                         super::operation::operation(feature, &history.features, &by_source)
                     };
                     let id = neutral_feature_id(&feature.id)?;
+                    emitted_at.insert(feature.id.as_str(), timeline.features.len());
                     timeline
                         .features_by_record
                         .insert(feature.id.clone(), id.clone());
@@ -136,7 +175,12 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                         native_ref: Some(feature.id.clone()),
                     });
                 }
-                Step::CloseFolder { first, name } => {
+                Step::CloseFolder {
+                    first,
+                    name,
+                    record,
+                    children,
+                } => {
                     let Some(last) = timeline.features.len().checked_sub(1) else {
                         continue;
                     };
@@ -153,6 +197,20 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                         first: index(first)?,
                         last: index(last)?,
                     });
+                    let in_run = |child: &records::Feature| {
+                        emitted_at
+                            .get(child.id.as_str())
+                            .or_else(|| closed_at.get(child.id.as_str()))
+                            .is_some_and(|at| (first..=last).contains(at))
+                    };
+                    let members = children
+                        .iter()
+                        .filter(|child| in_run(child))
+                        .map(|child| neutral_feature_id(&child.id))
+                        .collect::<Result<_, _>>()?;
+                    closed_at.insert(record, first);
+                    timeline.folder_records.push(neutral_feature_id(record)?);
+                    timeline.folder_children.push(members);
                 }
             }
         }

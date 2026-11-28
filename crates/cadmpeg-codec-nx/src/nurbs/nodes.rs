@@ -74,6 +74,7 @@ pub(super) fn lanes<'a>(bytes: &'a [u8], primary: &PrimaryRecords<'_>) -> Lanes<
             .or_insert(values);
     }
     Lanes {
+        source: super::LaneSource::Records,
         arrays: Arrays { u16s, f64s },
         surface_payloads: payloads(B_SURFACE, NURBS_SURF),
         curve_payloads: payloads(B_CURVE, NURBS_CURVE),

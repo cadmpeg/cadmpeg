@@ -1725,11 +1725,8 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                             offset: 0,
                             len: malformed.len(),
                         };
-                        let edits = crate::edit::AsmEditSet::from_framed(
-                            vec![record.clone()],
-                            int_width,
-                            1.0,
-                        );
+                        let edits =
+                            crate::edit::AsmEditSet::from_framed(vec![record.clone()], int_width);
                         let definition =
                             cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Projection(cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                                     std::array::from_fn(|_| {
@@ -1932,7 +1929,7 @@ fn a_reversed_intersection_context_patches_on_the_subtype_parameter() {
             offset: 0,
             len: 0,
         };
-        let edits = crate::edit::AsmEditSet::from_framed(vec![curve.clone(), edge], int_width, 1.0);
+        let edits = crate::edit::AsmEditSet::from_framed(vec![curve.clone(), edge], int_width);
         let unsupported = || IntcurveSupportSide {
             surface: None,
             pcurve: None,

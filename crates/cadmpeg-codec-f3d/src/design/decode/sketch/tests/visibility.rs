@@ -277,6 +277,15 @@ fn collection_stream_version(
     collections: &[(u64, &[u64])],
     version: u32,
 ) -> (Vec<u8>, crate::metastream::MetaStream) {
+    collection_stream_form(named_collection, collections, version, None)
+}
+
+fn collection_stream_form(
+    named_collection: u64,
+    collections: &[(u64, &[u64])],
+    version: u32,
+    member_type: Option<&str>,
+) -> (Vec<u8>, crate::metastream::MetaStream) {
     let (mut bytes, mut metadata) = visibility_stream();
     let member_at = bytes.len() - member(1, 1).len();
     bytes[member_at + 37..member_at + 45].copy_from_slice(&named_collection.to_le_bytes());
@@ -307,6 +316,9 @@ fn collection_stream_version(
         for target in *members {
             bytes.push(1);
             bytes.extend_from_slice(&target.to_le_bytes());
+            if let Some(member_type) = member_type {
+                crate::test_support::lp_ascii(&mut bytes, member_type);
+            }
             bytes.extend_from_slice(&[0; 2]);
         }
         metadata.records.push(crate::metastream::RecordIndexEntry {
@@ -510,16 +522,16 @@ fn unread_folder_charges_one_loss_for_its_sketches() {
     let (visibilities, losses, given_up) = decode_with_given_up(&bytes, &metadata);
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].1.ordinal_collection, None);
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
-    );
-    assert!(losses[0].message.contains("sketch folder 500"));
-    // §3.3: the folder frame is given up as a part.
+    assert!(losses.is_empty(), "{losses:?}");
+    // §3.3: the folder frame is given up as a part, and the give-up names
+    // the folder.
     let [frame] = given_up.as_slice() else {
         panic!("one given-up folder frame: {given_up:?}");
     };
     assert_eq!(frame.span().0, STREAM);
+    let (cause, text) = frame.reason();
+    assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Undecoded);
+    assert!(text.contains("sketch folder 500"), "{text}");
 }
 
 #[test]
@@ -572,34 +584,31 @@ fn collection_counted_run_requires_complete_plain_local_references() {
     let (valid, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
     let reference_at = valid.len() - 11;
     for end in reference_at..valid.len() {
-        let (rows, losses) = decode_with_losses(&valid[..end], &metadata);
+        let (rows, _, given_up) = decode_with_given_up(&valid[..end], &metadata);
         assert_eq!(rows.len(), 1);
-        assert!(losses
-            .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind()));
+        assert!(collection_given_up(&given_up), "{given_up:?}");
     }
     let mut null_target = valid.clone();
     null_target[reference_at + 1..reference_at + 9].fill(0);
-    let (rows, losses) = decode_with_losses(&null_target, &metadata);
+    let (rows, _, given_up) = decode_with_given_up(&null_target, &metadata);
     assert_eq!(rows.len(), 1);
-    assert!(
-        losses
-            .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind())
-    );
+    assert!(collection_given_up(&given_up), "{given_up:?}");
     let mut cross_segment = valid;
     cross_segment[reference_at + 10] = 1;
     cross_segment.extend_from_slice(&1u32.to_le_bytes());
-    let (rows, losses) = decode_with_losses(&cross_segment, &metadata);
+    let (rows, _, given_up) = decode_with_given_up(&cross_segment, &metadata);
     assert_eq!(rows.len(), 1);
-    assert!(
-        losses
-            .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind())
-    );
+    assert!(collection_given_up(&given_up), "{given_up:?}");
+}
+
+/// Whether `given_up` holds the ordinal collection, given up as a form the
+/// decoder has no reading for.
+fn collection_given_up(given_up: &[crate::design::decode::record::GivenUpFrame]) -> bool {
+    given_up.iter().any(|frame| {
+        let (cause, text) = frame.reason();
+        cause == cadmpeg_ir::unknown::part::Cause::Undecoded
+            && text.contains("sketch ordinal collection")
+    })
 }
 
 #[test]
@@ -610,6 +619,27 @@ fn version_three_collection_has_six_bytes_before_its_member_run() {
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
     assert!(visibilities[0].1.visible);
+}
+
+#[test]
+fn version_three_collection_run_carries_the_sketch_container_type() {
+    let decode = |version, member_type| {
+        let (bytes, metadata) =
+            collection_stream_form(300, &[(300, &[ENTITY_SUFFIX])], version, Some(member_type));
+        decode_with_given_up(&bytes, &metadata)
+    };
+    let (visibilities, losses, given_up) = decode(3, SKETCH_CONTAINER_TYPE_GUID);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert!(losses.is_empty());
+    assert!(given_up.is_empty());
+    for (version, member_type) in [
+        (4, SKETCH_CONTAINER_TYPE_GUID),
+        (3, "11111111-2222-4333-8444-555555555555"),
+    ] {
+        let (_, _, given_up) = decode(version, member_type);
+        assert_eq!(given_up.len(), 1, "{given_up:?}");
+        assert!(collection_given_up(&given_up), "{given_up:?}");
+    }
 }
 
 #[test]

@@ -295,7 +295,14 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
             .to_owned()
     };
     assert_eq!(source.model.attributes.len(), 4);
-    assert!(unwritten(&source, &records, &notes).unwrap().is_empty());
+    assert!(unwritten(
+        &source,
+        &records,
+        &notes,
+        &cadmpeg_core::decode::DecodePolicy::desktop()
+    )
+    .unwrap()
+    .is_empty());
     let mut read_back = source.clone();
     for row in &mut read_back.model.attributes {
         if row.name == "Mass" {
@@ -306,7 +313,14 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
             row.values = vec![Some(AttributeValue::float(0.0).unwrap())];
         }
     }
-    assert!(unwritten(&read_back, &records, &notes).unwrap().is_empty());
+    assert!(unwritten(
+        &read_back,
+        &records,
+        &notes,
+        &cadmpeg_core::decode::DecodePolicy::desktop()
+    )
+    .unwrap()
+    .is_empty());
 
     let mut edited = source.clone();
     for row in &mut edited.model.attributes {
@@ -327,10 +341,15 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
     ];
     expected.sort();
     assert_eq!(
-        unwritten(&edited, &records, &notes)
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        unwritten(
+            &edited,
+            &records,
+            &notes,
+            &cadmpeg_core::decode::DecodePolicy::desktop()
+        )
+        .unwrap()
+        .into_iter()
+        .collect::<Vec<_>>(),
         expected
     );
 
@@ -347,10 +366,15 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
     let mut expected = vec![(id("Designer"), Held::Nothing), (id("Mass"), Held::Nothing)];
     expected.sort();
     assert_eq!(
-        unwritten(&source, &without_bytes, &notes)
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        unwritten(
+            &source,
+            &without_bytes,
+            &notes,
+            &cadmpeg_core::decode::DecodePolicy::desktop()
+        )
+        .unwrap()
+        .into_iter()
+        .collect::<Vec<_>>(),
         expected
     );
 }

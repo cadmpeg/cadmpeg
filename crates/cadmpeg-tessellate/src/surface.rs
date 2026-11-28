@@ -56,6 +56,8 @@ const SINGULAR_RATIO: f64 = 1e-9;
 pub(crate) struct Carrier<'t, 'ir> {
     pub(crate) index: &'t ModelIndex<'ir>,
     pub(crate) work: &'t WorkBudget,
+    /// The admission each evaluation of the carrier runs under.
+    pub(crate) admission: EvaluationAdmission<'ir, 'ir>,
     pub(crate) id: &'ir SurfaceId,
     /// The solved geometry, when the carrier has one.
     solved: Option<&'ir SolvedSurfaceGeometry>,
@@ -131,6 +133,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
     pub(crate) fn new(
         index: &'t ModelIndex<'ir>,
         work: &'t WorkBudget,
+        admission: EvaluationAdmission<'ir, 'ir>,
         id: &'ir SurfaceId,
     ) -> Result<Self, Refusal> {
         let surface = index
@@ -143,6 +146,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         let mut carrier = Self {
             index,
             work,
+            admission,
             id,
             solved,
             periods: [None, None],
@@ -350,13 +354,10 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         if let Some(known) = self.points.borrow().get(&bits(uv)) {
             return Ok(*known);
         }
-        let point = finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(
-            self.work,
-            |admission| {
-                let [u, v] = self.in_domain(uv);
-                model_surface_point_by_id(admission, self.index, self.id, u, v)
-            },
-        ))
+        let point = finite_or_refusal(self.admission.within_work_slice(self.work, |admission| {
+            let [u, v] = self.in_domain(uv);
+            model_surface_point_by_id(admission, self.index, self.id, u, v)
+        }))
         .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)?;
         self.points.borrow_mut().insert(bits(uv), point);
@@ -367,15 +368,13 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         if let Some(known) = self.partials.borrow().get(&bits(uv)) {
             return Ok(*known);
         }
-        let partials = finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(
-            self.work,
-            |admission| {
+        let partials =
+            finite_or_refusal(self.admission.within_work_slice(self.work, |admission| {
                 let [u, v] = self.in_domain(uv);
                 model_surface_partials_by_id(admission, self.index, self.id, u, v)
-            },
-        ))
-        .map(|partials| partials.map(SurfacePartials::into_raw))
-        .map_err(resource)?;
+            }))
+            .map(|partials| partials.map(SurfacePartials::into_raw))
+            .map_err(resource)?;
         self.partials.borrow_mut().insert(bits(uv), partials);
         Ok(partials)
     }
@@ -440,7 +439,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
     ) -> Result<Option<Uv>, Refusal> {
         let project = |seed: Option<Uv>| -> Result<Option<Uv>, Refusal> {
             Ok(nurbs_surface_parameter_near_point(
-                EvaluationAdmission::Standard,
+                self.admission,
                 nurbs,
                 point,
                 seed.map(|[u, v]| Point2::new(u, v)),
@@ -594,11 +593,9 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         for step in 0..=samples {
             let t = sweep.domain[0]
                 + (sweep.domain[1] - sweep.domain[0]) * f64::from(step) / f64::from(samples);
-            let on = finite_or_refusal(
-                EvaluationAdmission::Standard.within_work_slice(self.work, |admission| {
-                    model_curve_point_by_id(admission, self.index, sweep.directrix, t)
-                }),
-            )
+            let on = finite_or_refusal(self.admission.within_work_slice(self.work, |admission| {
+                model_curve_point_by_id(admission, self.index, sweep.directrix, t)
+            }))
             .map_err(resource)?;
             let Some(on) = on.map(cadmpeg_ir::features::geometry::FinitePoint3::get) else {
                 continue;

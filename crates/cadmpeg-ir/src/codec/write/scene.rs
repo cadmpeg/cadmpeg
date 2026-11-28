@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scene settings that the caller of an export selects.
 
-/// The up axis of a written scene.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpAxis {
-    /// The +Y axis points up.
-    Y,
-    /// The +Z axis points up.
-    Z,
-}
+use crate::up_axis::UpAxis;
 
 /// Scene settings for an encoder of a scene format. An encoder whose format
 /// has no such setting does not read them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SceneOptions {
     /// The up axis of the scene. The encoder turns the model so that its
-    /// up direction is this axis. `None` keeps the up axis of the source.
+    /// up direction is this axis. `None` keeps the up axis of the source, and writes Z where the
+    /// source states none.
     pub up_axis: Option<UpAxis>,
     /// Metres per scene unit, finite and positive. `None` selects the
     /// default of the format.

@@ -258,8 +258,13 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
                 parameter_range: Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap()),
             });
         }
-        let mut builder =
-            super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
+        let mut builder = super::super::Builder::new(
+            &ir,
+            crate::StepSchema::Ap214,
+            HashSet::new(),
+            crate::test_support::write_context(),
+        )
+        .unwrap();
         if split {
             let shells = ir
                 .geometry
@@ -438,8 +443,13 @@ fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
         (1.0, 0.0, [1.0, 0.0], [1.0, 0.0]),
     ] {
         let (ir, pcurve, surface, edge) = cube_edge_with_pcurve(from, to);
-        let builder =
-            super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
+        let builder = super::super::Builder::new(
+            &ir,
+            crate::StepSchema::Ap214,
+            HashSet::new(),
+            crate::test_support::write_context(),
+        )
+        .unwrap();
         let directed = builder
             .directed_use_range(
                 &pcurve,
@@ -492,8 +502,13 @@ fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
                 isoparametric: None,
                 parameter_range: Some(DirectedParameterRange::new([0.25, 0.75]).unwrap()),
             });
-        let mut builder =
-            super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
+        let mut builder = super::super::Builder::new(
+            &ir,
+            crate::StepSchema::Ap214,
+            HashSet::new(),
+            crate::test_support::write_context(),
+        )
+        .unwrap();
         assert!(builder
             .emit_coedge_edge(&ir.geometry.coedges[index])
             .is_some());
@@ -514,8 +529,13 @@ fn a_closed_edge_directs_only_an_increasing_use_interval() {
     let (mut ir, pcurve, surface, mut edge) = cube_edge_with_pcurve(0.0, 0.0);
     edge.ends.as_mut().unwrap().end = edge.ends.as_ref().unwrap().start.clone();
     ir.geometry.edges[0] = edge.clone();
-    let builder =
-        super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
+    let builder = super::super::Builder::new(
+        &ir,
+        crate::StepSchema::Ap214,
+        HashSet::new(),
+        crate::test_support::write_context(),
+    )
+    .unwrap();
     for (stored, expected) in [([0.0, 1.0], Some([0.0, 1.0])), ([1.0, 0.0], None)] {
         let directed = builder
             .directed_use_range(
@@ -568,8 +588,13 @@ fn reflected_conic_emission_uses_a_rational_spline() {
             parameter_range: Some(DirectedParameterRange::new([0.0, TAU]).unwrap()),
         });
     }
-    let mut builder =
-        super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
+    let mut builder = super::super::Builder::new(
+        &ir,
+        crate::StepSchema::Ap214,
+        HashSet::new(),
+        crate::test_support::write_context(),
+    )
+    .unwrap();
     for coedge in ir.geometry.coedges.iter().filter(|c| c.edge == edge_id) {
         let (start, end) = builder
             .coedge_pcurve_ends(coedge.id.as_str())

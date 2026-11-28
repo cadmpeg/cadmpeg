@@ -64,6 +64,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, IdentityKey};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::Cause;
 
 mod adjacency;
 mod emit;
@@ -165,8 +166,12 @@ const MIN_WEDGE_ANGLE_RAD: f64 = 1.0e-6;
 pub(crate) enum MeshBrepError {
     /// The mesh has no triangles.
     Empty,
-    /// Every triangle is degenerate.
+    /// Every triangle is degenerate at its stored positions: it repeats an
+    /// index or its corners are collinear.
     AllDegenerate,
+    /// The weld and the repairs leave no triangle of a mesh that has a
+    /// triangle with three distinct, non-collinear corners.
+    Collapsed,
     /// The mesh exceeds [`MAX_TRIANGLES`] or [`MAX_POSITIONS`].
     TooLarge,
     /// The weld tolerance is not a positive finite number.
@@ -196,6 +201,9 @@ impl std::fmt::Display for MeshBrepError {
         match self {
             Self::Empty => f.write_str("mesh has no triangles"),
             Self::AllDegenerate => f.write_str("every triangle of the mesh is degenerate"),
+            Self::Collapsed => {
+                f.write_str("no triangle of the mesh is left after the weld and the repairs")
+            }
             Self::TooLarge => write!(
                 f,
                 "mesh exceeds {MAX_TRIANGLES} triangles or {MAX_POSITIONS} points"
@@ -215,6 +223,24 @@ impl std::fmt::Display for MeshBrepError {
 }
 
 impl std::error::Error for MeshBrepError {}
+
+impl MeshBrepError {
+    /// How the body is charged when it cannot be built.
+    pub(crate) const fn cause(&self) -> Cause {
+        match self {
+            Self::AllDegenerate | Self::IndexOutOfRange { .. } | Self::NonFinitePosition { .. } => {
+                Cause::Unreadable
+            }
+            Self::Empty
+            | Self::Collapsed
+            | Self::TooLarge
+            | Self::CoordinateTooLarge
+            | Self::InvalidTolerance
+            | Self::Model(_)
+            | Self::Internal(_) => Cause::Undecoded,
+        }
+    }
+}
 
 impl From<MeshBrepError> for CodecError {
     fn from(error: MeshBrepError) -> Self {
@@ -353,6 +379,25 @@ fn check_input(input: &MeshInput<'_>, options: MeshBrepOptions) -> Result<(), Me
     Ok(())
 }
 
+/// Whether `triangle` repeats an index or has corners whose stored
+/// positions are exactly collinear. [`check_input`] has admitted its indices.
+fn degenerate_as_stored(positions: &[[f64; 3]], [a, b, c]: [u32; 3]) -> bool {
+    let corner = |i: u32| {
+        usize::try_from(i)
+            .ok()
+            .and_then(|i| positions.get(i))
+            .copied()
+    };
+    match (corner(a), corner(b), corner(c)) {
+        (Some(pa), Some(pb), Some(pc)) if a != b && b != c && a != c => {
+            geom::cross(geom::sub(pb, pa), geom::sub(pc, pa))
+                .iter()
+                .all(|component| *component == 0.0)
+        }
+        _ => true,
+    }
+}
+
 /// Convert `input` into one body and append its entities to `ir.geometry`.
 ///
 /// A body that is not watertight at the requested weld tolerance is built a
@@ -413,7 +458,17 @@ fn build(
     };
     let mut mesh = mesh::Mesh::build(welded, input.triangles)?;
     if mesh.tris.is_empty() {
-        return Err(MeshBrepError::AllDegenerate);
+        return Err(
+            if input
+                .triangles
+                .iter()
+                .all(|t| degenerate_as_stored(input.positions, *t))
+            {
+                MeshBrepError::AllDegenerate
+            } else {
+                MeshBrepError::Collapsed
+            },
+        );
     }
     let mut adjacency = adjacency::build(&mesh.tris)?;
     let mut t_junction_splits = 0;
@@ -453,7 +508,7 @@ fn build(
             return Err(MeshBrepError::Internal("component rewrite lost triangles"));
         }
         if mesh.tris.is_empty() {
-            return Err(MeshBrepError::AllDegenerate);
+            return Err(MeshBrepError::Collapsed);
         }
         adjacency = adjacency::build(&mesh.tris)?;
         if adjacency.non_manifold_edges > 0 {
@@ -492,7 +547,7 @@ fn build(
     }
     let dropped_flat_shells = run_set.drop_flat_shells(&component_of_region)?;
     if (collapsed_faces > 0 || dropped_flat_shells > 0) && run_set.rings.iter().all(Vec::is_empty) {
-        return Err(MeshBrepError::AllDegenerate);
+        return Err(MeshBrepError::Collapsed);
     }
     let closed = adjacency.open_edges == 0 && adjacency.non_manifold_edges == 0;
     let scope = IdentityKey::encode_segment(input.scope);

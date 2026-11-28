@@ -52,12 +52,12 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
-    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, Identity, LoopId, PcurveId, PointId,
+    ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use cadmpeg_parasolid::geometry::Refusal;
@@ -91,64 +91,356 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
 }
 
 /// Gives up the record `node` of Parasolid stream `si`, which the decode
-/// names `stream`, for `why`, as a `parasolid-record` part. The retained
-/// record of the stream keeps the inflated bytes, so the part keeps only
-/// their length and digest.
+/// names `stream`, for `cause` as `why` states, as a `parasolid-record`
+/// part. The retained record of the stream keeps the inflated bytes, so the
+/// part keeps only their length and digest.
 pub(super) fn give_up_record(
     ctx: &DecodeContext<'_>,
-    (si, stream): (usize, &cadmpeg_ir::StreamName),
+    stream: (usize, &cadmpeg_ir::StreamName),
     node: &Node,
-    why: &LossNote,
+    cause: Cause,
+    why: String,
 ) -> Result<GivenUpPart, CodecError> {
+    ctx.give_up_part(
+        stream_part(stream, "parasolid-record", node.pos(), node.bytes())?,
+        cause,
+        give_up_error(cause, why),
+    )
+}
+
+/// The error of a give-up for `cause` with the text `why`: a malformed input
+/// for [`Cause::Unreadable`], and a form without a reading for
+/// [`Cause::Undecoded`].
+fn give_up_error(cause: Cause, why: String) -> CodecError {
+    match cause {
+        Cause::Unreadable => CodecError::Malformed(why),
+        Cause::Undecoded => CodecError::NotImplemented(why),
+    }
+}
+
+/// The part of `kind` over `bytes` at `pos` of Parasolid stream `si`, which
+/// the decode names `stream`. The retained record of the stream keeps the
+/// inflated bytes, so the part keeps only their length and digest.
+fn stream_part<'a>(
+    (si, stream): (usize, &cadmpeg_ir::StreamName),
+    kind: &'static str,
+    pos: usize,
+    bytes: &'a [u8],
+) -> Result<Part<'a>, CodecError> {
     let holder = UnknownId::mint(format!(
         "{}{si}",
         crate::RETAINED_PARASOLID_STREAM_ID_PREFIX
     ))
     .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    ctx.give_up_part(
-        Part::at(
-            "nx",
-            "parasolid-record",
-            u64_from_index(node.pos()),
-            node.bytes(),
-            [ArenaClass::Model],
-        )
-        .in_stream(stream.clone())
-        .contained_in(cadmpeg_ir::ids::Identity::from(holder))
-        .digest_only(),
-        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+    Ok(
+        Part::at("nx", kind, u64_from_index(pos), bytes, [ArenaClass::Model])
+            .in_stream(stream.clone())
+            .contained_in(cadmpeg_ir::ids::Identity::from(holder))
+            .digest_only(),
     )
 }
 
+/// A part of a Parasolid stream that the decode gives up once it knows the
+/// faces that the part's records leave partial.
+struct PendingPart {
+    stream: (usize, cadmpeg_ir::StreamName),
+    kind: &'static str,
+    range: std::ops::Range<usize>,
+    cause: Cause,
+    error: String,
+    id: Identity,
+    /// The kind and XMT index of the record that the part holds, for a record
+    /// of the stream that needs it.
+    record: Option<(NodeKind, u32)>,
+}
+
+/// The parts of the Parasolid streams that the decode gives up, with the
+/// faces that each part marks.
+#[derive(Default)]
+pub(super) struct PendingParts {
+    parts: Vec<PendingPart>,
+    marks: BTreeMap<Identity, BTreeSet<Identity>>,
+}
+
+impl PendingParts {
+    /// Enters the part of `kind` over `bytes` at `pos` of Parasolid stream
+    /// `si`, which the decode names `stream`, given up for `cause` with the
+    /// text of `why`, and returns its stub id. `record` is the kind and XMT
+    /// index of the record that the part holds.
+    fn push(
+        &mut self,
+        (si, stream): (usize, &cadmpeg_ir::StreamName),
+        kind: &'static str,
+        (pos, bytes): (usize, &[u8]),
+        (cause, why): (Cause, &LossNote),
+        record: Option<(NodeKind, u32)>,
+    ) -> Result<Identity, CodecError> {
+        let id = Identity::from(stream_part((si, stream), kind, pos, bytes)?.id()?);
+        self.parts.push(PendingPart {
+            stream: (si, stream.clone()),
+            kind,
+            range: pos..pos + bytes.len(),
+            cause,
+            error: format!("{}: {}", why.code, why.message),
+            id: id.clone(),
+            record,
+        });
+        Ok(id)
+    }
+
+    /// Enters the record `node` of Parasolid stream `si`, which the decode
+    /// names `stream`, as a `parasolid-record` part given up for `cause`
+    /// with the text of `why`, and returns its stub id.
+    pub(super) fn push_record(
+        &mut self,
+        stream: (usize, &cadmpeg_ir::StreamName),
+        node: &Node,
+        why: (Cause, &LossNote),
+    ) -> Result<Identity, CodecError> {
+        self.push(
+            stream,
+            "parasolid-record",
+            (node.pos(), node.bytes()),
+            why,
+            None,
+        )
+    }
+
+    /// The kind, XMT index, and stub id of each part of stream `si` that
+    /// holds a node record.
+    pub(super) fn records_of(
+        &self,
+        si: usize,
+    ) -> impl Iterator<Item = ((NodeKind, u32), &Identity)> {
+        self.parts
+            .iter()
+            .filter(move |part| part.stream.0 == si)
+            .filter_map(|part| Some((part.record?, &part.id)))
+    }
+
+    /// Names `record` among the records that the part `id` marks.
+    pub(super) fn mark(&mut self, id: Identity, record: Identity) {
+        self.marks.entry(id).or_default().insert(record);
+    }
+
+    /// Gives up each part. Its charge names each record it marks that
+    /// `holds` finds in the document.
+    pub(super) fn give_up(
+        self,
+        ctx: &DecodeContext<'_>,
+        scan: &Scan<'_>,
+        holds: impl Fn(&Identity) -> bool,
+        given_up: &mut Vec<GivenUpPart>,
+    ) -> Result<(), CodecError> {
+        let Self { parts, mut marks } = self;
+        for part in parts {
+            let (si, name) = &part.stream;
+            let bytes = scan
+                .streams
+                .get(*si)
+                .and_then(|stream| stream.inflated.get(part.range.clone()))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "NX stream #{si} has no bytes at {:?}",
+                        part.range
+                    ))
+                })?;
+            let marked = marks
+                .remove(&part.id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|record| holds(record));
+            given_up.push(ctx.give_up_part(
+                stream_part((*si, name), part.kind, part.range.start, bytes)?.marking(marked),
+                part.cause,
+                give_up_error(part.cause, part.error),
+            )?);
+        }
+        Ok(())
+    }
+}
+
+/// Enters the records and spans of each Parasolid stream that its primary
+/// parse frames and leaves out: the nodes and EDGE records the graph does
+/// not select, the surface-intersection records that state no construction,
+/// the bytes past a stop of the primary framing that no record the decode
+/// reads holds, and every intersection construction whose identity another
+/// one also carries.
+pub(super) fn give_up_unread(
+    scan: &Scan<'_>,
+    parsed: &crate::native::substrate::ParsedStreams<'_>,
+    parts: &mut PendingParts,
+) -> Result<(), CodecError> {
+    for (si, stream) in scan.streams.iter().enumerate() {
+        let view = parsed.stream(si);
+        let graph = &view.graph;
+        let name = cadmpeg_ir::StreamName::try_from(format!(
+            "nx:parasolid#{si}:{}",
+            stream.kind().label()
+        ))
+        .map_err(CodecError::malformed)?;
+        let mut give_up = |kind, range: std::ops::Range<usize>, why: (Cause, &LossNote), record| {
+            let Some(bytes) = view.source.get(range.clone()) else {
+                return Err(CodecError::malformed(format_args!(
+                    "NX stream #{si} has no bytes at {range:?}"
+                )));
+            };
+            parts.push((si, &name), kind, (range.start, bytes), why, record)?;
+            Ok(())
+        };
+        for (xmt, range) in graph.primary_edge_refusals() {
+            let why = NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                "Primary EDGE in stream #{si} at byte {} has no typed projection under its \
+                 declared field contract and source identity; exact Source bytes remain retained.",
+                range.start
+            ));
+            give_up(
+                "parasolid-record",
+                range.clone(),
+                (Cause::Undecoded, &why),
+                Some((NodeKind::Edge, *xmt)),
+            )?;
+        }
+        for (kind, xmt, range) in graph.primary_node_refusals() {
+            let why = NxLossCode::PrimaryNodeUnresolved.note(format!(
+                "Primary {kind:?} node in stream #{si} at byte {} has no typed projection \
+                 under its declared field contract and source identity; exact Source bytes \
+                 remain retained.",
+                range.start
+            ));
+            give_up(
+                "parasolid-record",
+                range.clone(),
+                (Cause::Undecoded, &why),
+                Some((*kind, *xmt)),
+            )?;
+        }
+        for (xmt, range) in &view.intersections.unread {
+            let why = NxLossCode::IntersectionRecordUnresolved.note(format!(
+                "parasolid#{si} INTERSECTION {xmt} at byte {} states no construction: a \
+                 reference is null, or neither surface reference names a record, or the chart \
+                 and term references are neither a chart nor null; the record is withheld.",
+                range.start
+            ));
+            give_up(
+                "parasolid-record",
+                range.clone(),
+                (Cause::Undecoded, &why),
+                None,
+            )?;
+        }
+        if let Some(stop) = graph.primary_unread_from() {
+            let gaps = graph.unread_spans(view.source.len(), records_read_past(stream, view, stop));
+            if !gaps.is_empty() {
+                let why = NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                    "Primary framing in stream #{si} stops at byte {stop}; the bytes past it \
+                     that no record the decode reads holds, EDGE records among them, have no \
+                     typed projection, and exact Source bytes remain retained."
+                ));
+                for gap in gaps {
+                    give_up("parasolid-unframed", gap, (Cause::Undecoded, &why), None)?;
+                }
+            }
+        }
+        let duplicates = &view.intersections.duplicates;
+        let mut xmts = duplicates.iter().map(|copy| copy.xmt).collect::<Vec<_>>();
+        xmts.sort_unstable();
+        xmts.dedup();
+        for xmt in xmts {
+            let copies = duplicates.iter().filter(|copy| copy.xmt == xmt);
+            let offsets = copies
+                .clone()
+                .map(|copy| copy.pos.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let why = NxLossCode::IntersectionIdentityDuplicated.note(format!(
+                "parasolid#{si} INTERSECTION {xmt} is stored at bytes {offsets}; each copy is \
+                 withheld."
+            ));
+            for copy in copies {
+                give_up(
+                    "parasolid-record",
+                    copy.pos..copy.end,
+                    (Cause::Unreadable, &why),
+                    None,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The span of each record past `stop` of `stream` that the decode reads or
+/// gives up as a part of its own outside its node graph: the
+/// surface-intersection records, the NURBS arrays, control values and
+/// descriptors, the charts, and the LIMIT, blend-bound, and support-UV
+/// records that the readers scanning the whole stream read.
+fn records_read_past(
+    stream: &crate::parasolid::Stream,
+    view: &crate::native::substrate::StreamView<'_>,
+    stop: usize,
+) -> Vec<std::ops::Range<usize>> {
+    let source = view.source;
+    let mut read = view
+        .intersections
+        .source_constructions
+        .iter()
+        .chain(&view.intersections.duplicates)
+        .map(|construction| construction.pos..construction.end)
+        .chain(
+            view.intersections
+                .unread
+                .iter()
+                .map(|(_, range)| range.clone()),
+        )
+        .collect::<Vec<_>>();
+    read.extend(crate::nurbs::record_extents(source, stop));
+    let layout = match &stream.body {
+        crate::parasolid::StreamBody::Parasolid { subtype, .. } => subtype.chart_point_layout(),
+        crate::parasolid::StreamBody::Preview => None,
+    };
+    if let Some(layout) = layout {
+        read.extend((stop..source.len()).filter_map(|tag| {
+            crate::intersection::chart_source_record_at(source, tag, layout)
+                .map(|(_, end)| tag..end)
+        }));
+    }
+    read.extend(crate::intersection::scanned_record_extents(source, layout));
+    read
+}
+
 /// Each graph-owned CONE or TORUS record whose otherwise valid fields state
-/// a form that has no surface, with its loss.
-fn surface_refusals(si: usize, graph: &Graph) -> Vec<(&Node, LossNote)> {
+/// a form that has no surface, with the cause and text of its give-up. A
+/// half-angle pair off the unit identity breaks the record's rules; a
+/// negative half-angle field or major radius states a form that the
+/// decoder has no surface for.
+fn surface_refusals(si: usize, graph: &Graph) -> Vec<(&Node, Cause, String)> {
     [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
         .into_iter()
         .flat_map(|(kind, name)| graph.of_kind(kind).map(move |node| (name, node)))
         .filter_map(|(name, node)| {
-            let (code, cause) = match node.surface_refusal()? {
+            let (cause, why) = match node.surface_refusal()? {
                 SurfaceRefusal::Analytic(Refusal::ConeHalfAngleSign) => (
-                    NxLossCode::CarrierConeHalfAngleSignUnresolved,
+                    Cause::Undecoded,
                     "stores a negative half-angle sine or cosine",
                 ),
                 SurfaceRefusal::Analytic(Refusal::ConeHalfAngleIdentity) => (
-                    NxLossCode::CarrierConeHalfAngleIdentityRefused,
+                    Cause::Unreadable,
                     "stores a half-angle sine and cosine whose squared sum differs from one \
                      by more than 1e-9",
                 ),
-                SurfaceRefusal::NegativeMajorRadius => (
-                    NxLossCode::CarrierTorusNegativeMajorUnresolved,
-                    "stores a negative major radius",
-                ),
+                SurfaceRefusal::NegativeMajorRadius => {
+                    (Cause::Undecoded, "stores a negative major radius")
+                }
                 SurfaceRefusal::Analytic(Refusal::Fields) => return None,
             };
             Some((
                 node,
-                code.note(format!(
-                    "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
+                cause,
+                format!(
+                    "parasolid#{si} {name} at byte {} {why}; the surface is not emitted.",
                     node.pos()
-                )),
+                ),
             ))
         })
         .collect()
@@ -168,8 +460,6 @@ fn ordered_fixed_candidates<T>(
     candidates.into_values().collect()
 }
 
-/// Decode analytic carriers from every Parasolid stream. Returns `None` when no
-/// carrier of any kind passes its gate, so the caller falls back to metadata.
 type GeometryDecode = (
     CadIr,
     DecodeBody,
@@ -178,6 +468,16 @@ type GeometryDecode = (
     Vec<GivenUpPart>,
 );
 
+/// The carrier records that a geometry decode which admits no carrier gave
+/// up. The metadata decode the caller falls back to reads no carrier record,
+/// so it commits these.
+pub(super) struct RefusedCarriers {
+    pub(super) given_up: Vec<GivenUpPart>,
+}
+
+/// Decode analytic carriers from every Parasolid stream. Returns
+/// [`RefusedCarriers`] when no carrier of any kind passes its gate, so the
+/// caller falls back to metadata.
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
@@ -185,7 +485,7 @@ pub(super) fn try_decode_geometry(
     dialect_losses: &[LossNote],
     notes: &[String],
     admitted_entities: &mut u64,
-) -> Result<Option<GeometryDecode>, CodecError> {
+) -> Result<Result<GeometryDecode, RefusedCarriers>, CodecError> {
     let mut ir = CadIr::empty();
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
@@ -197,9 +497,10 @@ pub(super) fn try_decode_geometry(
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-    let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let mut given_up = Vec::new();
-    let mut topology_losses = parsed.primary_losses();
+    let mut stream_parts = PendingParts::default();
+    let mut topology_losses = Vec::new();
+    give_up_unread(scan, &parsed, &mut stream_parts)?;
     // Losses that state a face partial, kept for the faces the document holds
     // once inactive bodies are pruned.
     let mut partial_face_losses = Vec::new();
@@ -358,27 +659,35 @@ pub(super) fn try_decode_geometry(
         let view = parsed.stream(si);
         let refused = nurbs_refusals
             .iter()
-            .map(|refusal| (refusal.pos, refusal.loss(si)))
+            .map(|refusal| (refusal.pos, refusal.give_up(si)))
             .chain(unresolved_controls.iter().map(|carrier| {
                 (
                     carrier.pos,
-                    NxLossCode::CarrierControlsUnresolved.note(format!(
-                        "parasolid#{si} {} at byte {} names no control values that resolve to it",
-                        carrier.family, carrier.pos
-                    )),
+                    (
+                        Cause::Undecoded,
+                        format!(
+                            "parasolid#{si} {} at byte {} names no control values that resolve \
+                             to it",
+                            carrier.family, carrier.pos
+                        ),
+                    ),
                 )
             }))
-            .map(|(pos, note)| (view.graph.at_pos(pos), note))
-            .chain(
-                surface_refusals(si, &view.graph)
-                    .into_iter()
-                    .map(|(node, note)| (Some(node), note)),
-            );
-        for (node, note) in refused {
-            if let Some(node) = node {
-                given_up.push(give_up_record(ctx, (si, &stream_name), node, &note)?);
-            }
-            carrier_refusals.push(note);
+            .map(|(pos, (cause, why))| {
+                let node = view.graph.at_pos(pos).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "parasolid#{si} refused carrier at byte {pos} is not a graph record"
+                    ))
+                })?;
+                Ok::<_, CodecError>((node, cause, why))
+            })
+            .chain(surface_refusals(si, &view.graph).into_iter().map(Ok));
+        let mut refused_carriers = BTreeMap::new();
+        for refusal in refused {
+            let (node, cause, why) = refusal?;
+            let part = give_up_record(ctx, (si, &stream_name), node, cause, why)?;
+            refused_carriers.insert(node.xmt(), Identity::from(part.id().clone()));
+            given_up.push(part);
         }
         let source_stream = StreamHandle::new(stream_name);
 
@@ -1359,6 +1668,7 @@ pub(super) fn try_decode_geometry(
                 graph,
                 points: &points_by_xmt,
                 surfaces: &surfaces_by_xmt,
+                refused_carriers: &refused_carriers,
                 reversed_analytic_surfaces: &reversed_analytic_surfaces,
                 curves: &curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
@@ -1379,7 +1689,7 @@ pub(super) fn try_decode_geometry(
             crate::decode::emit::TopologyLosses {
                 losses: &mut topology_losses,
                 partial_faces: &mut partial_face_losses,
-                given_up: &mut given_up,
+                parts: &mut stream_parts,
             },
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
@@ -1498,7 +1808,7 @@ pub(super) fn try_decode_geometry(
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
-        return Ok(None);
+        return Ok(Err(RefusedCarriers { given_up }));
     }
 
     ir.source = Some(source_meta(scan, dialects, Some(&parsed))?);
@@ -1552,7 +1862,7 @@ pub(super) fn try_decode_geometry(
     }
     let resolution_losses = state_held_body_tolerances(&mut ir, &stored_resolutions);
     classify_body_kinds(&mut ir)?;
-    crate::native::attach_annotations(
+    given_up.extend(crate::native::attach_annotations(
         ctx,
         &mut ir,
         &model,
@@ -1560,7 +1870,7 @@ pub(super) fn try_decode_geometry(
         &mut annotations,
         &mut unknowns,
         &mut native_losses,
-    )?;
+    )?);
     for (si, unknown_index) in stream_unknowns {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
@@ -1610,20 +1920,30 @@ pub(super) fn try_decode_geometry(
         &ir,
         &model,
     )?;
-    let stated_faces: std::collections::BTreeSet<_> =
-        ir.geometry.faces.iter().map(|face| &face.id).collect();
+    let stated_faces: BTreeSet<&str> = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.id.as_str())
+        .collect();
+    stream_parts.give_up(
+        ctx,
+        scan,
+        |record| stated_faces.contains(record.as_str()),
+        &mut given_up,
+    )?;
     topology_losses.extend(
         partial_face_losses
             .into_iter()
-            .filter(|(face, _)| stated_faces.contains(face))
+            .filter(|(face, _)| stated_faces.contains(face.as_str()))
             .map(|(_, note)| note),
     );
     topology_losses.extend(resolution_losses);
-    for losses in [carrier_refusals, topology_losses, native_losses] {
+    for losses in [topology_losses, native_losses] {
         report.losses.extend(losses);
     }
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
-    Ok(Some((ir, report, annotations, unknowns, given_up)))
+    Ok(Ok((ir, report, annotations, unknowns, given_up)))
 }
 
 fn extend_endpoint_witnesses(target: &mut EndpointWitnesses, source: EndpointWitnesses) {

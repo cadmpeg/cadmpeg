@@ -30,8 +30,8 @@ fn write_and_read(ir: &CadIr, version: RhinoArchiveVersion) -> (ExportReport, Ca
     let mut bytes = Vec::new();
     let report = RhinoCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the write succeeds");
