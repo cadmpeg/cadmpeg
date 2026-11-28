@@ -662,9 +662,18 @@ pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId 
 pub(crate) fn neutral_parameter_id(
     parameter: &DesignParameter,
 ) -> cadmpeg_ir::features::ParameterId {
+    neutral_parameter_id_of(&parameter.id, parameter.record_index)
+}
+
+/// The neutral parameter key of the design parameter record `record_id` at
+/// `record_index`.
+pub(crate) fn neutral_parameter_id_of(
+    record_id: &str,
+    record_index: u32,
+) -> cadmpeg_ir::features::ParameterId {
     neutral_parameter_id_parts(
-        native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM),
-        parameter.record_index,
+        native_stream(record_id).unwrap_or(DEFAULT_STREAM),
+        record_index,
     )
 }
 

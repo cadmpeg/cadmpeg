@@ -2052,6 +2052,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#AdditiveBox"
           },
+          "position": 11,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -2088,6 +2089,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -2124,6 +2126,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {

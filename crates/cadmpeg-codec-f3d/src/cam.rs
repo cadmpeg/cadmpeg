@@ -111,12 +111,14 @@ fn source(
     ctx: &DecodeContext<'_>,
     node: XmlNode<'_>,
     member: &str,
+    document: &cadmpeg_core::decode::tree::XmlDocument<'_>,
 ) -> Result<ManufacturingSource, CodecError> {
+    let range = document.source_range(node.range());
     Ok(ManufacturingSource {
         exactness: cadmpeg_ir::Exactness::ByteExact,
         member: owned(ctx, member)?,
-        start: u64_from_index(node.range().start),
-        end: u64_from_index(node.range().end),
+        start: u64_from_index(range.start),
+        end: u64_from_index(range.end),
         native_xml: owned(ctx, xml(node))?,
     })
 }
@@ -493,7 +495,7 @@ fn parse(
     if document.descendants().any(|node| record(node)) {
         losses.push(F3dLossCode::CamStructureAssumed.note("CAM object nesting, strategy and tool attributes, and named parameter metadata use the source-definition reading; native XML retains all source fields"));
     }
-    let index = Index::new(ctx, &document)?;
+    let index = Index::new(ctx, document.tree())?;
     let mut setups = BTreeMap::new();
     let mut memo = HashMap::new();
     let objects: BTreeMap<_, _> = document
@@ -521,7 +523,7 @@ fn parse(
             wcs: wcs(&parameters),
             model_refs: selections(ctx, &index, node, losses)?,
             parameters,
-            source: source(ctx, node, member)?,
+            source: source(ctx, node, member, &document)?,
         });
     }
     for node in document
@@ -582,7 +584,7 @@ fn parse(
             product: value(&parameters, "tool_productId").map(str::to_owned),
             holder,
             parameters,
-            source: source(ctx, node, member)?,
+            source: source(ctx, node, member, &document)?,
         });
     }
     let mut orders = BTreeMap::<SetupId, u64>::new();
@@ -609,7 +611,7 @@ fn parse(
                     F3dLossCode::CamSetupAssumed
                         .note("CAM operation has no enclosing setup; a document setup is assumed"),
                 );
-                let mut inferred_source = source(ctx, root, member)?;
+                let mut inferred_source = source(ctx, root, member, &document)?;
                 inferred_source.exactness = cadmpeg_ir::Exactness::Inferred;
                 target.setups.push(ManufacturingSetup {
                     id: id.clone(),
@@ -704,7 +706,7 @@ fn parse(
             geometry,
             computed_path_present: path.is_some(),
             computed_path_valid,
-            source: source(ctx, node, member)?,
+            source: source(ctx, node, member, &document)?,
         });
         *order = order
             .checked_add(1)

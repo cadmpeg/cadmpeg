@@ -38,6 +38,7 @@ mod history_scale;
 mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
+mod patch_session;
 mod pcurve_uv_offset;
 mod placement_history;
 mod position;

@@ -1579,7 +1579,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
         &protein,
         &std::collections::BTreeMap::new(),
         &mut Vec::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));

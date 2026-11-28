@@ -90,6 +90,55 @@ impl Timeline {
     }
 }
 
+struct NativeTree<'a> {
+    roots: Vec<&'a records::Feature>,
+    children: HashMap<&'a str, Vec<&'a records::Feature>>,
+}
+
+impl<'a> NativeTree<'a> {
+    fn new(features: &'a [records::Feature]) -> Self {
+        let mut tree = Self {
+            roots: Vec::new(),
+            children: HashMap::new(),
+        };
+        for feature in features {
+            match feature.tree_parent_record_id() {
+                Some(parent) => tree.children.entry(parent).or_default().push(feature),
+                None => tree.roots.push(feature),
+            }
+        }
+        tree
+    }
+}
+
+/// Whether any native tree has a reachable timeline member.
+pub(super) fn has_members(histories: &[FeatureHistory]) -> bool {
+    histories.iter().any(|history| {
+        let metadata = HistoryMetadata::new(&history.features);
+        let NativeTree { roots, children } = NativeTree::new(&history.features);
+        let mut pending = roots;
+        while let Some(feature) = pending.pop() {
+            if metadata.contains(feature) {
+                continue;
+            }
+            match feature_tree_node_role(feature, &history.features) {
+                Some(FeatureTreeNodeRole::FeatureFolder) => {
+                    pending.extend(
+                        children
+                            .get(feature.id.as_str())
+                            .into_iter()
+                            .flatten()
+                            .copied(),
+                    );
+                }
+                Some(FeatureTreeNodeRole::ModelOrigin) | None => return true,
+                Some(_) => {}
+            }
+        }
+        false
+    })
+}
+
 /// The timeline of every history, in history order.
 pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecError> {
     let mut timeline = Timeline::default();
@@ -101,14 +150,7 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
             .iter()
             .filter_map(|feature| Some((feature.source_id?, feature)))
             .collect::<HashMap<FeatureSource, &records::Feature>>();
-        let mut children = HashMap::<&str, Vec<&records::Feature>>::new();
-        let mut roots = Vec::new();
-        for feature in &history.features {
-            match feature.tree_parent_record_id() {
-                Some(parent) => children.entry(parent).or_default().push(feature),
-                None => roots.push(feature),
-            }
-        }
+        let NativeTree { roots, children } = NativeTree::new(&history.features);
         let mut emitted_at = HashMap::<&str, usize>::new();
         let mut closed_at = HashMap::<&str, usize>::new();
         let mut stack = roots

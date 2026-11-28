@@ -5,7 +5,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::index::IndexedCurve;
 use crate::loss::SldprtLossCode;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Count {
     count: usize,
     largest: f64,
@@ -18,7 +18,7 @@ impl Count {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct ApproximationCounts {
     intersection: Count,
     surface_curve: Count,

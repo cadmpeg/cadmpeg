@@ -4409,11 +4409,18 @@ fn brep_identity_namespace(entry: &str) -> Option<&str> {
 /// Decode an F3D or F3Z reader.
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = crate::f3z::observer::scan(ctx, root)?;
+    decode_scanned(ctx, &scan)
+}
+
+pub(crate) fn decode_scanned(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Decoded, CodecError> {
     match &scan.kind {
-        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
+        container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, scan),
         container::F3dContainerKind::Document { .. } => {
             let mut decoded =
-                decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+                decode_scanned_document(ctx, scan, crate::report::ReportScope::Standalone)?;
             crate::f3z::merge::bind_standalone_joints(
                 ctx,
                 &mut decoded.ir,
@@ -4422,7 +4429,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             refresh_incomplete_feature_loss(&decoded.ir, &mut decoded.body.losses);
             let poses = crate::xref::operation_pose::collect(
                 ctx,
-                &scan,
+                scan,
                 &decoded.ir,
                 &mut decoded.body.losses,
             )?;
@@ -4434,9 +4441,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.body.losses,
             )?;
             let has_scene =
-                crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
+                crate::scene::collect(ctx, scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
-                let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
+                let sources = crate::scene::sources(ctx, scan, &decoded.ir)?;
                 crate::scene::bind(
                     ctx,
                     &mut decoded.ir,
@@ -5883,19 +5890,20 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 
 /// The machine-local digest by which the F3D patch path compares two documents
 /// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
+    ctx.with_arena(&arena, |ctx| {
+        cadmpeg_ir::hash::document_local_sha256(
+            ctx,
+            ir,
+            ir.source.as_ref(),
+            "f3d",
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+        )
+    })
 }
 
 fn annotation_stream(entry_name: &str) -> Result<StreamHandle, CodecError> {

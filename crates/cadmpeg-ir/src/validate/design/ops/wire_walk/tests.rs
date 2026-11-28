@@ -362,6 +362,7 @@ fn wire_walk_matches_legacy_json_walk_identically() {
         id: pid.clone(),
         scope: def_id.clone(),
         owner: None,
+        position: None,
         name: None,
         kind: ValueKind::Integer,
         unit: None,
@@ -407,6 +408,7 @@ fn wire_walk_matches_legacy_json_walk_identically() {
         id: id::<ConfigurationId>("cfg1"),
         scope: def_id.clone(),
         name: "C".to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides {

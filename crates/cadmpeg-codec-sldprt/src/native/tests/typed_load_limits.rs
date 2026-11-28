@@ -22,7 +22,7 @@ fn typed_load_refusal(policy: DecodePolicy) -> cadmpeg_core::CodecError {
             cadmpeg_ir::units::Tolerances::default().linear
         )
         .unwrap(),
-        crate::native::SldprtNative::load_under(
+        crate::test_support::native::load_under(
             namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear
@@ -60,7 +60,7 @@ fn a_writer_load_refuses_past_the_callers_nesting_limit_with_the_record_root_add
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
     let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
     limits.max_recursion_depth = 0;
-    let error: cadmpeg_core::CodecError = crate::native::SldprtNative::load_under(
+    let error: cadmpeg_core::CodecError = crate::test_support::native::load_under(
         namespace,
         limits,
         cadmpeg_ir::units::Tolerances::default().linear,
