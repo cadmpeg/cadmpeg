@@ -57,6 +57,24 @@ const SIDECAR: &str = r#"{
 }"#;
 
 #[test]
+fn query_reads_a_report_with_an_added_member_and_reports_it() {
+    let mut report: serde_json::Value = serde_json::from_str(CHECK_REPORT).unwrap();
+    report["future_member"] = cadmpeg_core::json!({"value": 1});
+    report["check_report"]["future_check_member"] = cadmpeg_core::json!(true);
+    let directory = tempdir().unwrap();
+    let path = write(directory.path(), "report.json", &report.to_string());
+    cadmpeg()
+        .args(["query", "summary", path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("kind\tcommand report"))
+        .stderr(
+            predicate::str::contains("future_member")
+                .and(predicate::str::contains("future_check_member")),
+        );
+}
+
+#[test]
 fn summary_detects_all_three_artifact_kinds() {
     let dir = tempdir().unwrap();
     for (name, content, kind) in [
