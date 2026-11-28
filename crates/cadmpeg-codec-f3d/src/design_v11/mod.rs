@@ -398,7 +398,7 @@ pub(crate) fn project(
             ));
         }
     }
-    settle_components(ir, &scoped_features, &owners);
+    settle_components(ir, &scoped_features, &owners, losses);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -578,6 +578,7 @@ fn settle_components(
     ir: &mut CadIr,
     scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
     owners: &HashMap<FeatureId, ProductDefinitionId>,
+    losses: &mut Vec<LossNote>,
 ) {
     let mut spans = vec![BTreeSet::<String>::new(); scoped.len()];
     let mut unsettled = Vec::new();
@@ -604,7 +605,7 @@ fn settle_components(
             }
         }
         if unsettled.is_empty() {
-            return;
+            break;
         }
     }
     for index in unsettled {
@@ -615,6 +616,29 @@ fn settle_components(
             .filter(|feature| scoped[index].1.contains(&feature.id))
         {
             feature.component = None;
+        }
+    }
+    let spans = ir.spanned_definitions_of_scopes();
+    for (definition, members) in scoped {
+        let Some(span) = spans.get(definition.as_str()) else {
+            continue;
+        };
+        let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
+        for feature in &ir.design.features {
+            if members.contains(&feature.id) && feature.component.is_none() {
+                if let Some(owner) = owners
+                    .get(&feature.id)
+                    .filter(|owner| span.contains(owner.as_str()))
+                {
+                    *withheld.entry(owner).or_default() += 1;
+                }
+            }
+        }
+        let prefix = timeline::document_prefix(definition.as_str());
+        for (owner, count) in withheld {
+            losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+            )));
         }
     }
 }

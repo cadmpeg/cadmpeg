@@ -365,6 +365,7 @@ fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &mut Vec::new(),
     );
     let components = ir
         .design
@@ -414,6 +415,7 @@ fn a_component_named_in_one_round_widens_the_span_of_the_next() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &mut Vec::new(),
     );
     let components = ir
         .design
@@ -448,12 +450,42 @@ fn a_scope_that_reaches_no_other_definition_names_no_component() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &mut Vec::new(),
     );
     assert!(ir
         .design
         .features
         .iter()
         .all(|feature| feature.component.is_none()));
+}
+
+#[test]
+fn a_spanned_owner_with_no_component_charges_one_loss_for_its_features() {
+    let scope = "f3d:archive:product-definition#0";
+    let (mut ir, ids, owners) = component_document(
+        scope,
+        vec![file_definition(scope)],
+        &[("a", scope), ("b", scope)],
+    );
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &owners,
+        &mut losses,
+    );
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| feature.component.is_none()));
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(loss.code, "history.member-component-unstated");
+    assert_eq!(loss.message, format!(
+        "2 features of the document \"\" name no component: their owner {scope} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+    ));
 }
 
 #[test]
