@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1078. Island in the profile of an Intersect Extrude
+
+**Question.** Does the counted region selection of an Intersect Extrude ever name a face that encloses an island?
+
+**Known.** `f3d.md` states the faces of the profile of an Intersect from the planes parallel to the Sketch and the named curves. The boundary of a face that encloses an island lists only its outer ring, so the named curves of such a face do not show whether the island belongs to the profile. A kept face that encloses an island leaves the selection native; whether the island lies in the profile is not established.
+
+**Need.** An Intersect Extrude whose profile face encloses a closed curve, saved once with the island in the profile and once with the island excluded, with the counted member lists of each.
+
+**Conflict.** None.
+
+**Note.** The decoder leaves such a selection native.
+
 ### DR-1063. MetaStream type of the `DesignConfigurationRoot` record
 
 **Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?
@@ -78,7 +90,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?
 
-**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. A Revolve can select one curve with `(1,2)` and a second curve with `(2,2)`; its directed arrangement boundary uses the first interval of the first curve and the second interval of the second curve. A Revolve can select a curve with `(2,3)`. The complete intersection partition of that curve has four pieces, and the stored last word is three. Its selected-member graph excludes one Sketch curve and has three pieces; the second piece equals the directed arrangement interval. A Revolve can repeat one curve with `(1,2)` and `(2,2)` in one exterior loop. A curve can carry `(3,3)` while its full selected-member curve graph has four pieces at the intersections with three other curves. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. A symmetric intersect Extrude can have counted members that each join uniquely to a Sketch curve while other Sketch curves with tail marker zero divide its boundary. The member-ring resolver accepts one atomic arrangement boundary with the complete named-curve ring and traversal directions. It also accepts a boundary whose fragments of one curve meet only at nodes of curves outside the ring, when each member is piece `k` of the `n` pieces into which the other curves of its member list cut its curve; this reading carries `feature.profile-piece-partition-assumed`. Stored members agree with the member-list partition in these cases: pieces are numbered along the curve's parameter direction for both traversal flags; the pieces of a full circle start at angle zero and continue counterclockwise; each of two overlapping lines has its own member, each is cut at the ends of the other, and the part of a line beyond a corner counts as a piece; arc pieces are numbered along the arc; curves outside the member list that end on, cross, or touch a member curve add no cut; the relation holds for curves added to the Sketch after the feature. The transition certificate accepts one-sided blind Cut, Join, and NewBody. The selection retains its native identity with `feature.profile-selection-native`.
+**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. A Revolve can select one curve with `(1,2)` and a second curve with `(2,2)`; its directed arrangement boundary uses the first interval of the first curve and the second interval of the second curve. A Revolve can select a curve with `(2,3)`. The complete intersection partition of that curve has four pieces, and the stored last word is three. Its selected-member graph excludes one Sketch curve and has three pieces; the second piece equals the directed arrangement interval. A Revolve can repeat one curve with `(1,2)` and `(2,2)` in one exterior loop. A curve can carry `(3,3)` while its full selected-member curve graph has four pieces at the intersections with three other curves. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. A symmetric intersect Extrude can have counted members that each join uniquely to a Sketch curve while other Sketch curves with tail marker zero divide its boundary. The member-ring resolver accepts one atomic arrangement boundary with the complete named-curve ring and traversal directions. It also accepts a boundary whose fragments of one curve meet only at nodes of curves outside the ring, when each member is piece `k` of the `n` pieces into which the other curves of its member list cut its curve; this reading carries `feature.profile-piece-partition-assumed`. Stored members agree with the member-list partition in these cases: pieces are numbered along the curve's parameter direction for both traversal flags; the pieces of a full circle start at angle zero and continue counterclockwise; each of two overlapping lines has its own member, each is cut at the ends of the other, and the part of a line beyond a corner counts as a piece; arc pieces are numbered along the arc; curves outside the member list that end on, cross, or touch a member curve add no cut; the relation holds for curves added to the Sketch after the feature. The transition certificate accepts one-sided blind Cut, Join, and NewBody, and Intersect over one-sided, two-sided, and symmetric blind extents and over an offset start. The selection retains its native identity with `feature.profile-selection-native`.
 
 **Need.** The join from each counted member to its native primary/related tracking graph, the partition domain and circle phase, the treatment of line extensions, clipped members and coincident curves, and the relation to feature-time sketch revisions. These rules must determine both incidence words and the selected interval in independent designs.
 
@@ -1099,7 +1111,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
 
-**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)` in a Z-up document and `(1, 1, 1)` in a Y-up document, the up direction `(0, 0, 1)` or `(0, 1, 0)` respectively, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
 
 **Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
 
@@ -1183,6 +1195,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 **Need.** Allocate the profile group of a written `Extrude` as the groups of a `Revolve` are allocated: the record-timestamp table at `G + 1` and the item-tail companion at `G + 2`. Then state the relation in `f3d.md` §3.1 "**Profile group.**", and compare the records of each written `Extrude` before and after the change. The same comparison of the `Extrude` start record against stored `Extrude` start records would show whether its record-timestamp table and item-tail companion also belong at the next two records.
 
 ## 2. External references
+
+### DR-1077. Closing bytes of a legacy typed occurrence placement
+
+**Question.** Do the closing bytes `00 01 04 00 00 00 00 00 00 00 00 00` of a legacy typed occurrence placement name a local owner record, and is the record the legacy typed placement or the compact legacy external placement?
+
+**Known.** `f3d.md` §1.4 "A legacy typed occurrence placement uses" gives the typed envelope and its closing bytes `u8 0`, `u8 1`, `u8 4`, `u8[9] zero`. These bytes have the form of a zero byte and an eleven-byte untyped local reference to record `4`. `f3d.md` §1.4 "A compact legacy external placement uses" closes with a zero byte and an untyped local owner reference with a nonzero target. With root-component targets, the typed fields `u32 1`, `u8 0`, `u32 1` after the path discriminator have the form of the compact present-empty property block and a member ordinal of `1`. Both grammars then close the same record, at 403 bytes for identity and 531 bytes for a matrix. Record `4` of the Design stream can be a component naming space of type `904F885E-D859-4755-A7EF-6EBED8732FAD`.
+
+**Need.** A legacy typed placement whose Design stream holds a record of another type at index `4`, or a legacy placement whose closing reference has a target other than `4`.
+
+**Note.** The decoder reads a record that closes both grammars as the legacy typed placement, with no owner and no source occurrence key.
 
 ### DR-111. Component-path poses of nested occurrences
 
@@ -3386,7 +3408,7 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
 
-**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name joins the stored scope kind spelling, a space, and the feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
+**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name is the stored scope kind spelling directly followed by the stored feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
 
 **Need.** A design with a Sketch renamed in the timeline.
 

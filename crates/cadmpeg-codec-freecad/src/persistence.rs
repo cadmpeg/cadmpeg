@@ -555,18 +555,28 @@ fn parse_properties(
         .children()
         .filter(|node| node.has_tag_name("_Property"))
         .collect::<Vec<_>>();
-    let mut names = HashSet::new();
-    for node in transient_property_nodes.iter().chain(property_nodes.iter()) {
+    // `FreeCAD` restores the `_Property` elements, then the `Property`
+    // elements, each into the property of its name, so the element of a
+    // name it restores last sets that property.
+    let mut last = HashMap::new();
+    for (index, node) in transient_property_nodes
+        .iter()
+        .chain(property_nodes.iter())
+        .enumerate()
+    {
         let name = node.attribute("name").ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "{} element has no name attribute",
                 node.tag_name().name()
             ))
         })?;
-        if !names.insert(name) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate property name {name} for {owner}"
-            )));
+        if last.insert(name, index).is_some() {
+            losses.push(
+                crate::loss::FreecadLossCode::PersistencePropertyRepeated.note(format!(
+                    "{owner} stores property {name} in more than one element; the element \
+                     FreeCAD restores last is kept"
+                )),
+            );
         }
     }
     check_count(container, "Count", property_nodes.len(), losses);
@@ -578,6 +588,23 @@ fn parse_properties(
             losses,
         );
     }
+    let restored_last = |index: usize, node: &roxmltree::Node<'_, '_>| {
+        node.attribute("name")
+            .is_some_and(|name| last.get(name) == Some(&index))
+    };
+    let transient_count = transient_property_nodes.len();
+    let transient_property_nodes = transient_property_nodes
+        .into_iter()
+        .enumerate()
+        .filter(|(index, node)| restored_last(*index, node))
+        .map(|(_, node)| node)
+        .collect::<Vec<_>>();
+    let property_nodes = property_nodes
+        .into_iter()
+        .enumerate()
+        .filter(|(index, node)| restored_last(transient_count + index, node))
+        .map(|(_, node)| node)
+        .collect::<Vec<_>>();
     for (order, node) in transient_property_nodes.into_iter().enumerate() {
         let name = retained_attr(node, "name")?;
         let type_name = retained_attr(node, "type")?;

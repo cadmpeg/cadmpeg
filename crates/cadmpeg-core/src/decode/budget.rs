@@ -400,6 +400,60 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
+    pub(super) fn admit_optional(
+        &self,
+        bytes: u64,
+        entities: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        if let Some(limit) = self.fused() {
+            return Err(limit);
+        }
+        let retained = self.retained.get();
+        let entity_count = self.entities.get();
+        let refusal = [
+            (
+                ResourceDimension::RetainedBytes,
+                retained,
+                bytes,
+                self.retained_allowance(),
+            ),
+            (
+                ResourceDimension::Entities,
+                entity_count,
+                entities,
+                self.policy.limits.max_entities,
+            ),
+        ]
+        .into_iter()
+        .find_map(|(dimension, used, additional, limit)| {
+            limit
+                .checked_sub(used)
+                .is_none_or(|remaining| additional > remaining)
+                .then_some(ResourceLimit {
+                    scope: LimitScope::Part,
+                    dimension,
+                    reason: ResourceFailure::BudgetExceeded,
+                    limit,
+                    used,
+                    additional,
+                    operation,
+                })
+        });
+        self.record(super::transaction::Event::OptionalOutput {
+            bytes,
+            entities,
+            operation,
+            refusal,
+        });
+        if let Some(limit) = refusal {
+            return Err(limit);
+        }
+        self.retained.set(retained + bytes);
+        self.entities.set(entity_count + entities);
+        Ok(())
+    }
+
     pub(super) fn enter_nested(
         &self,
         operation: &'static str,

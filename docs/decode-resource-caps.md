@@ -189,6 +189,30 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+## Scratch decodes
+
+`DecodeContext::scratch` runs optional evidence work in a separate arena
+and resource account. The measured carrier length scales its allowances.
+The codec's work and population caps bound repeated requests. The decoder
+admits the bytes and entities of each kept result together. A refusal
+at that admission leaves the session usable.
+
+An F3D or Inventor history nest admits its records and body and face names.
+An Inventor state view admits the topology, naming attributes and body keys
+that its proofs read. A profile body admits its wires and copied spline
+coefficients. An identity lookup, source key check or Loft body kind probe
+keeps a scalar result and discards the temporary graph.
+
+A resource refusal gives up the affected evidence. The codec reports the
+limit on a bounded history body, Base source body, Loft result or unread
+profile body. `cadmpeg_asm::brep::inspect_with_header` and
+`inspect_with_table` read framed records and preserve the shell membership
+marks. The Model path copies withheld and passthrough spans and emits
+provenance records.
+
+Scratch work uses the same evidence allowance at every F3Z composition
+position. The whole-session trace composes the charges of the kept output.
+
 ## Scan limits
 
 `ScanLimits` in `crates/cadmpeg-core/src/scan/mod.rs` bounds a feature-only
@@ -373,6 +397,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
+| `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_NAMED_RECORDS`                       | `8`                                                     | 4    | Occurrences one placement give-up names as left with no transform, and objects one member-list give-up names as placed without the container placement. The message counts the rest.                                                                                         |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_OBJECTS`                             | `1_000_000`                                             | 2    | Object elements in `Document.xml`, counted in the parsed tree. Excess returns `NotImplemented`. Entities are charged separately in `container.rs`.                                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_PROPERTY_VALUE_XML_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Total of the overlapping value-XML ranges one property would copy. Excess keeps the exact XML, builds no value records and reports `PersistencePayloadUnresolved`.                                                                                                           |
 | `cadmpeg-codec-freecad` | `src/application_geometry/mesh_placement.rs` | `MAX_MESH_PLACEMENT_WORK` | `65_536` | 4 | Floor of mesh occurrence expansion visits; allowance is the larger of this floor and 64 times the combined native product and neutral occurrence row count. Exhaustion withholds the current complete mesh use and subsequent uses with blocking `geometry.mesh-placement-bounded`; independent source meshes remain. |

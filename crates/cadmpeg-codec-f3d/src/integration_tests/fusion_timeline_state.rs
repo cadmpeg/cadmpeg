@@ -61,8 +61,8 @@ fn rolled_back_features_after_an_edit_are_active() {
     let (suppressed, marker, codes) = timeline_state(include_bytes!(
         "../../../../corpus/f3d/timeline_rolled_after_edit.f3d"
     ));
-    expect(&suppressed, &[("Combine 1", false), ("Fillet 1", false)]);
-    assert_eq!(marker.as_deref(), Some("Combine 1"));
+    expect(&suppressed, &[("Combine1", false), ("Fillet1", false)]);
+    assert_eq!(marker.as_deref(), Some("Combine1"));
     assert!(
         !codes
             .iter()
@@ -76,8 +76,8 @@ fn a_suppressed_feature_after_the_marker_stays_suppressed() {
     let (suppressed, marker, _) = timeline_state(include_bytes!(
         "../../../../corpus/f3d/timeline_suppressed_rolled.f3d"
     ));
-    expect(&suppressed, &[("Combine 1", false), ("Fillet 1", true)]);
-    assert_eq!(marker.as_deref(), Some("Combine 1"));
+    expect(&suppressed, &[("Combine1", false), ("Fillet1", true)]);
+    assert_eq!(marker.as_deref(), Some("Combine1"));
 }
 
 #[test]
@@ -87,9 +87,9 @@ fn either_suppression_state_byte_marks_a_feature_suppressed() {
     ));
     expect(
         &suppressed,
-        &[("Combine 1", true), ("Fillet 1", false), ("Fillet 2", true)],
+        &[("Combine1", true), ("Fillet1", false), ("Fillet2", true)],
     );
-    assert_eq!(marker.as_deref(), Some("Fillet 2"));
+    assert_eq!(marker.as_deref(), Some("Fillet2"));
 }
 
 #[test]
@@ -99,11 +99,7 @@ fn a_suppressed_timeline_group_suppresses_its_items() {
     ));
     expect(
         &suppressed,
-        &[
-            ("Extrude 1", false),
-            ("Sketch 3", true),
-            ("Extrude 3", true),
-        ],
+        &[("Extrude1", false), ("Sketch3", true), ("Extrude3", true)],
     );
     assert_eq!(marker, None);
 }
@@ -116,8 +112,8 @@ fn a_marker_after_an_occurrence_item_charges_the_marker_bound_loss() {
     let (suppressed, marker, codes) = timeline_state(include_bytes!(
         "../../../../corpus/f3d/timeline_marker_after_occurrence.f3d"
     ));
-    expect(&suppressed, &[("Sketch 2", false), ("Extrude 2", false)]);
-    assert_eq!(marker.as_deref(), Some("Sketch 2"));
+    expect(&suppressed, &[("Sketch2", false), ("Extrude2", false)]);
+    assert_eq!(marker.as_deref(), Some("Sketch2"));
     assert!(
         codes
             .iter()

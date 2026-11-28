@@ -91,6 +91,7 @@ macro_rules! required {
 pub(crate) struct DesignObjects<'a> {
     pub(crate) objects: &'a [ObjectRecord],
     pub(crate) extensions: &'a [crate::native::ExtensionRecord],
+    pub(crate) products: &'a [crate::native::ProductNodeRecord],
 }
 
 #[derive(Clone, Copy)]
@@ -111,6 +112,7 @@ pub(crate) fn transfer(
     let DesignObjects {
         objects,
         extensions,
+        products,
     } = graph;
     let attachment_owners = extensions
         .iter()
@@ -132,6 +134,7 @@ pub(crate) fn transfer(
             owned.push(property);
         }
     }
+    let parent_map = crate::product::ParentMap::new(products, objects, &properties_by_owner);
     let reference_graph = DesignReferenceGraph {
         objects,
         properties_by_owner: &properties_by_owner,
@@ -157,6 +160,7 @@ pub(crate) fn transfer(
             .iter()
             .flatten()
             .filter_map(crate::native::LinkTarget::object)
+            .filter(|member| parent_map.coordinate(member) == Some(body.id().as_str()))
         {
             parent_by_member.insert(member, feature_id(body)?);
         }
@@ -232,7 +236,7 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(&owned, &feature_ids)?
+            body_definition(object.id(), &owned, &feature_ids, &parent_map)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned)
@@ -265,7 +269,7 @@ pub(crate) fn transfer(
         } else if is_primitive(&object.type_name) {
             match primitive_definition(ctx, &object.type_name, &owned)? {
                 Some(mut definition) => {
-                    match primitive_placement::resolve(object, objects, &properties_by_owner)? {
+                    match primitive_placement::resolve(object, &parent_map, &properties_by_owner)? {
                         Some(frame) => {
                             if let FeatureDefinition::Operation(FeatureOperation::Primitive {
                                 placement,
@@ -392,14 +396,13 @@ pub(crate) fn transfer(
                 .and_then(|(_, target)| {
                     objects.iter().find(|object| object.id().as_str() == target)
                 })
-                .map(|profile_object| {
+                .and_then(|profile_object| {
                     let profile_properties = properties_by_owner
                         .get(profile_object.id().as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
                     sketch_frame(profile_properties).map(|frame| frame.1)
-                })
-                .transpose()?;
+                });
             extrusion_definition(
                 ctx,
                 &object.type_name,
@@ -603,7 +606,9 @@ pub(crate) fn transfer(
     Ok((cycle_affected, losses))
 }
 
-fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
+pub(crate) fn body_membership_property<'a>(
+    properties: &'a [&PropertyRecord],
+) -> Option<&'a PropertyRecord> {
     match (property(properties, "Group"), property(properties, "Model")) {
         (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
             Some(group)
@@ -620,9 +625,13 @@ fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
     }
 }
 
+/// The tree node of Body `body`: the features it holds, of those its
+/// membership list names, and its `Tip` where the Body holds it.
 fn body_definition(
+    body: &str,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
+    parent_map: &crate::product::ParentMap<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     if !body_membership_carrier_is_valid(properties) {
         return Ok(None);
@@ -633,6 +642,7 @@ fn body_definition(
             .links()
             .iter()
             .filter_map(|link| link.as_ref()?.object())
+            .filter(|target| parent_map.coordinate(target) == Some(body))
         {
             if let Some(feature) = feature_ids.get(target) {
                 children.push(feature.clone());
@@ -640,7 +650,9 @@ fn body_definition(
         }
     }
     let active_child = match body_tip(properties, feature_ids)? {
-        BodyTipResolution::Valid(active_child) => active_child,
+        BodyTipResolution::Valid(active_child) => {
+            active_child.filter(|child| children.contains(child))
+        }
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
@@ -2041,15 +2053,19 @@ fn parse_sketch(
         );
         Vec::new()
     });
-    let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
             name: Some(object.name().to_owned()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            placement: match sketch_frame(properties) {
+                Some((origin, normal, u_axis)) => {
+                    cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
+                        .map_err(cadmpeg_core::CodecError::malformed)?
+                }
+                None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            },
             profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: Some(object.id().to_owned()),
@@ -2300,18 +2316,26 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     })
 }
 
-fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
-    validate_sketch_placement(properties)?;
-    Ok(placement_frame(properties).map_or_else(
-        || {
-            (
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-        },
-        |(origin, normal, x_axis, _)| (origin, normal, x_axis),
-    ))
+/// The frame of a sketch: its `Placement`, else its `AttachmentOffset`, else
+/// the identity. `None` where the carrier is stored in a form the decoder
+/// cannot read; the product layer gives that carrier up.
+fn sketch_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3)> {
+    let Some(property) =
+        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
+    else {
+        return Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ));
+    };
+    if property.type_name != "App::PropertyPlacement"
+        || property.values().len() != 1
+        || property.values()[0].tag != "PropertyPlacement"
+    {
+        return None;
+    }
+    placement_frame(properties).map(|(origin, normal, x_axis, _)| (origin, normal, x_axis))
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
@@ -2325,36 +2349,6 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
         column(0),
         column(1),
     ))
-}
-
-fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
-    let Some(property) =
-        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
-    else {
-        return Ok(());
-    };
-    let error = if property.type_name != "App::PropertyPlacement" {
-        Some(format!(
-            "sketch {} placement carrier has runtime type {}",
-            property.name, property.type_name
-        ))
-    } else if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
-        Some(format!(
-            "sketch {} placement carrier requires one PropertyPlacement value",
-            property.name
-        ))
-    } else if placement_frame(properties).is_none() {
-        Some(format!(
-            "sketch {} placement carrier has incomplete or invalid components",
-            property.name
-        ))
-    } else {
-        None
-    };
-    if let Some(message) = error {
-        return Err(CodecError::Malformed(message));
-    }
-    Ok(())
 }
 
 fn feature_state(
@@ -5386,11 +5380,11 @@ fn extrusion_shape(
         let raw_direction = vector_property(ctx, properties, "Dir")?;
         let direction_magnitude = raw_direction.map(|direction| direction.get().norm());
         let direction_mode = required!(enumeration_selector(ctx, properties, "DirMode", 0)?);
-        let (mut direction, direction_source) = match direction_mode {
+        let (direction, direction_source) = match direction_mode {
             0 => (
-                required!(cadmpeg_ir::units::UnitVector3::normalized(
+                Some(required!(cadmpeg_ir::units::UnitVector3::normalized(
                     required!(raw_direction).get()
-                )),
+                ))),
                 ExtrusionDirectionSource::Custom {},
             ),
             1 => {
@@ -5399,16 +5393,17 @@ fn extrusion_shape(
                     return Ok(None);
                 }
                 (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(
+                    Some(required!(cadmpeg_ir::units::UnitVector3::normalized(
                         required!(raw_direction).get()
-                    )),
+                    ))),
                     ExtrusionDirectionSource::Edge {
                         reference: PathRef::Native(reference.id.clone()),
                     },
                 )
             }
-            2 => {
-                let normal = required!(match &profile {
+            // `FreeCAD` stores the profile normal it computes in `Dir`.
+            2 => (
+                match &profile {
                     ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
                         .iter()
                         .find(|sketch| sketch.id == *sketch_id)
@@ -5416,12 +5411,11 @@ fn extrusion_shape(
                         .map(|(_, normal, _)| normal.get())
                         .or(profile_normal),
                     _ => profile_normal,
-                });
-                (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
-                    ExtrusionDirectionSource::ProfileNormal {},
-                )
-            }
+                }
+                .or(raw_direction.map(cadmpeg_ir::features::geometry::FiniteVector3::get))
+                .and_then(cadmpeg_ir::units::UnitVector3::normalized),
+                ExtrusionDirectionSource::ProfileNormal {},
+            ),
             _ => return Ok(None),
         };
         let signed_length = |name| -> Result<_, CodecError> {
@@ -5514,9 +5508,22 @@ fn extrusion_shape(
                 (None, None) => return Ok(None),
             }
         };
-        if reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
-            direction = direction.reversed();
-        }
+        let reversed =
+            reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?);
+        let direction = match direction {
+            Some(direction) => cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(if reversed {
+                    direction.reversed()
+                } else {
+                    direction
+                }),
+                source: Some(direction_source),
+            },
+            None if reversed => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+            }
+            None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+        };
         let face_maker = if property(properties, "FaceMakerClass").is_some() {
             let maker = required!(FaceMaker::new(required!(face_maker_class)));
             if property(properties, "FaceMakerMode").is_some()
@@ -5548,10 +5555,7 @@ fn extrusion_shape(
         return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::Extrude {
                 profile,
-                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
-                    source: Some(direction_source),
-                },
+                direction,
                 start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent,
                 op: BooleanOp::NewBody,
