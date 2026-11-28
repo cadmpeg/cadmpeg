@@ -21,9 +21,7 @@ SPEC.loader.exec_module(MODULE)
 
 class GoldenMaterializerTests(unittest.TestCase):
     def setUp(self) -> None:
-        scratch = Path.home() / "side2" / "tmp" / "iges-l9"
-        scratch.mkdir(parents=True, exist_ok=True)
-        self.directory = tempfile.TemporaryDirectory(dir=scratch)
+        self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
         self.golden = self.root / "golden"
         self.golden.mkdir()

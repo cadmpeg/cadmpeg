@@ -17,24 +17,7 @@ use cadmpeg_ir::report::{
     Severity,
 };
 
-macro_rules! loss_codes {
-    ($(#[$enum_attribute:meta])* pub(crate) enum $name:ident {
-        $($(#[$variant_attribute:meta])* $variant:ident),* $(,)?
-    }) => {
-        $(#[$enum_attribute])*
-        pub(crate) enum $name {
-            $($(#[$variant_attribute])* $variant),*
-        }
-
-        impl $name {
-            /// Every code, in declaration order.
-            #[cfg(test)]
-            const ALL: &'static [Self] = &[$(Self::$variant),*];
-        }
-    };
-}
-
-loss_codes! {
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one Creo transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The

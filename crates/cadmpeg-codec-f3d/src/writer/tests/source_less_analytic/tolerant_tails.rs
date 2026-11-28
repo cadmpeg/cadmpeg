@@ -7,9 +7,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::finite_tolerance_pair;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, TestEncode};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut, TestEncode};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]

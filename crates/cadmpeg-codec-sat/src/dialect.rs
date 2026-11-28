@@ -36,7 +36,7 @@
 //! [`SatLossCode::SourceDialectUnverified`]:
 //!     crate::loss::SatLossCode::SourceDialectUnverified
 
-use crate::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
+use crate::registry_ids::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{acis_header, asm_header, sat};
 use cadmpeg_core::dialect::{DialectId, DialectMatch};

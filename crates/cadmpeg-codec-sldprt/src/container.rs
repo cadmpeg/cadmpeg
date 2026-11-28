@@ -40,6 +40,7 @@ pub(crate) const MARKER: [u8; 6] = block_hdr::MARKER_VALUE;
 const NATIVE_VERSION: u32 = 4;
 
 /// Resource ceiling on the expansion of one native block.
+// resource-cap: MAX_UNCOMP = 2
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Classified decompressed payload signature.
@@ -1190,6 +1191,7 @@ pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 }
 
 /// One selected Parasolid partition stream and its source site.
+#[derive(Clone, Copy)]
 pub(crate) struct ActiveParasolidSite<'a> {
     pub(crate) section: Section<'a>,
     /// Offset of the stream in its section's semantic payload.

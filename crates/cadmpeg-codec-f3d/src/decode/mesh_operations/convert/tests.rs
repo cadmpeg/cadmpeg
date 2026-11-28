@@ -72,7 +72,7 @@ fn fixture(scope_version: u32, input_version: u32) -> (Vec<u8>, Vec<u8>) {
         index.push((id, u64::try_from(stream.len()).unwrap()));
         stream.extend_from_slice(&bytes);
     }
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (
                 "62B85DC3-27B5-47BA-9F13-B2527B72EE49",
@@ -154,7 +154,7 @@ fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Ve
     };
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(ENTRY, stored).unwrap();
     zip.write_all(stream).unwrap();
     if let Some(metadata) = metadata {
@@ -164,7 +164,7 @@ fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Ve
     }
     let archive = zip.finish().unwrap().into_inner();
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             bind_features(
                 ctx,

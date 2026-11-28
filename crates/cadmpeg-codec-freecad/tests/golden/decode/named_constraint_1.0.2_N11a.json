@@ -1397,10 +1397,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#Sketch"
             }
           },
           "id": "fcstd:design:feature#Sketch",
@@ -1663,9 +1661,890 @@
         }
       ],
       "sheet_metal_rules": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_constraints": [
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:1:end"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:2:start"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:10",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "distance",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:1:start"
+              },
+              "along": {
+                "kind": "aligned"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:1:end"
+              },
+              "value": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#Sketch:constraint:10"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:11",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "distance",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:2:start"
+              },
+              "along": {
+                "kind": "aligned"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:2:end"
+              },
+              "value": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#Sketch:constraint:11"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "horizontal",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:1"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:2:end"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:3:start"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "vertical",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:2"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:5",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:3:end"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:4:start"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:6",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "horizontal",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:3"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:7",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:4:end"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:1:start"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:8",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "vertical",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:4"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#Sketch:9",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#Sketch:1:start"
+              },
+              "b": {
+                "kind": "frame",
+                "value": "origin"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            }
+          }
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 30.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 30.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:1:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:1",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:1:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:1",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 30.0,
+                  "v": 20.0
+                },
+                "start": {
+                  "u": 30.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 30.0,
+                "v": 20.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:2:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:2",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 30.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:2:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:2",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 0.0,
+                  "v": 20.0
+                },
+                "start": {
+                  "u": 30.0,
+                  "v": 20.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 20.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:3:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:3",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 30.0,
+                "v": 20.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:3:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:3",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 0.0,
+                  "v": 20.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:4:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:4",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 20.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#Sketch:4:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#Sketch:4",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#Sketch",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#Sketch",
+          "name": "Sketch",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#Sketch",
+          "owner": "fcstd:design:feature#Sketch",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "input"
+                    },
+                    "picks": {
+                      "kind": "named",
+                      "value": [
+                        {
+                          "target": {
+                            "kind": "principal",
+                            "value": {
+                              "container": "fcstd:design:container#Body",
+                              "entity": "xy_plane"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "role": {
+                  "relation": {
+                    "kind": "coincident"
+                  },
+                  "subject": "whole"
+                }
+              }
+            ],
+            "kind": "placed",
+            "mode": {
+              "codec": "fcstd",
+              "method": {
+                "kind": "text",
+                "value": "FlatFace"
+              },
+              "native_options": {},
+              "source_settings": {}
+            },
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],

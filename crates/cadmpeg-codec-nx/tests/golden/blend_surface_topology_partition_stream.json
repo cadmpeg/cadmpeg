@@ -503,6 +503,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "BLEND_SURF"
           },
+          "nx:s0:blend-surface-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
+            "tag": "BLEND_SURF"
+          },
           "nx:s0:body#2": {
             "offset": 73,
             "stream": "nx:parasolid#0:partition",

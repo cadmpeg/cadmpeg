@@ -492,47 +492,9 @@ fn a_reference_written_zstandard_entry_decodes() {
 /// what the frame regenerated.
 const ZSTD_GOLDEN_ACCEPTING_BYTES: &[usize] = &[4, 18, 19, 285, 290, 294, 301, 302, 334];
 
-/// No corruption of the golden frame yields WRONG output, and every corruption that is
-/// accepted at all yields the correct bytes.
-///
-/// A decoder with no negative case is a gate whose passing form is no output: the positive
-/// test above passes just as well against a decoder that returns the expected bytes for
-/// anything.  Three things about the shape of this test, each of which was got wrong first:
-///
-/// **What is asserted is the property, not the reading.**  An earlier version pinned
-/// `accepted == [5, 6, 285, 334]`, which goes RED when `ruzstd` gets *stricter* -- i.e. on
-/// an improvement -- and a gate that is red for a fix is a gate that gets deleted.  The
-/// assertions are therefore: nothing decodes to the wrong bytes; the accepting positions are
-/// a SUBSET of the measured set above; and the checksum trailer is refused outright, which
-/// is the row this crate's own checksum comparison holds and the one a plant confirms.
-/// There is no `assert_eq!(refused, 401)`: every index lands in exactly one bucket, so the
-/// count is implied by the one above it.
-///
-/// **The sampling is stated.**  `frame[i] ^= 1` is one bit of eight and 405 of the 103 275
-/// possible single-byte mutations -- 0.39 %, and widening it changes the answer.  The
-/// default here sweeps all 255 deltas over the frame header and the trailer, where the
-/// structural behaviour lives, and all eight single-bit flips over every byte, so no byte
-/// is unswept: 9 168 mutations, ~10 s (eight accepting positions).  The exhaustive 103 275
-/// takes 100 s in a debug build (nine), which is a test someone eventually marks
-/// `#[ignore]`, so it is opt-in -- and the numbers recorded above come from it.
-///
-/// **The interesting bytes are 4, 5, 6 and 401-404**, all inside the exhaustive region:
-///
-/// | byte(s) | what it is | this decoder | Zstandard CLI v1.5.7 |
-/// |---|---|---|---|
-/// | 4 | frame descriptor | some deltas accepted, output correct | varies |
-/// | 5, 6 | `Frame_Content_Size` | refused | refused |
-/// | 401-404 | content checksum | refused | refused |
-///
-/// `ruzstd` compares neither `Frame_Content_Size` nor the content checksum with what it
-/// produced.  Both comparisons are made by `cadmpeg_core`'s `open_zstd` decoder, which reads
-/// the frame header itself and so can tell an absent size field from one that says 0 --
-/// which `ruzstd`'s accessor cannot.  `ExpandSpec::Exact`, fed the central directory's
-/// size, refuses independently of both.
-/// Bytes 401-404 are refused only because that decoder compares the checksum itself.  Delete
-/// the comparison and the assertion that fires is the SUBSET one -- `these bytes now accept
-/// a corruption and did not before: [401, 402, 403, 404]` -- not `checksum_bytes_accepted`,
-/// which cannot speak while the ceiling excludes those bytes.
+/// Check that accepted corruptions preserve the output and that checksum mutations fail.
+/// The default sweep covers every bit and every header and trailer byte value; the
+/// environment variable enables every byte value at every position.
 #[test]
 fn no_corruption_of_the_zstandard_frame_yields_wrong_output() {
     let plain = zip_fixture::zstd_golden_plaintext();

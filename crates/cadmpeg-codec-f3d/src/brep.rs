@@ -217,6 +217,29 @@ pub(crate) fn decode(
     )?)
 }
 
+/// Decode the record table of one stored history state of the ASM stream
+/// `stream` into the IR B-rep graph, as the model is decoded.
+pub(crate) fn decode_state(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    tables: (
+        &cadmpeg_asm::kernel_header::KernelHeader,
+        &cadmpeg_asm::nurbs::toks::SubtypeTable,
+    ),
+    stream: &str,
+) -> Result<Brep, CodecError> {
+    Brep::from_asm(cadmpeg_asm::brep::decode_with_table(
+        ctx,
+        records,
+        bytes,
+        (Some(tables.0), tables.1),
+        stream,
+        crate::ids::ID_FORMAT,
+        DecodePurpose::Model,
+    )?)
+}
+
 /// Decode a parsed text stream ([`cadmpeg_asm::sat`]) into the IR B-rep graph.
 ///
 /// The text parser already typed the records and converted lengths into the

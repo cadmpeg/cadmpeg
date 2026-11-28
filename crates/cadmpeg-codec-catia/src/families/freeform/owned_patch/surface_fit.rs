@@ -10,7 +10,9 @@ use cadmpeg_ir::units::UnitVector3;
 
 const DEGREE: usize = 3;
 const FIT_ERROR_MM: f64 = 0.0002;
+// resource-cap: MAX_CELLS = 4
 const MAX_CELLS: usize = 48 * 48;
+// resource-cap: MAX_REFINEMENTS = 4
 const MAX_REFINEMENTS: usize = 9;
 const HOLDOUTS: [f64; 3] = [0.2, 0.5, 0.8];
 

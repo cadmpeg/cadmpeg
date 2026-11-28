@@ -821,7 +821,8 @@ fn a_write_names_the_expression_a_driven_constraint_leaves_out() {
         "{charge:?}"
     );
     let driving = bound_constraint("1");
-    assert!(parameter_charge(&driving, DISTANCE).is_empty());
+    let charge = parameter_charge(&driving, DISTANCE);
+    assert!(charge.is_empty(), "{charge:?}");
 }
 
 /// A sketch's constraint parameters take their index in its constraint

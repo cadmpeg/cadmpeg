@@ -23,11 +23,14 @@ const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
 /// Maximum embedded curve nesting depth.
+// resource-cap: MAX_CURVE_DEPTH = 2
 const MAX_CURVE_DEPTH: usize = 32;
 /// Highest degree a polycurve join raises its segments to. Bezier elevation
 /// costs the square of the degree per span; Rhino commands stop at degree 11.
+// resource-cap: MAX_JOIN_DEGREE = 2
 const MAX_JOIN_DEGREE: usize = 64;
 /// Elevated Bezier poles, `degree` per span, that one polycurve join produces.
+// resource-cap: MAX_JOIN_ELEVATED_POLES = 4
 const MAX_JOIN_ELEVATED_POLES: usize = 1 << 20;
 /// Acceptance tolerance for circle plane axes and evaluated radius points.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;

@@ -4542,10 +4542,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#PadSketch"
             }
           },
           "id": "fcstd:design:feature#PadSketch",
@@ -4573,10 +4571,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#PocketSketch"
             }
           },
           "id": "fcstd:design:feature#PocketSketch",
@@ -4719,7 +4715,6 @@
               "time": 0
             }
           },
-          "name": "Constraint3",
           "native_options": {},
           "native_ref": "fcstd:native:property#PadSketch:Constraints",
           "owner": {
@@ -4756,7 +4751,6 @@
               "time": 0
             }
           },
-          "name": "Constraint4",
           "native_options": {},
           "native_ref": "fcstd:native:property#PadSketch:Constraints",
           "owner": {
@@ -4867,7 +4861,6 @@
               "time": 0
             }
           },
-          "name": "Constraint1",
           "native_options": {},
           "native_ref": "fcstd:native:property#PocketSketch:Constraints",
           "owner": {
@@ -4914,9 +4907,583 @@
         }
       ],
       "sheet_metal_rules": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_constraints": [
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#PadSketch:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Constraints",
+          "relation": {
+            "kind": "horizontal",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#PadSketch:1"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            },
+            "fcstd:visible": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": true
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#PadSketch:2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Constraints",
+          "relation": {
+            "kind": "vertical",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#PadSketch:2"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            },
+            "fcstd:visible": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": true
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#PadSketch:3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Constraints",
+          "relation": {
+            "kind": "distance",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#PadSketch:1:start"
+              },
+              "along": {
+                "kind": "aligned"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#PadSketch:1:end"
+              },
+              "value": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#PadSketch:constraint:3"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            },
+            "fcstd:visible": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": true
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#PadSketch:4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Constraints",
+          "relation": {
+            "kind": "distance",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#PadSketch:2:start"
+              },
+              "along": {
+                "kind": "aligned"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "fcstd:design:sketch-entity#PadSketch:2:end"
+              },
+              "value": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#PadSketch:constraint:4"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 0.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            },
+            "fcstd:visible": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": true
+              }
+            }
+          }
+        },
+        {
+          "active": {
+            "kind": "literal",
+            "value": true
+          },
+          "id": "fcstd:design:sketch-constraint#PocketSketch:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PocketSketch:Constraints",
+          "relation": {
+            "kind": "radial",
+            "value": {
+              "measure": "diameter",
+              "of": "fcstd:design:sketch-entity#PocketSketch:1",
+              "value": {
+                "kind": "parameter",
+                "value": "fcstd:design:parameter#PocketSketch:constraint:1"
+              }
+            }
+          },
+          "sketch": "fcstd:design:sketch#PocketSketch",
+          "source_settings": {
+            "fcstd:label_distance": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:label_position": {
+              "kind": "real",
+              "value": {
+                "kind": "literal",
+                "value": 10.0
+              }
+            },
+            "fcstd:virtual_space": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": false
+              }
+            },
+            "fcstd:visible": {
+              "kind": "bool",
+              "value": {
+                "kind": "literal",
+                "value": true
+              }
+            }
+          }
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 24.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 24.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:1:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#PadSketch:1",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 0.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:1:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#PadSketch:1",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 24.0,
+                  "v": 16.0
+                },
+                "start": {
+                  "u": 24.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 24.0,
+                "v": 16.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:2:end",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#PadSketch:2",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 24.0,
+                "v": 0.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:2:start",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "fcstd:design:sketch-entity#PadSketch:2",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 0.0,
+                  "v": 16.0
+                },
+                "start": {
+                  "u": 24.0,
+                  "v": 16.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 0.0,
+                  "v": 16.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PadSketch:4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PadSketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#PadSketch",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "circle",
+              "value": {
+                "center": {
+                  "u": 12.0,
+                  "v": 8.0
+                },
+                "radius": 3.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#PocketSketch:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#PocketSketch:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#PocketSketch",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#PadSketch",
+          "name": "PadSketch",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#PadSketch",
+          "owner": "fcstd:design:feature#PadSketch",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        },
+        {
+          "id": "fcstd:design:sketch#PocketSketch",
+          "name": "PocketSketch",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#PocketSketch",
+          "owner": "fcstd:design:feature#PocketSketch",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],

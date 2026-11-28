@@ -154,13 +154,7 @@ impl DecodeBudget {
         base: u64,
         per_input_byte: u64,
     ) -> u64 {
-        let Some(proportional) = per_input_byte
-            .checked_mul(self.input_bytes.get())
-            .and_then(|amount| base.checked_add(amount))
-        else {
-            return ceiling;
-        };
-        ceiling.min(proportional)
+        super::policy::proportional_allowance(ceiling, base, per_input_byte, self.input_bytes.get())
     }
 
     pub(super) fn decompression_allowance(&self) -> u64 {

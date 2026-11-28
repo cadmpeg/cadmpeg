@@ -258,6 +258,28 @@ impl<'a> Schema<'a> {
         found
     }
 
+    /// Every reachable object whose keys are typed map entries.
+    pub(super) fn maps(&self) -> BTreeSet<String> {
+        let mut found = BTreeSet::new();
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![String::new()];
+        while let Some(location) = pending.pop() {
+            if !seen.insert(location.clone()) {
+                continue;
+            }
+            if !under_constraint(&location)
+                && shape(self.node(&location)) == Shape::Map
+                && self.inhabited(&location)
+            {
+                found.insert(location.clone());
+            }
+            for (_, child) in self.children(&location) {
+                pending.push(child);
+            }
+        }
+        found
+    }
+
     /// The structural children of `location`, without the constraint
     /// keywords.
     pub(super) fn children(&self, location: &str) -> Vec<(Edge, String)> {

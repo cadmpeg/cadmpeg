@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::test_support::native_test::f3d_native_mut;
+use crate::test_support::native_fixture::f3d_native_mut;
 
 #[test]
 fn validation_accepts_transformed_insert_frames_with_other_paired_tags() {

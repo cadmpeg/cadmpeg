@@ -5,9 +5,9 @@ use std::io::{Cursor, Read, Write};
 use cadmpeg_core::decode::u64_from_index;
 use zip::CompressionMethod;
 
-use super::smbh_geometry_test::synthetic_geometry_smbh;
-use super::streams_test::{generated_act_bulkstream, generated_act_metastream};
-use super::zip_test::f3d_with_smbh_and_protein;
+use super::smbh_geometry_fixture::synthetic_geometry_smbh;
+use super::streams_fixture::{generated_act_bulkstream, generated_act_metastream};
+use super::zip_fixture::f3d_with_smbh_and_protein;
 use super::{indexed_header, lp_utf16};
 
 fn generated_act_with_component_links(links: &[(u32, usize)]) -> (Vec<u8>, Vec<(u64, u64)>) {

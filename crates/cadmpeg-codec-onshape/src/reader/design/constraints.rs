@@ -142,7 +142,7 @@ impl Points<'_> {
         let native = stored
             .map(|stored| -> Result<_, &'static str> {
                 Ok(cadmpeg_ir::design::names::NativeName {
-                    codec: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+                    codec: cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
                     value: cadmpeg_ir::design::names::NativeNameValue::Text(
                         NonBlankString::new(stored.as_str()).ok_or("a stored point id is blank")?,
                     ),

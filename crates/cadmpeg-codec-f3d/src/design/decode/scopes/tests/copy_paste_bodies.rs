@@ -3,7 +3,7 @@
 #[test]
 fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     let (bytes, _) =
-        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+        crate::test_support::streams_fixture::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let headers =
         crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
@@ -64,10 +64,10 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
 #[test]
 fn generated_copy_paste_bodies_decode_parameter_scopes() {
     let archive =
-        crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(
+        crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(
             &[],
         );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         assert!(
             !crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -84,7 +84,7 @@ fn generated_copy_paste_bodies_decode_parameter_scopes() {
 #[test]
 fn a_prologue_zero_scope_reads_its_references_after_the_marker_word() {
     let (mut bytes, _) =
-        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+        crate::test_support::streams_fixture::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
         &bytes, &records,

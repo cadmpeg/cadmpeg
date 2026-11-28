@@ -372,7 +372,17 @@ fn a_dimension_parameter_is_owned_by_its_sketch() {
         .iter()
         .find(|parameter| parameter.id == hole.id)
         .expect("Hole in the design");
-    assert_eq!(design_hole.display, Some(DimensionDisplay::Diameter));
+    assert_eq!(design_hole.display, None);
+    assert!(decoded.design.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            &constraint.relation,
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter),
+                ..
+            } if parameter == &hole.id
+        )
+    }));
     assert_cadir_carries_parameter_field(&decoded, hole.id.as_str(), "display");
     let tilt = decoded
         .model
@@ -1119,7 +1129,7 @@ fn a_driven_parameter_keeps_its_comment_and_its_rename_is_reported() {
         )),
         "{renamed}"
     );
-    assert!(crate::test_support::native_test::f3d_native(&decoded)
+    assert!(crate::test_support::native_fixture::f3d_native(&decoded)
         .design_parameters
         .iter()
         .any(
@@ -1133,7 +1143,7 @@ fn a_claimed_driving_parameter_keeps_its_comment() {
     let mut ir = on_xy();
     parameter_mut(&mut ir, "up").comment = Some("rise".into());
     let (_, decoded) = write(&ir);
-    assert!(crate::test_support::native_test::f3d_native(&decoded)
+    assert!(crate::test_support::native_fixture::f3d_native(&decoded)
         .design_parameters
         .iter()
         .any(|parameter| parameter.name() == "Up" && parameter.comment() == Some("rise")));

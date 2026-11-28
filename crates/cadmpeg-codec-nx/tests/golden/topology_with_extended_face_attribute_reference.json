@@ -479,6 +479,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
+          "nx:s0:topology-attribute-list-reference#14-4": {
+            "offset": 129,
+            "stream": "nx:s0",
+            "tag": "TOPOLOGY_ATTRIBUTE_LIST_REFERENCE"
+          },
           "nx:s0:vertex#10": {
             "offset": 391,
             "stream": "nx:parasolid#0:partition",

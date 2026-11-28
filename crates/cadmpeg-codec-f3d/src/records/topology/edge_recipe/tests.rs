@@ -46,7 +46,7 @@ fn edge_recipe_selector_context_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:selector-context#0",
         value: &context,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::EDGE_RECIPE_SELECTOR_CONTEXT_CLONE_COUNT.with(|count| count.set(0)),
@@ -75,7 +75,7 @@ fn surface_patch_structure_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:surface-patch-structure#0",
         value: &structure,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::SURFACE_PATCH_STRUCTURE_CLONE_COUNT.with(|count| count.set(0)),
@@ -100,7 +100,7 @@ fn surface_patch_clause_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:surface-patch-clause#0",
         value: &clause,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::SURFACE_PATCH_CLAUSE_CLONE_COUNT.with(|count| count.set(0)),
@@ -122,7 +122,7 @@ fn topology_recipe_side_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:topology-recipe-side#0",
         value: &side,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::TOPOLOGY_RECIPE_SIDE_CLONE_COUNT.with(|count| count.set(0)),

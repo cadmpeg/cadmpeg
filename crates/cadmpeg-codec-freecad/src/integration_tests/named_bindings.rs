@@ -157,7 +157,7 @@ fn named_constraint_path_grammar_and_ambiguity() {
             [" Name=\"width\"", " Name=\"width\""],
             vec!["Constraints[1]"],
             true,
-            Some(crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous),
+            None,
         ),
         (
             [" Name=\"width\"", ""],
@@ -187,7 +187,7 @@ fn named_constraint_path_grammar_and_ambiguity() {
             [" Name=\"width\"", " Name=\"width\""],
             vec![".Constraints.width"],
             false,
-            Some(crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous),
+            None,
         ),
         (
             [" Name=\"width\"", ""],

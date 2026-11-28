@@ -285,8 +285,11 @@ pub(super) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Op
 }
 
 /// Bounds for the shared ASM NURBS knot expansion check.
+// resource-cap: MAX_NURBS_POLES = 2
 const MAX_NURBS_POLES: usize = 100_000;
+// resource-cap: MAX_NURBS_DEGREE = 1
 const MAX_NURBS_DEGREE: usize = 20;
+// resource-cap: MAX_EXPANDED_NURBS_KNOTS = 2
 const MAX_EXPANDED_NURBS_KNOTS: usize = MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1;
 
 /// Checked expansion metadata for one unique-knot multiplicity table.

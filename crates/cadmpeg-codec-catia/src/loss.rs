@@ -48,6 +48,7 @@ pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> impl std::f
     Statement(ids)
 }
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one CATIA V5 transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -226,96 +227,9 @@ pub(crate) enum CatiaLossCode {
     /// Visualization value blocks lack a proven typed face or body target.
     AttributesVisualizationUnbound,
 }
+}
 
 impl CatiaLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [CatiaLossCode] = &[
-        Self::SourceDialectUnverified,
-        Self::SourceRouteFellThrough,
-        Self::SourceAnnotationCollision,
-        Self::SourceCatalogScanBounded,
-        Self::GeometryCarrierSummary,
-        Self::GeometryRollingSheetExtended,
-        Self::TopologyAffineVertexReconciled,
-        Self::GeometryParameterMapAccuracyInferred,
-        Self::GeometrySurfaceParametersNotTransferred,
-        Self::GeometrySurfaceExtrapolationNotTransferred,
-        Self::GeometryPlaneBoundsNotTransferred,
-        Self::GeometrySurfaceWeightsInferred,
-        Self::GeometryPlanePcurveProjected,
-        Self::GeometryConicBranchBoundsInferred,
-        Self::GeometrySheetSurfaceFitted,
-        Self::GeometryRollingBallRailsAdjusted,
-        Self::GeometryUnresolvedCarriers,
-        Self::GeometryBrepNotTransferred,
-        Self::GeometryPlaneParametersInvalid,
-        Self::GeometryAnalyticPayloadInvalid,
-        Self::GeometryParameterRangeInvalid,
-        Self::GeometryPcurveRechartNonFinite,
-        Self::GeometryPcurveCirclePlaneMismatch,
-        Self::GeometryPcurveSourceUseUntransferred,
-        Self::GeometryFaceLocalFreeformNotTransferred,
-        Self::GeometryRevolutionProfileUnbound,
-        Self::GeometryLineProfileNotTransferred,
-        Self::TopologyBoundaryGraphNotEmitted,
-        Self::TopologyFbbRowsWithheld,
-        Self::TopologyGraphNotBuilt,
-        Self::TopologySheetComponentsInferred,
-        Self::TopologyStandardSearchBounded,
-        Self::TopologyPlanarBoundaryBounded,
-        Self::TopologyE5GraphUnclosed,
-        Self::TopologyB5GaugeSubstituted,
-        Self::TopologyObjectStreamWorkSliceExhausted,
-        Self::TopologyB5GraphUnclosed,
-        Self::TopologyOwnedPatchSubset,
-        Self::TopologyUnselectedBodiesRetained,
-        Self::TopologyBodySelectionUnresolved,
-        Self::TopologyOwnedPatchSenseInferred,
-        Self::TopologyEndpointStationReadingInferred,
-        Self::TopologySharedBoundaryReconciled,
-        Self::TopologyTwoEdgeBindingInferred,
-        Self::TopologySheetPatchSearchBounded,
-        Self::TopologyB5FacesWithheld,
-        Self::TopologyB5PopulationBounded,
-        Self::TopologyZeroEntitySupportsRetained,
-        Self::TopologyZeroEntityCandidatesBounded,
-        Self::TopologyZeroEntityGaugeSubstituted,
-        Self::TopologyZeroEntityNotTransferred,
-        Self::TopologyZeroEntityFaceUnresolved,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::HistoryModelingScopeUnresolved,
-        Self::HistoryObjectRecordsUnresolved,
-        Self::HistoryLegacyRunsUnresolved,
-        Self::HistoryConfigurationRowOrderBounded,
-        Self::HistoryRelationDependenciesBounded,
-        Self::HistoryDefinitionChainsRetained,
-        Self::HistoryFeaturesUnread,
-        Self::HistoryParameterLiteralAssumed,
-        Self::DesignParameterReferenceAsText,
-        Self::DesignTreeRecordsUnstated,
-        Self::DesignMemberListUnread,
-        Self::DesignBooleanToolUnread,
-        Self::DesignFeaturesUngrouped,
-        Self::DesignMembersUnread,
-        Self::DesignSetKindUnread,
-        Self::DesignSetsUnlisted,
-        Self::DesignRollbackUnread,
-        Self::DesignSketchEntitiesUnread,
-        Self::DesignSketchConstraintsUnstated,
-        Self::AttributesMaterialsMetadataNotTransferred,
-        Self::AttributesDimensionQuantityUnresolved,
-        Self::AttributesPmiToleranceUntransferred,
-        Self::AttributesPmiSecondaryToleranceUntransferred,
-        Self::AttributesPmiDatumSystemUnresolved,
-        Self::AttributesPmiTargetRosterUnresolved,
-        Self::AttributesPmiTopologyTargetUnresolved,
-        Self::AttributesPmiSemanticsUnresolved,
-        Self::AttributesPmiFieldKeyUnresolved,
-        Self::AttributesPmiCompositeLinkUntransferred,
-        Self::AttributesVisualizationUnbound,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {

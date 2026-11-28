@@ -5,8 +5,8 @@ use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchLocus};
 
 use super::{assert_valid, decode};
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::f3d_native;
-use crate::test_support::zip_test::{
+use crate::test_support::native_fixture::f3d_native;
+use crate::test_support::zip_fixture::{
     f3d_with_generated_sketch_annotation, f3d_with_generated_sketch_presentation,
     SketchAnnotationCase,
 };
