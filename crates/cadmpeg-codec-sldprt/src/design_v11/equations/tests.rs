@@ -365,6 +365,7 @@ fn global(name: &str, kind: ValueKind) -> DesignParameter {
         id: id(name),
         scope: super::super::root_definition(),
         owner: None,
+        position: None,
         name: cadmpeg_core::text::NonBlankString::new(name.to_owned()),
         kind,
         unit: None,

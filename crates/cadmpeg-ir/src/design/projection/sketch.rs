@@ -310,6 +310,7 @@ pub fn driven_parameter(
         id: parameter.clone(),
         scope: scope.clone(),
         owner: Some(ParameterOwner::Feature(owner.clone())),
+        position: None,
         name,
         kind: crate::design::units::ValueKind::Quantity(quantity),
         unit: None,

@@ -436,6 +436,34 @@ fn group(features: Vec<Feature>) -> Option<(Container, Vec<Feature>)> {
     Some((container, features))
 }
 
+/// States the part root and identifies its inactive geometry without replay.
+/// A part states its root where its history holds a feature or it holds a
+/// sketch, as [`project`] does.
+pub(crate) fn state_current_model(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    histories: &[FeatureHistory],
+    length: Option<UnitSymbol>,
+    bodies: Vec<BodyId>,
+) -> Result<BTreeMap<String, ConfigurationId>, CodecError> {
+    let retired = if tree::has_members(histories) {
+        let Ok(retired) = ctx.run_part(|| states::retired_records(ctx, ir, histories, &bodies))?
+        else {
+            return Ok(BTreeMap::new());
+        };
+        retired
+    } else if ir.model.sketches.is_empty() && ir.model.spatial_sketches.is_empty() {
+        return Ok(BTreeMap::new());
+    } else {
+        BTreeMap::new()
+    };
+    ctx.charge_entities(1, "root product definition")?;
+    ir.model
+        .product_definitions
+        .push(root(root_definition(), length, bodies));
+    Ok(retired)
+}
+
 /// The root definition `definition`: a part in `length` units that holds
 /// `bodies`.
 fn root(

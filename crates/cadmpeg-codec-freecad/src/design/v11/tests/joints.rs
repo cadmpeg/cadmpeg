@@ -756,6 +756,7 @@ fn a_driven_joint_value_binds_a_parameter_of_the_joint() {
         "{offset:?}"
     );
     owned_by(gap_id, gap_feature);
+    assert_eq!(parameter(gap_id).position, Some(3));
     assert_eq!(neutral(gap_id), ("$0 * 1[mm]".to_owned(), vec![cell("w")]));
     assert_eq!(unbound("Gap"), None);
 
@@ -846,6 +847,7 @@ fn a_driven_joint_value_binds_a_parameter_of_the_joint() {
     // A driven second gear radius is its parameter.
     let (_, geared) = joint_feature(ir, "Geared");
     let geared_id = "fcstd:design:parameter#Geared:Distance2";
+    assert_eq!(parameter(geared_id).position, Some(4));
     assert!(
         matches!(
             &geared.kind,

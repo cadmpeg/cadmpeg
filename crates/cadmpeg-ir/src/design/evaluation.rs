@@ -170,7 +170,6 @@ impl StateDelta {
     /// needs its construction.
     #[must_use]
     pub fn between(state: &HeldState, base: &HeldState) -> Self {
-        let (records, removed) = super::edit::states::difference(&state.records, &base.records);
         let mut names = state
             .names
             .iter()
@@ -184,9 +183,19 @@ impl StateDelta {
                 .map(|entity| (entity.clone(), None)),
         );
         Self {
+            names,
+            ..Self::between_topologies(&state.records, &base.records)
+        }
+    }
+
+    /// The topology delta that turns `base` into `state`, including the
+    /// procedural carriers and constructions needed to write changed records.
+    #[must_use]
+    pub fn between_topologies(state: &Topology, base: &Topology) -> Self {
+        let (records, removed) = super::edit::states::difference(state, base);
+        Self {
             records,
             removed,
-            names,
             ..Self::default()
         }
     }

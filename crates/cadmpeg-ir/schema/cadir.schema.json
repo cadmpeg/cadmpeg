@@ -12745,6 +12745,12 @@
           "description": "The configuration's name, which identifies it.",
           "type": "string"
         },
+        "position": {
+          "description": "The configuration's place, from 0, in the one list where the source\nlists the configurations of its scope. It orders display only. `None`\nwhere the source lists none.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
         "parent": {
           "description": "The configuration a derived configuration inherits from.",
           "$ref": "#/$defs/ConfigurationId"
@@ -12802,6 +12808,12 @@
         "owner": {
           "description": "The record the source lists the parameter under. `None` is a user\nparameter of the scope.",
           "$ref": "#/$defs/ParameterOwner"
+        },
+        "position": {
+          "description": "The parameter's place, from 0, in the one list where the source lists\nthe parameters of its owner, or of its scope where `owner` is `None`.\nIt orders display only. `None` where the source lists none.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
         },
         "name": {
           "description": "The source's name without its owner's name. `None` only for a\nspreadsheet cell with no alias.",

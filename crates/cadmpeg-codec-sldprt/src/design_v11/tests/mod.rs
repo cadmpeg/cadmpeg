@@ -293,9 +293,32 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
+/// A configuration takes its place in the history's configuration list.
+#[test]
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
+}
+
 /// A configuration is restated without its custom properties, and one other
 /// than the active one without the feature suppressions that differ from the
-/// active one's and that its overrides do not state.
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
 #[test]
 fn a_configuration_is_restated_without_what_its_record_does_not_state() {
     use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
@@ -340,6 +363,7 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         id: id(key),
         scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
         name: key.to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),
@@ -413,6 +437,18 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
             "feature_states.dependencies",
             "ordinal"
         ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
     );
 }
 

@@ -61,6 +61,12 @@ fn cuts(ir: &CadIr) -> BTreeMap<String, BTreeSet<String>> {
         )
         .chain(
             ir.model
+                .configurations
+                .iter()
+                .map(|configuration| configuration.id.as_str()),
+        )
+        .chain(
+            ir.model
                 .sketch_constraints
                 .iter()
                 .map(|constraint| constraint.id.as_str()),
@@ -460,6 +466,7 @@ fn design_parameter(key: &str, name: &str) -> DesignParameter {
         id: parameter_id(key),
         scope: ProductDefinitionId::mint(SCOPE).unwrap(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -482,9 +489,9 @@ fn parameter_ir(models: Vec<ModelParameter>, designs: Vec<DesignParameter>) -> C
     ir
 }
 
-/// Only a spreadsheet orders design parameters: two parameters of one owner
-/// that no sheet lists name their ordinals, whichever order their ids take,
-/// and a parameter with no other of its owner keeps its ordinal.
+/// Two parameters of one owner that state no position and that no sheet
+/// lists name their ordinals, whichever order their ids take, and a
+/// parameter with no other of its owner keeps its ordinal.
 #[test]
 fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
     let designs = || {
@@ -510,6 +517,124 @@ fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
         designs(),
     ));
     assert_eq!(lone[parameter_id("sketch:7").as_str()], fields([]));
+}
+
+/// Parameters of one owner whose positions follow their ordinals keep the
+/// ordinals; those whose positions do not, or of which one states none, name
+/// them.
+#[test]
+fn a_parameter_ordinal_follows_the_positions_of_its_owner() {
+    let models = || {
+        vec![
+            model_parameter("sketch:7", 0),
+            model_parameter("sketch:10", 1),
+        ]
+    };
+    let placed = |first: Option<u32>, second: Option<u32>| {
+        let mut designs = vec![
+            design_parameter("sketch:7", "sketch:7"),
+            design_parameter("sketch:10", "sketch:10"),
+        ];
+        designs[0].position = first;
+        designs[1].position = second;
+        cuts(&parameter_ir(models(), designs))
+    };
+    let ordered = placed(Some(4), Some(9));
+    assert_eq!(ordered[parameter_id("sketch:7").as_str()], fields([]));
+    assert_eq!(ordered[parameter_id("sketch:10").as_str()], fields([]));
+    let reversed = placed(Some(1), Some(0));
+    assert_eq!(
+        reversed[parameter_id("sketch:7").as_str()],
+        fields(["ordinal"])
+    );
+    assert_eq!(
+        reversed[parameter_id("sketch:10").as_str()],
+        fields(["ordinal"])
+    );
+    let partial = placed(Some(0), None);
+    assert_eq!(
+        partial[parameter_id("sketch:7").as_str()],
+        fields(["ordinal"])
+    );
+}
+
+#[test]
+fn a_parameter_ordinal_requires_positions_in_one_design_list() {
+    let mut first = design_parameter("width", "width");
+    let mut second = design_parameter("height", "height");
+    first.position = Some(0);
+    second.position = Some(1);
+    let models = vec![model_parameter("width", 0), model_parameter("height", 1)];
+    let mut ir = parameter_ir(models, vec![first, second]);
+
+    ir.design.parameters[1].scope = ProductDefinitionId::mint(COMPONENT).unwrap();
+    let split_scope = cuts(&ir);
+    for key in ["width", "height"] {
+        assert!(split_scope[parameter_id(key).as_str()].contains("ordinal"));
+    }
+
+    ir.design.parameters[1].scope = ProductDefinitionId::mint(SCOPE).unwrap();
+    ir.design.parameters[1].owner = Some(ParameterOwner::Feature(
+        FeatureId::mint("test:design:feature#sketch").unwrap(),
+    ));
+    let split_owner = cuts(&ir);
+    for key in ["width", "height"] {
+        assert!(split_owner[parameter_id(key).as_str()].contains("ordinal"));
+    }
+
+    ir.design.parameters[1].owner = None;
+    ir.design.parameters[1].position = Some(0);
+    ir.model.parameters[0].ordinal = 1;
+    ir.model.parameters[1].ordinal = 0;
+    let duplicate_position = cuts(&ir);
+    for key in ["width", "height"] {
+        assert_eq!(
+            duplicate_position[parameter_id(key).as_str()],
+            fields(["ordinal"])
+        );
+    }
+}
+
+#[test]
+fn a_configuration_position_carries_the_same_model_ordinal() {
+    use crate::design::configuration::{DesignConfiguration, Overrides};
+    use crate::features::parameters::DesignConfiguration as ModelConfiguration;
+    use crate::features::ConfigurationId;
+
+    let id = ConfigurationId::mint("test:design:configuration#variant").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(ModelConfiguration {
+        id: id.clone(),
+        ordinal: 4,
+        active: true,
+        source_index: None,
+        name: Some("Variant".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    ir.design.configurations.push(DesignConfiguration {
+        id: id.clone(),
+        scope: ProductDefinitionId::mint(SCOPE).unwrap(),
+        name: "Variant".to_owned(),
+        position: Some(4),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    assert_eq!(cuts(&ir)[id.as_str()], fields(["active"]));
+
+    for position in [Some(0), None] {
+        ir.design.configurations[0].position = position;
+        assert_eq!(cuts(&ir)[id.as_str()], fields(["active", "ordinal"]));
+    }
 }
 
 /// A design parameter named by the stored name the model keeps in
@@ -602,17 +727,21 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
         address: CellAddress::new(row, col).unwrap(),
         parameter: parameter_id(key),
     };
-    listed.design.spreadsheets.push(
+    let sheet = |id, cells| {
         crate::design::spreadsheet::Spreadsheet::new(
-            SpreadsheetId::mint("test:design:spreadsheet#sheet").unwrap(),
-            vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+            SpreadsheetId::mint(id).unwrap(),
+            cells,
             Vec::new(),
             Vec::new(),
             Vec::new(),
             None,
         )
-        .unwrap(),
-    );
+        .unwrap()
+    };
+    listed.design.spreadsheets.push(sheet(
+        "test:design:spreadsheet#a",
+        vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+    ));
     let written = listed
         .design
         .parameters
@@ -622,9 +751,24 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
     assert!(
         same_id_cuts(&listed, &written)[parameter_id("sheet:cell:B1").as_str()].contains("ordinal")
     );
-    let listed = cuts(&listed);
-    assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
-    assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
+    let together = cuts(&listed);
+    assert_eq!(together[parameter_id("sheet:cell:B1").as_str()], fields([]));
+    assert_eq!(together[parameter_id("sheet:cell:A2").as_str()], fields([]));
+
+    listed.design.spreadsheets = vec![
+        sheet(
+            "test:design:spreadsheet#a",
+            vec![cell(1, 2, "sheet:cell:B1")],
+        ),
+        sheet(
+            "test:design:spreadsheet#b",
+            vec![cell(2, 1, "sheet:cell:A2")],
+        ),
+    ];
+    let split = cuts(&listed);
+    for key in ["sheet:cell:B1", "sheet:cell:A2"] {
+        assert_eq!(split[parameter_id(key).as_str()], fields(["ordinal"]));
+    }
 }
 
 #[test]

@@ -2,7 +2,7 @@
 //! Tests of the planar and spatial sketches of a Fusion design.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::InputReference;
@@ -320,6 +320,7 @@ fn a_sketch_states_its_entities_and_binds_its_dimensions_to_parameters_of_its_sc
     let mut losses = Vec::new();
     let parameters = super::super::parameters::project(
         &model.parameters,
+        &HashMap::new(),
         &definitions,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -464,6 +465,7 @@ fn in_scope(model: &Model, keys: &[&str]) -> Vec<cadmpeg_ir::design::parameter::
     let definitions = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
     super::super::parameters::project(
         &model.parameters,
+        &HashMap::new(),
         &definitions,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),

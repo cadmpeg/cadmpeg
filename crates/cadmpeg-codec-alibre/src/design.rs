@@ -788,6 +788,7 @@ impl Projection<'_> {
             id: self.parameters[at].clone(),
             scope: self.scope.clone(),
             owner,
+            position: None,
             name: NonBlankString::new(parameter.name.clone()),
             kind,
             unit,
