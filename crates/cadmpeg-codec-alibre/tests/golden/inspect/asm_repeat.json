@@ -1,0 +1,106 @@
+{
+  "container_kind": "cfb",
+  "entries": [
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "3",
+        "start_sector": "1"
+      },
+      "kind": "stored",
+      "name": "LIGHT_CONFIGURATION_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 48
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "regular",
+        "directory_id": "1",
+        "start_sector": "4"
+      },
+      "kind": "stored",
+      "name": "STEP_DATA",
+      "role": "root-exchange",
+      "size": {
+        "kind": "exact",
+        "size": 17062
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "4",
+        "start_sector": "16"
+      },
+      "kind": "stored",
+      "name": "PROP_DATA",
+      "role": "properties",
+      "size": {
+        "kind": "exact",
+        "size": 1301
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "6",
+        "start_sector": "2"
+      },
+      "kind": "stored",
+      "name": "VERSION",
+      "role": "metadata",
+      "size": {
+        "kind": "exact",
+        "size": 170
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "5",
+        "start_sector": "5"
+      },
+      "kind": "stored",
+      "name": "CONSTITUENTS",
+      "role": "external-references",
+      "size": {
+        "kind": "exact",
+        "size": 686
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "2",
+        "start_sector": "0"
+      },
+      "kind": "stored",
+      "name": "GLOBAL_PARAMETER_DATA_CACHE",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 20
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {},
+        "dialect": "alibre:cfb-assembly"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "CFB v3 with 6 streams"
+  ]
+}

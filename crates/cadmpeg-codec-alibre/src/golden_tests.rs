@@ -8,8 +8,8 @@ use std::io::Cursor;
 
 use cadmpeg_core::serde_erase::json;
 
-use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeResult};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -29,8 +29,10 @@ fn branches() -> [Branch; 2] {
 }
 
 fn inputs() -> Vec<(String, Vec<u8>)> {
+    let assemblies = crate::integration_tests::assembly::assembly_specimens();
     crate::integration_tests::specimens()
         .into_iter()
+        .chain(assemblies)
         .map(|(name, bytes)| (name.to_owned(), bytes.to_vec()))
         .collect()
 }
@@ -43,8 +45,25 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     snapshot_text(&value)
 }
 
+/// Decodes with the committed component files beside the input, as an
+/// assembly resolves its parts.
+fn decode_beside_corpus(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
+    let files = crate::integration_tests::assembly::Files::corpus();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+    let ctx = ctx.with_companions(&files);
+    let result = AlibreCodec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
+    ctx.finish_session()?;
+    result
+}
+
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match AlibreCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
+    let value = match decode_beside_corpus(bytes) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             cadmpeg_core::json!({

@@ -72,7 +72,7 @@ its result.
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
 | SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
-| Alibre Design `.AD_PRT`                           | L3    |
+| Alibre Design `.AD_PRT` and `.AD_ASM`             | L3    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
@@ -607,7 +607,7 @@ These gaps remain:
 - **Native write: None.**
 - **Round trip: None.**
 
-## Alibre Design `.AD_PRT`
+## Alibre Design `.AD_PRT` and `.AD_ASM`
 
 **Container:** Microsoft Compound File with a flat root; the `SAB_DATA` stream holds an ACIS binary body
 
@@ -618,21 +618,23 @@ These gaps remain:
 | Dialect                  | Read     | Write |
 | ------------------------ | -------- | ----- |
 | `alibre:cfb-acis-binary` | detected | none  |
+| `alibre:cfb-assembly`    | detected | none  |
 | `alibre:unknown`         | refused  | none  |
 
 <!-- /generated: dialects alibre -->
 
-The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition. The feature history of `STEP_DATA` transfers as design records: one scope with a timeline, a feature for each state, sketches with their entities and constraints, and parameters. These design records are a partial extra above L3, which the B-rep sets. They cover the origin, axes, planes, offset planes, sketches, extrusions, revolutions, fillets, holes, and lofts, and the sheet-metal rule of a sheet-metal part. A `STEP_DATA` stream that does not read keeps the body and reports `alibre/history.stream-unread`.
+The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition. The feature history of `STEP_DATA` transfers as design records: one scope with a timeline, a feature for each state, sketches with their entities and constraints, and parameters. These design records are a partial extra above L3, which the B-rep sets. They cover the origin, axes, planes, offset planes, sketches, extrusions, revolutions, fillets, holes, and lofts, and the sheet-metal rule of a sheet-metal part. A `STEP_DATA` stream that does not read keeps the body and reports `alibre/history.stream-unread`. An `.AD_ASM` assembly becomes a root assembly definition whose occurrences place the parts and subassemblies it names, decoded from the files beside it.
 
 These gaps remain:
 
 - The side faces of a lofted solid keep the solved B-spline cache as carrier, and its `intcurve` edges have no typed 3D curve, and its coedges carry no pcurve (ALB-01, `alibre/geometry.procedural-surface-untyped`, `alibre/geometry.pcurve-undecoded`). The cap faces rest on `plane` carriers.
 - Feature families without a decoded record, the loft settings, the selection of edges and faces by topology signature, and the logicals of the operation entities stay unread (ALB-02, ALB-06, ALB-07, ALB-08, `alibre/history.operation-unmapped`, `alibre/history.edge-selection-unresolved`, `alibre/history.face-selection-unresolved`).
 - Every stream other than `SAB_DATA` and `STEP_DATA` does not transfer (ALB-03, `alibre/source.streams-undecoded`).
-- Assemblies are not claimed (ALB-04). A sheet-metal part (`.AD_SMP`) decodes as a part, and its sheet-metal settings transfer as one sheet-metal rule; the relief type code stays a native option (`alibre/history.sheet-metal-settings-unmapped`).
+- A sheet-metal part (`.AD_SMP`) decodes as a part, and its sheet-metal settings transfer as one sheet-metal rule; the relief type code stays a native option (`alibre/history.sheet-metal-settings-unmapped`); its flat pattern and flange features are not read (ALB-04).
+- Assembly constraints, the configurations of an assembly, and flexible subassemblies do not transfer (ALB-09, ALB-11, ALB-12, `alibre/assembly.entities-unread`, `alibre/assembly.configuration-unmapped`).
 
 ### Read profile
-- **Container and versions: Partial.** The codec admits the compound file, requires the two body streams, and classifies the ACIS save format on the kernel layer.
+- **Container and versions: Partial.** The codec admits the compound file and requires one of two stream pairs: `SAB_DATA` and `STEP_DATA` for a part, `CONSTITUENTS` and `STEP_DATA` without `SAB_DATA` for an assembly. It classifies the ACIS save format of a part on the kernel layer; an assembly has no kernel layer and runs no admission gate.
 - **Geometry: Partial.** Planes, cylinders, cones, tori, and B-spline carriers decode with exact topology. Procedural constructions stay unknown.
 - **Design: Partial.** The feature history of the supported operations decodes into the design layer. Selections of edges and faces stay unread.
 

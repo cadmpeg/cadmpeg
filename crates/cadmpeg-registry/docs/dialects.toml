@@ -1212,6 +1212,10 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 # part body as a Spatial ACIS binary stream and selects the row by its magic
 # `ACIS BinaryFile`. The kernel save format is classified on the separate `acis:`
 # layer. A `SAB_DATA` stream without that magic is refused.
+#
+# An `.AD_ASM` is the same kind of compound file with the streams `CONSTITUENTS`,
+# `GLOBAL_PARAMETER_DATA_CACHE`, `LIGHT_CONFIGURATION_DATA`, `PROP_DATA`,
+# `STEP_DATA`, and `VERSION`, and no `SAB_DATA`. It selects `alibre:cfb-assembly`.
 [format.alibre]
 complete = false
 aliases = ["adprt"]
@@ -1222,6 +1226,13 @@ title = "Alibre Design part, compound file with an ACIS binary body"
 discriminants = { cfb_streams = "SAB_DATA and STEP_DATA", sab_magic = "ACIS BinaryFile" }
 seam = "the host row is Admitted when the ACIS stream frames. The separate kernel layer is acis:save-format-binary-other with Unverified admission at the stream's save format 33, and it charges source.kernel-dialect-unverified"
 witness = "corpus:corpus/alibre/box.AD_PRT"
+
+[[dialect]]
+id = "alibre:cfb-assembly"
+title = "Alibre Design assembly, compound file with a STEP_DATA feature model and no body stream"
+discriminants = { cfb_streams = "CONSTITUENTS and STEP_DATA without SAB_DATA" }
+seam = "the host row is Admitted when the compound file holds CONSTITUENTS and STEP_DATA and no SAB_DATA. There is no kernel layer: an assembly holds no ACIS body, and its parts are read from their own files"
+witness = "corpus:corpus/alibre/asm_two.AD_ASM"
 
 [[dialect]]
 # Mandatory `unknown` row (B4). A `SAB_DATA` stream whose leading bytes are not

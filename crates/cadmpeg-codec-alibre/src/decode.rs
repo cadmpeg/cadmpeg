@@ -16,7 +16,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::DecodeParts;
 
-use crate::container::{AlibreContainer, SAB_STREAM, STEP_STREAM};
+use crate::container::{AlibreContainer, DocumentKind, SAB_STREAM, STEP_STREAM};
 use crate::dialect::registry_ids::FORMAT;
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
 use crate::history::History;
@@ -33,8 +33,26 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM as HEADER_SCALE_TO_MM;
 const HEADER_SCALE_TOLERANCE: f64 = 1e-9;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
-    let digest = Sha256Digest::digest(root.window());
     let container = AlibreContainer::open(ctx, root)?;
+    match container.kind() {
+        DocumentKind::Part => decode_part(ctx, root, &container),
+        DocumentKind::Assembly => crate::expand::decode_assembly(
+            ctx,
+            root,
+            &container,
+            None,
+            &mut crate::expand::Expansion::default(),
+        ),
+    }
+}
+
+/// Decodes a part: the ACIS body of `SAB_DATA`.
+pub(crate) fn decode_part<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    container: &AlibreContainer<'a>,
+) -> Result<Decoded, CodecError> {
+    let digest = Sha256Digest::digest(root.window());
     let sab = container.stream(ctx, SAB_STREAM)?;
     let bytes = sab.window();
     let kernel = kernel_stream(bytes);

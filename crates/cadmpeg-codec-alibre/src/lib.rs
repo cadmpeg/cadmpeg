@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Reads Alibre Design part files (`.AD_PRT`) and sheet-metal part files
-//! (`.AD_SMP`) into [`cadmpeg_ir::CadIr`].
+//! Reads Alibre Design part files (`.AD_PRT`), sheet-metal part files
+//! (`.AD_SMP`) and assemblies (`.AD_ASM`) into [`cadmpeg_ir::CadIr`].
 //!
 //! An `.AD_PRT` is a Microsoft Compound File. [`AlibreCodec`] detects a part
 //! from the `SAB_DATA` and `STEP_DATA` streams of the compound-file directory
@@ -9,21 +9,28 @@
 //! `cadmpeg-asm` into the neutral B-rep. The `STEP_DATA` stream holds the
 //! feature model as STEP Part 21 text, which decodes into the design layer:
 //! one ordered timeline of datums, sketches, and features with their
-//! parameters. The crate is read-only.
+//! parameters. An assembly (`.AD_ASM`) is a compound file with the
+//! `CONSTITUENTS` and `STEP_DATA` streams and no `SAB_DATA` stream. Its
+//! `STEP_DATA` text lists the placed components, and each component file beside
+//! the assembly decodes as a part or a subassembly into a product definition
+//! that the occurrences place. The crate is read-only.
 //!
 //! <!-- generated: capability alibre -->
-//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#alibre-design-adprt)).
+//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#alibre-design-adprt-and-adasm)).
 //! <!-- /generated: capability alibre -->
 
+mod assembly;
 mod container;
 mod coverage;
 mod decode;
 mod design;
 mod dialect;
+mod expand;
 #[doc(hidden)]
 pub mod fuzz;
 mod history;
 mod loss;
+mod merge;
 mod part21;
 
 use cadmpeg_container::compound::CompoundPrefixProbe;
@@ -63,6 +70,9 @@ impl CodecBackend for AlibreCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let container = container::AlibreContainer::open(ctx, root)?;
+        if container.kind() == container::DocumentKind::Assembly {
+            return container.summary(dialect::classify_assembly(), None);
+        }
         let sab = container.stream(ctx, container::SAB_STREAM)?;
         let kernel = dialect::kernel_stream(sab.window());
         let classification = dialect::classify(kernel.as_ref());

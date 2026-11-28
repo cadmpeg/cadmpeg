@@ -1,0 +1,6909 @@
+{
+  "ir": {
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "alibre:m0@brep:entity#0",
+          "kind": "solid"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#0",
+          "kind": "solid"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#0",
+          "kind": "solid"
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "alibre:m0@brep:entity#23",
+          "id": "alibre:m0@brep:entity#15",
+          "owner_loop": "alibre:m0@brep:entity#7",
+          "pcurves": [],
+          "radial_next": "alibre:m0@brep:entity#21",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m0@brep:entity#23",
+          "id": "alibre:m0@brep:entity#21",
+          "owner_loop": "alibre:m0@brep:entity#12",
+          "pcurves": [],
+          "radial_next": "alibre:m0@brep:entity#15",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m0@brep:entity#27",
+          "id": "alibre:m0@brep:entity#22",
+          "owner_loop": "alibre:m0@brep:entity#14",
+          "pcurves": [],
+          "radial_next": "alibre:m0@brep:entity#26",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m0@brep:entity#27",
+          "id": "alibre:m0@brep:entity#26",
+          "owner_loop": "alibre:m0@brep:entity#19",
+          "pcurves": [],
+          "radial_next": "alibre:m0@brep:entity#22",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#106",
+          "id": "alibre:m1/m0@brep:entity#105",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#81",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#25",
+          "id": "alibre:m1/m0@brep:entity#14",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#24",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#36",
+          "id": "alibre:m1/m0@brep:entity#21",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#35",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#38",
+          "id": "alibre:m1/m0@brep:entity#22",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#34",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#40",
+          "id": "alibre:m1/m0@brep:entity#23",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#39",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#25",
+          "id": "alibre:m1/m0@brep:entity#24",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#14",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#56",
+          "id": "alibre:m1/m0@brep:entity#32",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#55",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#58",
+          "id": "alibre:m1/m0@brep:entity#33",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#54",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#38",
+          "id": "alibre:m1/m0@brep:entity#34",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#22",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#36",
+          "id": "alibre:m1/m0@brep:entity#35",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#21",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#63",
+          "id": "alibre:m1/m0@brep:entity#37",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#62",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#40",
+          "id": "alibre:m1/m0@brep:entity#39",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#23",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#71",
+          "id": "alibre:m1/m0@brep:entity#41",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#52",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#71",
+          "id": "alibre:m1/m0@brep:entity#52",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#41",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#82",
+          "id": "alibre:m1/m0@brep:entity#53",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#80",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#58",
+          "id": "alibre:m1/m0@brep:entity#54",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#33",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#56",
+          "id": "alibre:m1/m0@brep:entity#55",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#32",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#87",
+          "id": "alibre:m1/m0@brep:entity#57",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#86",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#63",
+          "id": "alibre:m1/m0@brep:entity#62",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#37",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#98",
+          "id": "alibre:m1/m0@brep:entity#67",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#93",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#82",
+          "id": "alibre:m1/m0@brep:entity#80",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#53",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#106",
+          "id": "alibre:m1/m0@brep:entity#81",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#105",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#87",
+          "id": "alibre:m1/m0@brep:entity#86",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#57",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m0@brep:entity#98",
+          "id": "alibre:m1/m0@brep:entity#93",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m0@brep:entity#67",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m1@brep:entity#23",
+          "id": "alibre:m1/m1@brep:entity#15",
+          "owner_loop": "alibre:m1/m1@brep:entity#7",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m1@brep:entity#21",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m1@brep:entity#23",
+          "id": "alibre:m1/m1@brep:entity#21",
+          "owner_loop": "alibre:m1/m1@brep:entity#12",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m1@brep:entity#15",
+          "sense": "reversed"
+        },
+        {
+          "edge": "alibre:m1/m1@brep:entity#27",
+          "id": "alibre:m1/m1@brep:entity#22",
+          "owner_loop": "alibre:m1/m1@brep:entity#14",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m1@brep:entity#26",
+          "sense": "forward"
+        },
+        {
+          "edge": "alibre:m1/m1@brep:entity#27",
+          "id": "alibre:m1/m1@brep:entity#26",
+          "owner_loop": "alibre:m1/m1@brep:entity#19",
+          "pcurves": [],
+          "radial_next": "alibre:m1/m1@brep:entity#22",
+          "sense": "reversed"
+        }
+      ],
+      "curves": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m0@brep:entity#30"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m0@brep:entity#34"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.0,
+                "y": -15.0,
+                "z": 10.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#102"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.0,
+                "y": -15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#109"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#113"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.0,
+                "y": -15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#118"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": -15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#122"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.0,
+                "y": 15.0,
+                "z": 10.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#46"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 15.0,
+                "z": 10.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#61"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#66"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.0,
+                "y": 15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#70"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": -15.0,
+                "z": 10.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#85"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": -15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#90"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.0,
+                "y": 15.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#95"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m1@brep:entity#30"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m1@brep:entity#34"
+        }
+      ],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "alibre:m0@brep:entity#30",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
+          "ends": {
+            "end": "alibre:m0@brep:entity#29",
+            "start": "alibre:m0@brep:entity#29"
+          },
+          "id": "alibre:m0@brep:entity#23"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m0@brep:entity#34",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
+          "ends": {
+            "end": "alibre:m0@brep:entity#33",
+            "start": "alibre:m0@brep:entity#33"
+          },
+          "id": "alibre:m0@brep:entity#27"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#122",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#108",
+            "start": "alibre:m1/m0@brep:entity#89"
+          },
+          "id": "alibre:m1/m0@brep:entity#106"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#46",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#45",
+            "start": "alibre:m1/m0@brep:entity#44"
+          },
+          "id": "alibre:m1/m0@brep:entity#25"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#61",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#60",
+            "start": "alibre:m1/m0@brep:entity#45"
+          },
+          "id": "alibre:m1/m0@brep:entity#36"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#66",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#45",
+            "start": "alibre:m1/m0@brep:entity#65"
+          },
+          "id": "alibre:m1/m0@brep:entity#38"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#70",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#44",
+            "start": "alibre:m1/m0@brep:entity#69"
+          },
+          "id": "alibre:m1/m0@brep:entity#40"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#85",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#84",
+            "start": "alibre:m1/m0@brep:entity#60"
+          },
+          "id": "alibre:m1/m0@brep:entity#56"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#90",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#60",
+            "start": "alibre:m1/m0@brep:entity#89"
+          },
+          "id": "alibre:m1/m0@brep:entity#58"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#95",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#65",
+            "start": "alibre:m1/m0@brep:entity#69"
+          },
+          "id": "alibre:m1/m0@brep:entity#63"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#102",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#44",
+            "start": "alibre:m1/m0@brep:entity#84"
+          },
+          "id": "alibre:m1/m0@brep:entity#71"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#109",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#84",
+            "start": "alibre:m1/m0@brep:entity#108"
+          },
+          "id": "alibre:m1/m0@brep:entity#82"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#113",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#89",
+            "start": "alibre:m1/m0@brep:entity#65"
+          },
+          "id": "alibre:m1/m0@brep:entity#87"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m0@brep:entity#118",
+            "param_range": [
+              0.0,
+              30.0
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m0@brep:entity#69",
+            "start": "alibre:m1/m0@brep:entity#108"
+          },
+          "id": "alibre:m1/m0@brep:entity#98"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m1@brep:entity#30",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m1@brep:entity#29",
+            "start": "alibre:m1/m1@brep:entity#29"
+          },
+          "id": "alibre:m1/m1@brep:entity#23"
+        },
+        {
+          "carrier": {
+            "curve": "alibre:m1/m1@brep:entity#34",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
+          "ends": {
+            "end": "alibre:m1/m1@brep:entity#33",
+            "start": "alibre:m1/m1@brep:entity#33"
+          },
+          "id": "alibre:m1/m1@brep:entity#27"
+        }
+      ],
+      "faces": [
+        {
+          "id": "alibre:m0@brep:entity#11",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m0@brep:entity#19"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "alibre:m0@brep:entity#3",
+          "surface": "alibre:m0@brep:entity#20"
+        },
+        {
+          "id": "alibre:m0@brep:entity#4",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m0@brep:entity#7",
+              "alibre:m0@brep:entity#14"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m0@brep:entity#3",
+          "surface": "alibre:m0@brep:entity#8"
+        },
+        {
+          "id": "alibre:m0@brep:entity#6",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m0@brep:entity#12"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m0@brep:entity#3",
+          "surface": "alibre:m0@brep:entity#13"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#11",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m0@brep:entity#19"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#20"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#18",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m0@brep:entity#30"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#31"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#29",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m0@brep:entity#42"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#51"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#4",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m0@brep:entity#7"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#8"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#50",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m0@brep:entity#78"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#79"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#6",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m0@brep:entity#12"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#13"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#11",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m1@brep:entity#19"
+            ]
+          },
+          "sense": "reversed",
+          "shell": "alibre:m1/m1@brep:entity#3",
+          "surface": "alibre:m1/m1@brep:entity#20"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#4",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m1@brep:entity#7",
+              "alibre:m1/m1@brep:entity#14"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m1@brep:entity#3",
+          "surface": "alibre:m1/m1@brep:entity#8"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#6",
+          "loops": {
+            "kind": "unspecified",
+            "loops": [
+              "alibre:m1/m1@brep:entity#12"
+            ]
+          },
+          "sense": "forward",
+          "shell": "alibre:m1/m1@brep:entity#3",
+          "surface": "alibre:m1/m1@brep:entity#13"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m0@brep:entity#21"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m0@brep:entity#6",
+          "id": "alibre:m0@brep:entity#12"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m0@brep:entity#22"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m0@brep:entity#4",
+          "id": "alibre:m0@brep:entity#14"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m0@brep:entity#26"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m0@brep:entity#11",
+          "id": "alibre:m0@brep:entity#19"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m0@brep:entity#15"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m0@brep:entity#4",
+          "id": "alibre:m0@brep:entity#7"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m0@brep:entity#21",
+              "alibre:m1/m0@brep:entity#33",
+              "alibre:m1/m0@brep:entity#57",
+              "alibre:m1/m0@brep:entity#34"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m0@brep:entity#6",
+          "id": "alibre:m1/m0@brep:entity#12"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m0@brep:entity#32",
+              "alibre:m1/m0@brep:entity#53",
+              "alibre:m1/m0@brep:entity#81",
+              "alibre:m1/m0@brep:entity#54"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m0@brep:entity#11",
+          "id": "alibre:m1/m0@brep:entity#19"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m0@brep:entity#52",
+              "alibre:m1/m0@brep:entity#39",
+              "alibre:m1/m0@brep:entity#67",
+              "alibre:m1/m0@brep:entity#80"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m0@brep:entity#18",
+          "id": "alibre:m1/m0@brep:entity#30"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m0@brep:entity#24",
+              "alibre:m1/m0@brep:entity#41",
+              "alibre:m1/m0@brep:entity#55",
+              "alibre:m1/m0@brep:entity#35"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m0@brep:entity#29",
+          "id": "alibre:m1/m0@brep:entity#42"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m0@brep:entity#14",
+              "alibre:m1/m0@brep:entity#22",
+              "alibre:m1/m0@brep:entity#37",
+              "alibre:m1/m0@brep:entity#23"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m0@brep:entity#4",
+          "id": "alibre:m1/m0@brep:entity#7"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m0@brep:entity#93",
+              "alibre:m1/m0@brep:entity#62",
+              "alibre:m1/m0@brep:entity#86",
+              "alibre:m1/m0@brep:entity#105"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m0@brep:entity#50",
+          "id": "alibre:m1/m0@brep:entity#78"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m1@brep:entity#21"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m1@brep:entity#6",
+          "id": "alibre:m1/m1@brep:entity#12"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m1@brep:entity#22"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m1@brep:entity#4",
+          "id": "alibre:m1/m1@brep:entity#14"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m1@brep:entity#26"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m1@brep:entity#11",
+          "id": "alibre:m1/m1@brep:entity#19"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "alibre:m1/m1@brep:entity#15"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "alibre:m1/m1@brep:entity#4",
+          "id": "alibre:m1/m1@brep:entity#7"
+        }
+      ],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "alibre:m0@brep:entity#36",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 15.0
+          }
+        },
+        {
+          "id": "alibre:m0@brep:entity#38",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#100",
+          "position": {
+            "x": -10.0,
+            "y": 15.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#111",
+          "position": {
+            "x": -10.0,
+            "y": -15.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#115",
+          "position": {
+            "x": 10.0,
+            "y": -15.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#124",
+          "position": {
+            "x": -10.0,
+            "y": -15.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#73",
+          "position": {
+            "x": -10.0,
+            "y": 15.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#74",
+          "position": {
+            "x": 10.0,
+            "y": 15.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#92",
+          "position": {
+            "x": 10.0,
+            "y": -15.0,
+            "z": 10.0
+          }
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#97",
+          "position": {
+            "x": 10.0,
+            "y": 15.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#36",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 15.0
+          }
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#38",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "alibre:m0@brep:entity#0",
+          "id": "alibre:m0@brep:entity#2",
+          "shells": [
+            "alibre:m0@brep:entity#3"
+          ]
+        },
+        {
+          "body": "alibre:m1/m0@brep:entity#0",
+          "id": "alibre:m1/m0@brep:entity#2",
+          "shells": [
+            "alibre:m1/m0@brep:entity#3"
+          ]
+        },
+        {
+          "body": "alibre:m1/m1@brep:entity#0",
+          "id": "alibre:m1/m1@brep:entity#2",
+          "shells": [
+            "alibre:m1/m1@brep:entity#3"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "alibre:m0@brep:entity#3",
+          "members": [],
+          "region": "alibre:m0@brep:entity#2"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#3",
+          "members": [],
+          "region": "alibre:m1/m0@brep:entity#2"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#3",
+          "members": [],
+          "region": "alibre:m1/m1@brep:entity#2"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m0@brep:entity#13"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m0@brep:entity#20"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m0@brep:entity#8"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#13"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": -15.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#20"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#31"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": -1.2111523905001707e-16,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#51"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": -1.2111523905001707e-16,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#79"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 15.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m0@brep:entity#8"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 15.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m1@brep:entity#13"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m1@brep:entity#20"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 10.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "alibre:m1/m1@brep:entity#8"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "alibre:m0@brep:entity#29",
+          "point": "alibre:m0@brep:entity#36"
+        },
+        {
+          "id": "alibre:m0@brep:entity#33",
+          "point": "alibre:m0@brep:entity#38"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#108",
+          "point": "alibre:m1/m0@brep:entity#124"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#44",
+          "point": "alibre:m1/m0@brep:entity#73"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#45",
+          "point": "alibre:m1/m0@brep:entity#74"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#60",
+          "point": "alibre:m1/m0@brep:entity#92"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#65",
+          "point": "alibre:m1/m0@brep:entity#97"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#69",
+          "point": "alibre:m1/m0@brep:entity#100"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#84",
+          "point": "alibre:m1/m0@brep:entity#111"
+        },
+        {
+          "id": "alibre:m1/m0@brep:entity#89",
+          "point": "alibre:m1/m0@brep:entity#115"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#29",
+          "point": "alibre:m1/m1@brep:entity#36"
+        },
+        {
+          "id": "alibre:m1/m1@brep:entity#33",
+          "point": "alibre:m1/m1@brep:entity#38"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assets": [],
+      "attributes": [
+        {
+          "id": "alibre:m0@brep:attribute#1",
+          "name": "name_attrib-gen-attrib",
+          "target": {
+            "entity": {
+              "kind": "body",
+              "value": "alibre:m0@brep:entity#0"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#0"
+            },
+            {
+              "kind": "integer",
+              "value": 14675622
+            },
+            {
+              "kind": "string",
+              "value": "alibrePartClosedBody%5"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#10",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#17"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#16",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#0]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#17",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#24"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#10"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#18",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#25"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#24",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#17"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#2]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#25",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#31"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#18"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#28",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m0@brep:entity#23"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#35"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#23"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#31",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#25"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#1]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#32",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m0@brep:entity#27"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#37"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#27"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#35",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m0@brep:entity#23"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#28"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#23"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#37",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m0@brep:entity#27"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#32"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#27"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#5",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m0@brep:attribute#9",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m0@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#16"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#5"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#1",
+          "name": "name_attrib-gen-attrib",
+          "target": {
+            "entity": {
+              "kind": "body",
+              "value": "alibre:m1/m0@brep:entity#0"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#0"
+            },
+            {
+              "kind": "integer",
+              "value": 14675622
+            },
+            {
+              "kind": "string",
+              "value": "alibrePartClosedBody%5"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#10",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#16"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#101",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#71"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#119"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#71"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#103",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#29"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#76"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#29"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#5]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#104",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#50"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#120"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#77"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#50"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#107",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#82"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#123"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#82"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#110",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#56"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#83"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#56"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#112",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#87"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#125"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#87"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#114",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#58"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#88"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#58"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#116",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#63"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#94"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#63"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#117",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#98"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#126"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#98"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#119",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#71"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#101"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#71"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#120",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#50"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#104"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#50"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#4]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#121",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#106"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#127"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#106"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#123",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#82"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#107"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#82"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#125",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#87"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#112"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#87"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#126",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#98"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#117"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#98"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#127",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#106"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#121"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#106"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#15",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#3]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#16",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#26"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#10"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#17",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#27"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#26",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#16"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#2]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#27",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#47"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#17"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#28",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#18"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#48"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#18"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#43",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#25"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#72"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#25"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#47",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#27"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#1]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#48",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#18"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#75"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#28"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#18"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#49",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#29"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#76"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#29"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#5",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#59",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#36"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#91"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#36"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#64",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#38"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#96"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#38"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#68",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#40"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#99"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#40"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#72",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#25"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#43"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#25"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#75",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#18"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#48"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#18"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#0]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#76",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#29"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#103"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#49"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#29"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#77",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#50"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#104"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#50"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#83",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#56"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#110"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#56"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#88",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#58"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#114"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#58"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#9",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m0@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#15"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#5"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#91",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#36"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#59"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#36"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#94",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#63"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#116"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#63"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#96",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#38"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#64"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#38"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m0@brep:attribute#99",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m0@brep:entity#40"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#68"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#40"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#1",
+          "name": "name_attrib-gen-attrib",
+          "target": {
+            "entity": {
+              "kind": "body",
+              "value": "alibre:m1/m1@brep:entity#0"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#0"
+            },
+            {
+              "kind": "integer",
+              "value": 14675622
+            },
+            {
+              "kind": "string",
+              "value": "alibrePartClosedBody%5"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#10",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#17"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#16",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#0]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#17",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#24"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#10"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#18",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#25"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#24",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#17"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#6"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#2]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#25",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#31"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#18"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#28",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m1@brep:entity#23"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#35"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#23"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#31",
+          "name": "Autograph-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#11"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#25"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#11"
+            },
+            {
+              "kind": "integer",
+              "value": 12709541
+            },
+            {
+              "kind": "string",
+              "value": "[#1]"
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#32",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m1@brep:entity#27"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#37"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#27"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#35",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m1@brep:entity#23"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#28"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#23"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#37",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "alibre:m1/m1@brep:entity#27"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#32"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#27"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#5",
+          "name": "TimeStamp-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#9"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "id": "alibre:m1/m1@brep:attribute#9",
+          "name": "StateID-Alibre-attrib",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "alibre:m1/m1@brep:entity#4"
+            }
+          },
+          "values": [
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#-1"
+            },
+            {
+              "kind": "integer",
+              "value": -1
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#16"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#5"
+            },
+            {
+              "kind": "reference",
+              "value": "alibre:brep:entity#4"
+            },
+            {
+              "kind": "integer",
+              "value": 8515237
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "colliders": [],
+      "declared_measures": [],
+      "drawings": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "alibre:m1@model:occurrence#104",
+          "name": "asm_box<1>",
+          "native_ref": "alibre:m1@model:inclusion#5D0E9423-DD53-4DC1-A153-05891E5704BF",
+          "overrides": [],
+          "prototype": "alibre:m1@xref:product-definition#m1/m0",
+          "suppressed": false,
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        },
+        {
+          "id": "alibre:m1@model:occurrence#105",
+          "name": "asm_cylinder<1>",
+          "native_ref": "alibre:m1@model:inclusion#615DEADA-B1A9-4459-9ACB-07C2D227EEEC",
+          "overrides": [],
+          "prototype": "alibre:m1@xref:product-definition#m1/m1",
+          "suppressed": false,
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              40.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        },
+        {
+          "id": "alibre:model:occurrence#105",
+          "name": "asm_cylinder<1>",
+          "native_ref": "alibre:model:inclusion#4E2F0B49-450E-4691-A6AB-5B410E3B43B9",
+          "overrides": [],
+          "prototype": "alibre:xref:product-definition#m0",
+          "suppressed": false,
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        },
+        {
+          "id": "alibre:model:occurrence#106",
+          "name": "asm_two<1>",
+          "native_ref": "alibre:model:inclusion#00466848-BF40-4288-8BE7-C5A5DF66FC11",
+          "overrides": [],
+          "prototype": "alibre:xref:product-definition#m1",
+          "suppressed": false,
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              50.0
+            ]
+          ]
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "alibre:m1/m0@brep:entity#0"
+          ],
+          "bom_properties": {},
+          "id": "alibre:m1@xref:product-definition#m1/m0",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {
+              "document_id": "58F88938-2D66-43CA-BFF8-892C49CE60A9",
+              "path": "asm_box.AD_PRT"
+            },
+            "kind": "file",
+            "source": {
+              "attributes": {
+                "acis_save_format_version": "3300",
+                "kernel_family": "acis",
+                "product_family": "Alibre, Inc",
+                "product_version": "ACIS 33.0.1 NT"
+              },
+              "identity": {
+                "dialects": {
+                  "extra": [
+                    {
+                      "admission": {
+                        "kind": "unverified",
+                        "using": "save-format-217"
+                      },
+                      "declared": {
+                        "reference_width": "4",
+                        "save_format_major": "33",
+                        "save_format_minor": "0"
+                      },
+                      "dialect": "acis:save-format-binary-other"
+                    }
+                  ],
+                  "primary": {
+                    "admission": {
+                      "kind": "admitted"
+                    },
+                    "declared": {},
+                    "dialect": "alibre:cfb-acis-binary"
+                  }
+                },
+                "kind": "classified"
+              }
+            }
+          }
+        },
+        {
+          "bodies": [
+            "alibre:m1/m1@brep:entity#0"
+          ],
+          "bom_properties": {},
+          "id": "alibre:m1@xref:product-definition#m1/m1",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {
+              "document_id": "DEA42A74-1927-4D4B-AC9C-B067E6F17441",
+              "path": "asm_cylinder.AD_PRT"
+            },
+            "kind": "file",
+            "source": {
+              "attributes": {
+                "acis_save_format_version": "3300",
+                "kernel_family": "acis",
+                "product_family": "Alibre, Inc",
+                "product_version": "ACIS 33.0.1 NT"
+              },
+              "identity": {
+                "dialects": {
+                  "extra": [
+                    {
+                      "admission": {
+                        "kind": "unverified",
+                        "using": "save-format-217"
+                      },
+                      "declared": {
+                        "reference_width": "4",
+                        "save_format_major": "33",
+                        "save_format_minor": "0"
+                      },
+                      "dialect": "acis:save-format-binary-other"
+                    }
+                  ],
+                  "primary": {
+                    "admission": {
+                      "kind": "admitted"
+                    },
+                    "declared": {},
+                    "dialect": "alibre:cfb-acis-binary"
+                  }
+                },
+                "kind": "classified"
+              }
+            }
+          }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "alibre:model:product-definition#root",
+          "instance_bodies": [],
+          "kind": "assembly",
+          "occurrences": [
+            "alibre:model:occurrence#105",
+            "alibre:model:occurrence#106"
+          ],
+          "representations": [],
+          "source_name": "asm_nested",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        },
+        {
+          "bodies": [
+            "alibre:m0@brep:entity#0"
+          ],
+          "bom_properties": {},
+          "id": "alibre:xref:product-definition#m0",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {
+              "document_id": "DEA42A74-1927-4D4B-AC9C-B067E6F17441",
+              "path": "asm_cylinder.AD_PRT"
+            },
+            "kind": "file",
+            "source": {
+              "attributes": {
+                "acis_save_format_version": "3300",
+                "kernel_family": "acis",
+                "product_family": "Alibre, Inc",
+                "product_version": "ACIS 33.0.1 NT"
+              },
+              "identity": {
+                "dialects": {
+                  "extra": [
+                    {
+                      "admission": {
+                        "kind": "unverified",
+                        "using": "save-format-217"
+                      },
+                      "declared": {
+                        "reference_width": "4",
+                        "save_format_major": "33",
+                        "save_format_minor": "0"
+                      },
+                      "dialect": "acis:save-format-binary-other"
+                    }
+                  ],
+                  "primary": {
+                    "admission": {
+                      "kind": "admitted"
+                    },
+                    "declared": {},
+                    "dialect": "alibre:cfb-acis-binary"
+                  }
+                },
+                "kind": "classified"
+              }
+            }
+          }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "alibre:xref:product-definition#m1",
+          "instance_bodies": [],
+          "kind": "assembly",
+          "occurrences": [
+            "alibre:m1@model:occurrence#104",
+            "alibre:m1@model:occurrence#105"
+          ],
+          "representations": [],
+          "source_name": "asm_two",
+          "storage": {
+            "document": {
+              "document_id": "66949A14-F5DB-4970-BCD4-C5E4FD3F0BEA",
+              "path": "asm_two.AD_ASM"
+            },
+            "kind": "file",
+            "source": {
+              "attributes": {
+                "product_version": "PRODUCTVERSION 28,1,1,28227"
+              },
+              "identity": {
+                "dialects": {
+                  "extra": [],
+                  "primary": {
+                    "admission": {
+                      "kind": "admitted"
+                    },
+                    "declared": {},
+                    "dialect": "alibre:cfb-assembly"
+                  }
+                },
+                "kind": "classified"
+              }
+            }
+          }
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "solver_settings": [],
+      "tessellations": [],
+      "view_presentations": []
+    },
+    "native": {
+      "alibre": {
+        "body_native_keys": [
+          {
+            "body": "alibre:m0@brep:entity#0",
+            "body_ordinal": 0,
+            "id": "alibre:m0@asm:body-native-key#0",
+            "record_index": 0,
+            "source_brep": "SAB_DATA"
+          },
+          {
+            "body": "alibre:m1/m0@brep:entity#0",
+            "body_ordinal": 0,
+            "id": "alibre:m1/m0@asm:body-native-key#0",
+            "record_index": 0,
+            "source_brep": "SAB_DATA"
+          },
+          {
+            "body": "alibre:m1/m1@brep:entity#0",
+            "body_ordinal": 0,
+            "id": "alibre:m1/m1@asm:body-native-key#0",
+            "record_index": 0,
+            "source_brep": "SAB_DATA"
+          }
+        ],
+        "edge_continuities": [
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m0@brep:entity#23",
+            "id": "alibre:m0@asm:edge-continuity#23",
+            "record_index": 23,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m0@brep:entity#27",
+            "id": "alibre:m0@asm:edge-continuity#27",
+            "record_index": 27,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#106",
+            "id": "alibre:m1/m0@asm:edge-continuity#106",
+            "record_index": 106,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#25",
+            "id": "alibre:m1/m0@asm:edge-continuity#25",
+            "record_index": 25,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#36",
+            "id": "alibre:m1/m0@asm:edge-continuity#36",
+            "record_index": 36,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#38",
+            "id": "alibre:m1/m0@asm:edge-continuity#38",
+            "record_index": 38,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#40",
+            "id": "alibre:m1/m0@asm:edge-continuity#40",
+            "record_index": 40,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#56",
+            "id": "alibre:m1/m0@asm:edge-continuity#56",
+            "record_index": 56,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#58",
+            "id": "alibre:m1/m0@asm:edge-continuity#58",
+            "record_index": 58,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#63",
+            "id": "alibre:m1/m0@asm:edge-continuity#63",
+            "record_index": 63,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#71",
+            "id": "alibre:m1/m0@asm:edge-continuity#71",
+            "record_index": 71,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#82",
+            "id": "alibre:m1/m0@asm:edge-continuity#82",
+            "record_index": 82,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#87",
+            "id": "alibre:m1/m0@asm:edge-continuity#87",
+            "record_index": 87,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m0@brep:entity#98",
+            "id": "alibre:m1/m0@asm:edge-continuity#98",
+            "record_index": 98,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m1@brep:entity#23",
+            "id": "alibre:m1/m1@asm:edge-continuity#23",
+            "record_index": 23,
+            "sense": "forward"
+          },
+          {
+            "continuity": "unknown",
+            "edge": "alibre:m1/m1@brep:entity#27",
+            "id": "alibre:m1/m1@asm:edge-continuity#27",
+            "record_index": 27,
+            "sense": "forward"
+          }
+        ],
+        "edge_ownerships": [
+          {
+            "edge": "alibre:m0@brep:entity#23",
+            "id": "alibre:m0@asm:edge-ownership#23",
+            "owner_coedge": "alibre:m0@brep:entity#15",
+            "record_index": 23
+          },
+          {
+            "edge": "alibre:m0@brep:entity#27",
+            "id": "alibre:m0@asm:edge-ownership#27",
+            "owner_coedge": "alibre:m0@brep:entity#22",
+            "record_index": 27
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#106",
+            "id": "alibre:m1/m0@asm:edge-ownership#106",
+            "owner_coedge": "alibre:m1/m0@brep:entity#81",
+            "record_index": 106
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#25",
+            "id": "alibre:m1/m0@asm:edge-ownership#25",
+            "owner_coedge": "alibre:m1/m0@brep:entity#14",
+            "record_index": 25
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#36",
+            "id": "alibre:m1/m0@asm:edge-ownership#36",
+            "owner_coedge": "alibre:m1/m0@brep:entity#21",
+            "record_index": 36
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#38",
+            "id": "alibre:m1/m0@asm:edge-ownership#38",
+            "owner_coedge": "alibre:m1/m0@brep:entity#34",
+            "record_index": 38
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#40",
+            "id": "alibre:m1/m0@asm:edge-ownership#40",
+            "owner_coedge": "alibre:m1/m0@brep:entity#23",
+            "record_index": 40
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#56",
+            "id": "alibre:m1/m0@asm:edge-ownership#56",
+            "owner_coedge": "alibre:m1/m0@brep:entity#32",
+            "record_index": 56
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#58",
+            "id": "alibre:m1/m0@asm:edge-ownership#58",
+            "owner_coedge": "alibre:m1/m0@brep:entity#54",
+            "record_index": 58
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#63",
+            "id": "alibre:m1/m0@asm:edge-ownership#63",
+            "owner_coedge": "alibre:m1/m0@brep:entity#37",
+            "record_index": 63
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#71",
+            "id": "alibre:m1/m0@asm:edge-ownership#71",
+            "owner_coedge": "alibre:m1/m0@brep:entity#52",
+            "record_index": 71
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#82",
+            "id": "alibre:m1/m0@asm:edge-ownership#82",
+            "owner_coedge": "alibre:m1/m0@brep:entity#80",
+            "record_index": 82
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#87",
+            "id": "alibre:m1/m0@asm:edge-ownership#87",
+            "owner_coedge": "alibre:m1/m0@brep:entity#57",
+            "record_index": 87
+          },
+          {
+            "edge": "alibre:m1/m0@brep:entity#98",
+            "id": "alibre:m1/m0@asm:edge-ownership#98",
+            "owner_coedge": "alibre:m1/m0@brep:entity#67",
+            "record_index": 98
+          },
+          {
+            "edge": "alibre:m1/m1@brep:entity#23",
+            "id": "alibre:m1/m1@asm:edge-ownership#23",
+            "owner_coedge": "alibre:m1/m1@brep:entity#15",
+            "record_index": 23
+          },
+          {
+            "edge": "alibre:m1/m1@brep:entity#27",
+            "id": "alibre:m1/m1@asm:edge-ownership#27",
+            "owner_coedge": "alibre:m1/m1@brep:entity#22",
+            "record_index": 27
+          }
+        ],
+        "face_native_keys": [
+          {
+            "face": "alibre:m0@brep:entity#11",
+            "id": "alibre:m0@asm:face-native-key#11",
+            "record_index": 11
+          },
+          {
+            "face": "alibre:m0@brep:entity#4",
+            "id": "alibre:m0@asm:face-native-key#4",
+            "record_index": 4
+          },
+          {
+            "face": "alibre:m0@brep:entity#6",
+            "id": "alibre:m0@asm:face-native-key#6",
+            "record_index": 6
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#11",
+            "id": "alibre:m1/m0@asm:face-native-key#11",
+            "record_index": 11
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#18",
+            "id": "alibre:m1/m0@asm:face-native-key#18",
+            "record_index": 18
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#29",
+            "id": "alibre:m1/m0@asm:face-native-key#29",
+            "record_index": 29
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#4",
+            "id": "alibre:m1/m0@asm:face-native-key#4",
+            "record_index": 4
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#50",
+            "id": "alibre:m1/m0@asm:face-native-key#50",
+            "record_index": 50
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#6",
+            "id": "alibre:m1/m0@asm:face-native-key#6",
+            "record_index": 6
+          },
+          {
+            "face": "alibre:m1/m1@brep:entity#11",
+            "id": "alibre:m1/m1@asm:face-native-key#11",
+            "record_index": 11
+          },
+          {
+            "face": "alibre:m1/m1@brep:entity#4",
+            "id": "alibre:m1/m1@asm:face-native-key#4",
+            "record_index": 4
+          },
+          {
+            "face": "alibre:m1/m1@brep:entity#6",
+            "id": "alibre:m1/m1@asm:face-native-key#6",
+            "record_index": 6
+          }
+        ],
+        "face_sidedness": [
+          {
+            "face": "alibre:m0@brep:entity#11",
+            "id": "alibre:m0@asm:face-sidedness#11",
+            "native_sense": "reversed",
+            "normalized_sense": "reversed",
+            "record_index": 11
+          },
+          {
+            "face": "alibre:m0@brep:entity#4",
+            "id": "alibre:m0@asm:face-sidedness#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          },
+          {
+            "face": "alibre:m0@brep:entity#6",
+            "id": "alibre:m0@asm:face-sidedness#6",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 6
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#11",
+            "id": "alibre:m1/m0@asm:face-sidedness#11",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 11
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#18",
+            "id": "alibre:m1/m0@asm:face-sidedness#18",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 18
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#29",
+            "id": "alibre:m1/m0@asm:face-sidedness#29",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 29
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#4",
+            "id": "alibre:m1/m0@asm:face-sidedness#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#50",
+            "id": "alibre:m1/m0@asm:face-sidedness#50",
+            "native_sense": "reversed",
+            "normalized_sense": "reversed",
+            "record_index": 50
+          },
+          {
+            "face": "alibre:m1/m0@brep:entity#6",
+            "id": "alibre:m1/m0@asm:face-sidedness#6",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 6
+          },
+          {
+            "face": "alibre:m1/m1@brep:entity#11",
+            "id": "alibre:m1/m1@asm:face-sidedness#11",
+            "native_sense": "reversed",
+            "normalized_sense": "reversed",
+            "record_index": 11
+          },
+          {
+            "face": "alibre:m1/m1@brep:entity#4",
+            "id": "alibre:m1/m1@asm:face-sidedness#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          },
+          {
+            "face": "alibre:m1/m1@brep:entity#6",
+            "id": "alibre:m1/m1@asm:face-sidedness#6",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 6
+          }
+        ],
+        "mesh_surface_sentinels": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [],
+        "vertex_ownerships": [],
+        "wire_topologies": []
+      }
+    },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
+    "source": {
+      "attributes": {
+        "product_version": "PRODUCTVERSION 28,1,1,28227"
+      },
+      "identity": {
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
+            "dialect": "alibre:cfb-assembly"
+          }
+        },
+        "kind": "classified"
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
+    }
+  },
+  "report": {
+    "coverage": {},
+    "identity": {
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
+          "dialect": "alibre:cfb-assembly"
+        }
+      },
+      "kind": "classified"
+    },
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.streams-undecoded",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "streams without a decoder: LIGHT_CONFIGURATION_DATA, PROP_DATA, VERSION, CONSTITUENTS, GLOBAL_PARAMETER_DATA_CACHE; the component references of CONSTITUENTS repeat those of STEP_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-guid-unmapped",
+            "kind": "object_records_untransferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "2 inclusion(s) list 3 member(s) that state a GUID (attribute 5 of DESIGNMEMBER); the occurrence carries the GUID of its inclusion only",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: the extended entity base stores an integer in 25 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.streams-undecoded",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.dimension-annotation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: state E1 holds a dimension annotation, which the history does not map",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.direction-flag-assumed",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: the logical of a blind end condition is read as the reversal of the sketch normal",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.presentation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: document profile, measurement format, font, hatch, configuration, and version records are not mapped",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-tolerance-unmerged",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-design-unmerged",
+            "kind": "assembly_components_external",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: design records of the file are not merged into the assembly",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.streams-undecoded",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two: streams without a decoder: LIGHT_CONFIGURATION_DATA, PROP_DATA, VERSION, CONSTITUENTS, GLOBAL_PARAMETER_DATA_CACHE; the component references of CONSTITUENTS repeat those of STEP_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-guid-unmapped",
+            "kind": "object_records_untransferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two: 2 inclusion(s) list 2 member(s) that state a GUID (attribute 5 of DESIGNMEMBER); the occurrence carries the GUID of its inclusion only",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: the extended entity base stores an integer in 85 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.streams-undecoded",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.dimension-annotation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: state E1 holds a dimension annotation, which the history does not map",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.direction-flag-assumed",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: the logical of a blind end condition is read as the reversal of the sketch normal",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.presentation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: document profile, measurement format, font, hatch, configuration, and version records are not mapped",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-tolerance-unmerged",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-design-unmerged",
+            "kind": "assembly_components_external",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_box: design records of the file are not merged into the assembly",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: the extended entity base stores an integer in 25 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.streams-undecoded",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.dimension-annotation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: state E1 holds a dimension annotation, which the history does not map",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.direction-flag-assumed",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: the logical of a blind end condition is read as the reversal of the sketch normal",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.presentation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: document profile, measurement format, font, hatch, configuration, and version records are not mapped",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-tolerance-unmerged",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-design-unmerged",
+            "kind": "assembly_components_external",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_two/asm_cylinder: design records of the file are not merged into the assembly",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "alibre:m0@brep:entity#13": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m0@brep:entity#20": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m0@brep:entity#23": {
+          "fields": {
+            "carrier.param_range": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m0@brep:entity#27": {
+          "fields": {
+            "carrier.param_range": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m0@brep:entity#30": {
+          "fields": {
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m0@brep:entity#34": {
+          "fields": {
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m0@brep:entity#8": {
+          "fields": {
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#102": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#109": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#113": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#118": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#122": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#13": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#20": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#31": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#46": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#51": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#61": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#66": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#70": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#79": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#8": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#85": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#90": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m0@brep:entity#95": {
+          "fields": {
+            "geometry.value.direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#13": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#20": {
+          "fields": {
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#23": {
+          "fields": {
+            "carrier.param_range": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#27": {
+          "fields": {
+            "carrier.param_range": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#30": {
+          "fields": {
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#34": {
+          "fields": {
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
+        },
+        "alibre:m1/m1@brep:entity#8": {
+          "fields": {
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
+        }
+      },
+      "provenance": {
+        "alibre:m0@brep:attribute#1": {
+          "offset": 246,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "name_attrib-gen-attrib"
+        },
+        "alibre:m0@brep:attribute#10": {
+          "offset": 1070,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#16": {
+          "offset": 1623,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#17": {
+          "offset": 1690,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#18": {
+          "offset": 1747,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#24": {
+          "offset": 2273,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#25": {
+          "offset": 2331,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#28": {
+          "offset": 2574,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#31": {
+          "offset": 2808,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#32": {
+          "offset": 2866,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#35": {
+          "offset": 3082,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#37": {
+          "offset": 3197,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#5": {
+          "offset": 560,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m0@brep:attribute#9": {
+          "offset": 1006,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m0@brep:entity#0": {
+          "offset": 193,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "body"
+        },
+        "alibre:m0@brep:entity#11": {
+          "offset": 1127,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m0@brep:entity#12": {
+          "offset": 1234,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m0@brep:entity#13": {
+          "offset": 1339,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m0@brep:entity#14": {
+          "offset": 1459,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m0@brep:entity#15": {
+          "offset": 1558,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m0@brep:entity#19": {
+          "offset": 1804,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m0@brep:entity#2": {
+          "offset": 342,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "lump"
+        },
+        "alibre:m0@brep:entity#20": {
+          "offset": 1909,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m0@brep:entity#21": {
+          "offset": 2024,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m0@brep:entity#22": {
+          "offset": 2083,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m0@brep:entity#23": {
+          "offset": 2142,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m0@brep:entity#26": {
+          "offset": 2388,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m0@brep:entity#27": {
+          "offset": 2447,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m0@brep:entity#29": {
+          "offset": 2631,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m0@brep:entity#3": {
+          "offset": 390,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "shell"
+        },
+        "alibre:m0@brep:entity#30": {
+          "offset": 2675,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "ellipse-curve"
+        },
+        "alibre:m0@brep:entity#33": {
+          "offset": 2923,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m0@brep:entity#34": {
+          "offset": 2961,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "ellipse-curve"
+        },
+        "alibre:m0@brep:entity#36": {
+          "offset": 3139,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m0@brep:entity#38": {
+          "offset": 3254,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m0@brep:entity#4": {
+          "offset": 449,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m0@brep:entity#6": {
+          "offset": 632,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m0@brep:entity#7": {
+          "offset": 739,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m0@brep:entity#8": {
+          "offset": 842,
+          "stream": "alibre:m0@SAB_DATA",
+          "tag": "cone-surface"
+        },
+        "alibre:m1/m0@brep:attribute#1": {
+          "offset": 246,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "name_attrib-gen-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#10": {
+          "offset": 1033,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#101": {
+          "offset": 7915,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#103": {
+          "offset": 8068,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#104": {
+          "offset": 8126,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#107": {
+          "offset": 8369,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#110": {
+          "offset": 8560,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#112": {
+          "offset": 8670,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#114": {
+          "offset": 8823,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#116": {
+          "offset": 8933,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#117": {
+          "offset": 8990,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#119": {
+          "offset": 9143,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#120": {
+          "offset": 9200,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#121": {
+          "offset": 9258,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#123": {
+          "offset": 9411,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#125": {
+          "offset": 9521,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#126": {
+          "offset": 9578,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#127": {
+          "offset": 9635,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#15": {
+          "offset": 1476,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#16": {
+          "offset": 1543,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#17": {
+          "offset": 1600,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#26": {
+          "offset": 2345,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#27": {
+          "offset": 2403,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#28": {
+          "offset": 2460,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#43": {
+          "offset": 3737,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#47": {
+          "offset": 3985,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#48": {
+          "offset": 4043,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#49": {
+          "offset": 4100,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#5": {
+          "offset": 560,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#59": {
+          "offset": 4928,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#64": {
+          "offset": 5305,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#68": {
+          "offset": 5555,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#72": {
+          "offset": 5873,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#75": {
+          "offset": 6041,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#76": {
+          "offset": 6099,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#77": {
+          "offset": 6156,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#83": {
+          "offset": 6678,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#88": {
+          "offset": 7055,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#9": {
+          "offset": 969,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#91": {
+          "offset": 7246,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#94": {
+          "offset": 7415,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#96": {
+          "offset": 7568,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:attribute#99": {
+          "offset": 7805,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m0@brep:entity#0": {
+          "offset": 193,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "body"
+        },
+        "alibre:m1/m0@brep:entity#100": {
+          "offset": 7862,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#102": {
+          "offset": 7972,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#105": {
+          "offset": 8183,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#106": {
+          "offset": 8242,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#108": {
+          "offset": 8426,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#109": {
+          "offset": 8464,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#11": {
+          "offset": 1090,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m0@brep:entity#111": {
+          "offset": 8617,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#113": {
+          "offset": 8727,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#115": {
+          "offset": 8880,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#118": {
+          "offset": 9047,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#12": {
+          "offset": 1197,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m0@brep:entity#122": {
+          "offset": 9315,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#124": {
+          "offset": 9468,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#13": {
+          "offset": 1296,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m0@brep:entity#14": {
+          "offset": 1411,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#18": {
+          "offset": 1657,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m0@brep:entity#19": {
+          "offset": 1764,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m0@brep:entity#2": {
+          "offset": 342,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "lump"
+        },
+        "alibre:m1/m0@brep:entity#20": {
+          "offset": 1863,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m0@brep:entity#21": {
+          "offset": 1978,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#22": {
+          "offset": 2037,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#23": {
+          "offset": 2096,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#24": {
+          "offset": 2155,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#25": {
+          "offset": 2214,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#29": {
+          "offset": 2517,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m0@brep:entity#3": {
+          "offset": 390,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "shell"
+        },
+        "alibre:m1/m0@brep:entity#30": {
+          "offset": 2624,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m0@brep:entity#31": {
+          "offset": 2723,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m0@brep:entity#32": {
+          "offset": 2838,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#33": {
+          "offset": 2897,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#34": {
+          "offset": 2956,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#35": {
+          "offset": 3015,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#36": {
+          "offset": 3074,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#37": {
+          "offset": 3201,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#38": {
+          "offset": 3260,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#39": {
+          "offset": 3387,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#4": {
+          "offset": 449,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m0@brep:entity#40": {
+          "offset": 3446,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#41": {
+          "offset": 3573,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#42": {
+          "offset": 3632,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m0@brep:entity#44": {
+          "offset": 3794,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#45": {
+          "offset": 3838,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#46": {
+          "offset": 3876,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#50": {
+          "offset": 4157,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m0@brep:entity#51": {
+          "offset": 4264,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m0@brep:entity#52": {
+          "offset": 4379,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#53": {
+          "offset": 4438,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#54": {
+          "offset": 4497,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#55": {
+          "offset": 4556,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#56": {
+          "offset": 4615,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#57": {
+          "offset": 4742,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#58": {
+          "offset": 4801,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#6": {
+          "offset": 632,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m0@brep:entity#60": {
+          "offset": 4985,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#61": {
+          "offset": 5023,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#62": {
+          "offset": 5119,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#63": {
+          "offset": 5178,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#65": {
+          "offset": 5362,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#66": {
+          "offset": 5400,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#67": {
+          "offset": 5496,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#69": {
+          "offset": 5612,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#7": {
+          "offset": 739,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m0@brep:entity#70": {
+          "offset": 5650,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#71": {
+          "offset": 5746,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#73": {
+          "offset": 5930,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#74": {
+          "offset": 5988,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#78": {
+          "offset": 6213,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m0@brep:entity#79": {
+          "offset": 6318,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m0@brep:entity#8": {
+          "offset": 842,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m0@brep:entity#80": {
+          "offset": 6433,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#81": {
+          "offset": 6492,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#82": {
+          "offset": 6551,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#84": {
+          "offset": 6735,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#85": {
+          "offset": 6773,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#86": {
+          "offset": 6869,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#87": {
+          "offset": 6928,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m0@brep:entity#89": {
+          "offset": 7112,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m0@brep:entity#90": {
+          "offset": 7150,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#92": {
+          "offset": 7303,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#93": {
+          "offset": 7356,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m0@brep:entity#95": {
+          "offset": 7472,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "straight-curve"
+        },
+        "alibre:m1/m0@brep:entity#97": {
+          "offset": 7625,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m0@brep:entity#98": {
+          "offset": 7678,
+          "stream": "alibre:m1/m0@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m1@brep:attribute#1": {
+          "offset": 246,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "name_attrib-gen-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#10": {
+          "offset": 1070,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#16": {
+          "offset": 1623,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#17": {
+          "offset": 1690,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#18": {
+          "offset": 1747,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#24": {
+          "offset": 2273,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#25": {
+          "offset": 2331,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#28": {
+          "offset": 2574,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#31": {
+          "offset": 2808,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "Autograph-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#32": {
+          "offset": 2866,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#35": {
+          "offset": 3082,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#37": {
+          "offset": 3197,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#5": {
+          "offset": 560,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "TimeStamp-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:attribute#9": {
+          "offset": 1006,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "StateID-Alibre-attrib"
+        },
+        "alibre:m1/m1@brep:entity#0": {
+          "offset": 193,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "body"
+        },
+        "alibre:m1/m1@brep:entity#11": {
+          "offset": 1127,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m1@brep:entity#12": {
+          "offset": 1234,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m1@brep:entity#13": {
+          "offset": 1339,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m1@brep:entity#14": {
+          "offset": 1459,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m1@brep:entity#15": {
+          "offset": 1558,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m1@brep:entity#19": {
+          "offset": 1804,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m1@brep:entity#2": {
+          "offset": 342,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "lump"
+        },
+        "alibre:m1/m1@brep:entity#20": {
+          "offset": 1909,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "plane-surface"
+        },
+        "alibre:m1/m1@brep:entity#21": {
+          "offset": 2024,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m1@brep:entity#22": {
+          "offset": 2083,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m1@brep:entity#23": {
+          "offset": 2142,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m1@brep:entity#26": {
+          "offset": 2388,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "coedge"
+        },
+        "alibre:m1/m1@brep:entity#27": {
+          "offset": 2447,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "edge"
+        },
+        "alibre:m1/m1@brep:entity#29": {
+          "offset": 2631,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m1@brep:entity#3": {
+          "offset": 390,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "shell"
+        },
+        "alibre:m1/m1@brep:entity#30": {
+          "offset": 2675,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "ellipse-curve"
+        },
+        "alibre:m1/m1@brep:entity#33": {
+          "offset": 2923,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "vertex"
+        },
+        "alibre:m1/m1@brep:entity#34": {
+          "offset": 2961,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "ellipse-curve"
+        },
+        "alibre:m1/m1@brep:entity#36": {
+          "offset": 3139,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m1@brep:entity#38": {
+          "offset": 3254,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "point"
+        },
+        "alibre:m1/m1@brep:entity#4": {
+          "offset": 449,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m1@brep:entity#6": {
+          "offset": 632,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "face"
+        },
+        "alibre:m1/m1@brep:entity#7": {
+          "offset": 739,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "loop"
+        },
+        "alibre:m1/m1@brep:entity#8": {
+          "offset": 842,
+          "stream": "alibre:m1/m1@SAB_DATA",
+          "tag": "cone-surface"
+        }
+      }
+    },
+    "codec_digests": {},
+    "content_digest": "960808924e55f942d396d10837da44d89e9a073520f3a7274924b82fbdbac6d9",
+    "decode_digest": "e71d533bcaf22eefc813ae6348b0723263450dcd4e595a14abbc7f90f244cbcc",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
+  }
+}

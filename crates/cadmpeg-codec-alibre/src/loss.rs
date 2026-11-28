@@ -80,6 +80,40 @@ pub(crate) enum AlibreLossCode {
     HistoryParameterEquationUnmapped,
     /// Sheet-metal settings of the part that the rule does not state or maps only as a native option.
     HistorySheetMetalSettingsUnmapped,
+    /// A component file of an assembly is not available beside the assembly.
+    AssemblyMemberUnavailable,
+    /// A component file of an assembly is available but does not decode.
+    AssemblyMemberUndecoded,
+    /// A component file of an assembly contains the assembly that places it.
+    AssemblyMemberCycle,
+    /// Nested assemblies or occurrences lie past an expansion limit.
+    AssemblyExpansionTruncated,
+    /// The design records of a component file are not merged into the assembly.
+    AssemblyMemberDesignUnmerged,
+    /// An inclusion has no readable placement.
+    AssemblyPlacementUnreadable,
+    /// An inclusion states an attribute that the occurrence does not carry.
+    AssemblyInclusionUnmapped,
+    /// An inclusion states the hidden state of a component below a subassembly.
+    AssemblyNestedStateUnread,
+    /// The assembly feature model holds entity families that are not read.
+    AssemblyEntitiesUnread,
+    /// An occurrence names a component configuration, or the assembly holds more than one configuration, and the IR carries neither.
+    AssemblyConfigurationUnmapped,
+    /// A component file declares an ACIS save format outside the verified bands.
+    AssemblyMemberDialectUnverified,
+    /// The file beside the assembly is a different document than the one the inclusion references.
+    AssemblyMemberDocumentMismatch,
+    /// An assembly record that the reader needs is missing or does not read, and the decode goes on without it.
+    AssemblyRecordUnreadable,
+    /// An inclusion lists members that state a GUID which the occurrence does not carry.
+    AssemblyMemberGuidUnmapped,
+    /// The default units of the assembly are not the centimetre that the decoder reads lengths in, or are not stated.
+    AssemblyUnitUnverified,
+    /// The origin datums of the assembly are missing or are not the standard frame at the origin.
+    AssemblyDatumsUnread,
+    /// A component states document tolerances that differ from those of the assembly, which keeps its own.
+    AssemblyMemberToleranceUnmerged,
 }
 }
 
@@ -117,6 +151,23 @@ impl AlibreLossCode {
             Self::HistoryPresentationUnmapped => "history.presentation-unmapped",
             Self::HistoryParameterEquationUnmapped => "history.parameter-equation-unmapped",
             Self::HistorySheetMetalSettingsUnmapped => "history.sheet-metal-settings-unmapped",
+            Self::AssemblyMemberUnavailable => "assembly.member-unavailable",
+            Self::AssemblyMemberUndecoded => "assembly.member-undecoded",
+            Self::AssemblyMemberCycle => "assembly.member-cycle",
+            Self::AssemblyExpansionTruncated => "assembly.expansion-truncated",
+            Self::AssemblyMemberDesignUnmerged => "assembly.member-design-unmerged",
+            Self::AssemblyPlacementUnreadable => "assembly.placement-unreadable",
+            Self::AssemblyInclusionUnmapped => "assembly.inclusion-field-unmapped",
+            Self::AssemblyNestedStateUnread => "assembly.nested-member-state-unread",
+            Self::AssemblyEntitiesUnread => "assembly.entities-unread",
+            Self::AssemblyConfigurationUnmapped => "assembly.configuration-unmapped",
+            Self::AssemblyMemberDialectUnverified => "assembly.member-dialect-unverified",
+            Self::AssemblyMemberDocumentMismatch => "assembly.member-document-mismatch",
+            Self::AssemblyRecordUnreadable => "assembly.record-unreadable",
+            Self::AssemblyMemberGuidUnmapped => "assembly.member-guid-unmapped",
+            Self::AssemblyUnitUnverified => "assembly.unit-unverified",
+            Self::AssemblyDatumsUnread => "assembly.datums-unread",
+            Self::AssemblyMemberToleranceUnmerged => "assembly.member-tolerance-unmerged",
         }
     }
 
@@ -151,7 +202,24 @@ impl AlibreLossCode {
             | Self::HistoryStreamUnread
             | Self::HistoryPresentationUnmapped
             | Self::HistoryParameterEquationUnmapped
-            | Self::HistorySheetMetalSettingsUnmapped => Severity::Warning,
+            | Self::HistorySheetMetalSettingsUnmapped
+            | Self::AssemblyMemberUnavailable
+            | Self::AssemblyMemberUndecoded
+            | Self::AssemblyMemberCycle
+            | Self::AssemblyExpansionTruncated
+            | Self::AssemblyMemberDesignUnmerged
+            | Self::AssemblyPlacementUnreadable
+            | Self::AssemblyInclusionUnmapped
+            | Self::AssemblyNestedStateUnread
+            | Self::AssemblyEntitiesUnread
+            | Self::AssemblyConfigurationUnmapped
+            | Self::AssemblyMemberDialectUnverified
+            | Self::AssemblyMemberDocumentMismatch
+            | Self::AssemblyRecordUnreadable
+            | Self::AssemblyMemberGuidUnmapped
+            | Self::AssemblyUnitUnverified
+            | Self::AssemblyDatumsUnread
+            | Self::AssemblyMemberToleranceUnmerged => Severity::Warning,
         }
     }
 
@@ -166,7 +234,9 @@ impl AlibreLossCode {
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
             | Self::HeaderScaleUnverified => LossTaxonomy::GeometryNotTransferred,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::AssemblyMemberDialectUnverified => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::ContainerNoncanonical | Self::SourceRecordNameUnresolved => {
                 LossTaxonomy::NoncanonicalSourceSyntax
@@ -189,6 +259,22 @@ impl AlibreLossCode {
             | Self::HistoryPresentationUnmapped
             | Self::HistoryParameterEquationUnmapped
             | Self::HistorySheetMetalSettingsUnmapped => LossTaxonomy::FeatureHistoryRetained,
+            Self::AssemblyMemberUnavailable
+            | Self::AssemblyMemberUndecoded
+            | Self::AssemblyMemberCycle
+            | Self::AssemblyExpansionTruncated
+            | Self::AssemblyMemberDesignUnmerged
+            | Self::AssemblyMemberDocumentMismatch => LossTaxonomy::AssemblyComponentsExternal,
+            Self::AssemblyPlacementUnreadable => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::AssemblyInclusionUnmapped
+            | Self::AssemblyNestedStateUnread
+            | Self::AssemblyEntitiesUnread
+            | Self::AssemblyRecordUnreadable
+            | Self::AssemblyMemberGuidUnmapped
+            | Self::AssemblyDatumsUnread => LossTaxonomy::ObjectRecordsUntransferred,
+            Self::AssemblyConfigurationUnmapped
+            | Self::AssemblyUnitUnverified
+            | Self::AssemblyMemberToleranceUnmerged => LossTaxonomy::MetadataNotTransferred,
         }
     }
 
@@ -247,6 +333,23 @@ mod tests {
                 "history.presentation-unmapped",
                 "history.parameter-equation-unmapped",
                 "history.sheet-metal-settings-unmapped",
+                "assembly.member-unavailable",
+                "assembly.member-undecoded",
+                "assembly.member-cycle",
+                "assembly.expansion-truncated",
+                "assembly.member-design-unmerged",
+                "assembly.placement-unreadable",
+                "assembly.inclusion-field-unmapped",
+                "assembly.nested-member-state-unread",
+                "assembly.entities-unread",
+                "assembly.configuration-unmapped",
+                "assembly.member-dialect-unverified",
+                "assembly.member-document-mismatch",
+                "assembly.record-unreadable",
+                "assembly.member-guid-unmapped",
+                "assembly.unit-unverified",
+                "assembly.datums-unread",
+                "assembly.member-tolerance-unmerged",
             ]
         );
     }

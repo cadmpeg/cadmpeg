@@ -14,5 +14,7 @@ pub(crate) const FORMAT: &str = "alibre";
 /// Registry-owned dialect id `alibre:cfb-acis-binary`.
 pub(crate) const ALIBRE_CFB_ACIS_BINARY: DialectId =
     cadmpeg_core::dialect_id!("alibre:cfb-acis-binary");
+/// Registry-owned dialect id `alibre:cfb-assembly`.
+pub(crate) const ALIBRE_CFB_ASSEMBLY: DialectId = cadmpeg_core::dialect_id!("alibre:cfb-assembly");
 /// Registry-owned dialect id `alibre:unknown`.
 pub(crate) const ALIBRE_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("alibre:unknown");

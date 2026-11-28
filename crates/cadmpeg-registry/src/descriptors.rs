@@ -502,9 +502,12 @@ reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
     cadmpeg_codec_pvz::PvzCodec
 ));
 #[cfg(feature = "alibre")]
-reader!(ALIBRE, FormatId::new("alibre"), &["ad_prt"], || Box::new(
-    cadmpeg_codec_alibre::AlibreCodec
-));
+reader!(
+    ALIBRE,
+    FormatId::new("alibre"),
+    &["ad_prt", "ad_asm"],
+    || Box::new(cadmpeg_codec_alibre::AlibreCodec)
+);
 #[cfg(feature = "edrawings")]
 reader!(
     EDRAWINGS,

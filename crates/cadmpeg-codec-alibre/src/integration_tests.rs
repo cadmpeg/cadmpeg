@@ -21,6 +21,9 @@ use crate::AlibreCodec;
 
 mod history;
 
+pub(crate) mod assembly;
+mod synthetic;
+
 /// Allowance of a measured value beyond its stated numeric error, relative to
 /// the expected magnitude.
 const MEASURE_RELATIVE_FLOOR: f64 = 1.0e-9;
