@@ -17,6 +17,7 @@ use cadmpeg_ir::CadIr;
 use super::{compare, DestinationParameters, Written};
 use crate::design::configurations::{root_document, ConfigurationTargets, Projection};
 use crate::ids::{neutral_configuration_id, neutral_parameter_id_parts};
+use crate::loss::F3dLossCode;
 use crate::records::configuration::table::{test_row_differences, TestRowTarget};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationActiveRow};
 use crate::writer::primitives::bases;
@@ -221,11 +222,15 @@ impl<'a> Destination<'a> {
             });
         match back {
             Ok(notes) => losses.extend(notes),
-            Err(error) => losses.extend(value_unwritable(
-                "F3D",
-                &format!("cannot read the written configuration records: {error}"),
-                self.documents.iter().map(DesignConfiguration::id),
-            )),
+            Err(error) => {
+                let mut ids: Vec<_> = self.documents.iter().map(DesignConfiguration::id).collect();
+                ids.sort_unstable();
+                ids.dedup();
+                losses.push(F3dLossCode::WriterConfigurationReadBackUnread.note(format!(
+                    "the F3D write cannot read the written configuration records ({error}): {}",
+                    ids.join(", ")
+                )));
+            }
         }
     }
 

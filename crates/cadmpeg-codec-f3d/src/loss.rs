@@ -1391,6 +1391,8 @@ pub(crate) enum F3dLossCode {
     WriterSketchSupportSubstituted,
     /// A configuration was not written.
     WriterConfigurationOmitted,
+    /// Configuration verification stopped before it could compare the written archive.
+    WriterConfigurationReadBackUnread,
     /// A tessellation was not written.
     WriterTessellationOmitted,
     /// A carrier's source-object association was not written.
@@ -2277,6 +2279,7 @@ impl F3dLossCode {
         Self::WriterSketchContentOmitted,
         Self::WriterSketchSupportSubstituted,
         Self::WriterConfigurationOmitted,
+        Self::WriterConfigurationReadBackUnread,
         Self::WriterTessellationOmitted,
         Self::WriterSourceAssociationOmitted,
         Self::WriterBodyOmitted,
@@ -3529,6 +3532,7 @@ impl F3dLossCode {
             Self::WriterSketchContentOmitted => "writer.sketch-content-omitted",
             Self::WriterSketchSupportSubstituted => "writer.sketch-support-substituted",
             Self::WriterConfigurationOmitted => "writer.configuration-omitted",
+            Self::WriterConfigurationReadBackUnread => "writer.configuration-read-back-unread",
             Self::WriterTessellationOmitted => "writer.tessellation-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -3640,6 +3644,7 @@ impl F3dLossCode {
             Self::WriterSketchContentOmitted => Severity::Warning,
             Self::WriterSketchSupportSubstituted => Severity::Warning,
             Self::WriterConfigurationOmitted => Severity::Warning,
+            Self::WriterConfigurationReadBackUnread => Severity::Warning,
             Self::WriterTessellationOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Info,
             Self::WriterBodyOmitted => Severity::Error,
@@ -4493,6 +4498,7 @@ impl F3dLossCode {
             Self::WriterSketchContentOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchSupportSubstituted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterConfigurationReadBackUnread => LossTaxonomy::DecodeDiagnostic,
             Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
@@ -6204,6 +6210,7 @@ mod tests {
                 "writer.sketch-content-omitted",
                 "writer.sketch-support-substituted",
                 "writer.configuration-omitted",
+                "writer.configuration-read-back-unread",
                 "writer.tessellation-omitted",
                 "writer.source-association-omitted",
                 "writer.body-omitted",

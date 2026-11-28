@@ -385,8 +385,7 @@ fn generator_keeps_the_archive_when_readback_exhausts_its_budget() {
     assert_eq!(archive, expected);
     assert!(
         report.losses.iter().any(|loss| {
-            loss.message
-                .contains("cannot read the written configuration records")
+            loss.code == crate::loss::F3dLossCode::WriterConfigurationReadBackUnread.kind()
                 && loss.message.contains("resource limit on Entities")
                 && loss.message.contains(&document)
         }),
