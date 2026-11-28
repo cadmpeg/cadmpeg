@@ -51,6 +51,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
@@ -302,11 +303,21 @@ pub(crate) fn project(
             bodies,
         } = spans.remove(&prefix).unwrap_or_default();
         if spanned.len() > 1 {
+            let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
             for feature in &mut projected.features {
-                feature.component = owners
+                let owner = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
-                    .map(|owner| (*owner).clone());
+                    .copied()
+                    .filter(|owner| spanned.contains(*owner));
+                feature.component = owner.and_then(|owner| member_component(feature, owner));
+                if let (Some(owner), None) = (owner, &feature.component) {
+                    *withheld.entry(owner).or_default() += 1;
+                }
+            }
+            for (owner, count) in withheld {
+                losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                    "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+                )));
             }
         }
         let bodiless = bodies.is_empty();
@@ -545,6 +556,22 @@ fn built_prefix<'a>(members: &'a [Member], rollback: Option<&Rollback>) -> Optio
             Some(&members[..built])
         }
     }
+}
+
+/// The component a feature names: `owner`, for a feature of the root
+/// document. The span above counts the definitions each document hosts, which
+/// does not match the span of an archive member's own scope: naming the owner
+/// of a member's feature, even one that stands in the member's own document,
+/// makes the checker read the scope as spanning the files its occurrences
+/// place. A member's feature names no component.
+fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
+    let stream = feature
+        .native_ref
+        .as_deref()
+        .and_then(crate::ids::native_stream)?;
+    timeline::document_prefix(stream)
+        .is_empty()
+        .then(|| owner.clone())
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

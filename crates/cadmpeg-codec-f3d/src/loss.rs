@@ -722,6 +722,10 @@ pub(crate) enum F3dLossCode {
     /// history that the walk places it in, which its scope tail does not
     /// state.
     HistoryStateInferred,
+    /// A timeline item matches its v10 feature by its position in its Design stream because no scope record states the pairing.
+    HistoryItemMatchedByPosition,
+    /// An archive member's feature does not name the component that owns it, because the member's scope does not span the owner's definition.
+    HistoryMemberComponentUnstated,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1919,6 +1923,8 @@ impl F3dLossCode {
         Self::HistoryStateNameInherited,
         Self::HistoryStatePosesAssumed,
         Self::HistoryStateInferred,
+        Self::HistoryItemMatchedByPosition,
+        Self::HistoryMemberComponentUnstated,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2974,6 +2980,8 @@ impl F3dLossCode {
             Self::HistoryStateNameInherited => "history.state-name-inherited",
             Self::HistoryStatePosesAssumed => "history.state-poses-assumed",
             Self::HistoryStateInferred => "history.state-inferred",
+            Self::HistoryItemMatchedByPosition => "history.item-matched-by-position",
+            Self::HistoryMemberComponentUnstated => "history.member-component-unstated",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -4067,6 +4075,8 @@ impl F3dLossCode {
             | Self::HistoryStateNameInherited
             | Self::HistoryStatePosesAssumed
             | Self::HistoryStateInferred
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4868,6 +4878,8 @@ impl F3dLossCode {
             | Self::HistoryStateNameInherited
             | Self::HistoryStatePosesAssumed
             | Self::HistoryStateInferred
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5795,6 +5807,8 @@ mod tests {
                 "history.state-name-inherited",
                 "history.state-poses-assumed",
                 "history.state-inferred",
+                "history.item-matched-by-position",
+                "history.member-component-unstated",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
