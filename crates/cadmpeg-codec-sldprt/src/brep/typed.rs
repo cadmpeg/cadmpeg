@@ -16,7 +16,7 @@ use cadmpeg_parasolid::pointer::read_at as read_ref;
 
 pub(super) mod nodes;
 pub(super) mod schema;
-mod shell_containment;
+pub(super) mod shell_containment;
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];

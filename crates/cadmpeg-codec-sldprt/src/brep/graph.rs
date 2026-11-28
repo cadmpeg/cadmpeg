@@ -62,8 +62,8 @@ mod grouping;
 mod prune;
 
 use grouping::{
-    body_records_of, chain_cut_note, first_lost_face, mark_derived_shells, note_body_precision,
-    region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
+    body_records_of, chain_cut_note, classify_native_shells, first_lost_face, mark_derived_shells,
+    note_body_precision, region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
     unclassified_body_kind, withheld_counts,
 };
 use prune::{prune_rejected_topology, RingLoss};
@@ -621,9 +621,18 @@ fn pcurve_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
     cadmpeg_ir::identity_namespace!("sldprt", "brep", "pcurve")
 }
 
+const SHELL_COMPONENT_TAG: &str = ".component-";
+
+fn shell_source_id(shell: &ShellId) -> &str {
+    shell
+        .as_str()
+        .split_once(SHELL_COMPONENT_TAG)
+        .map_or(shell.as_str(), |(id, _)| id)
+}
+
 /// The component split of one native shell: `<shell>.component-<ordinal>`.
 fn shell_component(shell: &ShellId, component: usize) -> Result<ShellId, cadmpeg_core::CodecError> {
-    let text = format!("{shell}.component-{component}");
+    let text = format!("{shell}{SHELL_COMPONENT_TAG}{component}");
     ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -3628,6 +3637,7 @@ fn decode_graph(
     out.losses.extend(out.approximations.take_notes());
     let typed_face_unstated = report_withheld_ownership(ctx, &mut out, typed_facts, stream)?;
     mark_derived_shells(&mut out, typed_face_unstated);
+    classify_native_shells(&mut out, typed_facts);
     // The bodies `report_withheld_ownership` states keep their facts too.
     bind_body_facts(&mut out, body_payloads);
     Ok(out)
@@ -5474,21 +5484,9 @@ fn decode_graph_inner(
             admit_brep_entity(ctx)?;
             // No record states the region or its shells, so nothing states
             // which piece bounds the outside.
-            out.regions.push(region_of(
-                region_id.clone(),
-                body_id.clone(),
-                region_shells,
-                None,
-            ));
+            out.regions
+                .push(region_of(region_id.clone(), body_id.clone(), region_shells));
         } else {
-            let exteriors = body_record
-                .filter(|_| native_regions.iter().any(|region| region.shells.len() > 1))
-                .and_then(|record| {
-                    typed_facts.containing_shells(record.attr, |attr| {
-                        stated_faces.contains(id_face(attr).as_str())
-                    })
-                })
-                .unwrap_or_default();
             for region in native_regions {
                 let region_id = RegionId::compose(&region_namespace(), region.attr);
                 annotate_group(
@@ -5496,11 +5494,9 @@ fn decode_graph_inner(
                     Some((region.offset, "00_51_region")),
                 )?;
                 let mut region_shells = Vec::new();
-                let mut exterior_unknown = false;
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
                     let lost_face = first_lost_face(&shell.refs, &stated_faces);
-                    exterior_unknown |= lost_face.is_some();
                     let mut pieces = 0_usize;
                     for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                         .into_iter()
@@ -5534,9 +5530,6 @@ fn decode_graph_inner(
                         pieces += 1;
                         region_shells.push(shell_id);
                     }
-                    // One stored SHELL stated as several pieces does not say
-                    // which piece bounds the outside.
-                    exterior_unknown |= pieces > 1;
                     // A shell none of whose faces is stated holds no face and
                     // says so; its region and body stay stated (§3.3).
                     if pieces == 0 && lost_face.is_some() {
@@ -5551,20 +5544,9 @@ fn decode_graph_inner(
                         region_shells.push(native_shell_id);
                     }
                 }
-                let exterior = exteriors
-                    .get(&region.attr)
-                    .filter(|(_, count)| !exterior_unknown && *count == region_shells.len())
-                    .and_then(|(attr, _)| {
-                        let exterior = ShellId::compose(&shell_namespace(), *attr);
-                        region_shells.iter().position(|shell| *shell == exterior)
-                    });
                 admit_brep_entity(ctx)?;
-                out.regions.push(region_of(
-                    region_id,
-                    body_id.clone(),
-                    region_shells,
-                    exterior,
-                ));
+                out.regions
+                    .push(region_of(region_id, body_id.clone(), region_shells));
             }
         }
         admit_brep_entity(ctx)?;

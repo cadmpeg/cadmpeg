@@ -345,6 +345,8 @@ pub(crate) enum SldprtLossCode {
     TopologyLoopChainCut,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
+    /// The region has both proven and unresolved shell roles.
+    TopologyShellRoleUnstated,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
     /// A canonical edge whose FIN record is an unwalked boundary dummy lacks
@@ -793,6 +795,7 @@ impl SldprtLossCode {
         Self::TopologyFaceWithheld,
         Self::TopologyLoopChainCut,
         Self::TopologyOwnershipWithheld,
+        Self::TopologyShellRoleUnstated,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
         Self::TopologyFinLinkUnresolved,
@@ -1034,6 +1037,7 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
+            Self::TopologyShellRoleUnstated => "topology.shell-role-unstated",
             Self::TopologyFaceWithheld => "topology.face-withheld",
             Self::TopologyLoopChainCut => "topology.loop-chain-cut",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
@@ -1350,6 +1354,7 @@ impl SldprtLossCode {
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
+            | Self::TopologyShellRoleUnstated
             | Self::TopologyFaceWithheld
             | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
@@ -1533,6 +1538,7 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
+            | Self::TopologyShellRoleUnstated
             | Self::TopologyFaceWithheld
             | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
@@ -1976,6 +1982,7 @@ mod tests {
                 "topology.face-withheld",
                 "topology.loop-chain-cut",
                 "topology.ownership-withheld",
+                "topology.shell-role-unstated",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
                 "topology.fin-link-unresolved",
