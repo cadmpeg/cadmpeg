@@ -200,6 +200,21 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_rolling_result_window(
+        &mut self,
+        source_offset: usize,
+        stated: [f64; 2],
+        chart_end: f64,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryRollingResultWindowInferred.note(format!(
+                "Retained the native rolling-ball chart [0, {chart_end}] at source offset \
+                 {source_offset} with result V window [{}, {}] extending beyond that chart",
+                stated[0], stated[1],
+            )),
+        );
+    }
+
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
         let note = if resolved {
             crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(

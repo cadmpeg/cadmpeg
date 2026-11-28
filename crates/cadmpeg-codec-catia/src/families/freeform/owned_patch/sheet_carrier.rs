@@ -109,6 +109,7 @@ impl Carrier<'_> {
                         native_v_upper: Some(upper),
                         ..
                     } => *upper,
+                    Self::OwnedRollingBall { chart_end, .. } => *chart_end,
                     _ => radius,
                 };
                 Some([

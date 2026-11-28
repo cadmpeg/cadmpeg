@@ -177,45 +177,44 @@ where
                         })
                     }
                     (0x19, Family::A, 0x32) => {
-                        if bounds[1][0] != 0.0 {
-                            return None;
-                        }
                         let basis = (self.resolve)(support, bridge.support)?;
-                        let chart_end = bounds[1][1];
+                        let native =
+                            a5_owned_rolling_curves(self.bytes, std::slice::from_ref(target))
+                                .next();
+                        let chart_end = native.as_ref().map_or(bounds[1][1], |jet| jet.chart_v_end);
                         let cached = (self.physical)(target.byte_offset())
                             .and_then(|position| carriers.get(&position));
-                        let mut native = None;
                         for distance in [bridge.distance, -bridge.distance] {
                             let Some(radius) = self.rolling_support_radius(basis, distance) else {
                                 continue;
                             };
-                            if let Some(definition) =
+                            let carrier = if let Some(definition) =
                                 cached.and_then(|&i| rolling_ball(ir, i, radius))
                             {
-                                return Some(Carrier::OwnedRollingBall {
+                                Some(Carrier::OwnedRollingBall {
                                     definition: Box::new(Cow::Borrowed(definition)),
                                     chart_end,
                                     native_v_upper: None,
                                     variable_radius: false,
                                     max_rail_shift_mm: 0.0,
-                                });
-                            }
-                            let jet = match &native {
-                                Some(jet) => jet,
-                                None => native.insert(
-                                    a5_owned_rolling_curves(
-                                        self.bytes,
-                                        std::slice::from_ref(target),
-                                    )
-                                    .next()?,
-                                ),
+                                })
+                            } else {
+                                native.as_ref().and_then(|jet| {
+                                    Carrier::rolling_ball_at_radius(jet.clone(), radius, chart_end)
+                                })
                             };
-                            if !super::near(jet.chart_v_end, chart_end) {
-                                return None;
-                            }
-                            if let Some(carrier) =
-                                Carrier::rolling_ball_at_radius(jet.clone(), radius, chart_end)
-                            {
+                            if let Some(carrier) = carrier {
+                                if native.is_some()
+                                    && ((bounds[1][0] < 0.0 && !super::near(bounds[1][0], 0.0))
+                                        || (bounds[1][1] > chart_end
+                                            && !super::near(bounds[1][1], chart_end)))
+                                {
+                                    refusal.push_rolling_result_window(
+                                        record.byte_offset(),
+                                        bounds[1],
+                                        chart_end,
+                                    );
+                                }
                                 return Some(carrier);
                             }
                         }
@@ -2111,6 +2110,7 @@ mod tests {
 
     mod carriers;
     mod recovery;
+    mod rolling_results;
     mod rolling_spans;
     mod roster_priority;
 

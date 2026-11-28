@@ -67,6 +67,8 @@ pub(crate) enum CatiaLossCode {
     GeometryCarrierSummary,
     /// A sheet fit extends a rolling section past its stored transverse interval.
     GeometryRollingSheetExtended,
+    /// A result V window exceeds the retained native rolling-ball chart.
+    GeometryRollingResultWindowInferred,
     /// Corroborated affine stations replace disagreeing fitted vertex positions.
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
@@ -237,6 +239,7 @@ impl CatiaLossCode {
         Self::SourceCatalogScanBounded,
         Self::GeometryCarrierSummary,
         Self::GeometryRollingSheetExtended,
+        Self::GeometryRollingResultWindowInferred,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
         Self::GeometrySurfaceParametersNotTransferred,
@@ -328,6 +331,7 @@ impl CatiaLossCode {
             Self::SourceCatalogScanBounded => "source.catalog-scan-bounded",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryRollingSheetExtended => "geometry.rolling-sheet-extended",
+            Self::GeometryRollingResultWindowInferred => "geometry.rolling-result-window-inferred",
             Self::TopologyAffineVertexReconciled => "topology.affine-vertex-reconciled",
             Self::GeometryConicBranchBoundsInferred => "geometry.conic-branch-bounds-inferred",
             Self::GeometryParameterMapAccuracyInferred => {
@@ -460,7 +464,8 @@ impl CatiaLossCode {
             | Self::SourceAnnotationCollision
             | Self::SourceCatalogScanBounded
             | Self::TopologySheetComponentsInferred
-            | Self::HistoryParameterLiteralAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::HistoryParameterLiteralAssumed
+            | Self::GeometryRollingResultWindowInferred => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
@@ -584,6 +589,7 @@ mod tests {
                 "source.catalog-scan-bounded",
                 "geometry.carrier-summary",
                 "geometry.rolling-sheet-extended",
+                "geometry.rolling-result-window-inferred",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
                 "geometry.surface-parameters-not-transferred",
