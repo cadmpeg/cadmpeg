@@ -19,7 +19,7 @@ pub(crate) mod hex;
 pub(crate) mod history;
 pub(crate) mod model;
 pub(crate) mod om;
-mod parasolid;
+pub(crate) mod parasolid;
 pub(crate) mod rmfastload_storage;
 pub(crate) mod segments;
 pub(crate) mod structure;
