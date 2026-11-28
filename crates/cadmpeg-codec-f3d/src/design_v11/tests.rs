@@ -25,6 +25,8 @@ use crate::records::entity_header::{
 use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::records::identity::{Located, ReferenceRun};
 
+mod history_states;
+
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
 const GROUND: &str = "21E03EC1-0E53-406D-A852-6D088D4D1E95";
 

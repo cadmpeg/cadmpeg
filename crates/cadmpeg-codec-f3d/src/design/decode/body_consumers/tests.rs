@@ -65,7 +65,7 @@ fn hidden_body_consumption_uses_the_second_run_and_either_browser_flag() {
             for first_run in [false, true] {
                 let (bytes, meta) = source(consumer, true, flag, first_run);
                 let consumed = consumed_body_entities(View::over_retained(&bytes), &meta).unwrap();
-                assert_eq!(consumed, HashSet::from([50]));
+                assert_eq!(consumed, HashMap::from([(50, BTreeSet::from([40]))]));
             }
         }
     }
