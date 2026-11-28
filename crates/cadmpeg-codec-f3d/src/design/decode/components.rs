@@ -701,6 +701,7 @@ pub(crate) fn superseded_occurrences_loss(
 }
 
 /// Most attributes an attributed occurrence frame can carry.
+// resource-cap: MAX_OCCURRENCE_ATTRIBUTES = 2
 const MAX_OCCURRENCE_ATTRIBUTES: u32 = 16;
 /// Read stored local occurrence attributes and its occurrence key.
 #[cfg(test)]

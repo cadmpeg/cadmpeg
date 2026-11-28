@@ -28,7 +28,9 @@ use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
+// resource-cap: MAX_HISTORY_BODIES = 4
 const MAX_HISTORY_BODIES: usize = 64;
+// resource-cap: MAX_HISTORY_BODY_WORK = 4
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 
 /// A body slot of one history state that a feature produces or consumes.

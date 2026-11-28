@@ -37,6 +37,7 @@ use surface_curve_state::SurfaceCurveState;
 mod primary_edges;
 use primary_edges::PrimaryFrames;
 
+// resource-cap: MAX_MASKED_ATTRIBUTE_RECORD_BYTES = 2
 const MAX_MASKED_ATTRIBUTE_RECORD_BYTES: usize = 16_384;
 
 /// Type-38 first-use edit adding the support-UV `intersection_data` pointer.

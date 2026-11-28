@@ -34,10 +34,13 @@ pub const RECORD_MARKER: &[u8] = &record_start_page::MARKER_VALUE;
 pub const CONTINUATION_MARKER: &[u8] = &continuation_page::MARKER_VALUE;
 /// Terminal marker at page bytes 0..4.
 pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
+// resource-cap: MAX_SCHEMA_BYTES = 2
 const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
+// resource-cap: MAX_RECOVERY_VALUES = 2
 const MAX_RECOVERY_VALUES: u64 = 1_024;
 /// Inherited property entries one catalog materializes across all resolved
 /// schema closures.
+// resource-cap: MAX_INHERITED_PROPERTIES = 4
 const MAX_INHERITED_PROPERTIES: usize = 1 << 18;
 
 fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {

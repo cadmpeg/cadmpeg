@@ -32,13 +32,17 @@ use crate::part21;
 
 /// Deepest nesting of subassemblies that one expansion reads. A subassembly
 /// below it stays an external definition.
+// resource-cap: MAX_NESTING = 4
 const MAX_NESTING: usize = 8;
 /// Most occurrences that one expansion places, subassemblies included. Past it
 /// the expansion stops.
+// resource-cap: MAX_OCCURRENCES = 4
 const MAX_OCCURRENCES: usize = 10_000;
 /// Most entity names that the loss of unknown entities lists.
+// resource-cap: MAX_UNREAD_NAMES = 4
 const MAX_UNREAD_NAMES: usize = 16;
 /// Most examples that one aggregated loss lists by inclusion.
+// resource-cap: MAX_LOSS_EXAMPLES = 4
 const MAX_LOSS_EXAMPLES: usize = 16;
 /// Extensions of the component files, in the order the decode tries them.
 const EXTENSIONS: [&str; 4] = ["AD_PRT", "AD_ASM", "ad_prt", "ad_asm"];

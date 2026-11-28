@@ -22,6 +22,7 @@ use crate::native::{CatiaCatalog, CatiaNative, CatiaObjectGraph, CatiaObjectReco
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 const OPERATION: &str = "transfer inline CATIA geometric tolerances";
+// resource-cap: MAX_INLINE_VALUES = 4
 const MAX_INLINE_VALUES: usize = 79;
 const PROVENANCE_STREAM: &str = "catia:outer-pmi";
 const PROVENANCE_TAG: &str = "source-closed-inline-PMI";

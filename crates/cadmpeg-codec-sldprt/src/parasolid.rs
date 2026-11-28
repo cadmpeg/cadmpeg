@@ -26,6 +26,7 @@ use crate::layout::{
 /// after it.
 const WRAPPED_MAGIC_PREFIX: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 const WRAPPED_FRAME_HEADER_LEN: usize = chain_frame_hdr::LEN;
+// resource-cap: MAX_WRAPPED_FRAME_UNCOMPRESSED = 2
 const MAX_WRAPPED_FRAME_UNCOMPRESSED: usize = 512 * 1024 * 1024;
 
 /// One extracted stream with the location and header proven during extraction.

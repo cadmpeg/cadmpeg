@@ -19,6 +19,7 @@ use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 /// controls, so [`bezier_blends`] bounds the work of a curve by its span
 /// count. A curve over this limit is not processed, and its caller reports
 /// a loss naming this limit.
+// resource-cap: MAX_BEZIER_BLENDS = 4
 pub(crate) const MAX_BEZIER_BLENDS: usize = 1 << 26;
 
 /// The blends that processing `spans` Bézier spans of `degree` costs, or

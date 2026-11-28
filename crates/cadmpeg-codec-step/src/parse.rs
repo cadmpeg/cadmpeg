@@ -124,6 +124,7 @@ fn node_payload(value: &Value) -> u64 {
 
 /// Payload octets that one anchor or REFERENCE expansion pass may copy out
 /// of anchors for each input byte, on top of [`EXPANDED_PAYLOAD_BASE`].
+// resource-cap: MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE = 4
 const MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE: u64 = 16;
 /// Payload octets that one expansion pass may copy out of anchors at any
 /// input size.
@@ -2735,9 +2736,11 @@ struct AnchorResolver<'a, 'ctx, 'arena> {
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     /// Value nodes that anchor expansion may copy across the whole exchange.
+    // resource-cap: MAX_EXPANDED_NODES = 4
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     /// Value nodes that items omitted at the node limit may copy across the
     /// whole exchange before their expansion stopped.
+    // resource-cap: MAX_DISCARDED_EXPANDED_NODES = 4
     const MAX_DISCARDED_EXPANDED_NODES: usize = 16 * Self::MAX_EXPANDED_NODES;
 
     fn new(
@@ -3029,9 +3032,11 @@ struct ReferenceResolver<'a, 'ctx, 'arena> {
 impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     /// Value nodes that REFERENCE expansion may copy across the whole
     /// exchange.
+    // resource-cap: MAX_MATERIALIZED_NODES = 4
     const MAX_MATERIALIZED_NODES: usize = 1_000_000;
     /// Value nodes that items omitted at the node limit may copy across the
     /// whole exchange before their expansion stopped.
+    // resource-cap: MAX_DISCARDED_MATERIALIZED_NODES = 4
     const MAX_DISCARDED_MATERIALIZED_NODES: usize = 16 * Self::MAX_MATERIALIZED_NODES;
 
     fn new(
