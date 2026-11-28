@@ -1962,11 +1962,11 @@ fn unparsed_rigid_group_frame(
 
 /// The tail offsets of the timeline state of a feature item tail.
 #[derive(Debug, Clone, Copy)]
-struct TailStateAt {
+pub(super) struct TailStateAt {
     /// Tail offset of the three state bytes.
-    state: usize,
+    pub(super) state: usize,
     /// Tail offset of the no-result flag; the rolled-back flag follows it.
-    flags: usize,
+    pub(super) flags: usize,
 }
 
 /// The timeline state offsets of a typed-reference tail in the 196-byte form,
@@ -2419,9 +2419,9 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 tail_form == ScopeTailForm::TypedExtended,
                 label_units,
             ),
-            ScopeTailForm::Fixed => {
-                plain_scope_tail(bytes, kind_end, paired_at).map(|plain| plain.state)
-            }
+            ScopeTailForm::Fixed => plain_scope_tail(bytes, kind_end, paired_at)
+                .map(|plain| plain.state)
+                .or_else(|| end_anchored_scope_tail(bytes, kind_end, paired_at)),
         }
         .and_then(|at| {
             let state = kind_end.checked_add(at.state)?;
@@ -3046,6 +3046,37 @@ fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<P
             flags: no_result_at.checked_sub(kind_end)?,
         },
     })
+}
+
+pub(super) fn end_anchored_scope_tail(
+    bytes: &[u8],
+    kind_end: usize,
+    paired_at: usize,
+) -> Option<TailStateAt> {
+    use crate::layout::end_anchored_scope_tail_suffix as suffix;
+    let bytes = bytes.get(..paired_at)?;
+    let no_result_at = paired_at.checked_sub(suffix::LEN)?;
+    let state_at = kind_end.checked_add(named_tail::STATE_BYTES)?;
+    let state = bytes.get(state_at..state_at.checked_add(3)?)?;
+    if no_result_at < state_at.checked_add(3)?
+        || View::u32_le_at(bytes, kind_end)? == 0
+        || View::u32_le_at(bytes, kind_end.checked_add(named_tail::ZERO_WORD)?)? != 0
+        || View::u32_le_at(bytes, kind_end.checked_add(named_tail::ASSOCIATED_COUNT)?)? != 0
+        || View::u32_le_at(bytes, kind_end.checked_add(named_tail::LABEL_LENGTH)?)? != 0
+    {
+        return None;
+    }
+    let flag = |at: usize| bytes.get(at).is_some_and(|flag| *flag <= 1);
+    let mut cursor = no_result_at.checked_add(suffix::TIMESTAMP_REFERENCE)?;
+    named_scope_reference(bytes, &mut cursor)?.into_local()?;
+    (flag(no_result_at)
+        && flag(no_result_at + suffix::ROLLED_BACK)
+        && bytes.get(cursor..)? == [0; 2]
+        && (bytes.get(no_result_at) == Some(&1) || state == [0; 3]))
+        .then(|| TailStateAt {
+            state: named_tail::STATE_BYTES,
+            flags: no_result_at - kind_end,
+        })
 }
 
 /// Type a scope from its class type GUID when that GUID is listed. A

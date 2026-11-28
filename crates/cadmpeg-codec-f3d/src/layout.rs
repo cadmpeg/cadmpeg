@@ -13806,3 +13806,19 @@ pub(crate) mod local_component_occurrence_attributed_source_matrix {
     /// Offset of `source_matrix` (`bytes[128]`). Spec §3.1.
     pub(crate) const SOURCE_MATRIX: usize = 1;
 }
+
+/// Byte offsets for the `end_anchored_scope_tail_suffix` record.
+///
+/// Spec §Records of a sketch-and-extrude design. Record length 15 B.
+///
+/// ```text
+/// Relative to frame end minus 15. Admission requires a nonzero ordinal, zero prefix word, empty label and zero associated count. Flags are Boolean; state at tail offset 16 is zero when s0 is zero. The reference is untyped local with a nonzero target.
+/// ```
+pub(crate) mod end_anchored_scope_tail_suffix {
+    /// Record length in bytes. Spec §Records of a sketch-and-extrude design.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `rolled_back` (`bool8`). Spec §Records of a sketch-and-extrude design.
+    pub(crate) const ROLLED_BACK: usize = 1;
+    /// Offset of `timestamp_reference` (`bytes[11]`). Spec §Records of a sketch-and-extrude design.
+    pub(crate) const TIMESTAMP_REFERENCE: usize = 2;
+}

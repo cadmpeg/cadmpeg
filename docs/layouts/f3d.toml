@@ -57252,3 +57252,41 @@ offset = 217
 type = "u8"
 source = "spec"
 anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+
+[[record]]
+name = "end_anchored_scope_tail_suffix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"
+kind = "byte"
+section = "Records of a sketch-and-extrude design"
+anchor = "The end-anchored suffix is 15 bytes"
+size = 15
+note = "Relative to frame end minus 15. Admission requires a nonzero ordinal, zero prefix word, empty label and zero associated count. Flags are Boolean; state at tail offset 16 is zero when s0 is zero. The reference is untyped local with a nonzero target."
+
+[[record.field]]
+name = "no_result"
+offset = 0
+type = "bool8"
+source = "spec"
+anchor = "`s0` at offset 0"
+
+[[record.field]]
+name = "rolled_back"
+offset = 1
+type = "bool8"
+source = "spec"
+anchor = "`s1` at offset 1"
+
+[[record.field]]
+name = "timestamp_reference"
+offset = 2
+type = "bytes[11]"
+source = "spec"
+anchor = "the reference at offset 2"
+
+[[record.field]]
+name = "zero_bytes"
+offset = 13
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offset 13"
+value = [0, 0]

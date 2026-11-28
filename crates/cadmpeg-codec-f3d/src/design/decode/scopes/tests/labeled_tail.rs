@@ -664,3 +664,126 @@ fn envelopes_that_differ_only_in_a_state_byte_of_two_keep_the_later() {
         }
     }
 }
+
+/// The tail flags a fixed tail stores 15 bytes before the end of its frame
+/// are read where the plain grammar does not match the tail.
+#[test]
+fn an_end_anchored_tail_reads_its_lane_flags_before_the_timestamp_reference() {
+    use super::super::parameter_scope::end_anchored_scope_tail;
+    for long_form in [true, false] {
+        for flags in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let (bytes, kind_end) = plain_labeled_frame(&PlainTail {
+                label: "",
+                long_form,
+                flags,
+                ..PlainTail::default()
+            });
+            let paired_at = bytes.len() - 11;
+            let at = end_anchored_scope_tail(&bytes, kind_end, paired_at)
+                .unwrap_or_else(|| panic!("long form {long_form}, flags {flags:?}"));
+            assert_eq!(at.state, 16);
+            assert_eq!(bytes[kind_end + at.flags..][..2], [flags.0, flags.1]);
+            assert_eq!(kind_end + at.flags + 15, paired_at);
+        }
+    }
+}
+
+#[test]
+fn an_end_anchored_tail_requires_its_closing_bytes_and_a_zero_state_without_a_result_flag() {
+    use super::super::parameter_scope::end_anchored_scope_tail;
+    let (bytes, kind_end) = plain_labeled_frame(&PlainTail {
+        label: "",
+        ..PlainTail::default()
+    });
+    let paired_at = bytes.len() - 11;
+    let admitted = |bytes: &[u8]| end_anchored_scope_tail(bytes, kind_end, paired_at).is_some();
+    assert!(admitted(&bytes));
+    let mut flag = bytes.clone();
+    flag[paired_at - 14] = 2;
+    assert!(!admitted(&flag), "rolled-back flag above 1");
+    let mut zero = bytes.clone();
+    zero[paired_at - 1] = 1;
+    assert!(!admitted(&zero), "nonzero closing byte");
+    let mut reference = bytes.clone();
+    reference[paired_at - 13] = 0;
+    assert!(!admitted(&reference), "timestamp reference marker");
+    let mut state = bytes.clone();
+    state[kind_end + 17] = 1;
+    assert!(!admitted(&state), "state byte with no result flag");
+    let (labeled, labeled_end) = plain_labeled_frame(&PlainTail::default());
+    assert!(end_anchored_scope_tail(&labeled, labeled_end, labeled.len() - 11).is_none());
+}
+
+#[test]
+fn associated_reference_tail_keeps_the_item_unflagged() {
+    let (mut bytes, kind_end) = plain_labeled_frame(&PlainTail {
+        label: "",
+        long_form: false,
+        flags: (1, 0),
+        ..PlainTail::default()
+    });
+    bytes[kind_end + 12..kind_end + 16].copy_from_slice(&1u32.to_le_bytes());
+    let mut reference = Vec::new();
+    push_reference_u64(&mut reference, 1);
+    bytes.splice(kind_end + 16..kind_end + 16, reference);
+    assert_eq!(bytes.len() - 11 - kind_end, 88);
+    assert!(parse_plain(&bytes)
+        .expect("fixed scope")
+        .tail_flags
+        .is_none());
+}
+
+#[test]
+fn non_plain_fixed_tail_reads_state_flags_and_offsets_through_the_parser() {
+    let (mut bytes, kind_end) = plain_labeled_frame(&PlainTail {
+        label: "",
+        state: [0, 1, 0],
+        flags: (1, 1),
+        ..PlainTail::default()
+    });
+    bytes.splice(kind_end + 62..kind_end + 62, [0; 4]);
+    let flags = parse_plain(&bytes)
+        .expect("fixed scope")
+        .tail_flags
+        .expect("tail flags");
+    assert_eq!(flags.stored_state(), [0, 1, 0]);
+    assert!(flags.no_result && flags.rolled_back);
+    assert_eq!(flags.state_offset, u64_from_index(kind_end + 16));
+    assert_eq!(flags.no_result_offset, u64_from_index(kind_end + 67));
+}
+
+#[test]
+fn end_anchored_tail_rejects_invalid_prefix_flags_and_references() {
+    use super::super::parameter_scope::end_anchored_scope_tail;
+    let (bytes, kind_end) = plain_labeled_frame(&PlainTail {
+        label: "",
+        ..PlainTail::default()
+    });
+    let end = bytes.len() - 11;
+    for (at, value) in [
+        (kind_end, 0),
+        (kind_end + 4, 1),
+        (kind_end + 12, 1),
+        (end - 15, 2),
+        (end - 13, 0),
+        (end - 3, 1),
+    ] {
+        let mut bad = bytes.clone();
+        bad[at] = value;
+        assert!(
+            end_anchored_scope_tail(&bad, kind_end, end).is_none(),
+            "offset {at}"
+        );
+    }
+    let mut null = bytes.clone();
+    null[end - 12..end - 4].fill(0);
+    assert!(end_anchored_scope_tail(&null, kind_end, end).is_none());
+    let mut typed = bytes.clone();
+    let mut guid = 36u32.to_le_bytes().to_vec();
+    guid.extend_from_slice(b"6CCF41D5-40BE-48ED-A834-18F3EAED6C57");
+    typed.splice(end - 4..end - 4, guid);
+    assert!(end_anchored_scope_tail(&typed, kind_end, end + 40).is_none());
+    for length in 0..end {
+        assert!(end_anchored_scope_tail(&bytes[..length], kind_end, end).is_none());
+    }
+}
