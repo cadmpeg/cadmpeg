@@ -304,7 +304,7 @@ fn a_wide_legacy_record_keeps_the_wide_reading_and_a_compact_one_binds_its_owner
         .unwrap()
         .expect("wide placement");
     assert!(wide.owner.is_none());
-    assert!(wide.frame_bytes.is_empty());
+    assert_eq!(wide.frame_bytes, wide_bytes);
     assert_eq!(wide.transform, Some(MATRIX));
     assert_eq!(wide.link_names, [ROLE]);
     let compact_bytes = component_targets(compact_record(11, 1, Some(MATRIX)));
