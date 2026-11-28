@@ -124,6 +124,35 @@ fn clear_choice_values(value: &mut serde_json::Value, dirty: &BTreeSet<String>) 
 }
 
 impl CadIr {
+    pub(super) fn refresh_process_for_configuration(
+        &mut self,
+        scope: &crate::ids::ProductDefinitionId,
+    ) -> Result<(), EditError> {
+        let spanned = self.spanned_definitions(scope);
+        let design: BTreeSet<String> = self
+            .design
+            .parameters
+            .iter()
+            .filter(|parameter| &parameter.scope == scope)
+            .map(|parameter| parameter.id.as_str().to_owned())
+            .chain(
+                self.model
+                    .product_definitions
+                    .iter()
+                    .filter(|definition| spanned.contains(definition.id.as_str()))
+                    .flat_map(|definition| {
+                        definition
+                            .occurrences
+                            .iter()
+                            .map(|occurrence| occurrence.as_str().to_owned())
+                    }),
+            )
+            .collect();
+        let dirty = self.dirty_process_parameters(&History::new(&self.design), &design)?;
+        self.recompute_process_values(&dirty);
+        Ok(())
+    }
+
     /// Marks and refreshes what the process and PMI records hold that
     /// depends on an edit's dependents.
     pub(super) fn refresh_process(
@@ -250,13 +279,15 @@ impl CadIr {
                                     let RefTarget::Parameter(target) = &design.target else {
                                         return None;
                                     };
-                                    if design.through.is_some() {
-                                        return None;
-                                    }
                                     let held = self.design_parameter(target).ok()?;
-                                    let configuration = self.active_configuration_of(&held.scope);
-                                    let cache =
-                                        self.parameter_cache(target, configuration).ok()??;
+                                    let cache = match &design.through {
+                                        Some(path) => self.through_cache(target, path).ok()??,
+                                        None => {
+                                            let configuration =
+                                                self.active_configuration_of(&held.scope);
+                                            self.parameter_cache(target, configuration).ok()??
+                                        }
+                                    };
                                     cache_value(&held.kind, cache)
                                 }
                             });

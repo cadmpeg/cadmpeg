@@ -261,11 +261,21 @@ impl CadIr {
             let StepRef::Occurrence(occurrence) = &step.occurrence else {
                 return Ok(None);
             };
-            let scope = self
-                .design
-                .scopes
-                .iter()
-                .find(|scope| scope.occurrences.contains_key(occurrence));
+            let scope = crate::products::owner(&self.model.product_definitions, occurrence)
+                .and_then(|owner| {
+                    self.design.design_scope(&owner.id).or_else(|| {
+                        self.design.scopes.iter().find(|scope| {
+                            self.spanned_definitions(&scope.definition)
+                                .contains(owner.id.as_str())
+                        })
+                    })
+                })
+                .or_else(|| {
+                    self.design
+                        .scopes
+                        .iter()
+                        .find(|scope| scope.occurrences.contains_key(occurrence))
+                });
             let resolved = match (&step.configuration, scope) {
                 (Some(stated), _) => Some(stated.clone()),
                 (None, Some(scope)) => {

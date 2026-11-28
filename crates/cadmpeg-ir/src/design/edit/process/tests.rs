@@ -361,6 +361,141 @@ fn a_design_edit_recomputes_a_process_value_that_reads_it() {
 }
 
 #[test]
+fn switching_configuration_recomputes_process_values_without_staling_toolpaths() {
+    use crate::design::configuration::ParameterOverride;
+    use crate::report::strictness::Strictness;
+
+    let mut document = machined();
+    let configuration = |key, overrides| DesignConfiguration {
+        id: id("configuration", key),
+        scope: definition(),
+        name: format!("c{key}"),
+        position: None,
+        parent: None,
+        comment: None,
+        overrides,
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    };
+    let mut overrides = Overrides::default();
+    overrides.parameters.insert(
+        parameter_id(1),
+        ParameterOverride {
+            expression: None,
+            value: Some(ParameterValue::Number(real(20.0))),
+        },
+    );
+    document.design.configurations = vec![
+        configuration(1, Overrides::default()),
+        configuration(2, overrides),
+    ];
+    document.design.scopes[0].active_configuration = Some(id("configuration", 1));
+    document
+        .edit(&Strictness::default())
+        .unwrap()
+        .set_active_configuration(&definition(), &id("configuration", 2))
+        .unwrap();
+    assert_eq!(
+        document.process.parameters[0].value,
+        Some(ParameterValue::Number(real(60.0)))
+    );
+    assert_eq!(toolpath_status(&document, 1), EvaluationStatus::Current);
+    assert_eq!(state_status(&document, 1), EvaluationStatus::Current);
+}
+
+#[test]
+fn switching_configuration_recomputes_process_values_read_through_an_occurrence() {
+    use crate::design::configuration::{OccurrenceOverride, ParameterOverride};
+    use crate::design::refs::ConfigurationRef;
+    use crate::design::selection::{OccurrencePath, PathStep, StepRef};
+    use crate::products::{Occurrence, ProductDefinition, Storage};
+    use crate::report::strictness::Strictness;
+
+    let mut document = machined();
+    let child: ProductDefinitionId = id("product-definition", 2);
+    let occurrence: crate::ids::OccurrenceId = id("occurrence", 1);
+    let mut root = ProductDefinition::new(definition(), Storage::Embedded);
+    root.occurrences.push(occurrence.clone());
+    document.model.product_definitions = vec![
+        root,
+        ProductDefinition::new(child.clone(), Storage::Embedded),
+    ];
+    document
+        .model
+        .occurrences
+        .push(Occurrence::new(occurrence.clone(), child.clone(), None));
+    document.design.scopes.push(DesignScope {
+        definition: child.clone(),
+        roots: Vec::new(),
+        active_configuration: Some(id("configuration", 21)),
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: Vec::new(),
+        unproduced: BTreeSet::new(),
+    });
+    let mut parameter = length(3, "5[mm]", &[], 5.0);
+    parameter.scope = child.clone();
+    document.design.parameters.push(parameter);
+    let configuration = |key, scope, overrides| DesignConfiguration {
+        id: id("configuration", key),
+        scope,
+        name: format!("c{key}"),
+        position: None,
+        parent: None,
+        comment: None,
+        overrides,
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    };
+    let mut root_override = Overrides::default();
+    root_override.occurrences.insert(
+        occurrence.clone(),
+        OccurrenceOverride {
+            configuration: Some(ConfigurationRef::Local(id("configuration", 22))),
+            ..OccurrenceOverride::default()
+        },
+    );
+    let mut child_override = Overrides::default();
+    child_override.parameters.insert(
+        parameter_id(3),
+        ParameterOverride {
+            expression: None,
+            value: Some(ParameterValue::Number(real(7.0))),
+        },
+    );
+    document.design.configurations = vec![
+        configuration(1, definition(), Overrides::default()),
+        configuration(2, definition(), root_override),
+        configuration(21, child.clone(), Overrides::default()),
+        configuration(22, child, child_override),
+    ];
+    document.design.scopes[0].active_configuration = Some(id("configuration", 1));
+    let reference = ParameterRef {
+        target: RefTarget::Parameter(parameter_id(3)),
+        through: Some(OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(occurrence),
+            configuration: None,
+        }])),
+    };
+    document.process.parameters[0].definition = ProcessDefinition::Expression(Expression::Neutral(
+        Neutral(parse("$0 * 3", &[ParamRef::Design(reference)], &[]).unwrap()),
+    ));
+    document.process.parameters[0].value = Some(ParameterValue::Number(real(15.0)));
+    document
+        .edit(&Strictness::default())
+        .unwrap()
+        .set_active_configuration(&definition(), &id("configuration", 2))
+        .unwrap();
+    assert_eq!(
+        document.process.parameters[0].value,
+        Some(ParameterValue::Number(real(21.0)))
+    );
+    assert_eq!(toolpath_status(&document, 1), EvaluationStatus::Current);
+}
+
+#[test]
 fn an_unrelated_design_edit_leaves_the_process_alone() {
     let mut document = machined();
     let before = document.process.clone();

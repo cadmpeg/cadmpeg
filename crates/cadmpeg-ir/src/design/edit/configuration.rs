@@ -243,6 +243,7 @@ impl CadIr {
         }
         self.exchange_scope_constructions(scope, &outgoing, configuration)?;
         self.design.scopes[scope_at].active_configuration = Some(configuration.clone());
+        self.refresh_process_for_configuration(scope)?;
         self.geometry.finalize();
         self.design.finalize();
         Ok(switch)
