@@ -3,7 +3,7 @@
 
 use cadmpeg_asm::kernel_header::RefWidth;
 
-use crate::test_support::tokens_test::{t_end, t_ident, t_long, t_ref};
+use crate::test_support::tokens_fixture::{t_end, t_ident, t_long, t_ref};
 
 /// One `delta_state` stream whose single board carries one change from `old`
 /// to `new`.

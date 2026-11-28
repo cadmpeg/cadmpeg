@@ -11,8 +11,8 @@ use crate::decode::analytic::equations::{
 use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 use crate::feature::dimensions::RoundDimensionRadius;
 use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
+use crate::vecmath::dot;
 use crate::vecmath::normalize;
-use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
@@ -175,8 +175,14 @@ pub(in super::super) fn slot_fillet_cylinder(
                         && (dot(candidate.axis, first.axis).abs() - 1.0).abs()
                             <= EPS_NORMAL_ALIGNMENT
                         && dot(
-                            cross(origin_delta, first.axis),
-                            cross(origin_delta, first.axis),
+                            <[f64; 3]>::from(
+                                cadmpeg_ir::math::Vector3::from(origin_delta)
+                                    .cross(cadmpeg_ir::math::Vector3::from(first.axis)),
+                            ),
+                            <[f64; 3]>::from(
+                                cadmpeg_ir::math::Vector3::from(origin_delta)
+                                    .cross(cadmpeg_ir::math::Vector3::from(first.axis)),
+                            ),
                         )
                         .sqrt()
                             <= EPS_CYLINDER_FIT * scale)

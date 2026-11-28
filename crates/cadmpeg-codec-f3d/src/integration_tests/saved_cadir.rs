@@ -21,8 +21,8 @@ use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity};
 
 use crate::loss::F3dLossCode;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::{f3d_with_smbh_and_manifest_version, with_manifest_version};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_fixture::{f3d_with_smbh_and_manifest_version, with_manifest_version};
 use crate::F3dCodec;
 
 const SOURCE: &[u8] = include_bytes!("../../../../corpus/f3d/region_A.f3d");
@@ -127,8 +127,8 @@ fn a_saved_design_writes_an_edited_dimension_as_its_decode_does() {
 
 #[test]
 fn a_saved_design_patches_an_edited_point() {
-    let source = crate::test_support::zip_test::f3d_with_smbh_and_manifest_version(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let source = crate::test_support::zip_fixture::f3d_with_smbh_and_manifest_version(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         "3-3-0-0",
     );
     let decoded = decode(&source);
@@ -157,8 +157,8 @@ fn a_saved_design_patches_an_edited_point() {
 /// that admits one decode of it admits the write.
 #[test]
 fn a_saved_design_patches_from_the_archive_its_restore_read() {
-    let source = crate::test_support::zip_test::f3d_with_smbh_and_manifest_version(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let source = crate::test_support::zip_fixture::f3d_with_smbh_and_manifest_version(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         "3-3-0-0",
     );
     let decoded = decode(&source);

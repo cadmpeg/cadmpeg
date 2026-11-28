@@ -375,7 +375,7 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         const DESIGN: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let archive =
-            crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &[0x5a; 64], &[]);
+            crate::test_support::body_map_fixture::f3d_with_breps_and_design(&[], &[0x5a; 64], &[]);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();

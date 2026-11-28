@@ -25,7 +25,6 @@ use super::super::sweep::nurbs::{extruded_nurbs_surface, placed_tabulated_cylind
 use super::super::uniqueness::{exactly_one, UniqueById};
 use crate::decode::sketch_transfer::recipe::FeatureSchemaClasses;
 use crate::decode::source_carriers::SourceUnitCarriers;
-use crate::vecmath::cross;
 
 use super::prototypes::{prototype_scalar, unique_surface_prototype_associations};
 
@@ -299,7 +298,10 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         let (Some(_direction), Some(u_axis), Some(normal)) = (
             normalize(frame.direction),
             normalize(directrix),
-            normalize(cross(directrix, frame.direction)),
+            normalize(<[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(directrix)
+                    .cross(cadmpeg_ir::math::Vector3::from(frame.direction)),
+            )),
         ) else {
             continue;
         };

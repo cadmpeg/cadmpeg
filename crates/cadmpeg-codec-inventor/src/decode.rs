@@ -1019,7 +1019,7 @@ fn decode_container<'a>(
         .and_then(|layers| {
             layers
                 .iter()
-                .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+                .find(|matched| matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT)
         })
     {
         losses.extend(kernel_dialect_loss(kernel));

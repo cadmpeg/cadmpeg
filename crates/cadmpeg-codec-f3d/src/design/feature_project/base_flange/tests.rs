@@ -11,9 +11,10 @@ fn fixture() -> (
     Vec<DesignConstructionOperandGroup>,
     Vec<DesignSketchPlacement>,
 ) {
-    let bytes = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base_flange(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
-    );
+    let bytes =
+        crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_base_flange(
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
+        );
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(bytes),
         &DecodeOptions::default(),

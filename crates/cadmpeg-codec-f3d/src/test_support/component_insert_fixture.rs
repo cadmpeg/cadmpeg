@@ -11,7 +11,7 @@
 //! zero bytes and the same transform.
 #![allow(clippy::unwrap_used)]
 
-use super::streams_test::design_metastream_with_records;
+use super::streams_fixture::design_metastream_with_records;
 use crate::test_support::lp_utf16;
 
 /// One envelope of the shared scope record.

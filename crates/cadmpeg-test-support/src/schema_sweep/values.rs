@@ -12,17 +12,111 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-use super::generate::{value_at, value_at_mut, Known, Sample};
+use super::generate::{value_at, value_at_mut, Known, Sample, Search};
 use super::schema::{
-    definition, enum_names, is_definition, is_name_enum, reference, types, Schema,
+    definition, enum_names, is_definition, is_name_enum, reference, types, Edge, Schema,
 };
-use super::{Read, SchemaSweepReport};
+use super::{Read, SchemaSweepReport, SEARCH_BUDGET};
 use crate::spelling::first_difference;
-use crate::unknown_keys::Step;
+use crate::spelling::write_repeating;
+use crate::unknown_keys::{normalise, Step};
 
 /// The pairs of candidate members one array tries for a sample that holds
 /// two of them.
 const PAIR_TRIES: usize = 24;
+
+/// Probes repeated keys in typed JSON-object maps.
+pub(super) fn probe_maps(
+    schema: &Schema<'_>,
+    samples: &BTreeMap<String, Sample>,
+    known: &Known,
+    read: Read<'_>,
+    report: &mut SchemaSweepReport,
+) {
+    let locations = schema.maps();
+    let mut instances = BTreeMap::<String, Vec<(&Sample, Vec<Step>)>>::new();
+    for sample in samples.values() {
+        schema.walk_where(
+            "",
+            &sample.document,
+            &mut Vec::new(),
+            &[],
+            &|location| locations.contains(location),
+            &mut |location, path, _| {
+                instances
+                    .entry(location.to_owned())
+                    .or_default()
+                    .push((sample, path.to_vec()));
+            },
+        );
+    }
+    for location in locations {
+        let Some(found) = instances.get(&location) else {
+            report
+                .unprobed
+                .push(format!("#{location}: no document reaches the map"));
+            continue;
+        };
+        let mut paths = BTreeMap::<String, Vec<(&Sample, Vec<Step>)>>::new();
+        for (sample, path) in found {
+            paths
+                .entry(normalise(path))
+                .or_default()
+                .push((sample, path.clone()));
+        }
+        for (route, found) in &paths {
+            let nonempty = |document: &Value, path: &[Step]| {
+                value_at(document, path)
+                    .and_then(Value::as_object)
+                    .is_some_and(|object| !object.is_empty())
+            };
+            let existing = found
+                .iter()
+                .find(|(sample, path)| nonempty(&sample.document, path));
+            let (document, path) = if let Some((sample, path)) = existing {
+                (Some(sample.document.clone()), path.clone())
+            } else {
+                let (sample, path) = &found[0];
+                let base = Sample {
+                    document: sample.document.clone(),
+                    path: path.clone(),
+                };
+                let edge = schema
+                    .children(&location)
+                    .into_iter()
+                    .find_map(|(edge, _)| matches!(edge, Edge::Entry(_)).then_some(edge));
+                let mut search = Search {
+                    schema,
+                    known,
+                    read,
+                    budget: SEARCH_BUDGET / 4,
+                    reads: 0,
+                };
+                let document = edge.and_then(|edge| search.reach(&base, &location, &[edge]));
+                report.reads += search.reads;
+                (document, path.clone())
+            };
+            let Some(document) = document.filter(|document| nonempty(document, &path)) else {
+                report.unprobed.push(format!(
+                    "#{location} at {route}: no document holds a map entry"
+                ));
+                continue;
+            };
+            let mut text = String::new();
+            let key = value_at(&document, &path)
+                .and_then(Value::as_object)
+                .and_then(|object| object.keys().next())
+                .expect("nonempty map");
+            write_repeating(&document, &path, key, &mut text);
+            report.reads += 1;
+            if read(&text).is_ok() {
+                report
+                    .accepting
+                    .insert(format!("#{location}: map key stated twice"));
+            }
+        }
+    }
+}
 
 /// Reads the sample of every data-free enum definition with its name stated
 /// as `{"<name>": null}`.
@@ -90,30 +184,70 @@ pub(super) fn probe_orders(
                 .push(format!("#{location}: no document reaches it"));
             continue;
         };
-        let Some((document, path)) = two_members(schema, location, found, known, read, report)
-        else {
-            report
-                .unprobed
-                .push(format!("#{location}: no document holds two of its members"));
-            continue;
-        };
-        let mut swapped = document;
-        if let Some(Value::Array(items)) = value_at_mut(&mut swapped, &path) {
-            items.swap(0, 1);
+        let mut paths = BTreeMap::<String, Vec<(&Sample, Vec<Step>)>>::new();
+        for (sample, path) in found {
+            paths
+                .entry(normalise(path))
+                .or_default()
+                .push((sample, path.clone()));
         }
-        report.reads += 1;
-        match read(&swapped.to_string()) {
-            Err(_) => report.sets += 1,
-            Ok(written) => match (value_at(&swapped, &path), value_at(&written, &path)) {
-                (Some(stated), Some(written)) if first_difference(stated, written).is_none() => {
-                    report.ordered += 1;
+        for (route, found) in &paths {
+            let Some((document, path)) = two_members(schema, location, found, known, read, report)
+            else {
+                report.unprobed.push(format!(
+                    "#{location} at {route}: no document holds two of its members"
+                ));
+                continue;
+            };
+            let mut swapped = document.clone();
+            if let Some(Value::Array(items)) = value_at_mut(&mut swapped, &path) {
+                items.swap(0, 1);
+            }
+            report.reads += 1;
+            let distinct = match read(&swapped.to_string()) {
+                Err(_) => {
+                    report.sets += 1;
+                    true
                 }
-                _ => {
-                    report.accepting.insert(format!(
+                Ok(written) => match (value_at(&swapped, &path), value_at(&written, &path)) {
+                    (Some(stated), Some(written))
+                        if first_difference(stated, written).is_none() =>
+                    {
+                        report.ordered += 1;
+                        false
+                    }
+                    _ => {
+                        report.accepting.insert(format!(
                         "#{location}: two members out of order are read and written back sorted"
                     ));
+                        true
+                    }
+                },
+            };
+            if distinct {
+                let mut duplicate = document;
+                if let Some(Value::Array(items)) = value_at_mut(&mut duplicate, &path) {
+                    let mut first = items[0].clone();
+                    if schema.has_node(&format!("{location}/items/prefixItems/0")) {
+                        let value = items[1].as_array().and_then(|pair| pair.get(1)).cloned();
+                        let target = first.as_array_mut().and_then(|pair| pair.get_mut(1));
+                        let (Some(value), Some(target)) = (value, target) else {
+                            report
+                                .unprobed
+                                .push(format!("#{location}: pair has no key"));
+                            continue;
+                        };
+                        *target = value;
+                    }
+                    items.insert(1, first);
                 }
-            },
+                report.reads += 1;
+                if read(&duplicate.to_string()).is_ok() {
+                    report
+                        .accepting
+                        .insert(format!("#{location}: duplicate member is accepted"));
+                }
+            }
         }
     }
 }

@@ -607,7 +607,7 @@ fn assembly_operand_path_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:assembly-operand-path#0",
         path: &path,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::ASSEMBLY_OPERAND_PATH_CLONE_COUNT.with(|count| count.set(0)),
@@ -1002,7 +1002,7 @@ fn assembly_axial_selector_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:assembly-axial-selector#0",
         value: &selector,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(|count| count.set(0)),

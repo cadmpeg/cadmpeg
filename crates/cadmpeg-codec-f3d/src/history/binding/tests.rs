@@ -851,7 +851,7 @@ fn binding_work_cap_counts_decoded_records() {
 #[test]
 fn historical_curve_cache_uses_source_definition_indices() {
     let bytes =
-        crate::test_support::smbh_curves_test::synthetic_geometry_with_consistent_exact_curve_smbh(
+        crate::test_support::smbh_curves_fixture::synthetic_geometry_with_consistent_exact_curve_smbh(
         );
     let arena = DecodeArena::new();
     let (ctx, _) =

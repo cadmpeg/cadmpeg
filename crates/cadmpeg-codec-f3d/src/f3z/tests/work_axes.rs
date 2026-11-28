@@ -1,6 +1,6 @@
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_work_axis;
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_work_axis;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::design::construction::InputReference;
 use cadmpeg_ir::design::names::{Base64Bytes, NativeNameValue};
