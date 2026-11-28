@@ -247,6 +247,7 @@ impl EncoderBackend for F3dCodec {
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
+    const REPORT_STALE_CURRENT: bool = false;
     type Target = Catalog;
     const TARGET: Catalog =
         Catalog::new(dialect::TARGETS, Some(0)).with_replay_rows(dialect::REPLAY_ROWS);

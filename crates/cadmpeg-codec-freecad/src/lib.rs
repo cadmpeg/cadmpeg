@@ -1408,6 +1408,7 @@ impl EncoderBackend for FcstdCodec {
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
+    const REPORT_STALE_CURRENT: bool = false;
     type Target = Catalog;
     const TARGET: Catalog =
         Catalog::new(dialect::TARGETS, None).with_replay_rows(dialect::REPLAY_ROWS);

@@ -734,6 +734,7 @@ impl EncoderBackend for SldprtCodec {
     /// rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
+    const REPORT_STALE_CURRENT: bool = false;
     const DEFINITION_PER_FILE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));

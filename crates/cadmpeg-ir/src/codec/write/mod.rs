@@ -91,6 +91,9 @@ pub trait EncoderBackend {
     /// same-format source was synthesized.
     const REUSES_SOURCE: bool;
 
+    /// Whether the wrapper reports stale current states for this target.
+    const REPORT_STALE_CURRENT: bool = true;
+
     /// Whether the format stores one definition per file (§3.4, Encode
     /// sets). For such a backend [`Encoder::plan`] produces one output per
     /// `File` definition of the document, the root definition included, and
@@ -215,6 +218,8 @@ impl<E: EncoderBackend> Encoder for E {
     }
 
     fn plan(&self, input: EncodeInput<'_>) -> Result<ExportPlan, EncodeError> {
+        crate::document::check_state_chain_limit(input.ir, &input.limits)
+            .map_err(EncodeError::from_backend)?;
         let outputs = planned_outputs(input.ir, input.outputs, E::DEFINITION_PER_FILE)?;
         let unchecked = EncodeInput {
             validation: None,
@@ -312,6 +317,29 @@ fn plan_output<E: EncoderBackend>(
         .iter()
         .any(|loss| loss.code.local_code() == target::SOURCE_DIALECT_DISPLACED);
     losses.extend(body_losses);
+    if E::REPORT_STALE_CURRENT {
+        use crate::design::evaluation::EvaluationStatus;
+        use crate::design::refs::{Member, Position};
+        let states = input.ir.design.scopes.iter().flat_map(|scope| {
+            scope.current.iter().filter_map(|state| {
+                if state.status == EvaluationStatus::Current
+                    || (state.bodies.is_empty() && state.poses.is_empty())
+                {
+                    return None;
+                }
+                let id = match &state.at {
+                    Position::Start(id) | Position::After(Member::Container(id)) => id.as_str(),
+                    Position::After(Member::Feature(id)) => id.as_str(),
+                };
+                Some(id.to_owned())
+            })
+        });
+        losses.extend(evaluation_stale(
+            E::NAME,
+            "writes the current geometry of these stale or failed states without a stale mark",
+            states,
+        ));
+    }
     losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
     losses.extend(native.omission_losses(input.ir, E::NAME));
     losses.extend(placed_definition_loss(
@@ -1300,6 +1328,7 @@ impl EncoderBackend for CadirEncoder {
     /// faithful CADIR document.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = false;
+    const REPORT_STALE_CURRENT: bool = false;
 
     /// CADIR writes the neutral document. Its version identifies the CADIR
     /// schema. The serialized export report uses the `cadir` identity variant,

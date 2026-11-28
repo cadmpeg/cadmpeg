@@ -232,3 +232,40 @@ fn from_json_walks_the_chains() {
     let error = CadIr::from_json(&document(evaluation, Vec::new())).unwrap_err();
     assert!(error.to_string().contains("its own ancestor"), "{error}");
 }
+
+#[test]
+fn codec_boundaries_refuse_state_chains_past_caller_limit() {
+    use crate::codec::write::{CadirEncoder, EncodeError, EncodeInput, Encoder};
+    use crate::codec::{DecodeBody, DecodeFailure, DecodeResult, Decoded, FormatId};
+    use crate::report::decode::DecodeTransfer;
+    use crate::report::strictness::Strictness;
+    use crate::source_fidelity::SourceFidelity;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, LimitScope};
+
+    let mut ir = CadIr::empty();
+    ir.design.evaluations = evaluations(2);
+    ir.process.states = chain_from(1, 1, on_evaluation(2));
+    let limits = ResourceLimits {
+        max_state_chain_depth: 2,
+        ..ResourceLimits::default()
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy { limits };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let decoded = Decoded {
+        ir: ir.clone(),
+        body: DecodeBody::new(DecodeTransfer::full(true)),
+        source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test")),
+    };
+    let result =
+        DecodeResult::from_decoded(&ctx, decoded, FormatId::new("test"), &Strictness::default());
+    let decode_refused = matches!(&result, Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) if limit.scope == LimitScope::Session);
+    let decode_result = format!("{result:?}");
+    let result = CadirEncoder.plan(EncodeInput::new(&ir, None).with_limits(limits));
+    let encode_refused = matches!(result, Err(EncodeError::ResourceLimit(limit)) if limit.scope == LimitScope::Session);
+    assert_eq!(
+        (decode_refused, encode_refused),
+        (true, true),
+        "{decode_result}"
+    );
+}
