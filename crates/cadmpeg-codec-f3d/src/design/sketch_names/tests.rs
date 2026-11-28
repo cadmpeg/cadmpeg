@@ -76,18 +76,18 @@ fn names(
 
 #[test]
 fn exact_scope_copies_composed_feature_name_and_charges_one_loss() {
-    let (result, losses) = names(&[scope(10)], &[placement(20, Some(10))], Some("Sketch 1"));
+    let (result, losses) = names(&[scope(10)], &[placement(20, Some(10))], Some("Sketch1"));
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
         F3dLossCode::SketchNameComposedFromFeatureOrdinal.kind()
     );
-    assert_eq!(result, (Some("Sketch 1".into()), Some("Sketch 1".into())));
+    assert_eq!(result, (Some("Sketch1".into()), Some("Sketch1".into())));
 }
 
 #[test]
 fn absent_scope_keeps_entity_names() {
-    let (result, losses) = names(&[], &[placement(20, None)], Some("Sketch 1"));
+    let (result, losses) = names(&[], &[placement(20, None)], Some("Sketch1"));
     assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
 }
@@ -97,7 +97,7 @@ fn two_scopes_selecting_one_sketch_keep_entity_names() {
     let (result, losses) = names(
         &[scope(10), scope(11)],
         &[placement(20, Some(10)), placement(21, Some(11))],
-        Some("Sketch 1"),
+        Some("Sketch1"),
     );
     assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
@@ -108,7 +108,7 @@ fn two_placements_carrying_one_scope_keep_entity_names() {
     let (result, losses) = names(
         &[scope(10)],
         &[placement(20, Some(10)), placement(21, Some(10))],
-        Some("Sketch 1"),
+        Some("Sketch1"),
     );
     assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
@@ -127,7 +127,7 @@ fn absent_or_empty_display_name_keeps_entity_names() {
 fn scope_stream_is_part_of_the_placement_join() {
     let mut other = scope(10);
     other.id = "f3d:Other/BulkStream.dat:parameter-scope#10".into();
-    let (result, losses) = names(&[other], &[placement(20, Some(10))], Some("Sketch 1"));
+    let (result, losses) = names(&[other], &[placement(20, Some(10))], Some("Sketch1"));
     assert!(losses.is_empty());
     assert_eq!(result, (Some("Sketch_42".into()), Some("Sketch_42".into())));
 }

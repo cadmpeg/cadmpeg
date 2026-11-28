@@ -3428,7 +3428,7 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
 
-**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name joins the stored scope kind spelling, a space, and the feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
+**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name is the stored scope kind spelling directly followed by the stored feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
 
 **Need.** A design with a Sketch renamed in the timeline.
 

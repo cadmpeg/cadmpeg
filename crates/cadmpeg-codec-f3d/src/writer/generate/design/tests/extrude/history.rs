@@ -371,7 +371,7 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
         .iter()
         .filter_map(|feature| feature.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["Sketch 1", "Extrude 1", "Extrude 2"]);
+    assert_eq!(names, ["Sketch1", "Extrude1", "Extrude2"]);
     let missing = loss(&report, EVALUATION_MISSING);
     let rolled = missing
         .iter()
