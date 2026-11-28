@@ -8,9 +8,30 @@ use super::{reconstruct_logical_stream, ContainerScan, Descriptor};
 use crate::layout::{visible_body_roster_prefix as prefix, visible_body_roster_suffix as suffix};
 use crate::wire::records::SourceExtent;
 
+/// Maximum number of visible-body roster slots decoded from an untrusted
+/// `CATSeeBodyCont` stream without a [`DecodeContext`].
+const MAX_VISIBLE_BODY_SLOTS: usize = 65_536;
+
 pub(crate) struct BodySelection {
     pub(crate) source: usize,
     pub(crate) allocation_ends: Vec<usize>,
+}
+
+/// Decode the positive allocation-end roster from a `CATSeeBodyCont` logical stream.
+pub(crate) fn slots_from_bytes(bytes: &[u8]) -> Option<Vec<usize>> {
+    let count = View::u32_le_at(bytes, prefix::COUNT)?;
+    let mut view = View::over_retained(bytes.get(prefix::LEN..).unwrap_or_default());
+    view.counted(u64::from(count), 4)?;
+    let count = usize::try_from(count).ok()?;
+    if count > MAX_VISIBLE_BODY_SLOTS {
+        return None;
+    }
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let slot = view.u32_le().filter(|&slot| slot != 0)?;
+        values.push(usize::try_from(slot).ok()?);
+    }
+    (view.take(suffix::LEN) == Some(&[0; suffix::LEN]) && view.remaining() == 0).then_some(values)
 }
 
 fn slots(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<Vec<usize>>, CodecError> {

@@ -9,7 +9,14 @@
 
 [[crate]]
 id = "catia"
-names = ["CatiaCodec"]
+names = [
+    "CatiaBodyContainerKind",
+    "CatiaBodyMetadata",
+    "CatiaCodec",
+    "CatiaPrtContBody",
+    "decode_v5_body_metadata",
+    "decode_v5_prtcont_bodies",
+]
 fuzz = "required"
 
 [[crate]]
