@@ -366,7 +366,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
     )
     .unwrap();
     let mut decoded = ir.clone();
-    let unprojected = project_configuration_design_states(
+    let projection = project_configuration_design_states(
         &ctx,
         &mut decoded,
         &native.feature_histories,
@@ -376,7 +376,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
         None,
     )
     .unwrap();
-    assert_eq!(unprojected, 0);
+    assert_eq!(projection.unprojected, 0);
     settle_projected_configurations(&mut decoded);
     align_configuration_parameter_kinds(&mut decoded);
     let (_, decode_points) = project_configuration_sketch_states(

@@ -3,12 +3,10 @@
 //!
 //! `SolidWorks` configurations are peers, so the base is the configuration
 //! active at decode, which states no overrides. Another configuration states
-//! the material it assigns where that differs from the active one's, the
-//! value of each parameter where its stored state differs from the active
-//! one's (see [`super::parameters::configuration_override`]): a literal
-//! where the parameter's expression is one literal or reads no value the
-//! configuration changes, else a cache. It restates its model record without
-//! each field that differs from the active one's and that it does not state.
+//! the material it assigns where that differs from the active one's. Its
+//! parameter values are compared with the inherited expressions evaluated
+//! in that configuration. A different value replaces the expression with a
+//! literal, or is held as a cache with a loss if the expression is unread.
 //!
 //! Interim: the decoder reads a feature's suppression from the history,
 //! which every configuration shares, so no configuration states a
@@ -29,9 +27,7 @@ use cadmpeg_ir::design::configuration::{
 use cadmpeg_ir::design::evaluation::Evaluation;
 use cadmpeg_ir::design::expr::{Expression, ExpressionToken};
 use cadmpeg_ir::design::feature::Feature;
-use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::projection::restated::Restater;
-use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignConfiguration as ModelConfiguration,
@@ -44,6 +40,8 @@ use cadmpeg_ir::topology::Body;
 use crate::history::project::neutral_configuration_id;
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::FeatureHistory;
+
+pub(super) mod values;
 
 /// The configurations of a scope and the active one.
 #[derive(Default)]
@@ -207,72 +205,6 @@ pub(super) fn unread_states(
     notes
 }
 
-/// States in each configuration that is not active the parameter values in
-/// which its decoded state, the model configuration of the same id in
-/// `decoded`, differs from the active configuration's. A first pass finds
-/// the parameters whose value the configuration does not change, so that a
-/// parameter whose expression reads only those states its value as a
-/// literal (see [`super::parameters::configuration_override`]).
-pub(super) fn parameter_overrides(
-    configurations: &mut Configurations,
-    decoded: &[cadmpeg_ir::features::parameters::DesignConfiguration],
-    parameters: &[DesignParameter],
-    length_unit: Option<UnitSymbol>,
-) {
-    let Configurations { records, active } = configurations;
-    let base = decoded
-        .iter()
-        .find(|configuration| active.as_ref().is_some_and(|id| configuration.id == *id));
-    let active_value = |parameter: &DesignParameter| {
-        base.and_then(|base| base.parameter_values.get(&parameter.id))
-            .cloned()
-    };
-    for record in records.iter_mut() {
-        if active.as_ref() == Some(&record.id) {
-            continue;
-        }
-        let Some(state) = decoded
-            .iter()
-            .find(|configuration| configuration.id == record.id)
-        else {
-            continue;
-        };
-        let unchanged = parameters
-            .iter()
-            .filter(|parameter| {
-                state
-                    .parameter_values
-                    .get(&parameter.id)
-                    .is_none_or(|stored| {
-                        super::parameters::stores_same(
-                            parameter,
-                            stored.clone(),
-                            active_value(parameter),
-                        )
-                    })
-            })
-            .map(|parameter| &parameter.id)
-            .collect::<HashSet<_>>();
-        for parameter in parameters {
-            let Some(stored) = state.parameter_values.get(&parameter.id) else {
-                continue;
-            };
-            if let Some(entry) = super::parameters::configuration_override(
-                parameter,
-                stored.clone(),
-                active_value(parameter),
-                length_unit,
-                &|id| unchanged.contains(id),
-            ) {
-                record
-                    .overrides
-                    .parameters
-                    .insert(parameter.id.clone(), entry);
-            }
-        }
-    }
-}
-
 /// States the model configuration fields each configuration leaves out, by
 /// comparing the two records (§5.11). A configuration has no field for its
 /// custom properties. Another configuration than the active one states what
@@ -292,6 +224,7 @@ pub(super) fn restate(
     configurations: &Configurations,
     evaluations: &[Evaluation],
     current: &[BodyId],
+    parameter_cuts: &HashSet<ConfigurationId>,
 ) {
     let model = ir
         .model
@@ -354,6 +287,9 @@ pub(super) fn restate(
         }
         if let Some(base) = base.filter(|base| base.id != own.id) {
             cut.extend(override_cut(design, own, base));
+            if parameter_cuts.contains(&design.id) {
+                cut.push("parameter_values");
+            }
         }
         restated.push((design.id.as_str().to_owned(), cut));
     }
@@ -399,12 +335,6 @@ fn override_cut(
     }
     let parameters = &design.overrides.parameters;
     let parameter = |id: &cadmpeg_ir::ParameterId| parameters.get(id);
-    if own.parameter_values.iter().any(|(id, value)| {
-        base.parameter_values.get(id) != Some(value)
-            && parameter(id).is_none_or(|stated| stated.value.is_none())
-    }) {
-        cut.insert("parameter_values");
-    }
     if own.parameter_overrides.iter().any(|(id, text)| {
         base.parameter_overrides.get(id) != Some(text)
             && !spells(

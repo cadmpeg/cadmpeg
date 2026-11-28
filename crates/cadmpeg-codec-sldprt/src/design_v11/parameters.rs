@@ -56,7 +56,6 @@ use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::configuration::ParameterOverride;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
@@ -77,7 +76,6 @@ use crate::history::literals::dimension_display;
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
     expression_identifier_tokens, native_parameter_is_length, parse_native_parameter_literal,
-    ExpressionIdentifier,
 };
 use crate::history::project::{
     neutral_feature_id, neutral_parameter_id, projected_parameter_names,
@@ -595,7 +593,7 @@ fn reads_display(value: &cadmpeg_ir::features::parameters::ParameterValue, displ
 
 /// The cache of the decoder's `value` for a parameter of `kind`, or `None`
 /// where the value is not of that kind.
-fn typed_cache(
+pub(super) fn typed_cache(
     kind: &ValueKind,
     value: cadmpeg_ir::features::parameters::ParameterValue,
 ) -> Option<ParameterValue> {
@@ -609,6 +607,9 @@ fn typed_cache(
             number(exact_integer_f64(integer)?)
         }
         (ValueKind::Integer, V10::Integer(integer)) => Some(ParameterValue::Integer(integer)),
+        (ValueKind::Boolean, V10::Boolean(flag)) => Some(ParameterValue::Boolean(flag)),
+        (ValueKind::Text, V10::String(text)) => Some(ParameterValue::Text(text)),
+        (ValueKind::Native(_), V10::Real(real)) => number(real.get()),
         _ => None,
     }
 }
@@ -1408,113 +1409,9 @@ pub(super) fn references_unbound(
     })
 }
 
-/// The override of `parameter` in a configuration that stores `stored` for
-/// it, where that value differs at [`LITERAL_DIGITS`] significant digits
-/// from `active`, the value the active configuration stores, else from the
-/// parameter's (§5.11). A parameter whose expression is one literal has the
-/// stored value as a literal in the same unit. One whose expression reads
-/// only parameters for which `unchanged` holds, those whose value the
-/// configuration does not change, does not evaluate that expression in the
-/// configuration: the stored value replaces it, as the literal a record
-/// stores with no text, in the length unit `length_unit`. Any other
-/// expression keeps its text, and the override states the value alone, a
-/// cache.
-pub(super) fn configuration_override(
-    parameter: &DesignParameter,
-    stored: cadmpeg_ir::features::parameters::ParameterValue,
-    active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
-    length_unit: Option<UnitSymbol>,
-    unchanged: &dyn Fn(&ParameterId) -> bool,
-) -> Option<ParameterOverride> {
-    let ParameterDefinition::Expression(expression) = &parameter.definition else {
-        return None;
-    };
-    let value = typed_cache(&parameter.kind, stored)?;
-    if compared(parameter, active).is_some_and(|base| same_value(&base, &value)) {
-        return None;
-    }
-    let expression = literal_like(expression, &value)
-        .or_else(|| {
-            reads_unchanged(expression, unchanged)
-                .then(|| stored_literal(&parameter.kind, &value, length_unit))
-                .flatten()
-        })
-        .map(|node| Expression::Neutral(Neutral(node)));
-    Some(ParameterOverride {
-        expression,
-        value: Some(value),
-    })
-}
-
-/// Whether a configuration that stores `stored` for `parameter` stores, at
-/// [`LITERAL_DIGITS`] significant digits, the value it is compared with (see
-/// [`configuration_override`]). A stored value that is not of the
-/// parameter's kind is not known to be the same.
-pub(super) fn stores_same(
-    parameter: &DesignParameter,
-    stored: cadmpeg_ir::features::parameters::ParameterValue,
-    active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
-) -> bool {
-    typed_cache(&parameter.kind, stored)
-        .zip(compared(parameter, active))
-        .is_some_and(|(value, base)| same_value(&base, &value))
-}
-
-/// The value a configuration's stored value for `parameter` is compared
-/// with: `active`, the active configuration's, typed as the parameter's
-/// kind, else the parameter's own.
-fn compared(
-    parameter: &DesignParameter,
-    active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
-) -> Option<ParameterValue> {
-    active
-        .and_then(|active| typed_cache(&parameter.kind, active))
-        .or_else(|| parameter.value.clone())
-}
-
-/// Whether every value `expression` reads other than its own literals is a
-/// parameter of this document, named through no occurrence, for which
-/// `unchanged` holds. A neutral expression reads no measure, law parameter
-/// or bend variable; a source expression has tokens, and its text reads no
-/// name the decoder did not resolve.
-fn reads_unchanged(expression: &Expression, unchanged: &dyn Fn(&ParameterId) -> bool) -> bool {
-    let reads = |reference: &ParameterRef| match reference {
-        ParameterRef {
-            target: RefTarget::Parameter(id),
-            through: None,
-        } => unchanged(id),
-        _ => false,
-    };
-    let node = match expression {
-        Expression::Neutral(Neutral(node)) => node,
-        Expression::Source { tokens, .. } => {
-            return !tokens.is_empty()
-                && tokens.iter().all(|token| match token {
-                    ExpressionToken::Reference(reference) => reads(reference),
-                    ExpressionToken::Text(text) => expression_identifier_tokens(text)
-                        .is_some_and(|names| names.iter().all(ExpressionIdentifier::is_syntax)),
-                });
-        }
-    };
-    let mut stack = vec![node];
-    while let Some(node) = stack.pop() {
-        match node {
-            Node::Reference(reference) => {
-                if !reads(reference) {
-                    return false;
-                }
-            }
-            Node::Measure(_) | Node::LawParameter | Node::Bend(_) => return false,
-            _ => {}
-        }
-        stack.extend(node.operands());
-    }
-    true
-}
-
 /// Whether two caches are one value at [`LITERAL_DIGITS`] significant
 /// digits.
-fn same_value(left: &ParameterValue, right: &ParameterValue) -> bool {
+pub(super) fn same_value(left: &ParameterValue, right: &ParameterValue) -> bool {
     match (left, right) {
         (ParameterValue::Number(left), ParameterValue::Number(right)) => {
             significant(left.get()) == significant(right.get())
@@ -1525,7 +1422,10 @@ fn same_value(left: &ParameterValue, right: &ParameterValue) -> bool {
 
 /// The literal of the canonical `value` in the unit of `expression`, where
 /// that expression is one signed number literal.
-fn literal_like(expression: &Expression, value: &ParameterValue) -> Option<Node<ParameterRef>> {
+pub(super) fn literal_like(
+    expression: &Expression,
+    value: &ParameterValue,
+) -> Option<Node<ParameterRef>> {
     let Expression::Neutral(Neutral(node)) = expression else {
         return None;
     };
@@ -1558,7 +1458,7 @@ fn literal_like(expression: &Expression, value: &ParameterValue) -> Option<Node<
 /// `length_unit`, else in metres, the unit the records store it in; an angle
 /// in degrees; a real or a count with no unit; a flag or a text as itself.
 /// Its number is the value in that unit to 15 significant digits (§5.12).
-fn stored_literal(
+pub(super) fn stored_literal(
     kind: &ValueKind,
     value: &ParameterValue,
     length_unit: Option<UnitSymbol>,

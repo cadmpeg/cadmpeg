@@ -210,7 +210,7 @@ fn sync_configuration_design_state(
         .collect::<Vec<_>>();
     let design_arena = DecodeArena::new();
     let (design_ctx, _) = DecodeContext::from_root_bytes(&design_bytes, &design_arena, &policy)?;
-    let unprojected = project_configuration_design_states(
+    let projection = project_configuration_design_states(
         &design_ctx,
         &mut current_projection,
         &native.feature_histories,
@@ -219,7 +219,7 @@ fn sync_configuration_design_state(
         form_padding,
         None,
     )?;
-    if unprojected > 0 {
+    if projection.unprojected > 0 {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration design states exceed the local projection work cap".into(),
         ));
@@ -328,7 +328,7 @@ fn sync_configuration_design_state(
         .collect::<Vec<_>>();
     let design_arena = DecodeArena::new();
     let (design_ctx, _) = DecodeContext::from_root_bytes(&design_bytes, &design_arena, &policy)?;
-    let unprojected = project_configuration_design_states(
+    let projection = project_configuration_design_states(
         &design_ctx,
         &mut projected,
         &native.feature_histories,
@@ -337,7 +337,7 @@ fn sync_configuration_design_state(
         form_padding,
         None,
     )?;
-    if unprojected > 0 {
+    if projection.unprojected > 0 {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration design states exceed the local projection work cap".into(),
         ));

@@ -5,7 +5,7 @@
 
 use super::*;
 
-use cadmpeg_ir::design::configuration::DesignConfiguration;
+use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
 use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::parameter::ParameterValue;
@@ -157,7 +157,7 @@ fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
     let (radius, doubled) = (parameter("D1"), parameter("D2"));
     assert!(named(&ir, "Default").overrides.parameters.is_empty());
     let overrides = &named(&ir, "Large").overrides.parameters;
-    assert_eq!(overrides.len(), 2, "{overrides:#?}");
+    assert_eq!(overrides.len(), 1, "{overrides:#?}");
 
     let literal = &overrides[&radius.id];
     let Some(Expression::Neutral(Neutral(Node::Number { value, unit }))) = &literal.expression
@@ -177,12 +177,13 @@ fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
     };
     assert!((cached.get() - 50.0).abs() < 1e-9);
 
-    let cache = &overrides[&doubled.id];
-    assert_eq!(cache.expression, None);
-    let Some(ParameterValue::Number(cached)) = &cache.value else {
-        panic!("a number: {cache:#?}");
-    };
-    assert!((cached.get() - 100.0).abs() < 1e-9);
+    assert!(!overrides.contains_key(&doubled.id));
+    assert_eq!(
+        radius.value,
+        Some(ParameterValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(25.0).unwrap()
+        ))
+    );
     assert_no_design_findings(&ir);
 
     let read = round_trip(&ir);
@@ -231,95 +232,43 @@ fn a_configuration_storing_the_active_configurations_values_states_no_override()
     assert!(overrides.is_empty(), "{overrides:#?}");
 }
 
-/// A neutral expression that references nothing takes another
-/// configuration's stored value as a literal in the part's length unit; an
-/// expression whose reference the configuration changes, or whose text names
-/// a parameter the decoder did not resolve, keeps its text.
-#[test]
-fn an_expression_that_references_nothing_takes_the_stored_value_as_its_literal() {
-    use cadmpeg_ir::design::expr::AddOp;
-    use cadmpeg_ir::design::parameter::ParameterDefinition;
-
-    let ir = with_configured_radius("30mm", &[0.025, 0.050]);
-    let mut radius = parameter_named(&ir, "D1").clone();
-    let millimetres =
-        |value| crate::design_v11::parameters::number_node(value, Some(UnitSymbol::Mm)).unwrap();
-    radius.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::add(
-        millimetres(20.0),
-        AddOp::Add,
-        millimetres(5.0),
-    ))));
-    let value = |name: &str| stored(&ir, name).parameter_values[&radius.id].clone();
-    let entry = crate::design_v11::parameters::configuration_override(
-        &radius,
-        value("Large"),
-        Some(value("Default")),
-        Some(UnitSymbol::Mm),
-        &|_| false,
+fn length(value: f64) -> cadmpeg_ir::features::parameters::ParameterValue {
+    cadmpeg_ir::features::parameters::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(value).unwrap(),
     )
-    .unwrap();
-    assert_eq!(
-        entry.expression,
-        Some(Expression::Neutral(Neutral(millimetres(50.0))))
-    );
-
-    let doubled = parameter_named(&ir, "D2");
-    let entry = crate::design_v11::parameters::configuration_override(
-        doubled,
-        stored(&ir, "Large").parameter_values[&doubled.id].clone(),
-        Some(stored(&ir, "Default").parameter_values[&doubled.id].clone()),
-        Some(UnitSymbol::Mm),
-        &|_| false,
-    )
-    .unwrap();
-    assert_eq!(entry.expression, None);
-
-    let mut unresolved = doubled.clone();
-    unresolved.definition = ParameterDefinition::Expression(Expression::Source {
-        dialect: cadmpeg_ir::design::expr::ExpressionDialect::SolidWorks,
-        tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
-            "\"Width\" * 2".to_owned(),
-        )],
-    });
-    let entry = crate::design_v11::parameters::configuration_override(
-        &unresolved,
-        stored(&ir, "Large").parameter_values[&doubled.id].clone(),
-        Some(stored(&ir, "Default").parameter_values[&doubled.id].clone()),
-        Some(UnitSymbol::Mm),
-        &|_| true,
-    )
-    .unwrap();
-    assert_eq!(entry.expression, None);
 }
 
-/// `Large` stores the active configuration's `D1` and another `D2`, whose
-/// expression `D1 * 2` reads only `D1`: the configuration does not evaluate
-/// that expression, and its override states the stored `D2` as a literal in
-/// the part's length unit.
-#[test]
-fn a_value_its_expressions_references_do_not_explain_is_a_literal_override() {
-    use super::super::configurations::{parameter_overrides, Configurations};
-    use cadmpeg_ir::features::parameters::ParameterValue as Stored;
+fn number(value: f64) -> ParameterValue {
+    ParameterValue::Number(cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
+}
 
-    let mut ir = with_configured_radius("30mm", &[0.025, 0.025]);
-    let (radius, doubled) = (
-        parameter_named(&ir, "D1").id.clone(),
-        parameter_named(&ir, "D2").id.clone(),
-    );
-    let large = ir
-        .model
-        .configurations
-        .iter_mut()
-        .find(|configuration| configuration.name.as_deref() == Some("Large"))
-        .unwrap();
-    let Some(Stored::Length(stored_radius)) = large.parameter_values.get(&radius) else {
-        panic!("a length: {large:#?}");
-    };
-    assert!((stored_radius.get() - 25.0).abs() < 1e-9);
-    large.parameter_values.insert(
-        doubled.clone(),
-        Stored::Length(cadmpeg_ir::scalar::Length::new(70.0).unwrap()),
-    );
+fn millimetres(value: f64) -> Expression {
+    Expression::Neutral(Neutral(
+        crate::design_v11::parameters::number_node(value, Some(UnitSymbol::Mm)).unwrap(),
+    ))
+}
+
+fn project_samples(
+    ir: &mut CadIr,
+    values: &[(&str, &[(&str, f64)])],
+) -> (DesignConfiguration, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    use super::super::configurations::{values::project, Configurations};
+
+    let mut samples = crate::history::configuration::ConfigurationSamples::new();
+    for &(configuration, values) in values {
+        let parameters = values
+            .iter()
+            .map(|&(name, value)| (parameter_named(ir, name).id.clone(), length(value)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let lane = ir
+            .model
+            .configurations
+            .iter_mut()
+            .find(|lane| lane.name.as_deref() == Some(configuration))
+            .unwrap();
+        samples.insert(lane.id.clone(), parameters.keys().cloned().collect());
+        lane.parameter_values = parameters;
+    }
     let mut configurations = Configurations {
         records: ir
             .design
@@ -327,35 +276,161 @@ fn a_value_its_expressions_references_do_not_explain_is_a_literal_override() {
             .iter()
             .cloned()
             .map(|mut record| {
-                record.overrides = cadmpeg_ir::design::configuration::Overrides::default();
+                record.overrides = Overrides::default();
                 record
             })
             .collect(),
         active: ir.design.scopes[0].active_configuration.clone(),
     };
-    parameter_overrides(
+    let (_, losses) = project(
         &mut configurations,
         &ir.model.configurations,
-        &ir.design.parameters,
+        &samples,
+        &mut ir.design.parameters,
         Some(UnitSymbol::Mm),
     );
+    (
+        configurations
+            .records
+            .into_iter()
+            .find(|record| record.name == "Large")
+            .unwrap(),
+        losses,
+    )
+}
 
-    let large = configurations
-        .records
-        .iter()
-        .find(|record| record.name == "Large")
-        .unwrap();
-    assert!(!large.overrides.parameters.contains_key(&radius));
-    let entry = &large.overrides.parameters[&doubled];
-    let millimetres = crate::design_v11::parameters::number_node(70.0, Some(UnitSymbol::Mm));
-    assert_eq!(
-        entry.expression,
-        Some(Expression::Neutral(Neutral(millimetres.unwrap())))
+#[test]
+fn a_stored_result_overrides_the_expression_evaluated_with_the_alternate_inputs() {
+    for (driving, result) in [(25.0, 70.0), (50.0, 50.0), (50.0, 70.0)] {
+        let mut ir = with_configured_radius("30mm", &[0.025, 0.025]);
+        let (large, losses) = project_samples(
+            &mut ir,
+            &[
+                ("Default", &[("D1", 25.0), ("D2", 50.0)]),
+                ("Large", &[("D1", driving), ("D2", result)]),
+            ],
+        );
+        let radius = parameter_named(&ir, "D1");
+        assert_eq!(radius.value, Some(number(25.0)));
+        assert_eq!(
+            large.overrides.parameters.contains_key(&radius.id),
+            driving != 25.0
+        );
+        let entry = &large.overrides.parameters[&parameter_named(&ir, "D2").id];
+        assert_eq!(entry.expression, Some(millimetres(result)));
+        assert_eq!(entry.value, Some(number(result)));
+        assert!(losses.is_empty(), "{losses:#?}");
+    }
+}
+
+#[test]
+fn a_missing_intermediate_sample_uses_its_inherited_expression() {
+    use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+    use cadmpeg_ir::design::expr::AddOp;
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let mut ir = with_configured_radius("10mm", &[0.010, 0.020]);
+    let b = parameter_named(&ir, "D2");
+    let mut c = b.clone();
+    c.id = cadmpeg_ir::ParameterId::mint("sldprt:model:parameter#dependent-C").unwrap();
+    c.name = Some(cadmpeg_core::nonblank_literal!("C"));
+    let step = crate::design_v11::parameters::number_node(1.0, Some(UnitSymbol::Mm)).unwrap();
+    c.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::add(
+        Node::Reference(ParameterRef {
+            target: RefTarget::Parameter(b.id.clone()),
+            through: None,
+        }),
+        AddOp::Add,
+        step,
+    ))));
+    c.value = Some(number(21.0));
+    ir.design.parameters.insert(0, c);
+    let (large, losses) = project_samples(
+        &mut ir,
+        &[
+            ("Default", &[("D1", 10.0), ("D2", 20.0), ("C", 21.0)]),
+            ("Large", &[("D1", 20.0), ("C", 41.0)]),
+        ],
     );
-    let Some(ParameterValue::Number(value)) = &entry.value else {
-        panic!("a number: {entry:#?}");
+    assert_eq!(large.overrides.parameters.len(), 1);
+    assert!(large
+        .overrides
+        .parameters
+        .contains_key(&parameter_named(&ir, "D1").id));
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
+fn an_unread_expression_preserves_the_sample_as_a_charged_cache() {
+    use cadmpeg_ir::design::expr::{ExpressionDialect, ExpressionToken};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let mut ir = with_configured_radius("30mm", &[0.025, 0.050]);
+    let id = parameter_named(&ir, "D2").id.clone();
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == id)
+        .unwrap()
+        .definition = ParameterDefinition::Expression(Expression::Source {
+        dialect: ExpressionDialect::SolidWorks,
+        tokens: vec![ExpressionToken::Text("\"Unresolved\" * 2".to_owned())],
+    });
+    let (large, losses) = project_samples(&mut ir, &[("Large", &[("D2", 70.0)])]);
+    let entry = &large.overrides.parameters[&id];
+    assert_eq!(entry.expression, None);
+    assert_eq!(entry.value, Some(number(70.0)));
+    let [loss] = losses.as_slice() else {
+        panic!("{losses:#?}")
     };
-    assert!((value.get() - 70.0).abs() < 1e-9);
+    assert_eq!(
+        loss.code,
+        SldprtLossCode::DesignConfigurationParameterUnread.kind()
+    );
+    assert!(loss.message.contains(large.id.as_str()));
+    assert!(loss.message.contains(id.as_str()));
+}
+
+#[test]
+fn disjoint_lane_names_share_the_combined_parameter_identities() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/>
+            <Fillet Name="Round1" Type="Fillet"/></Keywords>"#,
+    ));
+    for (lane, scalar) in [(0, 0.025), (1, 0.070)] {
+        let mut payload = resolved_features_payload_with_names_relation_and_scalar(
+            &[0],
+            &["Round1", "D1"],
+            "moLengthParameter_c",
+            scalar,
+        );
+        if lane == 1 {
+            let name = [0xff, 0xfe, 0xff, 2, b'D', 0, b'1', 0];
+            let at = payload
+                .windows(name.len())
+                .position(|part| part == name)
+                .unwrap();
+            payload[at + 6] = b'2';
+        }
+        source.extend(make_block(
+            0x45,
+            &format!("Contents/Config-{lane}-ResolvedFeatures"),
+            &payload,
+        ));
+    }
+    source.extend(active_configuration("Default"));
+    let ir = decode(&source);
+    let d1 = &parameter_named(&ir, "D1").id;
+    let d2 = &parameter_named(&ir, "D2").id;
+    let active = &stored(&ir, "Default").parameter_values;
+    let alternate = &stored(&ir, "Large").parameter_values;
+    assert_eq!(active[d1], length(25.0));
+    assert_eq!(alternate[d1], length(25.0));
+    assert_eq!(alternate[d2], length(70.0));
+    assert!(!named(&ir, "Large").overrides.parameters.contains_key(d1));
 }
 
 /// Each configuration that is not active is named for its unread

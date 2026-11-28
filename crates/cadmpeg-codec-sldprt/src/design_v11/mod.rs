@@ -74,6 +74,7 @@ pub(crate) struct Part<'a> {
     /// reads from `ResolvedFeatures` scalars, PMI dimensions, and Move Face
     /// translations; their ordinals give the parameters their ids.
     pub(crate) parameter_histories: &'a [FeatureHistory],
+    pub(crate) configuration_samples: &'a crate::history::configuration::ConfigurationSamples,
     /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
     pub(crate) lanes: &'a [FeatureInputLane],
     /// The `Config-N` class map each lane continues, by lane id.
@@ -137,6 +138,7 @@ pub(crate) fn project(
     let Part {
         histories,
         parameter_histories,
+        configuration_samples,
         lanes,
         configuration_maps,
         mut bodies,
@@ -269,12 +271,14 @@ pub(crate) fn project(
         &design_features,
         &definition,
     ));
-    configurations::parameter_overrides(
+    let (parameter_cuts, parameter_losses) = configurations::values::project(
         &mut configurations,
         &ir.model.configurations,
-        &parameters,
+        configuration_samples,
+        &mut parameters,
         length,
     );
+    losses.extend(parameter_losses);
     losses.extend(configurations::unread_states(
         &configurations,
         &ir.model.configurations,
@@ -356,14 +360,19 @@ pub(crate) fn project(
         for configuration in &configurations.records {
             if Some(&configuration.id) != configurations.active.as_ref() {
                 losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
-                    "configuration {}: the part stores no feature history, so its state is \
-                     not stated.",
+                    "configuration {}: the part has no ordered design timeline to place its state.",
                     configuration.id
                 )));
             }
         }
     }
-    configurations::restate(ir, &configurations, &states.evaluations, &bodies);
+    configurations::restate(
+        ir,
+        &configurations,
+        &states.evaluations,
+        &bodies,
+        &parameter_cuts,
+    );
     let mut features = timeline.features;
     if let Some((group, members)) = group {
         containers.push(group);

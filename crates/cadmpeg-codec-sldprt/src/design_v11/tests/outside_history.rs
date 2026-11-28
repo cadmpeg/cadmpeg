@@ -17,6 +17,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::{assert_no_design_findings, sketch_and_extrude, sketch_and_extrude_with, ROOT};
+use crate::history::configuration::ConfigurationSamples;
 use crate::loss::SldprtLossCode;
 
 /// Project the design of `ir` again from `histories`, with the rollback at
@@ -73,6 +74,7 @@ pub(in crate::design_v11) fn project_from(
         ir,
         super::super::Part {
             histories,
+            configuration_samples: &ConfigurationSamples::new(),
             parameter_histories,
             lanes,
             configuration_maps: &maps,

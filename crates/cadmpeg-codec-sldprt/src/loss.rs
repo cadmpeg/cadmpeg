@@ -609,6 +609,8 @@ pub(crate) enum SldprtLossCode {
     /// differs from the active configuration's state no definition override:
     /// a dimension alone also makes the decoded definitions differ.
     DesignConfigurationDefinitionUnstated,
+    /// A configuration parameter sample lacks a stated expression or identity.
+    DesignConfigurationParameterUnread,
     /// Features under a feature-tree node outside the timeline (the
     /// annotations node, a lights folder) state no design feature.
     DesignFeatureOutsideTimeline,
@@ -935,6 +937,7 @@ impl SldprtLossCode {
         Self::DesignConfigurationStateUnplaced,
         Self::DesignConfigurationSuppressionUnread,
         Self::DesignConfigurationDefinitionUnstated,
+        Self::DesignConfigurationParameterUnread,
         Self::DesignFeatureOutsideTimeline,
         Self::DesignParameterReferenceUnbound,
         Self::DesignParameterReferenceAsText,
@@ -1220,6 +1223,7 @@ impl SldprtLossCode {
             Self::DesignConfigurationActiveUnread => "design.configuration-active-unread",
             Self::DesignConfigurationStateUnplaced => "design.configuration-state-unplaced",
             Self::DesignConfigurationSuppressionUnread => "design.configuration-suppression-unread",
+            Self::DesignConfigurationParameterUnread => "design.configuration-parameter-unread",
             Self::DesignConfigurationDefinitionUnstated => {
                 "design.configuration-definition-unstated"
             }
@@ -1466,6 +1470,7 @@ impl SldprtLossCode {
             | Self::DesignConfigurationStateUnplaced
             | Self::DesignConfigurationSuppressionUnread
             | Self::DesignConfigurationDefinitionUnstated
+            | Self::DesignConfigurationParameterUnread
             | Self::DesignFeatureOutsideTimeline
             | Self::DesignParameterReferenceUnbound
             | Self::DesignParameterReferenceAsText
@@ -1605,6 +1610,7 @@ impl SldprtLossCode {
             | Self::DesignConfigurationStateUnplaced
             | Self::DesignConfigurationSuppressionUnread
             | Self::DesignConfigurationDefinitionUnstated
+            | Self::DesignConfigurationParameterUnread
             | Self::DesignFeatureOutsideTimeline
             | Self::DesignParameterReferenceUnbound => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
@@ -2172,6 +2178,7 @@ mod tests {
                 "design.configuration-state-unplaced",
                 "design.configuration-suppression-unread",
                 "design.configuration-definition-unstated",
+                "design.configuration-parameter-unread",
                 "design.feature-outside-timeline",
                 "design.parameter-reference-unbound",
                 "design.parameter-reference-as-text",

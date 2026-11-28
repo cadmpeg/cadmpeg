@@ -368,7 +368,13 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         records: vec![design("default"), design("short")],
         active: Some(id("default")),
     };
-    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    super::configurations::restate(
+        &mut ir,
+        &configurations,
+        &[],
+        &[],
+        &std::collections::HashSet::new(),
+    );
     let default = ir.model.restated().get(id("default").as_str()).unwrap();
     let active = Restater::Record(id("default").as_str().to_owned());
     assert_eq!(
@@ -404,7 +410,13 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         }),
     )]);
     *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
-    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    super::configurations::restate(
+        &mut ir,
+        &configurations,
+        &[],
+        &[],
+        &std::collections::HashSet::new(),
+    );
     let short = ir.model.restated().get(id("short").as_str()).unwrap();
     assert_eq!(
         short.cut_by(|restater| restater == &by).map(Vec::from_iter),
