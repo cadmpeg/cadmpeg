@@ -231,7 +231,7 @@ sha256 = "09f0953e5a30c05166725f9c430e0f14ba20b2af3c330ff7837b7134b77a5ed8"
 notes = "Second original TechDraw dimension configuration: 42 mm box length, 11 mm cylinder radius and an asymmetric reference with a stored Y-down cache; no installed template or third-party model."
 
 [[file]]
-filename = "1WireRGBWController.f3d"
+filename = "f3d/1WireRGBWController.f3d"
 format = "f3d"
 dialect = "f3d:manifest-3-2-0-0"
 author = "Alastair D'Silva"

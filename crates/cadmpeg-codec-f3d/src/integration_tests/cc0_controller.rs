@@ -14,7 +14,7 @@ use crate::F3dCodec;
 /// Both checks read one decode of the 1.28 MB controller.
 #[test]
 fn controller_1wire_rgbw_corpus_decode() {
-    let bytes = include_bytes!("../../../../corpus/1WireRGBWController.f3d");
+    let bytes = include_bytes!("../../../../corpus/f3d/1WireRGBWController.f3d");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();

@@ -400,7 +400,7 @@ fn loft_body_lists_outside_the_reference_table_stay_unread() {
 #[test]
 fn two_lane_sweep_scope_from_corpus_admits_exact_along_and_against_distances() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let corpus_path = manifest_dir.join("../../corpus/1WireRGBWController.f3d");
+    let corpus_path = manifest_dir.join("../../corpus/f3d/1WireRGBWController.f3d");
     if !corpus_path.exists() {
         return;
     }
