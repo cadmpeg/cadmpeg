@@ -107,7 +107,9 @@ fn bounded_frame(
 fn agrees(envelope: Envelope, frame: PositionalCylinderFrame, exact: bool) -> bool {
     let u = frame.frame().ref_direction();
     let axis = frame.frame().axis();
-    let v = crate::vecmath::cross(axis, u);
+    let v = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(u)),
+    );
     let origin = frame.frame().origin();
     let radius = frame.radius().get();
     let [angular, axial] = envelope.bounds;
@@ -311,7 +313,9 @@ fn bounded_cone_frame(
     let m = slots.get();
     let origin = [m[9], m[10], m[11]];
     let (reference, axis) = scalar::rotation_plane_axes(slots.as_raw())?;
-    let transverse = crate::vecmath::cross(axis, reference);
+    let transverse = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(reference)),
+    );
     let scale = corners
         .into_iter()
         .chain(origin)
