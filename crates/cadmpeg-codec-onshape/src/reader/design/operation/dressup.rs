@@ -457,6 +457,12 @@ pub(super) fn hole(
             };
             let bottom = if (tip - std::f64::consts::PI).abs() < features::DRILL_TIP_ANGLE_TOLERANCE
             {
+                if preset.is_none() && owned("TipAngle").is_some() {
+                    source.usage.partial(
+                        "tipAngle",
+                        "keeps an evaluated flat bottom and omits its angle formula binding",
+                    );
+                }
                 source.usage.account(&["depthToTip", "useTipDepth"]);
                 HoleBottom::Flat
             } else {

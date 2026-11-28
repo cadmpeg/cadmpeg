@@ -701,6 +701,24 @@ fn accounting_treats_a_plain_hole_as_deliberately_unthreaded() {
 }
 
 #[test]
+fn accounting_reports_a_formula_that_evaluates_to_a_flat_drill_bottom() {
+    let bytes = part_studio("hole-forms", |document| {
+        let hole = &mut document["features"][5];
+        rows(hole).retain(|row| row["parameterId"] != "tipAngleStyle");
+        rows(hole).push(json!({"parameterId":"tipAngleStyle","value":"CUSTOM"}));
+        parameter(hole, "tipAngle")["expression"] = json!("90 deg + 90 deg");
+    });
+    let result = decode(&bytes);
+    let operation = design_operation(result.ir(), "Tapped");
+    assert_eq!(
+        operation["value"]["shape"]["bottom"]["kind"], "flat",
+        "{operation}"
+    );
+    assert!(parameter_loss(&result, "tipAngle", "Tapped"));
+    validate(result);
+}
+
+#[test]
 fn accounting_reports_a_suppressed_derived_selector_beyond_the_document_pin() {
     for part in ["part-one", "part-two"] {
         let bytes = part_studio("derived", |document| {
