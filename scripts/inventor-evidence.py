@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Build an ordinal-only Inventor envelope census and framing oracle.
 
-The reader is independent of the Rust codec. It follows CFB FAT, DIFAT,
+The reader is independent of the Rust codec and reads regular files by content.
+It follows CFB FAT, DIFAT,
 directory, mini-FAT, and stream chains. It parses the RSe database, registry,
 Meta Stream 8 tables, bulk envelope, record frames, and typed kernel-carrier
 envelope. It accepts paths as input selectors. Output contains no input paths
@@ -25,7 +26,7 @@ Run a census with::
 
     python3 scripts/inventor-evidence.py --root INPUT_ROOT --output RESULT.json
 
-``--compare --cadmpeg PATH`` compares wrapper and direct carrier semantics and
+``--compare --cadmpeg PATH`` compares active-carrier wrapper and direct semantics and
 validation. It normalizes codec ID namespaces and excludes presentation-only
 geometry color fields from the shared geometry fingerprint. Each comparison
 uses a temporary carrier file and each command receives its own ``--timeout``.
