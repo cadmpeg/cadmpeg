@@ -158,6 +158,8 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     let losses = bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
     assert!(losses.is_empty());
@@ -256,6 +258,8 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     crate::history::pattern_bodies::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -287,7 +291,10 @@ fn pattern_body_seed_preserves_native_selection() {
 
 /// Group record 20 of the scope with record index `scope_record_index`,
 /// whose one member is body recipe operand 21.
-fn body_operand_group(group_id: &str, scope_record_index: u32) -> DesignConstructionOperandGroup {
+pub(super) fn body_operand_group(
+    group_id: &str,
+    scope_record_index: u32,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: group_id.into(),
@@ -489,6 +496,8 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     crate::history::pattern_bodies::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -640,7 +649,10 @@ fn generated_case_in(
 }
 
 /// One state of a test history: `state_id` holds the body slots `bodies`.
-fn history_state(state_id: i64, bodies: Vec<i64>) -> crate::test_support::history::State {
+pub(super) fn history_state(
+    state_id: i64,
+    bodies: Vec<i64>,
+) -> crate::test_support::history::State {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 
     let versions = bodies
@@ -837,6 +849,8 @@ fn generated_selection_in_state(
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     let mut losses = Vec::new();
     let results = crate::history::bind_generated_body_selections(
@@ -1557,6 +1571,8 @@ fn assert_seed_with_updated_entity_is_generated(
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     crate::history::bind_generated_body_selections(
         &mut features,

@@ -833,6 +833,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     }
     let tails = crate::design::decode::body_reference_tails::decode(ctx, scan)?;
     design.design_body_reference_tails = tails.records;
+    let body_tail_nodes = tails.nodes;
     if tails.unparsed != 0 {
         push_loss_vec(
             &mut losses,
@@ -1050,6 +1051,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         regions: geometry.regions,
         shells: geometry.shells,
         faces: geometry.faces,
+        body_tail_nodes: &body_tail_nodes,
+        body_bindings: &prereqs.design_body_bindings,
     };
     let (selection_losses, operand_refusals) =
         crate::history::body_selections::bind_feature_body_selections_with_refusals(
@@ -1083,6 +1086,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &mut model.feature_result_topologies,
         (tool_results, replaced_tools),
+    ));
+    crate::history::tail_generated_bodies::bind(
+        &mut model.features,
+        &body_selection_inputs,
+        &model.feature_result_topologies,
+    );
+    losses.extend(crate::history::tail_bodies::unbound_tail_notes(
+        &model.features,
+        &body_selection_inputs,
     ));
     for (producer, state_id, slots) in omitted_copies {
         if crate::history::feature_outputs::combine_consumes_generated_bodies(

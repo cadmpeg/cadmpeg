@@ -97,6 +97,8 @@ pub(crate) mod selection;
 mod shell_walls;
 pub(crate) mod stored_bodies;
 mod surface_rows;
+pub(crate) mod tail_bodies;
+pub(crate) mod tail_generated_bodies;
 pub(crate) mod thread_face;
 mod topology_cache;
 mod treatment_index;

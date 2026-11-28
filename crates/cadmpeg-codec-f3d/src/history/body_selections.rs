@@ -36,6 +36,10 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
     /// Neutral shell faces.
     pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
+    /// The body browser nodes that the whole-body reference tails of body groups name.
+    pub(crate) body_tail_nodes: &'a [crate::design::decode::body_reference_tails::TailBodyNodes],
+    /// Design body-map pairs that resolve body entity suffixes.
+    pub(crate) body_bindings: &'a [crate::records::bodies::DesignBodyBinding],
 }
 
 /// Bind the body selections of `features`, and return the browser-node
@@ -119,7 +123,7 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
         pattern_body_slots.insert(feature_id, slots);
     }
 
-    for feature in features {
+    for feature in features.iter_mut() {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
         let dependencies = &feature.dependencies;
@@ -283,6 +287,13 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
                             groups,
                             body_recipe_operands,
                         );
+                        super::tail_bodies::bind_tail_history_bodies(
+                            bodies,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            inputs,
+                        );
                     } else {
                         let native = bodies.clone();
                         bind_direct_body_recipe_body_selection(
@@ -293,6 +304,23 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
                         );
                         // The recipe identity of the operands outranks a face match.
                         super::generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
+                        super::tail_bodies::bind_tail_model_bodies(bodies, scope, inputs);
+                        // A scope that stores no preceding state takes it from
+                        // its history state.
+                        if let Some(previous_state_id) =
+                            super::history_states::effective_scope_previous_history_state_id(
+                                scope,
+                                inputs.histories,
+                            )
+                        {
+                            super::tail_bodies::bind_tail_history_bodies(
+                                bodies,
+                                feature_id,
+                                previous_state_id,
+                                scope,
+                                inputs,
+                            );
+                        }
                     }
                     break 'feature_edit;
                 }

@@ -218,6 +218,8 @@ fn combine_case(
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     let mut losses = Vec::new();
     let results = crate::history::bind_generated_body_selections(

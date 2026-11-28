@@ -1080,6 +1080,10 @@ pub(crate) enum F3dLossCode {
     /// body of the preceding history state, and the body recipes of the scope
     /// bind no body for it, so that operand stays native.
     FeatureCombineOperandBodyUnbound,
+    /// A Pattern or Remove Body selection whose group members are whole-body
+    /// reference tails names body browser nodes that bind no body, so the
+    /// selection stays native.
+    FeatureBodyTailUnbound,
     /// The body recipe of an operand-list Combine names model bodies for its
     /// tools, and these bodies replace the tools that the browser-node slots
     /// bind.
@@ -2482,6 +2486,7 @@ impl F3dLossCode {
                 "feature.combine-tool-result-state-unbound"
             }
             Self::FeatureCombineOperandBodyUnbound => "feature.combine-operand-body-unbound",
+            Self::FeatureBodyTailUnbound => "feature.body-tail-unbound",
             Self::FeatureCombineToolRecipeReplacementAssumed => {
                 "feature.combine-tool-recipe-replacement-assumed"
             }
@@ -3446,6 +3451,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolExternalBodyUnbound
             | Self::FeatureCombineToolResultStateUnbound
             | Self::FeatureCombineOperandBodyUnbound
+            | Self::FeatureBodyTailUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperationEntriesAssumed
@@ -4245,6 +4251,7 @@ impl F3dLossCode {
             | Self::FeatureCombineToolExternalBodyUnbound
             | Self::FeatureCombineToolResultStateUnbound
             | Self::FeatureCombineOperandBodyUnbound
+            | Self::FeatureBodyTailUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperationEntriesAssumed
@@ -5188,6 +5195,7 @@ mod tests {
                 "feature.combine-tool-external-body-unbound",
                 "feature.combine-tool-result-state-unbound",
                 "feature.combine-operand-body-unbound",
+                "feature.body-tail-unbound",
                 "feature.combine-tool-recipe-replacement-assumed",
                 "feature.combine-prologue-assumed",
                 "feature.combine-operation-entries-assumed",

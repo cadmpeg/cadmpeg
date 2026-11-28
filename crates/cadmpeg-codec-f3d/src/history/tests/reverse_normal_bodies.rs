@@ -205,6 +205,8 @@ fn reverse_case(case: &ReverseCase<'_>) -> (Feature, Vec<FeatureResultTopology>,
         regions: &[],
         shells: &[],
         faces: &[],
+        body_tail_nodes: &[],
+        body_bindings: &[],
     };
     let mut losses = Vec::new();
     let results = crate::history::bind_generated_body_selections(

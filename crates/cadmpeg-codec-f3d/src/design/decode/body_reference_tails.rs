@@ -12,6 +12,7 @@ use crate::metastream::{primary_record_frames, PrimaryRecordFrame};
 use crate::records::body_reference_tail::{
     BodyTailReference, DesignBodyReferenceTail, DesignBodyReferenceTailWire,
 };
+use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::references::DesignClassTag;
 
 mod tail;
@@ -22,6 +23,21 @@ const BASE_GUID: &str = "6144EA59-3ACA-4172-9F14-A6531E94D69B";
 pub(crate) struct DecodedTails {
     pub(crate) records: Vec<DesignBodyReferenceTail>,
     pub(crate) unparsed: usize,
+    /// The body browser nodes that the second reference run of each tail
+    /// names, for tails whose every second reference names one.
+    pub(crate) nodes: Vec<TailBodyNodes>,
+}
+
+/// The body browser nodes that the second reference run of one body-reference
+/// tail names, in run order. Node `n` is the record that the `n`th second
+/// reference of the tail targets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TailBodyNodes {
+    /// Identity of the tail record.
+    pub(crate) tail_id: String,
+    /// Record index of the tail.
+    pub(crate) tail_record_index: u64,
+    pub(crate) nodes: Vec<DesignCombineBodyNode>,
 }
 
 fn reference(view: &mut View<'_>) -> Option<()> {
@@ -165,6 +181,7 @@ pub(crate) fn decode(
     let mut result = DecodedTails {
         records: Vec::new(),
         unparsed: 0,
+        nodes: Vec::new(),
     };
     for entry in &scan.entries {
         let Some(prefix_name) = entry.name.strip_suffix("MetaStream.dat") else {
@@ -186,6 +203,9 @@ pub(crate) fn decode(
             continue;
         };
         let frames = primary_record_frames(&meta, root.remaining())?;
+        let nodes = super::body_consumers::entities_of(&meta, |guid| {
+            crate::design::presentation::BROWSER_NODE_TYPE_GUID.eq_ignore_ascii_case(guid)
+        });
         let by_entity: std::collections::HashMap<_, _> = frames
             .into_iter()
             .map(|frame| (frame.entity_id, frame))
@@ -209,6 +229,26 @@ pub(crate) fn decode(
                     result.unparsed += 1;
                     continue;
                 };
+                let second_body_nodes = local_targets(root, fields.second)
+                    .and_then(|targets| {
+                        targets
+                            .iter()
+                            .map(|target| {
+                                if !nodes.contains(target) {
+                                    return None;
+                                }
+                                let frame = by_entity.get(target).copied()?;
+                                let (body, creator) =
+                                    super::body_consumers::node_references(root.window(), frame)?;
+                                Some(DesignCombineBodyNode {
+                                    record_index: u32::try_from(*target).ok()?,
+                                    body_entity_suffix: u32::try_from(body).ok()?,
+                                    creating_scope_record_index: u32::try_from(creator).ok()?,
+                                })
+                            })
+                            .collect::<Option<Vec<_>>>()
+                    })
+                    .unwrap_or_default();
                 let record = DesignBodyReferenceTail::try_from(DesignBodyReferenceTailWire {
                     id: super::text::design_record_id(
                         &bulk_name,
@@ -226,6 +266,13 @@ pub(crate) fn decode(
                     trailing_form: fields.trailing,
                 })
                 .map_err(CodecError::Malformed)?;
+                if !second_body_nodes.is_empty() {
+                    result.nodes.push(TailBodyNodes {
+                        tail_id: record.id.clone(),
+                        tail_record_index: record.record_index,
+                        nodes: second_body_nodes,
+                    });
+                }
                 result.records.push(record);
             }
         }
