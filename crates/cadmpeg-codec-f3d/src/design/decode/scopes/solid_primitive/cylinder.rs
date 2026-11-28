@@ -49,12 +49,29 @@ pub(super) fn read_extended_prologue(
         return read_typed_prologue(frame, scope);
     }
     let prefix_word_width = prefixed::LEN - expanded::OPERATION;
-    let (compact_form, prefix_shift, tail_shift) =
+    // `construction_shift` moves the counted construction reference, which
+    // otherwise follows the matrix directly; `tail_shift` moves the GUID and
+    // the reference run.
+    let (compact_form, prefix_shift, construction_shift, tail_shift) =
         match (scope.frame_length(), scope.reference_members().len()) {
-            (356, 5) => (true, prefix_word_width, prefix_word_width),
-            (479, 5) | (501 | 502, 7) => (false, 0, 0),
-            (506, 7) => (false, prefix_word_width, prefix_word_width),
-            (507, 7) => (false, 0, prefix_word_width),
+            (356, 5) => (
+                true,
+                prefix_word_width,
+                prefix_word_width,
+                prefix_word_width,
+            ),
+            (479, 5) | (501 | 502, 7) => (false, 0, 0, 0),
+            (506, 7) => (
+                false,
+                prefix_word_width,
+                prefix_word_width,
+                prefix_word_width,
+            ),
+            (507, 7) => (false, 0, prefix_word_width, prefix_word_width),
+            // The prefixed five-reference form keeps the construction reference
+            // at its unprefixed offset, after four zero bytes, and stores eight
+            // zero bytes before its GUID.
+            (489, 5) => (false, prefix_word_width, 0, 2 * prefix_word_width),
             _ => return None,
         };
     let window = frame.window();
@@ -106,10 +123,10 @@ pub(super) fn read_extended_prologue(
         if window.get(expanded::ZERO_BEFORE_MATRIX + prefix_shift) != Some(&0) {
             return None;
         }
-        let count = if tail_shift == 0 {
+        let count = if construction_shift == 0 && tail_shift == 0 {
             matrix_end
         } else {
-            let count = expanded::CONSTRUCTION_REFERENCE + tail_shift;
+            let count = expanded::CONSTRUCTION_REFERENCE + construction_shift;
             if !window.get(matrix_end..count)?.iter().all(|byte| *byte == 0) {
                 return None;
             }

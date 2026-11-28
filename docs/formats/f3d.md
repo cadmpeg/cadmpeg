@@ -1250,15 +1250,16 @@ The [counted Cylinder reference](../layouts/f3d.md#counted_cylinder_reference) i
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 356 | 5 | 26 | | 76 | 99 | 178 |
 | 479 | 5 | 22 | 72 | 200 | 223 | 302 |
+| 489 | 5 | 26 | 76 | 208 | 231 | 310 |
 | 501 or 502 | 7 | 22 | 72 | 200 | 223 | 302 |
 | 506 | 7 | 26 | 76 | 212 | 227 | 306 |
 | 507 | 7 | 22 | 72 | 212 | 227 | 306 |
 
-The 356-byte form stores the compact tail marker `0x01` at offset 75. The 479-, 501-, and 502-byte forms in the table store eight zero bytes between the counted reference and the GUID. In the 506-byte form, eight zero bytes follow the matrix. In the 507-byte form, twelve zero bytes follow it. At offset 200, the counted 502-byte form stores u32 `1` and the shifted 502-byte form stores eight zero bytes.
+The 356-byte form stores the compact tail marker `0x01` at offset 75. The 479-, 501-, and 502-byte forms in the table store eight zero bytes between the counted reference and the GUID. In the 489-byte form, four zero bytes follow the matrix and eight zero bytes separate the counted reference from the GUID. In the 506-byte form, eight zero bytes follow the matrix. In the 507-byte form, twelve zero bytes follow it. At offset 200, the counted 502-byte form stores u32 `1` and the shifted 502-byte form stores eight zero bytes.
 
 The [typed Cylinder prefix](../layouts/f3d.md#typed_cylinder_prefix) has a byte `0x01` after the shifted operation. Four 51-byte typed references follow in reverse order of the last four ordered references. A zero byte precedes the rigid matrix. The matrix is followed by u32 `1`, a typed reference, eight zero bytes, a 36-code-unit LP-UTF16 GUID, and three zero bytes. The ordered reference count is `5`. The first ordered reference has type GUID `5A1BF548-241F-46FD-9FB5-E4B05126EB9D`. The remaining types are `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`, two `D91D429C-1BB5-4640-B49F-69AF14F463E9` entries, and `92112554-B316-46D1-8AFD-C49D91252558`. The reference after the matrix has type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E`.
 
-The extended form's support construction supplies its solved frame. The expanded and typed forms store a matrix relative to that frame. The fourth column of the composed frame is the base centre. The signed `Height` extends from the base along local z. `Diameter` remains positive. Both dimensions are in centimetres.
+The extended form's support construction supplies its solved frame; the support is a placement construction of version 4, 6, 8, 9 or 16. The expanded and typed forms store a matrix relative to that frame. The fourth column of the composed frame is the base centre. The signed `Height` extends from the base along local z. `Diameter` remains positive. Both dimensions are in centimetres.
 
 The shifted `CylinderPrimitive` form is keyed by its primary and paired class tags and its frame length:
 
