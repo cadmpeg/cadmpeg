@@ -17,7 +17,8 @@
 //! states one; its record stores the value of its literal, which can differ
 //! (f3d.md §3.1, "Sketch dimensions"), and the source setting `f3d:literal`
 //! keeps that literal. The role Fusion stores on a model parameter is the
-//! source setting `f3d:role`.
+//! source setting `f3d:role`, and the diameter or radius presentation of a
+//! diameter or radius dimension's parameter is its `display`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroI8;
@@ -31,11 +32,12 @@ use cadmpeg_ir::design::expr::{
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::parameter::{
-    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+    DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::parameters::{
-    DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
+    DesignParameter as LegacyParameter, DimensionDisplay as LegacyDisplay,
+    ParameterValue as LegacyValue,
 };
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
@@ -319,7 +321,10 @@ fn record(
         unit: None,
         definition,
         value,
-        display: None,
+        display: parameter.display.map(|display| match display {
+            LegacyDisplay::Diameter => DimensionDisplay::Diameter,
+            LegacyDisplay::Radius => DimensionDisplay::Radius,
+        }),
         tolerance: None,
         decimals: None,
         comment: property(COMMENT).map(str::to_owned),

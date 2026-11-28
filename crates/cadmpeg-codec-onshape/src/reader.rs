@@ -5,9 +5,11 @@ use crate::archive;
 use cadmpeg_core::serde_erase::json;
 mod assembly;
 mod derived;
+mod design;
 pub(super) mod expression;
 mod features;
 mod intersection;
+mod parameter_usage;
 mod planes;
 pub(super) mod query;
 mod regions;
@@ -739,25 +741,13 @@ fn studio_in(
     } else {
         std::collections::BTreeMap::new()
     };
-    let original_design = model.ir.design.clone();
-    let original_design_features = original_design.features.len();
-    if features
-        .iter()
-        .any(|feature| features::value(feature, "bodyType") == Some("THIN"))
-    {
-        ctx.charge_entities(
-            cadmpeg_core::decode::u64_from_index(features.len()) + 2,
-            "Onshape thin timeline admission",
-        )?;
-        reserve_history(&mut model.ir.design.features, features.len())?;
-        reserve_history(&mut model.ir.design.containers, 1)?;
-        reserve_history(&mut model.ir.design.scopes, 1)?;
-    }
+    let mut sources = design::Sources::new();
     let mut seen = std::collections::BTreeMap::<&str, &Value>::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
-        let design_length = model.ir.design.features.len();
+        let mut thin_design = None;
+        let mut legacy_loss = None;
         let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
             Ok(native) => match seen.entry(native) {
@@ -821,24 +811,21 @@ fn studio_in(
             }
         }
         admit_history(ctx, feature, &mut model.ir.model)?;
+        let usage = parameter_usage::ParameterUsage::new(feature);
         let sizes = (
             model.ir.model.sketches.len(),
             model.ir.model.sketch_entities.len(),
             model.ir.model.sketch_constraints.len(),
             model.ir.model.parameters.len(),
             model.ir.model.feature_input_topologies.len(),
-            model.ir.design.features.len(),
             model.ir.model.feature_result_topologies.len(),
         );
         let mut reference = None;
         let mut dependencies = Vec::new();
         let mapped = if let Err(reason) = &suppressed {
             Err(reason.clone())
-        } else if suppressed == Ok(true) {
-            Ok(definition(
-                "native",
-                json!({"kind": "Suppressed Onshape feature", "parameters": {}}),
-            ))
+        } else if suppressed == Ok(true) && derived::is_derived(feature) {
+            derived::reference(feature).map(|_| definition("stored_geometry", json!({})))
         } else if derived::is_derived(feature) {
             match derived::map(session, feature, ordinal, &inputs, folder, depth, report) {
                 Ok(captured) => {
@@ -860,6 +847,7 @@ fn studio_in(
                 &mut model.ir.model,
                 report,
                 &unresolved_variables,
+                &usage,
             )
             .and_then(|definition| {
                 json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
@@ -876,7 +864,6 @@ fn studio_in(
                 if features::value(feature, "bodyType") == Some("THIN")
                     && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
                 {
-                    thin::owner(&model.ir)?;
                     let (design, assumed) = thin::feature(
                         feature,
                         &definition,
@@ -884,8 +871,9 @@ fn studio_in(
                         &inputs,
                         ordinal,
                         &unresolved_variables,
+                        &usage,
                     )?;
-                    push(&mut model.ir.design.features, design)?;
+                    thin_design = Some(design);
                     if let Some(assumed) = assumed {
                         assumed_sides.insert(feature_id.clone());
                         report.push_coded(name, OnshapeLossCode::ThinNotSupported, assumed);
@@ -898,25 +886,7 @@ fn studio_in(
             })
         };
         let mut definition = match mapped {
-            Ok(definition) => {
-                if suppressed != Ok(true)
-                    && !matches!(
-                        feature.get("featureType").and_then(Value::as_str),
-                        Some("newSketch" | "assignVariable")
-                    )
-                {
-                    if let Err(reason) =
-                        features::report_evaluated_variables(feature, &model.ir.model, report)
-                    {
-                        report.push_coded(
-                            name,
-                            OnshapeLossCode::RecordMalformed,
-                            format!("{reason}; evaluated variable facts are not reported"),
-                        );
-                    }
-                }
-                definition
-            }
+            Ok(definition) => definition,
             Err(reason) => {
                 let mut tail = report.notes.split_off(note_start);
                 tail.retain(|note| !OnshapeLossCode::SketchPlaneAssumed.matches(note));
@@ -926,20 +896,21 @@ fn studio_in(
                 model.ir.model.sketch_constraints.truncate(sizes.2);
                 model.ir.model.parameters.truncate(sizes.3);
                 model.ir.model.feature_input_topologies.truncate(sizes.4);
-                model.ir.design.features.truncate(sizes.5);
-                model.ir.model.feature_result_topologies.truncate(sizes.6);
-                if suppressed != Ok(true) {
-                    let region_budget_exhausted = inputs
-                        .regions
-                        .try_borrow()
-                        .is_ok_and(|recovery| recovery.exhausted());
-                    let code = mapping_loss_code(
-                        feature,
-                        region_budget_exhausted,
-                        suppressed.is_ok(),
-                        &reason,
-                    );
-                    loss(report, name, &reason, model.source_step.is_some(), code);
+                model.ir.model.feature_result_topologies.truncate(sizes.5);
+                thin_design = None;
+                let region_budget_exhausted = inputs
+                    .regions
+                    .try_borrow()
+                    .is_ok_and(|recovery| recovery.exhausted());
+                let code = mapping_loss_code(
+                    feature,
+                    region_budget_exhausted,
+                    suppressed.is_ok(),
+                    &reason,
+                );
+                loss(report, name, &reason, model.source_step.is_some(), code);
+                if design::Source::independently_projected(feature) && suppressed.is_ok() {
+                    legacy_loss = report.notes.pop();
                 }
                 definition(
                     "native",
@@ -973,6 +944,36 @@ fn studio_in(
         {
             for name in &bindings {
                 unresolved_variables.remove(*name);
+            }
+        }
+        let mut source = design::Source::read(
+            feature,
+            ordinal,
+            thin_design.take(),
+            usage,
+            &model.ir.model,
+            &unresolved_variables,
+        );
+        source.legacy_loss = legacy_loss;
+        if suppressed.is_ok() && !features::is_custom(feature) {
+            if let Err(reason) = source.prepare_quantities(&model.ir.model, &unresolved_variables) {
+                report.push_coded(name, OnshapeLossCode::RecordMalformed, reason);
+            }
+        }
+        if suppressed == Ok(false)
+            && definition.pointer("/value/kind").and_then(Value::as_str) != Some("native")
+            && !matches!(
+                feature.get("featureType").and_then(Value::as_str),
+                Some("newSketch" | "assignVariable")
+            )
+        {
+            if let Err(reason) = features::report_evaluated_variables(
+                feature,
+                &model.ir.model,
+                &source.parameters,
+                report,
+            ) {
+                report.push_coded(name, OnshapeLossCode::RecordMalformed, reason);
             }
         }
         let mut source_properties = features::source_properties(feature, &definition)
@@ -1095,14 +1096,9 @@ fn studio_in(
         let outputs: Vec<_> = single_body
             .iter()
             .chain(part_bodies.get(&ordinal))
+            .filter(|_| suppressed == Ok(false))
             .filter(|_| {
-                (model
-                    .ir
-                    .design
-                    .features
-                    .iter()
-                    .any(|design| design.id.as_str() == feature_id)
-                    && features::value(feature, "operationType") == Some("NEW"))
+                (source.thin.is_some() && features::value(feature, "operationType") == Some("NEW"))
                     || definition
                         .pointer("/value/value/shape/op")
                         .and_then(Value::as_str)
@@ -1126,8 +1122,7 @@ fn studio_in(
             row["suppressed"] = json!(suppressed);
         }
         if let Err(reason) = push(&mut model.ir.model.features, row) {
-            model.ir.design.features.truncate(design_length);
-            model.ir.model.feature_result_topologies.truncate(sizes.6);
+            model.ir.model.feature_result_topologies.truncate(sizes.5);
             let mut tail = report.notes.split_off(note_start);
             tail.retain(|note| {
                 !OnshapeLossCode::SketchPlaneAssumed.matches(note)
@@ -1141,11 +1136,11 @@ fn studio_in(
                 OnshapeLossCode::RecordMalformed,
                 format!("{reason}; omitted the feature"),
             );
+        } else {
+            sources.insert(feature_id, source);
         }
     }
-    if model.ir.design.features.len() > original_design_features {
-        install_thin_scope(ctx, &mut model.ir, report, original_design, &bar)?;
-    }
+    project_design(ctx, &mut model.ir, report, &bar, &sources, &inputs)?;
     report
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
@@ -1156,32 +1151,45 @@ fn studio_in(
     Ok(model)
 }
 
-fn install_thin_scope(
+/// Project the design layer of the Part Studio `ir` as one part. A thin
+/// extrude whose design feature the projection refuses keeps its family, and
+/// its note names the refusal.
+fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut Report,
-    original: cadmpeg_ir::document::Design,
     bar: &RollbackBar,
+    sources: &design::Sources<'_>,
+    inputs: &topology::Inputs<'_>,
 ) -> Result<(), Error> {
-    let notes = report.notes.len();
-    let result = thin::sketches::project(ctx, ir)
-        .and_then(|()| thin::install_scope(ir, report, bar).map_err(Error::Decode));
-    if let Err(reason) = result {
-        ir.design = original;
-        report.notes.truncate(notes);
-        if matches!(
-            &reason,
-            Error::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.scope == cadmpeg_core::decode::LimitScope::Session
-        ) {
-            return Err(reason);
+    let mut refused = Vec::new();
+    cadmpeg_ir::design::projection::project_layer(
+        ctx,
+        "Onshape",
+        ir,
+        &mut report.notes,
+        |ir, notes| {
+            refused = design::project(ctx, ir, notes, bar, sources, inputs)?;
+            Ok(())
+        },
+    )?;
+    let stated = !ir.design.features.is_empty();
+    for note in &mut report.notes {
+        if !OnshapeLossCode::ThinModelNotSupported.matches(note) {
+            continue;
         }
-        for note in &mut report.notes {
-            if OnshapeLossCode::ThinModelNotSupported.matches(note) {
-                *note = OnshapeLossCode::ThinNotSupported.note(format!(
-                    "{reason}; thin construction retains its native model operation"
-                ));
-            }
+        let reason = if stated {
+            refused
+                .iter()
+                .find(|(name, _)| note.message.ends_with(&format!("; subject: {name}")))
+                .map(|(_, reason)| reason.as_str())
+        } else {
+            Some("the design layer is not stated")
+        };
+        if let Some(reason) = reason {
+            *note = OnshapeLossCode::ThinNotSupported.note(format!(
+                "{reason}; thin construction retains its native model operation"
+            ));
         }
     }
     Ok(())
@@ -1376,6 +1384,43 @@ fn annotate(
                 .field_exactness(&feature.id, thin::SIDE, Exactness::Inferred)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
+        if let cadmpeg_ir::design::feature::FeatureOperation::Sweep(sweep) =
+            &feature.definition.operation
+        {
+            if sweep.controls.scaling.is_some() {
+                annotations
+                    .field_exactness(
+                        &feature.id,
+                        "definition.operation.value.controls.scaling",
+                        Exactness::Inferred,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?;
+            }
+        }
+        if let cadmpeg_ir::design::feature::FeatureOperation::Chamfer(chamfer) =
+            &feature.definition.operation
+        {
+            use cadmpeg_ir::design::ops::dressup::ChamferSize;
+            for (index, set) in chamfer
+                .sets
+                .iter()
+                .enumerate()
+                .filter(|(_, set)| set.reference.is_none())
+            {
+                let side = match set.size {
+                    Some(ChamferSize::Distances { .. }) => "first",
+                    Some(ChamferSize::DistanceAngle { .. }) => "distance",
+                    _ => continue,
+                };
+                annotations
+                    .field_exactness(
+                        &feature.id,
+                        format!("definition.operation.value.sets.{index}.size.value.{side}"),
+                        Exactness::Inferred,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?;
+            }
+        }
     }
     model.source_fidelity.annotations = annotations.build();
     Ok(())
@@ -1383,8 +1428,7 @@ fn annotate(
 
 /// The model fields the decoder reads to build each design field. A design
 /// feature's definition is read from the source feature, and takes the
-/// `definition` mark [`annotate`] states on every feature; the decoder states
-/// no design parameter.
+/// `definition` mark [`annotate`] states on every feature.
 const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
     cadmpeg_ir::design::projection::Restatement {
         feature: feature_inputs,
@@ -1407,21 +1451,26 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
 #[deny(clippy::wildcard_enum_match_arm)]
 fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
+        ParameterField::Owner => &[ModelParameterField::Owner],
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind => &[ModelParameterField::Value],
+        ParameterField::Definition => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Dependencies,
+            ModelParameterField::Properties,
+        ],
+        ParameterField::Unit => &[ModelParameterField::ExpressionText],
+        ParameterField::Value => &[ModelParameterField::Value],
+        ParameterField::NativeOptions | ParameterField::SourceSettings => {
+            &[ModelParameterField::Properties]
+        }
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
         ParameterField::Scope
-        | ParameterField::Owner
         | ParameterField::Position
-        | ParameterField::Name
-        | ParameterField::Kind
-        | ParameterField::Unit
-        | ParameterField::Definition
-        | ParameterField::Value
         | ParameterField::Display
         | ParameterField::Tolerance
         | ParameterField::Decimals
-        | ParameterField::Comment
-        | ParameterField::NativeOptions
-        | ParameterField::SourceSettings
-        | ParameterField::NativeRef => &[],
+        | ParameterField::Comment => &[],
     }
 }
 

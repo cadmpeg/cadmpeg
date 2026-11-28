@@ -178,10 +178,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "spreadsheet"
-              }
+              "kind": "spreadsheet",
+              "value": "fcstd:design:spreadsheet#Parameters"
             }
           },
           "id": "fcstd:design:feature#Parameters",
@@ -356,17 +354,11 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
-                  {
-                    "kind": "text",
-                    "value": "'Length"
-                  }
-                ]
+                "measures": [],
+                "refs": [],
+                "text": "\"Length\""
               }
             }
           },
@@ -374,7 +366,6 @@
           "kind": {
             "kind": "text"
           },
-          "name": "A1",
           "native_options": {},
           "native_ref": "fcstd:native:property#Parameters:cells",
           "owner": {
@@ -392,17 +383,11 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
-                  {
-                    "kind": "text",
-                    "value": "'Width"
-                  }
-                ]
+                "measures": [],
+                "refs": [],
+                "text": "\"Width\""
               }
             }
           },
@@ -410,7 +395,6 @@
           "kind": {
             "kind": "text"
           },
-          "name": "A2",
           "native_options": {},
           "native_ref": "fcstd:native:property#Parameters:cells",
           "owner": {
@@ -428,17 +412,11 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
-                  {
-                    "kind": "text",
-                    "value": "=30 mm"
-                  }
-                ]
+                "measures": [],
+                "refs": [],
+                "text": "30[mm]"
               }
             }
           },
@@ -470,17 +448,11 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
-                  {
-                    "kind": "text",
-                    "value": "=20 mm"
-                  }
-                ]
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
               }
             }
           },
@@ -494,7 +466,6 @@
               "time": 0
             }
           },
-          "name": "B2",
           "native_options": {},
           "native_ref": "fcstd:native:property#Parameters:cells",
           "owner": {
@@ -667,7 +638,33 @@
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": []
+      "spreadsheets": [
+        {
+          "cells": [
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
+            },
+            {
+              "address": "A2",
+              "parameter": "fcstd:design:parameter#Parameters:cell:A2"
+            },
+            {
+              "address": "B2",
+              "parameter": "fcstd:design:parameter#Parameters:cell:B2"
+            }
+          ],
+          "column_widths": [],
+          "id": "fcstd:design:spreadsheet#Parameters",
+          "merged_ranges": [],
+          "native_ref": "fcstd:native:object#Parameters",
+          "row_heights": []
+        }
+      ]
     },
     "fragment": false,
     "geometry": {
