@@ -7,7 +7,6 @@ use std::num::NonZeroU32;
 
 use super::reference::{first_matching, references};
 use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueExt};
-use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -24,6 +23,7 @@ use cadmpeg_ir::pmi::{
 use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -210,12 +210,11 @@ pub(super) fn decode(
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up(
                     id,
-                    StepLossCode::PmiDatumSystemInvalid
-                        .note(format!("DATUM_SYSTEM #{id} omitted: {error}")),
-                ));
+                    Cause::Undecoded,
+                    format!("DATUM_SYSTEM #{id} omitted: {error}"),
+                );
                 continue;
             }
         };
@@ -400,11 +399,34 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    // The dimensions that a PLUS_MINUS_TOLERANCE tolerances. ISO 10303-47
+    // states `plus_minus_tolerance` UR1: one tolerance for each dimension.
+    let mut toleranced = BTreeSet::new();
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
         let refs = collect_pmi_references(record.parameters(), ctx)?;
-        let dimension = refs
+        let dimension_id = refs
             .iter()
-            .find_map(|reference| annotations.get(*reference));
+            .copied()
+            .find(|reference| annotations.get(*reference).is_some());
+        let dimension = dimension_id.and_then(|reference| annotations.get(reference));
+        let additional = || {
+            let dimension = dimension_id.unwrap_or_default();
+            if toleranced.contains(&dimension) {
+                (
+                    Cause::Unreadable,
+                    format!(
+                        "PLUS_MINUS_TOLERANCE #{id} tolerances dimension #{dimension}, which an earlier PLUS_MINUS_TOLERANCE tolerances (ISO 10303-47 plus_minus_tolerance UR1)"
+                    ),
+                )
+            } else {
+                (
+                    Cause::Undecoded,
+                    format!(
+                        "PLUS_MINUS_TOLERANCE #{id} tolerances dimension #{dimension}, which holds a tolerance from its own representation"
+                    ),
+                )
+            }
+        };
         let limits = refs.iter().find_map(|reference| {
             exchange
                 .records()
@@ -488,32 +510,30 @@ pub(super) fn decode(
                     }
                     typed.insert(id);
                     typed.extend(refs);
+                    toleranced.extend(dimension_id);
                 } else {
-                    losses.extend(give_up_instance(
-                        exchange,
-                        id,
-                        StepLossCode::DecodeWarning.note(format!(
-                            "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                        )),
-                    ));
+                    let (cause, why) = additional();
+                    exchange
+                        .lost()
+                        .give_up_for(id, cause, &StepLossCode::DecodeWarning.note(why));
                 }
             } else {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up_for(
                     id,
-                    StepLossCode::DecodeWarning.note(format!(
+                    Cause::Undecoded,
+                    &StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
                     )),
-                ));
+                );
             }
         } else if let (Some(_), Some((fit_id, None, _))) = (dimension, &fit) {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Undecoded,
+                &StepLossCode::DecodeWarning.note(format!(
                     "LIMITS_AND_FITS #{fit_id} names no hole or shaft letter; the designation is not transferred"
                 )),
-            ));
+            );
         } else if let (Some(index), Some((fit_id, Some(fit), zone_variance))) = (dimension, fit) {
             if set_dimension_tolerance(
                 &mut ir.model.pmi[index.get()].definition,
@@ -529,23 +549,21 @@ pub(super) fn decode(
                     );
                 }
                 typed.extend([id, fit_id]);
+                toleranced.extend(dimension_id);
             } else {
-                losses.extend(give_up_instance(
-                    exchange,
-                    id,
-                    StepLossCode::DecodeWarning.note(format!(
-                        "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )),
-                ));
+                let (cause, why) = additional();
+                exchange
+                    .lost()
+                    .give_up_for(id, cause, &StepLossCode::DecodeWarning.note(why));
             }
         } else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Undecoded,
+                &StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
                 )),
-            ));
+            );
         }
     }
 
@@ -610,11 +628,11 @@ pub(super) fn decode(
                 .collect::<Vec<_>>()
                 .join("+");
             let message = format!("{display_name} #{id} has no numeric magnitude");
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(message),
-            ));
+                Cause::Undecoded,
+                &StepLossCode::DecodeWarning.note(message),
+            );
             continue;
         };
         let defined_unit = record

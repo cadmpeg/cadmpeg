@@ -2,18 +2,57 @@
 //! Synthetic configuration-table documents and Design configuration root records.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::features::parameters::DesignParameter as NeutralParameter;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 use serde_json::{Map, Value};
 
 use crate::design::configurations::ConfigurationTargets;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
+use crate::F3dCodec;
+
+/// `ir` with no source and no unknown native records.
+pub(crate) fn unsourced(ir: &CadIr) -> CadIr {
+    let mut ir = ir.clone();
+    ir.source = None;
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .unwrap();
+    ir
+}
+
+/// `ir` written with `fidelity`: the report, which names one of the write
+/// paths `paths`, and the bytes.
+pub(crate) fn written_on(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    paths: &[&str],
+) -> (ExportReport, Vec<u8>) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write");
+    let path = report.write_path().to_string();
+    assert!(
+        paths.contains(&path.as_str()),
+        "{path} ({:?}): {:#?}",
+        report.synthesis_cause().map(ToString::to_string),
+        report.losses
+    );
+    (report, bytes)
+}
 
 /// The Design stream of the parameter records of [`Natives`].
 pub(crate) const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -204,7 +243,12 @@ pub(crate) const ROOT_RECORD: u32 = 349;
 /// `archive` with a `FusionDesignSegmentType1` segment whose one primary record
 /// is `root`, which must carry class tag `256` and index [`ROOT_RECORD`].
 pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
-    use std::io::{Read, Write};
+    with_root_segment_in(archive, "FusionDesignSegmentType1", root)
+}
+
+/// [`with_root_segment`] with the segment folder `segment`.
+pub(crate) fn with_root_segment_in(archive: Vec<u8>, segment: &str, root: Vec<u8>) -> Vec<u8> {
+    use std::io::Write;
 
     let metadata = crate::test_support::streams_test::design_metastream_with_records(
         &[(
@@ -220,19 +264,12 @@ pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     for index in 0..source.len() {
-        let mut entry = source.by_index(index).unwrap();
-        let name = entry.name().unwrap().into_owned();
-        let mut payload = Vec::new();
-        entry.read_to_end(&mut payload).unwrap();
-        zip.start_file(name, stored).unwrap();
-        zip.write_all(&payload).unwrap();
+        zip.raw_copy_file(source.by_index_raw(index).unwrap())
+            .unwrap();
     }
     for (name, payload) in [("BulkStream.dat", root), ("MetaStream.dat", metadata)] {
-        zip.start_file(
-            format!("FusionAssetName[Active]/FusionDesignSegmentType1/{name}"),
-            stored,
-        )
-        .unwrap();
+        zip.start_file(format!("FusionAssetName[Active]/{segment}/{name}"), stored)
+            .unwrap();
         zip.write_all(&payload).unwrap();
     }
     zip.finish().unwrap().into_inner()
@@ -363,6 +400,7 @@ pub(crate) struct Natives {
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) neutral_parameters: Vec<NeutralParameter>,
     pub(crate) neutral_features: Vec<Feature>,
+    pub(crate) producers: BTreeSet<FeatureId>,
 }
 
 impl Natives {
@@ -372,6 +410,7 @@ impl Natives {
         Self {
             neutral_parameters: parameters.iter().map(neutral_parameter).collect(),
             neutral_features: vec![neutral_feature(&scopes[0], "f3d:model:feature#sketch")],
+            producers: BTreeSet::new(),
             owners: vec![owner(STREAM, 330, 329)],
             parameters,
             scopes,
@@ -395,6 +434,7 @@ impl Natives {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.parameters = self.neutral_parameters.clone();
         ir.model.features = std::mem::take(&mut self.neutral_features);
+        self.producers = crate::design::configurations::body_producers(&ir.model.features);
         let archive = super::zip_test::f3d_with_configurations(
             &super::smbh_geometry_test::synthetic_geometry_smbh(),
             &[],

@@ -386,14 +386,25 @@ fn an_unreadable_unreferenced_member_is_retained_without_refusing_the_root() {
         &DecodeOptions::default(),
     )
     .expect("an unreadable unreferenced member must not erase the decoded root");
-    let loss = decoded
-        .report()
-        .losses
+    let losses = &decoded.report().losses;
+    let loss = losses
         .iter()
-        .find(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind())
-        .expect("the unreadable retained member is reported");
-    assert!(loss.message.starts_with("xref broken.f3d:"));
-    assert!(loss.message.contains("source bytes remain retained"));
+        .find(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .starts_with("part archive-entry \"broken.f3d\"")
+        })
+        .expect("the unreadable retained member is given up");
+    assert!(
+        loss.message
+            .contains("xref broken.f3d: member could not be scanned as an F3D document"),
+        "{}",
+        loss.message
+    );
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
 }
 
 #[test]

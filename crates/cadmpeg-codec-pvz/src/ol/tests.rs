@@ -304,22 +304,29 @@ fn a_malformed_surface_stream_is_reported_and_the_member_survives() {
             vertex_block(&SQUARE, None),
             primitive(0x1b, &[0, 1]),
         ],
-        vec![
-            patch_header(0xffff_ffff, 0),
-            tlv(0x0100_0016, &[2, 0, 0, 0, 0]),
-        ],
         vec![tlv(0x0100_000d, &[0; 12])],
     ] {
         let geometry = geometry(&surface_member(&[], &records)).unwrap();
         assert!(geometry.meshes.is_empty());
         assert_eq!(
             losses(&geometry),
-            [
-                PvzLossCode::GeometryStreamUndecoded.kind(),
-                cadmpeg_ir::unknown::part::record_unreadable_kind(),
-            ]
+            [cadmpeg_ir::unknown::part::record_unreadable_kind()]
         );
     }
+}
+
+#[test]
+fn a_vertex_layout_bit_outside_the_defined_bits_is_charged_as_undecoded() {
+    let records = [
+        patch_header(0xffff_ffff, 0),
+        tlv(0x0100_0016, &[2, 0, 0, 0, 0]),
+    ];
+    let geometry = geometry(&surface_member(&[], &records)).unwrap();
+    assert!(geometry.meshes.is_empty());
+    assert_eq!(
+        losses(&geometry),
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
+    );
 }
 
 #[test]
@@ -343,10 +350,7 @@ fn edge_groups_are_decoded_and_reported() {
     );
     assert_eq!(
         losses(&geometry(&odd).unwrap()),
-        [
-            PvzLossCode::GeometryStreamUndecoded.kind(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind(),
-        ]
+        [cadmpeg_ir::unknown::part::record_unreadable_kind()]
     );
 }
 

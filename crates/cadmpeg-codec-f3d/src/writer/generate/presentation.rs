@@ -164,7 +164,15 @@ impl GeneratedDesignRegistry {
         let mut pending = Vec::new();
         let mut guessed_visible = Vec::new();
 
+        let mut keys = Vec::with_capacity(target.geometry.bodies.len());
         for body in &target.geometry.bodies {
+            keys.push(source_less_body_key(attributes, body)?);
+        }
+        let stored_keys = keys
+            .iter()
+            .filter_map(|key| u64::try_from(*key).ok())
+            .collect::<BTreeSet<_>>();
+        for ((ordinal, body), key) in (0_u64..).zip(&target.geometry.bodies).zip(keys) {
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
             let stated = body
                 .visible
@@ -177,10 +185,18 @@ impl GeneratedDesignRegistry {
                 }
                 (None, BodySelection::Stated) => continue,
             };
-            let asm_body_key =
-                u64::try_from(source_less_body_key(attributes, body)?).map_err(|_| {
-                    CodecError::NotImplemented("source-less ASM body key is negative".into())
-                })?;
+            // A body that stores no ASM body key is selected by its ordinal
+            // among the written bodies (f3d.md §3.1).
+            let asm_body_key = match u64::try_from(key) {
+                Ok(key) => key,
+                Err(_) if !stored_keys.contains(&ordinal) => ordinal,
+                Err(_) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "source-less F3D body {} stores no ASM body key, and another body stores its ordinal {ordinal} as its key",
+                        body.id
+                    )))
+                }
+            };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
             if body_map.insert(asm_body_key, entity_suffix).is_some() {
                 return Err(CodecError::malformed(format_args!(

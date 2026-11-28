@@ -40,7 +40,7 @@ use crate::design::presentation::{
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::zero_fill_to;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -255,69 +255,221 @@ pub(crate) struct ProteinAppearanceEdit {
     pub(crate) properties: BTreeMap<String, f64>,
 }
 
+pub(crate) struct ProteinArchive<'a> {
+    root: View<'a>,
+    index: ArchiveSnapshot<'a>,
+    reads: Option<std::sync::Arc<ProteinReads>>,
+}
+
+#[derive(Default)]
+pub(crate) struct ProteinReads {
+    members: std::sync::Mutex<BTreeMap<String, HeldProteinMember>>,
+    schemas: std::sync::Mutex<ProteinSchemas>,
+}
+
+#[derive(Default)]
+enum ProteinSchemas {
+    #[default]
+    Unread,
+    Absent,
+    Present(cadmpeg_protein::SchemaCatalog),
+}
+
+enum HeldProteinMember {
+    Stored(cadmpeg_core::decode::ByteRange),
+    Expanded(std::sync::Arc<[u8]>),
+}
+
+enum ProteinMember<'a> {
+    View(View<'a>),
+    Held(std::sync::Arc<[u8]>),
+}
+
+impl AsRef<[u8]> for ProteinMember<'_> {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Self::View(view) => view.window(),
+            Self::Held(bytes) => bytes,
+        }
+    }
+}
+
+impl<'a> ProteinArchive<'a> {
+    pub(crate) fn read(
+        ctx: &DecodeContext<'a>,
+        root: View<'a>,
+        reads: Option<std::sync::Arc<ProteinReads>>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            root,
+            index: ArchiveSnapshot::new(ctx, root)?,
+            reads,
+        })
+    }
+
+    fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<ProteinMember<'a>, CodecError> {
+        let Some(reads) = &self.reads else {
+            return self.index.open(ctx, name).map(ProteinMember::View);
+        };
+        let mut members = reads.members.lock().map_err(CodecError::malformed)?;
+        let held = match members.entry(name.to_owned()) {
+            std::collections::btree_map::Entry::Occupied(member) => member.into_mut(),
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                let entry = self.index.entry(name).ok_or_else(|| {
+                    CodecError::malformed(format_args!("Protein ZIP entry {name} is absent"))
+                })?;
+                let member = if entry.compression == cadmpeg_container::ZipCompression::Stored {
+                    self.index.open(ctx, name)?;
+                    HeldProteinMember::Stored(entry.stored_range()?)
+                } else {
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let expanded = ctx.with_arena(&arena, |ctx| {
+                        self.index
+                            .open(ctx, name)
+                            .map(|view| std::sync::Arc::from(view.window()))
+                    })?;
+                    HeldProteinMember::Expanded(expanded)
+                };
+                slot.insert(member)
+            }
+        };
+        match held {
+            HeldProteinMember::Expanded(bytes) => {
+                Ok(ProteinMember::Held(std::sync::Arc::clone(bytes)))
+            }
+            HeldProteinMember::Stored(range) => {
+                let bounds = |offset| {
+                    usize::try_from(offset)
+                        .ok()
+                        .and_then(|offset| self.root.start().checked_add(offset))
+                };
+                bounds(range.start)
+                    .zip(bounds(range.end))
+                    .and_then(|(start, end)| self.root.child(start, end))
+                    .map(ProteinMember::View)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "Protein ZIP entry {name} escapes its archive"
+                        ))
+                    })
+            }
+        }
+    }
+
+    fn schema_records(
+        &self,
+        ctx: &DecodeContext<'a>,
+        frames: &[cadmpeg_protein::framing::RecordFrame],
+    ) -> Result<Option<cadmpeg_protein::DecodeOutcome>, CodecError> {
+        let load = || {
+            cadmpeg_protein::SchemaCatalog::load_indexed(ctx, &self.index, |name| {
+                self.open(ctx, name)
+            })
+        };
+        let Some(reads) = &self.reads else {
+            return load()?
+                .map(|mut catalog| cadmpeg_protein::decode_frames(ctx, &mut catalog, frames))
+                .transpose();
+        };
+        let mut schemas = reads.schemas.lock().map_err(CodecError::malformed)?;
+        if matches!(*schemas, ProteinSchemas::Unread) {
+            *schemas = match load()? {
+                Some(catalog) => ProteinSchemas::Present(catalog),
+                None => ProteinSchemas::Absent,
+            };
+        }
+        let ProteinSchemas::Present(catalog) = &mut *schemas else {
+            return Ok(None);
+        };
+        cadmpeg_protein::decode_frames(ctx, catalog, frames).map(Some)
+    }
+
+    fn member_ending(
+        &self,
+        ctx: &DecodeContext<'a>,
+        suffix: &str,
+    ) -> Result<Option<(String, ProteinMember<'a>)>, CodecError> {
+        self.index
+            .entries()
+            .iter()
+            .find(|entry| entry.name.ends_with(suffix))
+            .map(|entry| {
+                self.open(ctx, &entry.name)
+                    .map(|view| (entry.name.clone(), view))
+            })
+            .transpose()
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn patch_protein_appearances(
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     notes: &mut Vec<String>,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    ctx.with_arena(&arena, |ctx| {
+        let source = ProteinArchive::read(ctx, View::over_retained(protein), None)?;
+        patch_protein_source(&source, edits, notes, ctx)
+    })
+}
+
+pub(crate) fn patch_protein_source<'a>(
+    source: &ProteinArchive<'a>,
+    edits: &BTreeMap<String, ProteinAppearanceEdit>,
+    notes: &mut Vec<String>,
+    ctx: &DecodeContext<'a>,
+) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(source.root.window())).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
     })?;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let mut patched = std::collections::BTreeSet::new();
     let mut total_inflated = 0_u64;
     for index in 0..archive.len() {
-        // `zip` cannot expand or write a Zstandard member: see `crate::zip_write`.
-        let zstd = crate::zip_write::is_zstd_member(&mut archive, index)?;
-        let (name, options, mut bytes) = {
-            let mut entry = if zstd {
-                archive.by_index_raw(index)
-            } else {
-                archive.by_index(index)
-            }
+        let entry = archive.by_index_raw(index).map_err(|error| {
+            CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
+        })?;
+        let name = entry
+            .name()
             .map_err(|error| {
-                CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
-            })?;
-            let name = entry
-                .name()
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
-                })?
-                .into_owned();
-            let options = crate::zip_write::file_options(entry.compression());
-            let declared_size = entry.size();
-            total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
-                CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
-            })?;
-            if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
-                return Err(CodecError::malformed(format_args!(
-                    "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
-                    crate::container::MAX_ARCHIVE_BYTES
-                )));
-            }
-            let bytes = if zstd {
-                crate::zip_write::expand_zstd_member(
-                    &mut entry,
-                    &name,
-                    cadmpeg_core::decode::u64_from_index(protein.len()),
-                    limits,
-                )?
-            } else {
-                crate::container::read_entry_bounded(&mut entry, declared_size, &name)?
-            };
-            (name, options, bytes)
-        };
-        let expanded = zstd.then(|| bytes.clone());
-        if name.ends_with("AssetData/InstanceProperties.bin") {
-            patch_instance_colors(protein, &mut bytes, edits, &mut patched, notes)?;
+                CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
+            })?
+            .into_owned();
+        let options = crate::zip_write::file_options(entry.compression());
+        let zstd = entry.compression() == zip::CompressionMethod::ZSTD;
+        let declared_size = entry.size();
+        total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
+            CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
+        })?;
+        if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
+            return Err(CodecError::malformed(format_args!(
+                "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
+                crate::container::MAX_ARCHIVE_BYTES
+            )));
         }
-        if let Some(expanded) = expanded {
+        crate::zip_write::check_member_size(ctx, &name, declared_size)?;
+        let payload = match ctx.run_part(|| source.open(ctx, &name))? {
+            Ok(payload) => payload,
+            Err(error) => {
+                return Err(CodecError::malformed(format_args!(
+                    "ZIP entry {name}: {error}"
+                )))
+            }
+        };
+        let expanded = payload.as_ref();
+        drop(entry);
+        let mut bytes = expanded.to_vec();
+        if name.ends_with("AssetData/InstanceProperties.bin") {
+            patch_instance_colors(ctx, source, &mut bytes, edits, &mut patched, notes)?;
+        }
+        if zstd {
             crate::zip_write::write_zstd_member(
                 &mut zip,
                 &mut archive,
                 index,
-                &expanded,
+                expanded,
                 &bytes,
                 notes,
             )?;
@@ -335,17 +487,18 @@ pub(crate) fn patch_protein_appearances(
     Ok((bytes, patched))
 }
 
-fn patch_instance_colors(
-    protein: &[u8],
+fn patch_instance_colors<'a>(
+    ctx: &DecodeContext<'a>,
+    source: &ProteinArchive<'a>,
     bytes: &mut [u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
     let frames = cadmpeg_protein::framing::record_frames(bytes)?;
-    let schema_driven = cadmpeg_protein::has_schemas(protein);
-    let decoded = if schema_driven {
-        let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
+    let outcome = source.schema_records(ctx, &frames)?;
+    let schema_driven = outcome.is_some();
+    let decoded = if let Some(outcome) = outcome {
         notes.extend(outcome.rejected.iter().map(|rejected| {
             format!(
                 "Protein record {} rejected: {}",
@@ -619,23 +772,20 @@ pub(crate) fn decode_with_body_bindings<'a>(
         .iter()
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
     {
-        let protein = scan.entry_view(&entry.name).ok_or_else(|| {
-            CodecError::Malformed("protein archive entry missing from scan".into())
-        })?;
-        // An entry that opens no archive, or whose instance stream frames no
-        // record, leaves the document whole.
-        let (instance_name, record_frames) = match instance_records(ctx, protein) {
+        let source = scan.protein_source(ctx, &entry.name);
+        let (source, instance_name, record_frames) = match source.and_then(|source| {
+            Ok(instance_records(ctx, &source)?.map(|(name, frames)| (source, name, frames)))
+        }) {
             Ok(Some(found)) => found,
             Ok(None) => continue,
             Err(error) => {
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                let cause = Cause::Unreadable.of(&error);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, cause, error)?);
                 continue;
             }
         };
-        let catalog = definition_catalog(ctx, protein)?;
-        let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
-        let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
-            let outcome = cadmpeg_protein::decode_frames(ctx, &mut schema_catalog, &record_frames)?;
+        let catalog = definition_catalog(ctx, &source)?;
+        let mut appearances = if let Some(outcome) = source.schema_records(ctx, &record_frames)? {
             let stream = scan.entry_stream(&format!("{}/{instance_name}", entry.name))?;
             for rejected in &outcome.rejected {
                 let frame = usize::try_from(rejected.ordinal)
@@ -659,10 +809,14 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .in_stream(stream.clone());
                 given_up.push(ctx.give_up_part(
                     part,
-                    CodecError::malformed(format_args!(
-                        "Protein record {} rejected: {}",
-                        rejected.ordinal, rejected.detail
-                    )),
+                    Cause::Undecoded,
+                    crate::design::decode::record::give_up_error(
+                        Cause::Undecoded,
+                        format_args!(
+                            "Protein record {} rejected: {}",
+                            rejected.ordinal, rejected.detail
+                        ),
+                    ),
                 )?);
             }
             let records = outcome.records;
@@ -1941,26 +2095,26 @@ const PROTEIN_RECORD_PART: &str = "protein-record";
 /// pages frame no records.
 fn instance_records<'a>(
     ctx: &DecodeContext<'a>,
-    protein: View<'a>,
+    protein: &ProteinArchive<'a>,
 ) -> Result<Option<(String, Vec<cadmpeg_protein::framing::RecordFrame>)>, CodecError> {
-    let archive = ArchiveSnapshot::new(ctx, protein)?;
-    let Some((name, instance)) = open_nested(ctx, &archive, "AssetData/InstanceProperties.bin")?
+    let Some((name, instance)) = protein.member_ending(ctx, "AssetData/InstanceProperties.bin")?
     else {
         return Ok(None);
     };
-    let frames = cadmpeg_protein::framing::record_frames(instance.window())?;
+    let frames = cadmpeg_protein::framing::record_frames(instance.as_ref())?;
     Ok(Some((name, frames)))
 }
 
 fn definition_catalog<'a>(
     ctx: &DecodeContext<'a>,
-    protein: View<'a>,
+    protein: &ProteinArchive<'a>,
 ) -> Result<std::collections::HashMap<(String, String), Option<String>>, CodecError> {
-    let Some(entry) = nested_entry(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
+    let Some((_, entry)) =
+        protein.member_ending(ctx, "AssetData/DefinitionIteratorProperties.bin")?
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::framing::record_frames(entry.window())?;
+    let frames = cadmpeg_protein::framing::record_frames(entry.as_ref())?;
     let mut definitions = std::collections::HashMap::new();
     for frame in &frames {
         let definition = decode_definition_catalog_record(frame.bytes())?;
@@ -2066,33 +2220,6 @@ fn consume_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), Co
             .ok_or_else(|| malformed_definition_catalog_record("string", *position))?;
     }
     Ok(())
-}
-
-/// The member of the Protein archive `protein` whose name ends with
-/// `suffix`. The decode reads the definition catalog only after the instance
-/// stream of the same archive opened.
-fn nested_entry<'a>(
-    ctx: &DecodeContext<'a>,
-    protein: View<'a>,
-    suffix: &str,
-) -> Result<Option<View<'a>>, CodecError> {
-    let archive = ArchiveSnapshot::new(ctx, protein)?;
-    Ok(open_nested(ctx, &archive, suffix)?.map(|(_, view)| view))
-}
-
-/// The name and bytes of the first member of `archive` whose name ends with
-/// `suffix`.
-fn open_nested<'a>(
-    ctx: &DecodeContext<'a>,
-    archive: &ArchiveSnapshot<'a>,
-    suffix: &str,
-) -> Result<Option<(String, View<'a>)>, CodecError> {
-    for entry in archive.entries() {
-        if entry.name.ends_with(suffix) {
-            return Ok(Some((entry.name.clone(), archive.open(ctx, &entry.name)?)));
-        }
-    }
-    Ok(None)
 }
 
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native

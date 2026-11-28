@@ -1839,3 +1839,14 @@ mod resource_limits;
 mod materials;
 
 mod utf16;
+
+/// A major-1 mapping channel with a negative minor has no typed reading
+/// (`rhino_3dm.md` §4: major-1 readers accept every nonnegative minor).
+#[test]
+fn a_negative_minor_mapping_channel_is_undecoded() {
+    let archive = crate::chunks::ArchiveVersion::V5;
+    let chunk = crate::test_support::test_dump::anonymous_chunk(archive, -1, &[0; 24]);
+    let error = super::parse_rendering_mapping_channel(&chunk, 0, chunk.len(), archive, false)
+        .expect_err("negative minor");
+    assert_eq!(error.cause(), cadmpeg_ir::unknown::part::Cause::Undecoded);
+}

@@ -45,6 +45,22 @@ pub(crate) fn node_with_program(
     index: u16,
     fields: &[F],
 ) {
+    write_node(out, kind, program, index, fields, false);
+}
+
+/// Write a Deltas image of one node with the base field list.
+pub(crate) fn status_node(out: &mut Vec<u8>, kind: u16, index: u16, fields: &[F]) {
+    write_node(out, kind, &[0xff], index, fields, true);
+}
+
+fn write_node(
+    out: &mut Vec<u8>,
+    kind: u16,
+    program: &[u8],
+    index: u16,
+    fields: &[F],
+    status: bool,
+) {
     out.extend_from_slice(&kind.to_be_bytes());
     out.extend_from_slice(program);
     let count = fields.iter().find_map(|field| match field {
@@ -63,7 +79,13 @@ pub(crate) fn node_with_program(
     for field in fields {
         match field {
             F::I(value) => out.extend_from_slice(&value.to_be_bytes()),
-            F::P(value) | F::S(value) => out.extend_from_slice(&value.to_be_bytes()),
+            F::P(value) => {
+                out.extend_from_slice(&value.to_be_bytes());
+                if status {
+                    out.push(0);
+                }
+            }
+            F::S(value) => out.extend_from_slice(&value.to_be_bytes()),
             F::R(value) => out.extend_from_slice(&value.to_be_bytes()),
             F::C(value) | F::B(value) => out.push(*value),
             F::L(value) => out.push(u8::from(*value)),
@@ -84,9 +106,14 @@ pub(crate) fn node_with_program(
             F::Ints(values) => values
                 .iter()
                 .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
-            F::Pointers(values) => values
-                .iter()
-                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Pointers(values) => {
+                for value in values {
+                    out.extend_from_slice(&value.to_be_bytes());
+                    if status {
+                        out.push(0);
+                    }
+                }
+            }
         }
     }
 }
@@ -185,4 +212,40 @@ pub(crate) fn topology_sequence_with_face(face: Option<(&[u8], &[F])>) -> (Vec<u
     );
     out.extend_from_slice(&[0, 1, 0, 1]);
     (out, body_offset)
+}
+
+/// The nodes of one body, region, and shell that hold FACE 5, which names
+/// no loop, on surface 20 of node `kind`: a plane (50), a sphere (53), or a
+/// torus (54).
+pub(crate) fn loopless_nodes(kind: u16) -> Vec<(u16, u16, Vec<F>)> {
+    use F::{B, C, I, P, R, V};
+    let mut face = face_fields();
+    face[5] = P(1);
+    let mut surface = vec![I(7), P(1), P(1), P(1), P(1), P(1), C(b'+')];
+    match kind {
+        53 => surface.extend([
+            V([0.0; 3]),
+            R(0.007),
+            V([0.0, 0.0, 1.0]),
+            V([1.0, 0.0, 0.0]),
+        ]),
+        54 => surface.extend([
+            V([0.0; 3]),
+            V([0.0, 0.0, 1.0]),
+            R(0.007),
+            R(0.002),
+            V([1.0, 0.0, 0.0]),
+        ]),
+        50 => surface.extend([V([0.0; 3]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]),
+        _ => unreachable!(),
+    }
+    #[rustfmt::skip]
+    let nodes = vec![
+        (12, 2, vec![I(7), P(1), P(1), P(1), P(1), P(1), P(1), R(1000.0), R(1.0e-8), P(1), P(1), P(1), B(1), P(1), B(1), B(0), P(4), P(1), P(1), P(1), P(3), P(1), P(1)]),
+        (19, 3, vec![I(2), P(1), P(2), P(1), P(1), P(4), C(b'S')]),
+        (13, 4, vec![I(3), P(1), P(2), P(1), P(5), P(1), P(1), P(3), P(1)]),
+        (14, 5, face),
+        (kind, 20, surface),
+    ];
+    nodes
 }

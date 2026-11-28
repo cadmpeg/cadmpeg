@@ -155,7 +155,7 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() }));
+        .any(|loss| { loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind() }));
     assert!(recovered
         .ir()
         .native_unknowns("step")
@@ -316,7 +316,18 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
         "#900001=TEXT_STYLE_WITH_BOX_CHARACTERISTICS('',$,((.BOX_HEIGHT.,1.E999)));",
         "#900001=TEXT_STYLE_WITH_BOX_CHARACTERISTICS('',#900002,((.BOX_HEIGHT.,1.E999)));",
         "#900001=CURVE_STYLE('',.CONTINUOUS.,LENGTH_MEASURE(1.E999),$);",
+        "#900001=CURVE_STYLE('',.CONTINUOUS.,LENGTH_MEASURE(1.,2.),$);",
+        "#900001=SURFACE_STYLE_TRANSPARENT(1.E+);",
     ] {
+        // A valid numeric token outside the reader's range is a value the
+        // reader cannot hold; a literal that breaks the grammar is a
+        // recovery from broken input, which strict admission refuses.
+        let broken = record.contains("(1.,2.)") || record.contains("1.E+)");
+        let code = if broken {
+            crate::loss::StepLossCode::ParseNoncanonicalSyntax
+        } else {
+            crate::loss::StepLossCode::ParsePresentationLiteralUnrepresentable
+        };
         let data_end = original.rfind("ENDSEC;").unwrap();
         let source = format!(
             "{}{}\n{}",
@@ -331,16 +342,29 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
         );
         assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
-        assert!(recovered
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::StepLossCode::ParseNoncanonicalSyntax.kind()));
+        assert!(
+            recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == code.kind()),
+            "{record}: {:?}",
+            recovered.report().losses
+        );
         assert!(recovered
             .source_fidelity()
             .retained_records()
             .values()
             .any(|record_source| record_source.data() == Some(record.as_bytes())));
+        let mut pinned = DecodeOptions::default();
+        pinned.strictness.pinned = true;
+        // `#900002` names an absent instance, which breaks the exchange
+        // apart from the literal.
+        assert_eq!(
+            codec.decode(&mut Cursor::new(&source), &pinned).is_err(),
+            broken || record.contains("#900002"),
+            "{record}"
+        );
         assert_eq!(
             cadmpeg_test_support::wire::coverage_count(recovered.report(), "bytes_unclassified"),
             0

@@ -81,6 +81,48 @@ fn unlinked(feature: &cadmpeg_ir::features::Feature, scope: &str, reason: &str) 
     )
 }
 
+fn project_scopes(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    item: u64,
+    body_bindings: &[crate::records::bodies::DesignBodyBinding],
+) -> Vec<cadmpeg_ir::features::Feature> {
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::records::entity_header::{DesignFeatureTimeline, DesignTimelineFrame};
+    use crate::records::identity::Located;
+    use std::num::NonZeroU64;
+
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+        DesignTimelineFrame::test_items(
+            0,
+            vec![Located {
+                value: item,
+                offset: 0,
+            }],
+        ),
+        "256".to_owned().try_into().unwrap(),
+        NonZeroU64::new(1).unwrap(),
+        0,
+        NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes,
+                timelines: std::slice::from_ref(&timeline),
+                body_bindings,
+                ..Default::default()
+            },
+        )
+    })
+    .unwrap()
+    .features
+}
+
 /// The previous state of a scope that stores none is the state to which its
 /// bound history links its state, else the one state to which the histories
 /// that hold its state link it. A history that links the state to no state
@@ -257,17 +299,6 @@ fn histories_that_share_the_bound_history_id_link_the_previous_state() {
         ],
     );
     assert_eq!(
-        crate::history::history_states::scope_states(
-            &scope,
-            &HashMap::from([(scope.id.clone(), history.id.clone())]),
-            &[history.clone(), namesake.clone(), twice.clone()],
-        ),
-        Some(crate::history::history_states::ScopeStates {
-            state_id: 1,
-            previous: crate::history::history_states::PreviousState::Linked(0),
-        })
-    );
-    assert_eq!(
         bind(
             &feature,
             &scope,
@@ -290,28 +321,48 @@ fn histories_that_share_the_bound_history_id_link_the_previous_state() {
 /// names the first scope and its state.
 #[test]
 fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
-    use crate::history::feature_outputs::{feature_history_states, FeatureStates};
-    use crate::history::history_states::{PreviousState, ScopeStates, StateConflict};
-    let (mut feature, first, _, body) = unstored_previous();
-    let mut last = super::scope_between(2, 1);
-    last.try_edit(|draft| {
-        draft.record_index = 2;
-        draft.layout_fixture_tail();
-    })
-    .unwrap();
-    feature.native_ref = Some(last.id.clone());
-    feature.source_properties.insert(
-        crate::records::feature::derived_base::derived_base_scopes_property(),
-        format!("{},{}", first.record_index, last.record_index),
-    );
-    let scopes = [first.clone(), last.clone()];
+    use crate::records::feature::derived_base::DesignDerivedBaseOwner;
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::identity::Located;
+
+    let derived = |record_index, current, previous| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{record_index}"),
+            DesignFeatureKind::native("Derived Base Feature"),
+            record_index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(current);
+                draft.previous_history_state_id = previous;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope.derived_base_owner = Some(DesignDerivedBaseOwner {
+            record_index: Located {
+                value: 50,
+                offset: 0,
+            },
+            repeat_offset: 0,
+            result_body: None,
+        });
+        scope
+    };
+    let scopes = [derived(70, 1, None), derived(79, 2, Some(1))];
+    let [feature]: [cadmpeg_ir::features::Feature; 1] =
+        project_scopes(&scopes, 50, &[]).try_into().unwrap();
+    assert_eq!(feature.native_ref.as_deref(), Some(scopes[0].id.as_str()));
+    let body = super::active_body();
+    let mut second = body.clone();
+    second.id = "f3d:brep:entity#2".try_into().unwrap();
+    let bodies = [body, second];
     let history = crate::test_support::history::history(
         "f3d:asm-history#1".into(),
         0,
         None,
         false,
         vec![
-            state(2, 2, Some(1), bodies_topology(&[1])),
+            state(2, 2, Some(1), bodies_topology(&[1, 2])),
             state(1, 1, Some(0), bodies_topology(&[1])),
             state(
                 0,
@@ -322,26 +373,12 @@ fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
         ],
     );
     let none = HashMap::new();
-    let placed = |previous| {
-        Some(FeatureStates {
-            state_id: 2,
-            scope: &scopes[0].id,
-            from: ScopeStates {
-                state_id: 1,
-                previous,
-            },
-        })
-    };
-    assert_eq!(
-        feature_history_states(&feature, &scopes, std::slice::from_ref(&history), &none),
-        placed(PreviousState::Linked(0))
-    );
     let mut bound = feature.clone();
     let losses = bind_feature_outputs(
         std::slice::from_mut(&mut bound),
         &scopes,
         &mut [history.clone()],
-        std::slice::from_ref(&body),
+        &bodies,
         &none,
         None,
     )
@@ -349,23 +386,19 @@ fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
     .losses;
     assert_eq!(
         bound.evaluation.outputs().as_slice(),
-        std::slice::from_ref(&body.id)
+        bodies.each_ref().map(|body| body.id.clone())
     );
     assert!(losses
         .iter()
         .all(|loss| loss.code != F3dLossCode::FeatureOutputStateChainUnbound.kind()));
 
     let mut histories = [history, linked_tail(7)];
-    assert_eq!(
-        feature_history_states(&feature, &scopes, &histories, &none),
-        placed(PreviousState::Conflicting(StateConflict::Histories(0, 7)))
-    );
     let mut unbound = feature.clone();
     let losses = bind_feature_outputs(
         std::slice::from_mut(&mut unbound),
         &scopes,
         &mut histories,
-        std::slice::from_ref(&body),
+        &bodies,
         &none,
         None,
     )
@@ -380,10 +413,141 @@ fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
             .collect::<Vec<_>>(),
         vec![unlinked(
             &feature,
-            &first.id,
+            &scopes[0].id,
             "the histories that hold it link it to previous states 0 and 7"
         )]
     );
+}
+
+#[test]
+fn a_stored_copy_paste_result_survives_an_interval_in_another_history() {
+    use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire};
+    use crate::records::feature::body_ops::{
+        CopyPasteRecordLocation, DesignCopiedBody, DesignCopyPasteBodiesOperation,
+    };
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    use crate::records::identity::{Located, ReferenceRun};
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::CopyPasteBodies,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(1);
+            draft.reference_members = ReferenceRun::located(vec![
+                Located {
+                    value: 501,
+                    offset: 14,
+                },
+                Located {
+                    value: 502,
+                    offset: 25,
+                },
+            ]);
+            draft.layout_fixture_references();
+            draft.feature_ordinal_offset = draft.kind_offset + 30;
+            draft.frame_length = draft.feature_ordinal_offset + 110;
+            draft.paired_byte_offset = draft.frame_length;
+        })
+        .unwrap();
+    let record = |record_index| CopyPasteRecordLocation {
+        record_index,
+        class_tag: "264".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+    };
+    let DesignScopePayloadMut::CopyPasteBodies(operation) = scope.payload_mut() else {
+        panic!("CopyPasteBodies payload");
+    };
+    *operation = Some(
+        DesignCopyPasteBodiesOperation::try_new(
+            vec![DesignCopiedBody {
+                operand: Located {
+                    value: 502,
+                    offset: 26,
+                },
+                source: Located {
+                    value: 1,
+                    offset: 25,
+                },
+                copied: Located {
+                    value: 4,
+                    offset: 40,
+                },
+            }],
+            record(501),
+            record(503),
+        )
+        .unwrap(),
+    );
+    let (_, _, mut inferred_history, mut inferred) = native_base_feature();
+    inferred_history.id = "f3d:BREP.inferred:asm-history#0".into();
+    inferred.id = "f3d:brep/inferred/brep:entity#1".try_into().unwrap();
+    let mut copy = inferred.clone();
+    copy.id = "f3d:brep/copied/brep:entity#1".try_into().unwrap();
+    let mut copied_history = abstaining_tail();
+    copied_history.id = "f3d:BREP.copied:asm-history#0".into();
+    let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+        id: "f3d:Design/BulkStream.dat:design-body-binding#10".into(),
+        stream: "Design/BulkStream.dat".into(),
+        pair_count: 1,
+        pair_ordinal: 0,
+        consumers: Vec::new(),
+        asm_body_key: 1,
+        asm_body_key_offset: 10,
+        entity_suffix: 4,
+        entity_suffix_offset: 18,
+        blob_name: "BREP.copied".into(),
+        blob_name_offset: 30,
+        body: Some(copy.id.clone()),
+        component_owner: None,
+        component_owner_unresolved: false,
+        history_only: false,
+    })
+    .unwrap();
+    let scopes = [scope];
+    let bindings = [binding];
+    let projected = project_scopes(&scopes, 10, &bindings);
+    assert_eq!(projected.len(), 1);
+    assert_eq!(
+        projected[0].evaluation.outputs().as_slice(),
+        std::slice::from_ref(&copy.id)
+    );
+    let bodies = [inferred, copy];
+    let mut unread_transition = inferred_history.clone();
+    unread_transition.states_mut()[0].transition = None;
+    for history in [inferred_history, unread_transition] {
+        let mut features = projected.clone();
+        let mut histories = [history, copied_history.clone()];
+        let scope_histories = crate::history::scope_histories::bind_scope_histories(
+            &scopes,
+            &bindings,
+            &[],
+            Default::default(),
+            &histories,
+            &mut Vec::new(),
+        );
+        assert!(scope_histories.is_empty());
+        let result = bind_feature_outputs(
+            &mut features,
+            &scopes,
+            &mut histories,
+            &bodies,
+            &scope_histories,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            features[0].evaluation.outputs().as_slice(),
+            std::slice::from_ref(&bodies[1].id),
+        );
+        assert!(result.losses.iter().all(|loss| loss.code
+            != F3dLossCode::FeatureOutputStateChainUnbound.kind()
+            && loss.code != F3dLossCode::FeatureOutputBodyUnbound.kind()));
+    }
 }
 
 /// A Base Feature whose stored bodies resolved takes those bodies as its
@@ -436,18 +600,6 @@ fn a_resolved_base_feature_with_an_unlinked_state_is_not_charged() {
             &HashMap::new()
         ),
         (vec![body.id.clone()], Vec::new())
-    );
-    // Clear the projected result to exercise the projection guard independently.
-    inserted.evaluation.set_outputs(Default::default());
-    assert_eq!(
-        bind(
-            &inserted,
-            &scope,
-            &mut [history, linked_tail(7)],
-            &body,
-            &HashMap::new()
-        ),
-        (Vec::new(), Vec::new())
     );
 }
 

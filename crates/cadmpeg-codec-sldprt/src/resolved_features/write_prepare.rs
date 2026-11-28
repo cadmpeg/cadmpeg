@@ -51,9 +51,9 @@ pub(crate) fn prepare_sketches_for_write(
     native: &mut Option<crate::native::SldprtNative>,
     edits: &crate::history::write::edits::SourceEdits<'_>,
     cut: &mut Vec<String>,
+    source: Option<&crate::container::ContainerScan<'_>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let hash_ctx = edits.ctx();
-    let limits = hash_ctx.policy().limits;
 
     let (baseline_neutral, baseline_native) = sketch_baselines(digests);
     let baseline_constraints =
@@ -69,7 +69,7 @@ pub(crate) fn prepare_sketches_for_write(
         }
         validate_source_less_constraints(ir)?;
         let native = native.get_or_insert_with(crate::native::SldprtNative::default);
-        let generated = source_less_lanes(ir, native, cut, limits)?;
+        let generated = source_less_lanes(ir, native, cut, hash_ctx)?;
         native.feature_input_lanes.extend(generated);
         return Ok(());
     }
@@ -100,7 +100,7 @@ pub(crate) fn prepare_sketches_for_write(
         )
     })?;
     patch_spatial_sketches(ir, retained)?;
-    patch_line_profiles(ir, retained, limits)
+    patch_line_profiles(ir, retained, hash_ctx, source)
 }
 
 /// The source's neutral and native sketch digests, where the decoder recorded
@@ -1554,7 +1554,7 @@ fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
     cut: &mut Vec<String>,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
@@ -1628,31 +1628,15 @@ fn source_less_lanes(
     }
     let mut lanes = assemble_source_less_lanes(objects);
     for lane in &mut lanes {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy { limits },
-        )?;
         lane.classes = class_declarations(&lane.native_payload, &lane.id)?;
-        lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
+        lane.names = object_names(ctx, &lane.native_payload, &lane.id)?;
         lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?;
         lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
         lane.references = reference_cells(&lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
     }
-    let bytes = lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy { limits },
-    )?;
     bind_scalar_operands(
-        &ctx,
+        ctx,
         &native.feature_histories,
         &mut lanes,
         ir.tolerances.linear,
@@ -1676,9 +1660,7 @@ pub(crate) fn generated_profile_stream(
     let body =
         crate::writer::brep_body(&sketch_ir, 0.001, linear_resolution, false).map_err(|error| {
             match error {
-                cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => {
-                    error
-                }
+                cadmpeg_core::CodecError::ResourceLimit(_) => error,
                 other => cadmpeg_core::CodecError::NotImplemented(format!(
                     "source-less SLDPRT sketch {} cannot be encoded ({other})",
                     sketch.id.as_str()
@@ -2216,6 +2198,7 @@ mod source_less_lane_tests {
                 scope: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:id#part")
                     .unwrap(),
                 owner: None,
+                position: None,
                 name: Some(cadmpeg_core::nonblank_literal!("D1")),
                 kind: cadmpeg_ir::design::units::ValueKind::Quantity(
                     cadmpeg_ir::design::units::Quantity::LENGTH,

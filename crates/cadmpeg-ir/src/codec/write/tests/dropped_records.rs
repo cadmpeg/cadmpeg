@@ -455,9 +455,10 @@ fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
 }
 
 /// Sets each document-level field of `ir` to a value other than its default:
-/// `fragment`, `repro`, source metadata and tolerances.
+/// `fragment`, `repro`, source metadata, tolerances and up axis.
 fn state_document_fields(ir: &mut CadIr) {
     ir.fragment = true;
+    ir.up_axis = Some(crate::up_axis::UpAxis::Y);
     ir.source = Some(
         json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
@@ -511,6 +512,8 @@ fn assert_document_fields_without_records(ir: &CadIr, written: &CadIr) {
     assert_eq!(written.scope(), ir.scope());
     assert_eq!(written.source, ir.source);
     assert_eq!(written.tolerances, ir.tolerances);
+    assert_eq!(written.up_axis, ir.up_axis);
+    assert!(written.up_axis.is_some());
 }
 
 /// An output from which every record was dropped is the CADIR document with

@@ -2810,6 +2810,24 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `cut_list_folder_tail`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 43 B
+
+The bytes a cut-list folder writes after its last item.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one` | `u32` | little | spec | u32 `1`, i32 `-1`, u32 `2` or `3` · value `1` |
+| 4 | 4 | `minus_one` | `i32` | little | spec | i32 `-1`, u32 `2` or `3` · value `-1` |
+| 8 | 4 | `word` | `u32` | little | spec | u32 `2` or `3` |
+| 12 | 23 | `zeros` | `bytes[23]` | little | spec | 23 zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 35 | 4 | `one_after_zeros` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
+| 39 | 4 | `one_last` | `u32` | little | spec | 23 zero bytes, u32 `1`, u32 `1` · value `1` |
+
 ## `revolution_turn_block`
 
 Spec §Extrusion feature objects · layout: byte offsets · size: 9 B
@@ -3302,6 +3320,21 @@ Parsed by:
 | 16 | 4 | `record_id` | `u32` | little | spec | a little-endian u32 record identifier |
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
+
+## `three_int_identity_own`
+
+Spec §2.3 · layout: byte offsets · size: 12 B
+
+Own bytes of a three-integer identity representation; they follow its `moFR_c` object.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_0` | `u32` | little | spec | three little-endian u32 |
+| 4 | 4 | `word_4` | `u32` | little | spec | three little-endian u32 |
+| 8 | 4 | `word_8` | `u32` | little | spec | three little-endian u32 |
 
 ## `view_bytes`
 
