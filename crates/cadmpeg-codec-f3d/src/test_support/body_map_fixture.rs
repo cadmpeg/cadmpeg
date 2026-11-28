@@ -10,8 +10,8 @@ use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
 
-use super::manifest_test::write_synthetic_manifests;
-use super::streams_test::design_metastream_with_records;
+use super::manifest_fixture::write_synthetic_manifests;
+use super::streams_fixture::design_metastream_with_records;
 use crate::design::body::{
     BODY_MAP_CARRIER_BASE_TYPE_GUID, BODY_MAP_CARRIER_TYPE_GUID, BODY_MAP_CARRIER_TYPE_VERSION,
     GENERATED_BODY_MAP_ZERO_PREFIX_LEN,
@@ -171,7 +171,7 @@ pub(crate) fn f3d_with_empty_model_maps(snapshot: &[u8], targets: &[(&str, &str)
     let mut zip = zip::ZipWriter::new_append(Cursor::new(bytes)).unwrap();
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
-    zip.write_all(super::assembly_test::redirections_json("root.f3d", targets).as_bytes())
+    zip.write_all(super::assembly_fixture::redirections_json("root.f3d", targets).as_bytes())
         .unwrap();
     zip.finish().unwrap().into_inner()
 }

@@ -20,12 +20,12 @@ use cadmpeg_ir::report::loss::LossKind;
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_text_brep, f3d_with_text_brep_stream, f3d_without_brep,
     synthetic_ambiguous_multi_brep_f3d,
 };
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::smbh_header_test::synthetic_smbh;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::smbh_header_fixture::synthetic_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -467,9 +467,9 @@ fn malformed_text_brep_returns_an_entry_named_error() {
 
 #[test]
 fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
-    let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
-    let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(&snapshot, &[]);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let snapshot = crate::test_support::smbh_geometry_fixture::synthetic_wire_body_smbh();
+    let archive = crate::test_support::body_map_fixture::f3d_with_empty_model_maps(&snapshot, &[]);
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let selection = crate::design::decode::body::design_model_selection(scan).unwrap();
         assert!(selection.explicitly_empty);
         assert!(selection.blob_names.is_empty());
@@ -499,8 +499,8 @@ fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
 
 #[test]
 fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
-    use crate::test_support::smbh_header_test::smbh_header_prefix;
-    use crate::test_support::tokens_test::{push_u8_string, t_end, t_ident};
+    use crate::test_support::smbh_header_fixture::smbh_header_prefix;
+    use crate::test_support::tokens_fixture::{push_u8_string, t_end, t_ident};
 
     let mut empty = smbh_header_prefix();
     t_ident(&mut empty, "asmheader");
@@ -512,7 +512,7 @@ fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
         (b"invalid header".to_vec(), "not a decodable BinaryFile"),
         (empty, "decoded successfully"),
     ] {
-        let archive = crate::test_support::zip_test::f3d_with_smbh(&stream);
+        let archive = crate::test_support::zip_fixture::f3d_with_smbh(&stream);
         let decoded = F3dCodec
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .unwrap();

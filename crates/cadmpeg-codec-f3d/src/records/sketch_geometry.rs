@@ -2815,7 +2815,7 @@ mod tests {
             id: "f3d:native:sketch-point#0",
             value: &point,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_points",
             || super::SKETCH_POINT_CLONE_COUNT.with(|count| count.set(0)),
@@ -2844,7 +2844,7 @@ mod tests {
             id: "f3d:native:sketch-text#0",
             value: &text,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_texts",
             || super::SKETCH_TEXT_CLONE_COUNT.with(|count| count.set(0)),
@@ -2912,7 +2912,7 @@ mod tests {
             id: "f3d:native:sketch-curve#0",
             value: &geometry,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_curves",
             || super::SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(|count| count.set(0)),
@@ -2977,7 +2977,7 @@ mod tests {
             id: "f3d:native:sketch-surface#0",
             value: &surface,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_surfaces",
             || super::SKETCH_SURFACE_CLONE_COUNT.with(|count| count.set(0)),

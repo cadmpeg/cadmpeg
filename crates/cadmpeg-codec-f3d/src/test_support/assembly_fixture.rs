@@ -6,9 +6,9 @@ use std::io::{Cursor, Read, Write};
 
 use zip::CompressionMethod;
 
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::smbh_header_test::synthetic_smbh;
-use crate::test_support::streams_test::design_metastream_with_records;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::smbh_header_fixture::synthetic_smbh;
+use crate::test_support::streams_fixture::design_metastream_with_records;
 use crate::test_support::{cross_document_reference, local_reference};
 
 /// A `RedirectionsStream.dat` body with one self design entry plus one design

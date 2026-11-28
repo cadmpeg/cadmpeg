@@ -14,7 +14,8 @@ fn local(bytes: &mut Vec<u8>, target: u64) {
 }
 
 fn source(consumer: &str, hidden: bool, flag: bool, first_run: bool) -> (Vec<u8>, MetaStream) {
-    let (mut bytes, selection) = crate::test_support::body_reference_tail_test::frame(false, 9, 0);
+    let (mut bytes, selection) =
+        crate::test_support::body_reference_tail_fixture::frame(false, 9, 0);
     bytes.truncate(selection.member_end - 4 - LOCAL_REFERENCE_LEN);
     local(&mut bytes, 30);
     bytes.extend_from_slice(&9u32.to_le_bytes());

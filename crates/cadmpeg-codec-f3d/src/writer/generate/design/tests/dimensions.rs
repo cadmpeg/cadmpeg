@@ -1119,7 +1119,7 @@ fn a_driven_parameter_keeps_its_comment_and_its_rename_is_reported() {
         )),
         "{renamed}"
     );
-    assert!(crate::test_support::native_test::f3d_native(&decoded)
+    assert!(crate::test_support::native_fixture::f3d_native(&decoded)
         .design_parameters
         .iter()
         .any(
@@ -1133,7 +1133,7 @@ fn a_claimed_driving_parameter_keeps_its_comment() {
     let mut ir = on_xy();
     parameter_mut(&mut ir, "up").comment = Some("rise".into());
     let (_, decoded) = write(&ir);
-    assert!(crate::test_support::native_test::f3d_native(&decoded)
+    assert!(crate::test_support::native_fixture::f3d_native(&decoded)
         .design_parameters
         .iter()
         .any(|parameter| parameter.name() == "Up" && parameter.comment() == Some("rise")));

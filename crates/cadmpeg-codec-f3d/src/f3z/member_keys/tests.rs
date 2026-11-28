@@ -8,11 +8,11 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::products::Storage;
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_xref_placements, f3d_without_brep, f3z_archive, XREF_ROLE,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(

@@ -17,7 +17,7 @@ use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
     ROOT_RECORD,
 };
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 use crate::F3dCodec;
 
 const ENTRY: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.test.dsgcfg";
@@ -710,7 +710,7 @@ fn patch_keeps_the_production_suppression_of_an_unbound_base_feature() {
 
     use crate::layout::base_feature_wide_zero_body as layout;
     use crate::test_support::configuration_table::{root_record, with_root_segment_in};
-    use crate::test_support::streams_test::{
+    use crate::test_support::streams_fixture::{
         generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
     };
 
@@ -729,8 +729,8 @@ fn patch_keeps_the_production_suppression_of_an_unbound_base_feature() {
         .position(|bytes| bytes == prior)
         .unwrap();
     metadata[at..at + prior.len()].copy_from_slice(b"D7015B81-AB4D-4C89-BED7-AA4411E1964A");
-    let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(), &[], &bulk, &metadata
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(), &[], &bulk, &metadata
     );
     let payload = table_document(
         "1",

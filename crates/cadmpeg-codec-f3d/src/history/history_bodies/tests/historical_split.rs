@@ -108,11 +108,11 @@ fn a_base_and_later_historical_split_share_one_history_body() {
             .collect();
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, options);
         zip.start_file(name, options).unwrap();
         zip.write_all(&bytes).unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             assert_eq!(container::history_breps(scan).count(), 1);
             let mut losses = Vec::new();
             let features = [base.clone(), split.clone()];
