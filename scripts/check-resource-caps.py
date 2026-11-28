@@ -14,14 +14,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DOC_REL = Path("docs") / "decode-resource-caps.md"
 SOURCE_SCRIPT = Path(__file__).with_name("check-source-policy.py")
-SPEC = importlib.util.spec_from_file_location(
-    "resource_caps_source_policy", SOURCE_SCRIPT
-)
-if SPEC is None or SPEC.loader is None:
-    raise SystemExit(f"cannot load {SOURCE_SCRIPT}")
-SOURCE_POLICY = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = SOURCE_POLICY
-SPEC.loader.exec_module(SOURCE_POLICY)
+SOURCE_POLICY = sys.modules.get("shared_rust_source_policy")
+if SOURCE_POLICY is None:
+    SPEC = importlib.util.spec_from_file_location("resource_caps_source_policy", SOURCE_SCRIPT)
+    if SPEC is None or SPEC.loader is None:
+        raise SystemExit(f"cannot load {SOURCE_SCRIPT}")
+    SOURCE_POLICY = importlib.util.module_from_spec(SPEC)
+    sys.modules[SPEC.name] = SOURCE_POLICY
+    SPEC.loader.exec_module(SOURCE_POLICY)
 
 CONST_MAX = re.compile(
     r"(?<![\w:])(?:pub(?:\s*\([^)]*\))?\s+)?const\s+(MAX_[A-Z0-9_]+)\b"
@@ -97,13 +97,15 @@ def scan_markers(relative: str, source: str) -> tuple[list[Constant], list[str]]
     return declarations, findings
 
 
-def census(root: Path) -> tuple[list[Constant], list[str]]:
+def census(root: Path, sources: dict[Path, str] | None = None) -> tuple[list[Constant], list[str]]:
     constants: list[Constant] = []
     findings: list[str] = []
-    for path in sorted(root.glob("crates/**/*.rs")):
+    paths = sorted(root.glob("crates/**/*.rs")) if sources is None else sorted(sources)
+    for path in paths:
         relative = path.relative_to(root)
         if SOURCE_POLICY.is_production_rs(relative):
-            found, errors = scan_markers(relative.as_posix(), path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8") if sources is None else sources[path]
+            found, errors = scan_markers(relative.as_posix(), text)
             constants.extend(found)
             findings.extend(errors)
     doc = root / DOC_REL

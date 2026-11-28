@@ -51,7 +51,10 @@ class CommandSelection(unittest.TestCase):
     def test_repository_workflow_is_understood(self) -> None:
         workflow = (Path(__file__).resolve().parent.parent / check.WORKFLOW).read_text()
         selected = check.commands(workflow, scripts_changed=False)
-        self.assertIn("python3 scripts/check-source-policy.py", selected)
+        self.assertIn("python3 scripts/check-rust-policy.py", selected)
+        self.assertNotIn("python3 scripts/check-source-policy.py", selected)
+        self.assertNotIn("python3 scripts/check-resource-caps.py", selected)
+        self.assertNotIn("python3 scripts/census-panic-calls.py --check", selected)
         self.assertIn("python3 scripts/preflight_open_items.py", selected)
         self.assertIn("cargo fmt --all --check", selected)
 

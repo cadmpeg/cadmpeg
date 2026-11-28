@@ -204,9 +204,13 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(select(ROOT, ['corpus/manifest.toml'])['inventor_cli'])
 
     def test_python_only_skips_rust(self):
-        scope = select(ROOT, ['scripts/check-deny-census.py'])
-        self.assertFalse(scope['rust'])
-        self.assertFalse(scope['fuzz'])
+        for path in ('scripts/check-deny-census.py', 'scripts/check-rust-policy.py',
+                     'scripts/test_check_rust_policy.py'):
+            with self.subTest(path=path):
+                scope = select(ROOT, [path])
+                self.assertFalse(scope['rust'])
+                self.assertFalse(scope['fuzz'])
+                self.assertTrue(scope['static'])
 
     def test_preflight_tools_skip_rust(self):
         scope = select(ROOT, ['scripts/preflight.py', 'scripts/preflight_branch.py',
