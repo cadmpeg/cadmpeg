@@ -309,7 +309,7 @@ pub(super) enum CatiaOwnerChartBridge {
 }
 
 /// Compatibility representation with explicit framing controls.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaOwnerChartBridgeWire {
     /// Five-reference supported-surface construction.

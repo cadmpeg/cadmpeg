@@ -49,7 +49,7 @@ pub(in crate::validate) fn check(
     let mut findings = Vec::new();
     if let Some(file_keys) = closed {
         check_identity_and_order(&index, file_keys, &mut findings)?;
-        super::super::check_references(ctx, &alone, &index, &mut findings)?;
+        super::check_references(ctx, &alone, &index, &mut findings)?;
         check_typed_references(ctx, &alone, &index, &mut findings)?;
     }
     match rules {

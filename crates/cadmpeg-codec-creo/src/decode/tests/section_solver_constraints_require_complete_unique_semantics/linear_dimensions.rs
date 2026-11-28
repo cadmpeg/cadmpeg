@@ -45,6 +45,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
     let mut disabled_distance = distance_definition.clone();
     let disabled_relations = disabled_distance.relations.as_mut().expect("relations");
     disabled_relations.skamps = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 901,
@@ -69,6 +70,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         }],
     });
     disabled_relations.triples = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 903,
@@ -220,6 +222,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
     let schema_relations = schema_orientation.relations.as_mut().expect("relations");
     let relation_id = schema_relations.rows[0].relation_id;
     schema_relations.skamps = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 902,
@@ -238,6 +241,7 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
         }],
     });
     schema_relations.triples = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 903,

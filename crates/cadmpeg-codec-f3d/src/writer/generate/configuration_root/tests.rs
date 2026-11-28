@@ -107,7 +107,11 @@ fn planning(
         &written,
         &ir.model.configurations,
     );
-    losses.extend(written.read_back(plan.active(), &TARGETS).unwrap());
+    losses.extend(
+        written
+            .compare_in_memory(plan.active(), &TARGETS, &BTreeSet::new())
+            .unwrap(),
+    );
     losses.append(&mut plan.losses);
     plan.losses = losses;
     (plan, written.documents.into_owned())
@@ -219,18 +223,26 @@ fn an_active_configuration_with_no_written_row_is_charged() {
 }
 
 #[test]
-fn an_active_configuration_no_table_holds_is_charged_once() {
+fn an_active_configuration_of_an_empty_table_document_is_named_in_its_new_table() {
     let empty = vec![DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
         serde_json::Map::new(),
     )
     .unwrap()];
-    let (root, losses) = planned(&document(&documents(), &[id("large")], &[]), &empty);
-    assert!(root.is_none());
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].0, "export/edit.dropped");
-    assert!(losses[0].1.contains(id("large").as_str()));
+    let (plan, written) = planning(&document(&documents(), &[id("large")], &[]), &empty);
+    let table = &written[0].tables()[0];
+    let root = plan.root.expect("a root record");
+    assert_eq!(
+        (root.table_id.as_str(), root.row_id.as_str()),
+        (table.id.as_str(), "large")
+    );
+    assert_eq!(plan.losses.len(), 1, "{:#?}", plan.losses);
+    assert_eq!(
+        plan.losses[0].code.to_string(),
+        "export/record.residual-unavailable"
+    );
+    assert!(plan.losses[0].message.contains("DR-1069"));
 }
 
 #[test]
@@ -258,11 +270,10 @@ fn a_row_id_cut_that_names_another_row_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains(id(&long).as_str()));
 
     let (plan, documents) = planning(&ir, &documents);
-    let written = plan.payload(0, &documents[0]).unwrap();
     let written = DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
-        cadmpeg_core::serde_erase::json::from_slice(&written).unwrap(),
+        plan.payload(0, &documents[0]).into_owned(),
     )
     .unwrap();
     let rows = written.tables()[0]
@@ -304,8 +315,7 @@ fn written_by(
     DesignConfiguration::try_new(
         configuration.entry_name().clone(),
         DesignConfigurationKind::Table,
-        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(index, configuration).unwrap())
-            .unwrap(),
+        plan.payload(index, configuration).into_owned(),
     )
     .unwrap()
 }

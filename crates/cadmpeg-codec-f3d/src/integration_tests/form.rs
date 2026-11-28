@@ -30,7 +30,7 @@ fn form_cage_program_failures_retain_the_active_resource_and_native_parser_loss(
                 .report()
                 .losses
                 .iter()
-                .any(|loss| loss.code == crate::loss::F3dLossCode::TsplineCageUndecoded.kind()),
+                .any(crate::test_support::tspline_cage_given_up),
             !valid
         );
         let observation = &construction.observations()[0];
@@ -285,7 +285,7 @@ fn a_radial_map_that_repeats_a_source_decodes_and_keeps_the_map() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::TsplineCageUndecoded.kind()));
+        .any(crate::test_support::tspline_cage_given_up));
     let [subd] = decoded.ir().geometry.subds.as_slice() else {
         panic!("one cage");
     };
@@ -328,7 +328,7 @@ fn a_repeated_radial_source_over_live_edges_projects_only_pairs_with_an_inverse(
         let losses = &decoded.report().losses;
         assert!(!losses
             .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::TsplineCageUndecoded.kind()));
+            .any(crate::test_support::tspline_cage_given_up));
         let charged = losses
             .iter()
             .find(|loss| loss.code == crate::loss::F3dLossCode::TsplineRadialMapUnresolved.kind())

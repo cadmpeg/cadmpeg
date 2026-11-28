@@ -978,6 +978,7 @@ pub(crate) fn native_object_graph(
             lead: entity.lead,
             body,
             definition_schema_selections: Vec::new(),
+            compact_class: None,
             entity_id: entity.entity_id,
             value_schema_selections: Vec::new(),
             object_production: None,
@@ -990,6 +991,7 @@ pub(crate) fn native_object_graph(
             }),
             suffix: None,
             suffix_schema_selection: None,
+            cached_value_views: crate::native::entity_record::CachedValueViews::default(),
         };
         entities.push(row);
     }

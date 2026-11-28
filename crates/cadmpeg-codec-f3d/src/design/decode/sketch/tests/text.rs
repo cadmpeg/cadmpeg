@@ -36,25 +36,15 @@ fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
         records: vec![primary_record(41, 0), primary_record(42, sibling_start)],
         secondary_records: Vec::new(),
     };
-    let mut losses = Vec::new();
     let mut given_up = Vec::new();
-    let texts = decode_sketch_texts_from_stream(
-        &unreadable,
-        &meta,
-        "Design/BulkStream.dat",
-        &mut losses,
-        &mut given_up,
-    )
-    .unwrap();
+    let texts =
+        decode_sketch_texts_from_stream(&unreadable, &meta, "Design/BulkStream.dat", &mut given_up)
+            .unwrap();
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].record_index, 42);
     assert_eq!(
         texts[0].placement().unwrap().anchor.get(),
         Point2::new(10.0, 20.0)
-    );
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchTextUndecoded.kind()]
     );
     let [frame] = given_up.as_slice() else {
         panic!("one given-up text frame: {given_up:?}");
@@ -263,7 +253,6 @@ fn sketch_text_stream_decodes_its_text_records() {
             &bytes,
             &meta,
             "Design/BulkStream.dat",
-            &mut Vec::new(),
             &mut Vec::new(),
         )
         .unwrap()
@@ -542,10 +531,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     )
     .expect("an unreadable live point costs only that point")
     .is_empty());
-    assert_eq!(
-        crate::test_support::loss_codes(&malformed_losses),
-        [crate::loss::F3dLossCode::SketchPointUndecoded.kind()]
-    );
+    assert!(malformed_losses.is_empty(), "{malformed_losses:?}");
     assert_eq!(malformed_given_up.len(), 1);
 
     let curves = decode_sketch_curve_identities_from_stream(
@@ -563,14 +549,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = decode_sketch_texts_from_stream(
-        &bytes,
-        &meta,
-        "Design/BulkStream.dat",
-        &mut Vec::new(),
-        &mut Vec::new(),
-    )
-    .expect("indexed sketch texts");
+    let texts =
+        decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut Vec::new())
+            .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
     assert_eq!(texts[0].text, "live text");

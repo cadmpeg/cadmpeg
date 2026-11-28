@@ -120,7 +120,7 @@ pub(crate) struct DesignOccurrenceTransfer {
     pub(crate) source: DesignOccurrenceTransferSource,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignOccurrenceTransferSource {
     Cut {

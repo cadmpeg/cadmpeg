@@ -43,8 +43,9 @@ const PLACED: f64 = 1.0e-9;
 fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the document is written");
     let losses = plan.report().losses.clone();

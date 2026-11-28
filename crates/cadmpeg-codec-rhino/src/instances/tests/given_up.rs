@@ -68,10 +68,10 @@ fn a_definition_member_that_does_not_decode_is_given_up_once() {
         result.ir(),
         result.source_fidelity(),
         &result.report().losses,
-        "object-record",
-        offset,
+        ("object-record", offset),
         Some("rhino:object:record#000000"),
         "rhino:object:record#000000",
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
     let native = result
         .ir()

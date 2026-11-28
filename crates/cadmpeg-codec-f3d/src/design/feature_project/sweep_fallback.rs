@@ -184,7 +184,7 @@ fn observations(
             continue;
         }
         let bytes = inputs.scan.entry_bytes(&entry.name)?;
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = inputs.scan.design_record_offsets(&entry.name)?;
         for scope in selected {
             result
                 .entry(scope.id.clone())
