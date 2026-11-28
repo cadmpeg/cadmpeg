@@ -52,8 +52,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def edit_point(document: dict[str, Any]) -> None:
-    model = document.get("model")
-    points = model.get("points") if isinstance(model, dict) else None
+    ir = document.get("ir")
+    geometry = ir.get("geometry") if isinstance(ir, dict) else None
+    points = geometry.get("points") if isinstance(geometry, dict) else None
     if not isinstance(points, list) or len(points) != 1:
         raise SystemExit("edited IGES fixture must contain exactly one model point")
     point = points[0]
