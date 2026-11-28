@@ -55,7 +55,8 @@ use crate::design::refs::{Member, Position};
 use crate::document::Design;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::ProductDefinitionId;
-use crate::report::check::Finding;
+use crate::report::check::{Finding, ValidationReport};
+use crate::report::strictness::Strictness;
 use crate::report::Severity;
 use crate::CadIr;
 
@@ -72,6 +73,12 @@ pub enum EditError {
         .0.len()
     )]
     Invalid(Vec<Finding>),
+    /// A finding reaches the caller's severity floor.
+    #[error("validation findings reach the requested severity floor")]
+    Refused(ValidationReport),
+    /// Validation exceeded a resource ceiling.
+    #[error("validation exceeded a resource ceiling: {0:?}")]
+    ResourceLimit(cadmpeg_core::decode::ResourceLimit),
     /// Validation could not run to its end on the document or on the result
     /// of the edit.
     #[error("validation did not complete: {0}")]
@@ -205,21 +212,34 @@ impl CadIr {
     ///
     /// # Errors
     ///
-    /// Returns [`EditError::Validation`] where validation cannot run to its
-    /// end.
-    pub fn edit(&mut self) -> Result<Editor<'_>, EditError> {
-        let findings = findings(self)?;
+    /// Returns [`EditError::Refused`] where a finding reaches the requested
+    /// floor, [`EditError::ResourceLimit`] where validation reaches a
+    /// resource ceiling, and [`EditError::Validation`] for another failure.
+    pub fn edit(&mut self, strictness: &Strictness) -> Result<Editor<'_>, EditError> {
+        let report = validate(self)?;
+        if report
+            .findings
+            .iter()
+            .any(|finding| strictness.refuses_finding(finding))
+        {
+            return Err(EditError::Refused(report));
+        }
         Ok(Editor {
             document: self,
-            findings,
+            findings: report.findings,
         })
     }
 }
 
+fn validate(document: &CadIr) -> Result<ValidationReport, EditError> {
+    crate::validate::validate_neutral(document, Vec::new()).map_err(|error| match error {
+        cadmpeg_core::CodecError::ResourceLimit(limit) => EditError::ResourceLimit(limit),
+        error => EditError::Validation(error.to_string()),
+    })
+}
+
 fn findings(document: &CadIr) -> Result<Vec<Finding>, EditError> {
-    crate::validate::validate_neutral(document, Vec::new())
-        .map(|report| report.findings)
-        .map_err(|error| EditError::Validation(error.to_string()))
+    validate(document).map(|report| report.findings)
 }
 
 /// The Error findings of `after` beyond those of `before`: for each rule

@@ -37,7 +37,7 @@ fn the_current_state_at_an_unstated_rollback_is_after_every_member() {
     let mut document = timeline();
     unstated(&mut document);
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .insert_member(&id("container", 1), 3, owning(4, 40))
         .unwrap();
@@ -55,7 +55,7 @@ fn the_current_state_at_an_unstated_rollback_is_after_every_member() {
     let mut document = timeline();
     unstated(&mut document);
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Feature(feature(3)))
         .unwrap();
@@ -119,7 +119,7 @@ fn removing_a_container_deletes_the_current_states_at_its_unstated_rollbacks() {
     ]);
     document.design.finalize();
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Container(id("container", 2)))
         .unwrap();
@@ -154,7 +154,7 @@ fn removal_retargets_to_the_feature_before_a_container_member() {
         .retain(|evaluation| evaluation.of != Evaluated::State(after(2)));
     document.design.finalize();
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Feature(feature(3)))
         .unwrap();

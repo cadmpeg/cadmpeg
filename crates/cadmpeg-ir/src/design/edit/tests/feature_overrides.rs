@@ -54,7 +54,7 @@ fn switching_exchanges_the_constructions_of_feature_overrides() {
     document.design.arrangements.push(arranged);
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();

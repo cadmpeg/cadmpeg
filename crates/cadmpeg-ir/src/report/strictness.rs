@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use cadmpeg_core::text::NonBlankString;
 
 use super::loss::{LossKind, LossNote, BARE_SHARED_CODES};
-use super::Severity;
+use super::{check::Finding, Severity};
 
 /// The report entries on which a caller refuses an operation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -27,6 +27,12 @@ pub struct Strictness {
 }
 
 impl Strictness {
+    /// Whether the severity floor refuses a validation finding.
+    #[must_use]
+    pub fn refuses_finding(&self, finding: &Finding) -> bool {
+        self.floor.is_some_and(|floor| finding.severity >= floor)
+    }
+
     /// Whether this strictness refuses `entry`. `container` states a decode at
     /// `Container` depth, whose losses are by request; it exempts `pinned`.
     #[must_use]

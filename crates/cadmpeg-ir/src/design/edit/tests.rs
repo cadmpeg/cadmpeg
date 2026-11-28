@@ -568,13 +568,16 @@ fn stateless_features_follow_their_configuration() {
 #[test]
 fn set_dimension_refuses_a_driven_parameter() {
     let mut document = timeline();
-    let refused = document.edit().unwrap().set_dimension(
-        &parameter_id(2),
-        Literal::Number {
-            value: real(5.0),
-            unit: mm(),
-        },
-    );
+    let refused = document
+        .edit(&crate::report::strictness::Strictness::default())
+        .unwrap()
+        .set_dimension(
+            &parameter_id(2),
+            Literal::Number {
+                value: real(5.0),
+                unit: mm(),
+            },
+        );
     assert_eq!(
         refused,
         Err(EditError::DrivenParameter {
@@ -585,7 +588,7 @@ fn set_dimension_refuses_a_driven_parameter() {
     document.design.parameters[1].definition = ParameterDefinition::Driven;
     assert!(matches!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_dimension(&parameter_id(2), Literal::Boolean(true)),
         Err(EditError::DrivenParameter {
@@ -595,7 +598,7 @@ fn set_dimension_refuses_a_driven_parameter() {
     ));
     assert!(matches!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_dimension(&parameter_id(1), Literal::Boolean(true)),
         Err(EditError::KindMismatch { .. })
@@ -643,7 +646,7 @@ fn an_edit_whose_result_holds_an_error_is_refused() {
     let before = document.clone();
     let stateless = operation(2, FeatureOperation::Spreadsheet(id("spreadsheet", 2))).definition;
     match document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_feature_definition(&feature(2), stateless)
     {
@@ -674,7 +677,7 @@ fn set_dimension_takes_a_whole_number_with_no_unit_for_an_integer() {
     };
     for refused in [number(2.5, Unit(Vec::new())), number(2.0, mm())] {
         let result = document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_dimension(&parameter_id(7), refused.clone());
         assert!(
@@ -684,7 +687,7 @@ fn set_dimension_takes_a_whole_number_with_no_unit_for_an_integer() {
         assert_eq!(document, before, "refusing {refused:?} changes nothing");
     }
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_dimension(&parameter_id(7), number(4.0, Unit(Vec::new())))
         .unwrap();
@@ -696,7 +699,7 @@ fn an_integer_expression_whose_value_is_not_whole_has_no_cache() {
     let mut document = timeline();
     counted(&mut document);
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_parameter_expression(&parameter_id(7), neutral("5 / 2", &[], &[]))
         .unwrap();
@@ -732,7 +735,7 @@ fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
         .evaluations
         .retain(|evaluation| evaluation.of != Evaluated::Tool(feature(3)));
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_dimension(
             &parameter_id(1),
@@ -833,7 +836,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
     with_base(&mut document);
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_dimension(
             &parameter_id(1),
@@ -910,7 +913,7 @@ fn set_feature_definition_marks_the_states_after_the_feature() {
         evaluation.content.get_or_insert_with(|| with_bodies(&[]));
     }
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_feature_definition(&feature(2), unresolved(2).definition)
         .unwrap();
@@ -926,7 +929,7 @@ fn set_feature_definition_marks_the_states_after_the_feature() {
     }
     let replacement = unresolved(2).definition;
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_feature_definition(&feature(3), replacement)
         .unwrap();
@@ -1043,7 +1046,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
     ]);
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_parameter_expression(&parameter_id(1), neutral("10[mm]", &[], &[]))
         .unwrap();
@@ -1085,7 +1088,7 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
         ("$0", &[reference(9)][..]),
     ] {
         let refused = document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_parameter_expression(&parameter_id(1), neutral(text, refs, &[]));
         assert!(refused.is_err(), "{text} is refused");
@@ -1101,7 +1104,7 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
         "max(1[mm], 2[mm], 3[mm])",
     ] {
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_parameter_expression(&parameter_id(1), neutral(text, &[], &[]))
             .unwrap();
@@ -1125,7 +1128,7 @@ fn set_parameter_expression_refuses_a_neutral_reference_to_a_native_kind() {
     let before = document.clone();
     for text in ["$0", "$0 + 1[mm]", "if(true, $0, 1[mm])"] {
         let refused = document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_parameter_expression(&parameter_id(1), neutral(text, &[reference(5)], &[]));
         assert!(
@@ -1135,7 +1138,7 @@ fn set_parameter_expression_refuses_a_neutral_reference_to_a_native_kind() {
         assert_eq!(document, before, "refusing {text} changes nothing");
     }
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_parameter_expression(
             &parameter_id(5),
@@ -1143,7 +1146,7 @@ fn set_parameter_expression_refuses_a_neutral_reference_to_a_native_kind() {
         )
         .unwrap();
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_parameter_expression(
             &parameter_id(1),
@@ -1164,7 +1167,7 @@ fn inserting_a_member_marks_later_states_and_moves_folders() {
         evaluation.content.get_or_insert_with(|| with_bodies(&[]));
     }
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .insert_member(&id("container", 1), 1, owning(4, 40))
         .unwrap();
@@ -1185,14 +1188,14 @@ fn inserting_a_member_marks_later_states_and_moves_folders() {
     assert_eq!(status(&document, 2), EvaluationStatus::Stale);
     assert_eq!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .insert_member(&id("container", 1), 0, owning(4, 41)),
         Err(EditError::DuplicateId(feature(4).as_str().to_owned()))
     );
     assert!(matches!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .insert_member(&id("container", 1), 9, owning(5, 50)),
         Err(EditError::IndexOutOfRange { index: 9, .. })
@@ -1219,7 +1222,7 @@ fn insertion_takes_one_member_and_what_it_owns() {
     two.features.push(unresolved(5));
     assert!(matches!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .insert_member(&id("container", 1), 1, two),
         Err(EditError::NotOneMember(_))
@@ -1228,7 +1231,7 @@ fn insertion_takes_one_member_and_what_it_owns() {
     stray.parameters[0].owner = None;
     assert!(matches!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .insert_member(&id("container", 1), 1, stray),
         Err(EditError::NotOneMember(_))
@@ -1237,7 +1240,7 @@ fn insertion_takes_one_member_and_what_it_owns() {
     with_configurations.configurations = configured().design.configurations;
     assert!(matches!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .insert_member(&id("container", 1), 1, with_configurations),
         Err(EditError::NotOneMember(_))
@@ -1253,7 +1256,7 @@ fn insertion_takes_one_member_and_what_it_owns() {
     });
     assert_eq!(document, before, "a refused insertion changes nothing");
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .insert_member(&id("container", 1), 1, nested)
         .unwrap();
@@ -1321,7 +1324,7 @@ fn removing_a_member_rebases_and_retargets() {
     let before = document.resolved(&id("evaluation", 4)).unwrap();
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Feature(feature(2)))
         .unwrap();
@@ -1381,7 +1384,7 @@ fn removing_a_member_rebases_and_retargets() {
     );
     assert_eq!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .remove_member(&Member::Feature(feature(2))),
         Err(EditError::NotAMember(Member::Feature(feature(2))))
@@ -1403,7 +1406,7 @@ fn removal_refuses_while_a_kept_record_names_a_deleted_one() {
     let before = document.clone();
     assert_eq!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .remove_member(&Member::Feature(feature(2))),
         Err(EditError::Referenced(vec![parameter_id(6)
@@ -1455,7 +1458,7 @@ fn removal_strips_the_names_that_mention_a_deleted_feature() {
     ]);
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Feature(feature(2)))
         .unwrap();
@@ -1504,7 +1507,7 @@ fn removal_keeps_a_pick_whose_name_mentions_the_deleted_feature() {
     let kept = document.design.parameters[2].clone();
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Feature(feature(2)))
         .unwrap();
@@ -1601,7 +1604,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
     let resolved = document.resolved(&id("evaluation", 5)).unwrap();
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .remove_member(&Member::Feature(feature(2)))
         .unwrap();
@@ -1659,7 +1662,7 @@ fn unordered_removal_refuses_a_record_that_also_targets_kept_geometry() {
     let before = document.clone();
     assert_eq!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .remove_member(&Member::Feature(feature(2))),
         Err(EditError::Referenced(vec![id::<String>(
@@ -1737,7 +1740,7 @@ fn switching_the_active_configuration_exchanges_each_extent() {
     let mut document = configured();
     let chained = document.resolved(&id("evaluation", 6)).unwrap();
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
@@ -1800,7 +1803,7 @@ fn switching_the_active_configuration_exchanges_each_extent() {
     assert_eq!(document.resolved(&id("evaluation", 6)).unwrap(), chained);
 
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_active_configuration(&definition(), &configuration(1))
         .unwrap();
@@ -1851,7 +1854,7 @@ fn switching_exchanges_every_current_state_of_the_scope() {
     ));
     document.finalize();
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
@@ -1885,7 +1888,7 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
         .evaluations
         .retain(|evaluation| evaluation.id != id("evaluation", 5));
     document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
@@ -1903,7 +1906,7 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
         ));
     assert_eq!(
         document
-            .edit()
+            .edit(&crate::report::strictness::Strictness::default())
             .unwrap()
             .set_active_configuration(&definition(), &configuration(7)),
         Err(EditError::UnknownConfiguration(configuration(7)))

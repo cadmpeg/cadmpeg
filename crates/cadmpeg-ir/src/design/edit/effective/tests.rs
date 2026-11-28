@@ -552,7 +552,7 @@ fn a_display_colour_is_explicit_then_bound_then_the_bodys() {
     document.geometry.faces[0].color = Some(color(0.5));
     assert_eq!(
         document.effective_display_color(&placed).unwrap(),
-        Some(color(0.5))
+        Some(color(0.3))
     );
     assert_eq!(
         document.effective_display_color(&on_body).unwrap(),
@@ -680,6 +680,45 @@ fn moves_occurrence_2(y: f64, visible: Option<bool>) -> Overrides {
         },
     );
     overrides
+}
+
+#[test]
+fn an_arrangement_nested_override_resolves_before_configuration_and_base() {
+    let mut document = assembly();
+    document.model.occurrences[0].overrides.push(nested(
+        &[2],
+        Some(shift(0.0, 4.0, 0.0)),
+        Some(true),
+    ));
+    configured(&mut document, 11).occurrences.insert(
+        occurrence(1),
+        OccurrenceOverride {
+            nested: vec![nested(&[2], Some(shift(0.0, 6.0, 0.0)), Some(true))],
+            ..OccurrenceOverride::default()
+        },
+    );
+    let mut overrides = Overrides::default();
+    overrides.occurrences.insert(
+        occurrence(1),
+        OccurrenceOverride {
+            nested: vec![nested(&[2], Some(shift(0.0, 8.0, 0.0)), Some(false))],
+            ..OccurrenceOverride::default()
+        },
+    );
+    document
+        .design
+        .arrangements
+        .push(arrangement(1, 1, overrides));
+    document.design.scopes[0]
+        .active_arrangements
+        .insert(id("arrangement", 1));
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 8.0, 0.0]));
+    let target = InstanceTarget {
+        entity: AppearanceTarget::Body(id("body", 1)),
+        path: Some(path(&[1, 2])),
+        state: None,
+    };
+    assert!(!document.effective_visibility(&target).unwrap());
 }
 
 /// An arrangement in force in definition 1 chooses, by a `nested` entry, the

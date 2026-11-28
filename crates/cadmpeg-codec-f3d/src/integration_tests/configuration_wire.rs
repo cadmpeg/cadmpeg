@@ -806,7 +806,7 @@ fn an_active_row_moved_through_the_editor_is_charged_where_it_is_not_written() {
         .unwrap()
         .definition
         .clone();
-    ir.edit()
+    ir.edit(&cadmpeg_ir::report::strictness::Strictness::default())
         .unwrap()
         .set_active_configuration(&scope, &b)
         .unwrap();

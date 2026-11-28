@@ -668,6 +668,13 @@ impl PathResolver<'_> {
         for above in 0..at {
             let below = &ids[above + 1..=at];
             let outer = &levels[above];
+            for arrangement in &outer.arrangements {
+                if let Some(entry) = arrangement.overrides.occurrences.get(outer.occurrence) {
+                    for entry in entry.nested.iter().filter(|entry| names_path(entry, below)) {
+                        nested.take_nested(entry);
+                    }
+                }
+            }
             if let Some(configuration) = &outer.configuration {
                 for state in self.design.configuration_chain(configuration)? {
                     let entries = state

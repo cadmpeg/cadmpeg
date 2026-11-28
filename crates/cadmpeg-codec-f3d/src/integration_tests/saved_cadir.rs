@@ -87,12 +87,12 @@ fn a_saved_design_writes_an_edited_dimension_as_its_decode_does() {
     let decoded = decode(SOURCE);
     let id = parameter(decoded.ir(), "d1");
     let mut read = saved(decoded.ir());
-    read.edit()
+    read.edit(&cadmpeg_ir::report::strictness::Strictness::default())
         .expect("editor")
         .set_dimension(&id, millimetres(3.0))
         .expect("edit");
     let mut held = held(&decoded);
-    held.edit()
+    held.edit(&cadmpeg_ir::report::strictness::Strictness::default())
         .expect("editor")
         .set_dimension(&id, millimetres(3.0))
         .expect("edit");
@@ -281,7 +281,7 @@ fn d1(bytes: &[u8]) -> Option<ParameterValue> {
 fn with_d1_edited(decoded: &DecodeResult) -> CadIr {
     let id = parameter(decoded.ir(), "d1");
     let mut read = saved(decoded.ir());
-    read.edit()
+    read.edit(&cadmpeg_ir::report::strictness::Strictness::default())
         .expect("editor")
         .set_dimension(&id, millimetres(3.0))
         .expect("edit");

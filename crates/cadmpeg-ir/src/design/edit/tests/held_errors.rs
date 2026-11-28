@@ -43,7 +43,7 @@ fn an_editor_over_a_document_that_holds_an_error_reports_it() {
         "a current state off the rollback is an Error"
     );
     let editor = document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .expect("an Error the document holds refuses nothing");
     let reported: Vec<_> = editor
         .findings()
@@ -55,10 +55,38 @@ fn an_editor_over_a_document_that_holds_an_error_reports_it() {
 }
 
 #[test]
+fn edit_refuses_a_report_only_at_the_requested_floor() {
+    use crate::report::strictness::Strictness;
+
+    let mut document = off_its_rollback();
+    let before = document.clone();
+    let strictness = Strictness {
+        floor: Some(Severity::Error),
+        ..Strictness::default()
+    };
+    let Err(EditError::Refused(report)) = document.edit(&strictness) else {
+        panic!("the error finding reaches the floor");
+    };
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.severity == Severity::Error));
+    assert_eq!(document, before);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        pinned: true,
+        ..Strictness::default().with_code("anything")
+    };
+    assert!(document.edit(&strictness).is_ok());
+}
+
+#[test]
 fn an_edit_of_a_document_that_holds_an_error_keeps_the_error_and_applies() {
     let mut document = off_its_rollback();
     let held = error_findings(&document);
-    let mut editor = document.edit().unwrap();
+    let mut editor = document
+        .edit(&crate::report::strictness::Strictness::default())
+        .unwrap();
     editor
         .set_dimension(
             &parameter_id(1),
@@ -82,7 +110,7 @@ fn an_edit_that_adds_an_error_to_a_document_that_holds_one_is_refused() {
     let held = error_findings(&document);
     let stateless = operation(2, FeatureOperation::Spreadsheet(id("spreadsheet", 2))).definition;
     match document
-        .edit()
+        .edit(&crate::report::strictness::Strictness::default())
         .unwrap()
         .set_feature_definition(&feature(2), stateless)
     {
