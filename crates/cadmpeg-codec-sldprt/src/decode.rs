@@ -180,16 +180,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     decode_inner(ctx, root, true)
 }
 
-/// Decodes a retained `.sldprt` source image without stamping local SHA-256
-/// digests, for internal writer baselines that compare against the caller's
-/// recorded digests.
-pub(crate) fn decode_without_digests(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-) -> Result<Decoded, CodecError> {
-    decode_inner(ctx, root, false)
-}
-
 /// Decodes a written SLDPRT byte slice under `limits` for read-back
 /// comparison, skipping local-digest and canonical-JSON digest calculation
 /// that read-back ignores.
@@ -228,7 +218,47 @@ fn decode_inner(
     root: View<'_>,
     stamp_digests: bool,
 ) -> Result<Decoded, CodecError> {
-    let scan = container::scan(ctx, root)?;
+    let mut scan = container::scan(ctx, root)?;
+    decode_scanned(ctx, ScannedPart::Owned(&mut scan), stamp_digests)
+}
+
+pub(crate) fn decode_retained(
+    ctx: &DecodeContext<'_>,
+    source: &crate::writer::RetainedImage<'_>,
+) -> Result<Decoded, CodecError> {
+    decode_scanned(ctx, ScannedPart::Retained(source), false)
+}
+
+enum ScannedPart<'s, 'a> {
+    Owned(&'s mut ContainerScan<'a>),
+    Retained(&'s crate::writer::RetainedImage<'a>),
+}
+
+impl<'a> std::ops::Deref for ScannedPart<'_, 'a> {
+    type Target = ContainerScan<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Owned(scan) => scan,
+            Self::Retained(source) => &source.scan,
+        }
+    }
+}
+
+impl ScannedPart<'_, '_> {
+    fn property_reads(&self) -> Option<&crate::metadata::PropertyReads> {
+        match self {
+            Self::Owned(_) => None,
+            Self::Retained(source) => Some(&source.properties),
+        }
+    }
+}
+
+fn decode_scanned(
+    ctx: &DecodeContext<'_>,
+    scan: ScannedPart<'_, '_>,
+    stamp_digests: bool,
+) -> Result<Decoded, CodecError> {
     let assembly = crate::assembly::read(ctx, &scan)?;
     let placed_virtual = assembly
         .as_ref()
@@ -295,7 +325,7 @@ fn decode_inner(
 /// `part` states that the document is a part, whose design the decode states.
 fn decode_scan(
     ctx: &DecodeContext<'_>,
-    mut scan: container::ContainerScan<'_>,
+    mut scan: ScannedPart<'_, '_>,
     placed_virtual: &BTreeSet<String>,
     part: bool,
 ) -> Result<Decoded, CodecError> {
@@ -321,6 +351,7 @@ fn decode_scan(
     if ctx.container_only() {
         let (ir, annotations, unknowns, mut retention) =
             build_container_ir(ctx, &scan, &classification)?;
+        let site_given_up = parasolid_site_given_up(&given_up);
         retention.give_up(given_up);
         let mut report = build_container_report(
             ctx,
@@ -329,6 +360,7 @@ fn decode_scan(
             container::notes(&scan),
             0,
             parasolid_owner_unread,
+            site_given_up,
         )?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         return decode_result(
@@ -381,13 +413,6 @@ fn decode_scan(
             );
         }
     }
-    scan.given_up.extend(
-        given_up
-            .iter()
-            .filter(|part| part.kind() == PARASOLID_SITE_PART)
-            .cloned(),
-    );
-
     let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_metadata_ir(
         ctx,
         &scan,
@@ -395,7 +420,9 @@ fn decode_scan(
         form_padding,
         &mut admitted_entities,
         part,
+        &given_up,
     )?;
+    let site_given_up = parasolid_site_given_up(&given_up);
     retention.give_up(given_up);
     let display_meshes = ir.model.tessellations.len();
     let mut report = build_container_report(
@@ -405,6 +432,7 @@ fn decode_scan(
         container::notes(&scan),
         display_meshes,
         parasolid_owner_unread,
+        site_given_up,
     )?;
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
@@ -2683,6 +2711,11 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
             });
         }
     }
+    order_partition_streams(&mut streams);
+    streams
+}
+
+pub(crate) fn order_partition_streams(streams: &mut [ActiveParasolidSite<'_>]) {
     streams.sort_by(|left, right| {
         let key = |stream: &ActiveParasolidSite<'_>| {
             (
@@ -2692,7 +2725,6 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         };
         key(left).cmp(&key(right))
     });
-    streams
 }
 
 /// Test whether a section holds the bodies of imported features (spec §3.3).
@@ -2898,7 +2930,7 @@ fn give_up_unbuilt_site(
 /// it must not be mistaken for a metadata-only document.
 fn try_decode_brep(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ScannedPart<'_, '_>,
     streams: &[ActiveParasolidSite<'_>],
     placed_virtual: &BTreeSet<String>,
     classification: &crate::dialect::LayerClassification,
@@ -2909,14 +2941,27 @@ fn try_decode_brep(
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
     }
+    let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let bodies = indices
-            .iter()
-            .map(|index| (streams[*index].payload, streams[*index].header))
-            .collect::<Vec<_>>();
-        match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
+        let decode = || {
+            if let ScannedPart::Retained(source) = scan {
+                if active_site.as_ref() == Some(site) {
+                    let group = indices
+                        .iter()
+                        .map(|&index| streams[index])
+                        .collect::<Vec<_>>();
+                    return source.partition(ctx, &group).map(|graph| (*graph).clone());
+                }
+            }
+            let bodies = indices
+                .iter()
+                .map(|index| (streams[*index].payload, streams[*index].header))
+                .collect::<Vec<_>>();
+            decode_bodies(ctx, &bodies, streams[first].source_stream())
+        };
+        match ctx.run_part(decode)? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
                 let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
@@ -2949,7 +2994,6 @@ fn try_decode_brep(
             report,
         )));
     }
-    let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let resolved_active_site = active_site
         .as_ref()
         .and_then(|active| decoded_sites.iter().position(|(site, _, _)| site == active));
@@ -3105,6 +3149,11 @@ fn partition_configuration(section: &str) -> Option<usize> {
 
 /// The configurations whose partition section is a given-up part: a stream,
 /// a block, the Parasolid streams of an owner, or a Parasolid site.
+/// Whether `parts` gives up a Parasolid site.
+fn parasolid_site_given_up(parts: &[GivenUpPart]) -> bool {
+    parts.iter().any(|part| part.kind() == PARASOLID_SITE_PART)
+}
+
 fn partitions_given_up(parts: &[GivenUpPart]) -> BTreeSet<usize> {
     parts
         .iter()
@@ -3789,7 +3838,7 @@ fn push_display_meshes(
 
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
-    scan: &mut ContainerScan<'_>,
+    scan: &mut ScannedPart<'_, '_>,
     classification: &crate::dialect::LayerClassification,
     decoded: DecodedBrep,
     form_padding: Option<usize>,
@@ -4141,6 +4190,7 @@ fn build_geometry_ir(
     let mut attributes = crate::metadata::attributes(
         ctx,
         scan,
+        scan.property_reads(),
         &mut annotations,
         &mut pmi_losses,
         &mut carriers_given_up,
@@ -4817,36 +4867,56 @@ fn build_geometry_ir(
     };
     drop(stored_marks);
 
-    for source_block in &mut scan.blocks {
-        let member = container::Section::Block(source_block);
-        if geometry_only {
-            retention.unreplayed_states(member);
+    match scan {
+        ScannedPart::Owned(scan) => {
+            for source_block in &mut scan.blocks {
+                let member = container::Section::Block(source_block);
+                if geometry_only {
+                    retention.unreplayed_states(member);
+                }
+                let id = member.native_id();
+                if unknowns.iter().any(|record| record.id() == &id) {
+                    continue;
+                }
+                crate::annotations::note_member_record(&mut annotations, member)?;
+                unknowns.push(UnknownRecord::retained(
+                    id,
+                    0,
+                    std::mem::take(&mut source_block.payload),
+                    Vec::new(),
+                ));
+            }
+            for source_stream in &mut scan.compound_streams {
+                let member = container::Section::Compound(source_stream);
+                if geometry_only {
+                    retention.unreplayed_states(member);
+                }
+                let id = member.native_id();
+                crate::annotations::note_member_record(&mut annotations, member)?;
+                unknowns.push(UnknownRecord::retained(
+                    id,
+                    0,
+                    std::mem::take(&mut source_stream.payload),
+                    Vec::new(),
+                ));
+            }
         }
-        let id = member.native_id();
-        if unknowns.iter().any(|record| record.id() == &id) {
-            continue;
+        ScannedPart::Retained(source) => {
+            for member in source.scan.sections() {
+                if geometry_only {
+                    retention.unreplayed_states(member);
+                }
+                let id = member.native_id();
+                if matches!(member, container::Section::Block(_))
+                    && unknowns.iter().any(|record| record.id() == &id)
+                {
+                    continue;
+                }
+                crate::annotations::note_member_record(&mut annotations, member)?;
+                let bytes = retained_copy(ctx, member.stored_payload(), "retain SLDPRT member")?;
+                unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+            }
         }
-        crate::annotations::note_member_record(&mut annotations, member)?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            0,
-            std::mem::take(&mut source_block.payload),
-            Vec::new(),
-        ));
-    }
-    for source_stream in &mut scan.compound_streams {
-        let member = container::Section::Compound(source_stream);
-        if geometry_only {
-            retention.unreplayed_states(member);
-        }
-        let id = member.native_id();
-        crate::annotations::note_member_record(&mut annotations, member)?;
-        unknowns.push(UnknownRecord::retained(
-            id,
-            0,
-            std::mem::take(&mut source_stream.payload),
-            Vec::new(),
-        ));
     }
     let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
     for surface in &ir.geometry.surfaces {
@@ -5504,11 +5574,12 @@ fn build_container_ir(
 
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ScannedPart<'_, '_>,
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
     part: bool,
+    given_up: &[GivenUpPart],
 ) -> Result<BuiltIr, CodecError> {
     let geometry_only = ctx.depth() == DecodeDepth::Geometry;
     let length_unit = crate::design_v11::length_unit(scan);
@@ -5586,6 +5657,7 @@ fn build_metadata_ir(
     let mut model_attributes = crate::metadata::attributes(
         ctx,
         scan,
+        scan.property_reads(),
         &mut annotations,
         &mut pmi_losses,
         &mut carriers_given_up,
@@ -6050,7 +6122,7 @@ fn build_metadata_ir(
             .map(|body| body.id.clone())
             .collect();
         let given_up_configurations =
-            configurations_given_up(&ir, scan, &partitions_given_up(&scan.given_up));
+            configurations_given_up(&ir, scan, &partitions_given_up(given_up));
         let projection = project_design(
             ctx,
             &mut ir,
@@ -7269,6 +7341,7 @@ fn build_container_report(
     notes: Vec<String>,
     display_meshes: usize,
     parasolid_owner_unread: bool,
+    site_given_up: bool,
 ) -> Result<DecodeBody, CodecError> {
     let parasolid_sources = scan
         .blocks
@@ -7284,11 +7357,8 @@ fn build_container_report(
 
     // A given-up Parasolid site, or a given-up section that the choice of
     // the active partition needs, states the lost geometry in its give-up.
-    let geometry_given_up = scan
-        .given_up
-        .iter()
-        .any(|part| part.kind() == PARASOLID_SITE_PART)
-        || !container::unread_active_partition_sections(scan).is_empty();
+    let geometry_given_up =
+        site_given_up || !container::unread_active_partition_sections(scan).is_empty();
     let mut losses = Vec::new();
     if !geometry_given_up {
         losses.push(

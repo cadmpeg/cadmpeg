@@ -531,7 +531,7 @@ impl<'a> Reduction<'a> {
             culprit,
             native,
         } = failure;
-        if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
+        if matches!(error, CodecError::ResourceLimit(_)) {
             return Err(error);
         }
         if native.is_some_and(|unwritable| self.drop_unwritable(&unwritable)) {

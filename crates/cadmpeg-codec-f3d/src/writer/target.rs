@@ -35,10 +35,11 @@ pub(crate) fn plan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
+    restored: Option<&super::RetainedArchive<'_>>,
 ) -> Result<ExportBody, CodecError> {
     let off_catalog = target.entry().is_none();
     if off_catalog || target.preserves_source() {
-        let consumption = match preserve(ctx, input) {
+        let consumption = match preserve(ctx, input, restored) {
             Ok(Preservation::Written {
                 bytes,
                 write_path,
@@ -46,7 +47,7 @@ pub(crate) fn plan(
                 losses,
             }) => return Ok(preserved_body(input, write_path, bytes, notes, losses)),
             Ok(Preservation::SourceImageUnavailable) => source_image_unavailable(),
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => Consumption::Degraded {
                 reason: error.to_string(),
             },
@@ -81,6 +82,7 @@ enum Preservation {
 fn preserve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
+    restored: Option<&super::RetainedArchive<'_>>,
 ) -> Result<Preservation, CodecError> {
     let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
         sidecar
@@ -94,15 +96,8 @@ fn preserve(
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let mut losses = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(
-        ctx,
-        input.ir,
-        fidelity,
-        data,
-        &mut bytes,
-        &mut notes,
-        &mut losses,
+    let (write_path, losses) = F3dCodec::write_preserved_bytes(
+        ctx, input.ir, fidelity, data, restored, &mut bytes, &mut notes,
     )?;
     Ok(Preservation::Written {
         bytes,
