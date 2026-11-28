@@ -37,7 +37,74 @@ use super::{
 const EDGE_SAMPLES: u32 = 40;
 const MAX_SHARED_EDGE_SEED_GAP_MM: f64 = 0.005;
 const MAX_CORROBORATED_VERTEX_GAP_MM: f64 = 0.005;
+const MIN_CLOSED_SOLID_VOLUME_MM3: f64 = 1.0e-3;
+const VOLUME_EDGE_STEPS: u32 = 4;
 type AdmittedEdges = BTreeMap<usize, (usize, usize, usize)>;
+
+#[derive(Clone, Copy)]
+struct ComponentOutcome {
+    appended: bool,
+    closed_solid: bool,
+}
+
+fn closed_shell_signed_volume(patches: &[&Patch]) -> Option<f64> {
+    let mut sum = [0.0_f64; 3];
+    let mut vertex_count = 0_usize;
+    for patch in patches {
+        for side in &patch.sides {
+            for (_, p) in side.vertices {
+                sum[0] += p.x;
+                sum[1] += p.y;
+                sum[2] += p.z;
+                vertex_count += 1;
+            }
+        }
+    }
+    let count = u32::try_from(vertex_count).ok()?;
+    if count == 0 {
+        return None;
+    }
+    let inv = f64::from(count).recip();
+    let origin = Point3::new(sum[0] * inv, sum[1] * inv, sum[2] * inv);
+    let mut six_volume = 0.0_f64;
+    for patch in patches {
+        let mut start = 0;
+        let ends = patch
+            .inner_starts
+            .iter()
+            .copied()
+            .chain([patch.sides.len()]);
+        let mut face_anchor = None;
+        for end in ends {
+            let sides = &patch.sides[start..end];
+            start = end;
+            let mut ring = Vec::new();
+            for side in sides {
+                let [lo, hi] = side.curve.full_knot_endpoints().endpoints();
+                for step in 0..VOLUME_EDGE_STEPS {
+                    let fraction = f64::from(step) / f64::from(VOLUME_EDGE_STEPS);
+                    let f = if side.forward {
+                        fraction
+                    } else {
+                        1.0 - fraction
+                    };
+                    let p = curve_point(&side.curve, interval_parameter([lo, hi], f))?;
+                    ring.push(p.vector_from(origin));
+                }
+            }
+            if ring.len() < 3 {
+                return None;
+            }
+            let anchor = *face_anchor.get_or_insert(ring[0]);
+            for index in 0..ring.len() {
+                let a = ring[index] - anchor;
+                let b = ring[(index + 1) % ring.len()] - anchor;
+                six_volume += anchor.dot(a.cross(b));
+            }
+        }
+    }
+    six_volume.is_finite().then_some(six_volume / 6.0)
+}
 
 #[derive(Clone, Copy, Default)]
 struct Reconciliation {
@@ -91,6 +158,11 @@ fn matches_edge_within(a: &Use, b: &Use, tolerance: f64) -> Option<bool> {
     Some(same)
 }
 
+pub(super) struct TransferOutcome {
+    pub(super) loss: Option<LossNote>,
+    pub(super) complete_exact: bool,
+}
+
 pub(super) fn append(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
@@ -98,7 +170,8 @@ pub(super) fn append(
     refusal: &mut LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
     body_roots: &BodyRoots,
-) -> Result<Option<LossNote>, CodecError> {
+    selected_face_count: usize,
+) -> Result<TransferOutcome, CodecError> {
     let mut by_body = BTreeMap::<_, Vec<_>>::new();
     for patch in patches {
         by_body.entry(patch.body).or_default().push(patch);
@@ -141,7 +214,9 @@ pub(super) fn append(
             component.sort_unstable();
             let patches = component.iter().map(|&i| &patches[i]).collect::<Vec<_>>();
             for &root in &roots {
-                if append_component(ir, annotations, source, (root, body), &patches, admission)? {
+                let outcome =
+                    append_component(ir, annotations, source, (root, body), &patches, admission)?;
+                if outcome.appended {
                     count += patches.len();
                     for index in &component {
                         if let Some(record) = reconciliations.get(index) {
@@ -179,7 +254,10 @@ pub(super) fn append(
                             }
                         }
                     }
-                    inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
+                    if !outcome.closed_solid {
+                        inferred_senses +=
+                            patches.iter().filter(|patch| patch.sense_inferred).count();
+                    }
                     for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
                         match fit {
                             SheetSurfaceFit::RollingBall { max_rail_shift_mm } => {
@@ -220,11 +298,21 @@ pub(super) fn append(
     if adjusted != 0 {
         refusal.push_rolling_ball_rails_adjusted(adjusted, max_shift_mm);
     }
-    Ok((count != 0).then(|| {
+    let complete_exact = selected_face_count > 0
+        && count == selected_face_count
+        && inferred_senses == 0
+        && rolling_ball + offset + ruled + extrusion == 0
+        && reconciled == [0; 4]
+        && boundary_recovery.iter().all(|&(faces, _)| faces == 0);
+    let loss = (!complete_exact && count != 0).then(|| {
         CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
             "Transferred {count} bounded faces as sheet subsets of their native body rosters. The complete native body is retained."
         ))
-    }))
+    });
+    Ok(TransferOutcome {
+        loss,
+        complete_exact,
+    })
 }
 
 // Use the admitted vertex when a geometrically matching occurrence of the
@@ -526,7 +614,11 @@ fn append_component(
     (root, body): (usize, usize),
     patches: &[&Patch],
     admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<bool, CodecError> {
+) -> Result<ComponentOutcome, CodecError> {
+    let rejected = ComponentOutcome {
+        appended: false,
+        closed_solid: false,
+    };
     let mut vertices = BTreeMap::new();
     let mut vertex_gaps = BTreeMap::<usize, f64>::new();
     let mut edges = BTreeMap::<usize, Vec<(usize, &Use)>>::new();
@@ -537,10 +629,10 @@ fn append_component(
             for (&(vertex, point), parameter) in side.vertices.iter().zip(parameters) {
                 let representative = vertices.entry(vertex).or_insert(point);
                 if point.distance(*representative) > GAP_MM {
-                    return Ok(false);
+                    return Ok(rejected);
                 }
                 let Some(on_curve) = curve_point(&side.curve, parameter) else {
-                    return Ok(false);
+                    return Ok(rejected);
                 };
                 let gap = representative.distance(on_curve);
                 vertex_gaps
@@ -553,16 +645,28 @@ fn append_component(
                 [] => true,
                 [(_, first)] => {
                     let Some(same) = matches_edge(first, side) else {
-                        return Ok(false);
+                        return Ok(rejected);
                     };
                     same
                 }
-                _ => return Ok(false),
+                _ => return Ok(rejected),
             };
             orders.insert((patch.face, side.edge), same);
             uses.push((patch.face, side));
         }
     }
+    let manifold_closed = !edges.is_empty()
+        && edges.values().all(|uses| {
+            if let [(face_a, side_a), (face_b, side_b)] = uses.as_slice() {
+                (side_a.forward == orders[&(*face_a, side_a.edge)])
+                    != (side_b.forward == orders[&(*face_b, side_b.edge)])
+            } else {
+                false
+            }
+        });
+    let closed_solid = manifold_closed
+        && closed_shell_signed_volume(patches)
+            .is_some_and(|volume| volume > MIN_CLOSED_SOLID_VOLUME_MM3);
     let affine_vertices = patches
         .iter()
         .filter(|patch| patch.recovery.affine_vertex_shift_mm > 0.0)
@@ -836,9 +940,11 @@ fn append_component(
     for (id, field) in inferred_fields {
         annotations.field_exactness(id, field, Exactness::Inferred)?;
     }
-    for (face, patch) in faces.iter().zip(patches) {
-        if patch.sense_inferred {
-            annotations.field_exactness(face, "sense", Exactness::Inferred)?;
+    if !closed_solid {
+        for (face, patch) in faces.iter().zip(patches) {
+            if patch.sense_inferred {
+                annotations.field_exactness(face, "sense", Exactness::Inferred)?;
+            }
         }
     }
     if faces.is_empty() {
@@ -864,7 +970,11 @@ fn append_component(
     if new_body {
         ir.geometry.bodies.push(Body {
             id: body_id,
-            kind: BodyKind::Sheet,
+            kind: if closed_solid {
+                BodyKind::Solid
+            } else {
+                BodyKind::Sheet
+            },
             transform: None,
             name: None,
             color: None,
@@ -872,8 +982,20 @@ fn append_component(
             native_ref: None,
             unstated: None,
         });
+    } else if !closed_solid {
+        if let Some(existing) = ir
+            .geometry
+            .bodies
+            .iter_mut()
+            .find(|existing| existing.id == body_id)
+        {
+            existing.kind = BodyKind::Sheet;
+        }
     }
-    Ok(true)
+    Ok(ComponentOutcome {
+        appended: true,
+        closed_solid,
+    })
 }
 
 fn sense(forward: bool) -> Sense {

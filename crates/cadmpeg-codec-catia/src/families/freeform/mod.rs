@@ -2,6 +2,7 @@
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
 pub(in crate::families) mod owner_pcurves;
+pub(in crate::families) mod standard_carriers;
 pub(in crate::families) mod weighted_edges;
 mod weighted_plane;
 
@@ -564,6 +565,7 @@ pub(super) fn try_decode_freeform_surfaces(
             && b2_line_profile_count == 0
             && resolved_consolidated_revolution_count == 0
             && !planar_two_edge_candidate
+            && !owned_patch::has_sheet_group_root(&scan.data, &consolidated_records)
         {
             return None;
         }
@@ -703,8 +705,11 @@ pub(super) fn try_decode_freeform_surfaces(
             &mut admission,
         )));
         let body_selection = admitted!(container::body_selection::read(ctx, scan, &sources));
-        let owned_patch_loss = if topology_transferred {
-            None
+        let owned_patch_outcome = if topology_transferred {
+            owned_patch::OwnedPatchOutcome {
+                loss: None,
+                complete_exact: false,
+            }
         } else {
             admitted!(owned_patch::append(
                 &mut ir,
@@ -720,6 +725,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 &mut admission,
             ))
         };
+        let owned_patch_loss = owned_patch_outcome.loss;
+        let owned_patch_complete =
+            owned_patch_outcome.complete_exact && census_face_object_ids.is_empty();
         if planar_two_edge_candidate {
             if let Err(error) = append_planar_two_edge_pool(
                 &mut ir,
@@ -732,14 +740,16 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
         }
+        let mut standalone_wires = Vec::new();
         let line_profiles = admitted!(consolidated_line_profiles(
             &scan.data,
             &consolidated_records
         ));
-        let mut standalone_wires = Vec::new();
-        for profile in &line_profiles {
-            let id = profile.curve.id.clone();
-            standalone_wires.push((id, profile.range, profile.pos));
+        if !owned_patch_complete {
+            for profile in &line_profiles {
+                let id = profile.curve.id.clone();
+                standalone_wires.push((id, profile.range, profile.pos));
+            }
         }
         if let Err(error) = append_consolidated_line_profiles(
             &mut ir,
@@ -876,7 +886,7 @@ pub(super) fn try_decode_freeform_surfaces(
         };
         let mut losses = Vec::new();
         let mut given_up = Vec::new();
-        if !wire_topology_transferred {
+        if !wire_topology_transferred && !owned_patch_complete {
             if topology_transferred {
                 losses.push((CatiaLossCode::TopologyB5GaugeSubstituted).note(format!(
                 "B5 topology was transferred. Its carrier-relative face-sense choices \
@@ -2454,7 +2464,7 @@ struct ConsolidatedStandardFaceBinding {
 }
 
 impl ConsolidatedCarrierChart<'_> {
-    fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
+    pub(super) fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],

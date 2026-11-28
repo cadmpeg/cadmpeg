@@ -117,7 +117,7 @@ fn spline_axis(points: &[f64]) -> NurbsSurfaceAxis {
     NurbsSurfaceAxis::new(3, knots, false)
 }
 
-pub(super) fn offset(
+pub(in crate::families::freeform) fn offset(
     source: &NurbsSurface,
     distance: f64,
     [u, v]: [[f64; 2]; 2],
@@ -129,7 +129,7 @@ pub(super) fn offset(
     )
 }
 
-pub(super) fn rolling(
+pub(in crate::families::freeform) fn rolling(
     definition: &cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition,
     [u, v]: [[f64; 2]; 2],
 ) -> Option<NurbsSurface> {
