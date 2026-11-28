@@ -108,11 +108,7 @@ impl Names {
                 if let Some(rank) = rank {
                     self.by_rank.entry(rank).or_default().insert(entity.clone());
                 }
-                projected(
-                    entry,
-                    rank.is_none_or(|rank| rank < cutoff),
-                    &mut self.native_only,
-                )
+                projected(entry, available(entry, rank, cutoff), &mut self.native_only)
             });
             if before != after {
                 delta.insert(entity.clone(), after);
@@ -127,15 +123,18 @@ impl Names {
 
 fn rank(timeline: &Timeline<'_>, entry: &NameEntry) -> Option<usize> {
     match entry.name.as_ref()? {
-        TopoName::Generated { feature, .. } => {
-            Some(timeline.0.get(feature).copied().unwrap_or(usize::MAX))
-        }
+        TopoName::Generated { feature, .. } => timeline.0.get(feature).copied(),
         _ => None,
     }
 }
 
+fn available(entry: &NameEntry, rank: Option<usize>, cutoff: usize) -> bool {
+    rank.is_some_and(|rank| rank < cutoff)
+        || !matches!(entry.name, Some(TopoName::Generated { .. }))
+}
+
 fn visible(timeline: &Timeline<'_>, cutoff: usize, entry: &NameEntry) -> Option<NameEntry> {
-    if rank(timeline, entry).is_none_or(|rank| rank < cutoff) {
+    if available(entry, rank(timeline, entry), cutoff) {
         return Some(entry.clone());
     }
     entry.native.clone().map(|native| NameEntry {
