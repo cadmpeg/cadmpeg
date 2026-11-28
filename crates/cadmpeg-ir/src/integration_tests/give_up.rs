@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::bounds::MAX_EXPRESSION_DEPTH;
-use crate::codec::write::target::TargetRequest;
 use crate::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use crate::design::configuration::ParameterOverride;
 use crate::design::expr::{Expression, Neutral, Node, UnaryOp};
@@ -115,7 +114,7 @@ fn the_cadir_writer_keeps_a_scope_that_holds_an_expression_past_its_bound() {
     let before = errors(&ir);
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .expect("an expression past the bound does not refuse the write");
     let unwritable = plan
         .report()
@@ -193,16 +192,16 @@ fn the_decode_wrapper_keeps_a_scope_that_holds_an_expression_past_its_bound() {
         DecodeResult::from_decoded(&ctx, decoded, FormatId::new("test"), &Strictness::default())
             .expect("an expression past the bound does not refuse the decode");
 
-    let unreadable = result
+    let undecoded = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
-    let [loss] = unreadable.as_slice() else {
-        panic!("one loss for the one restated scope: {unreadable:?}");
+    let [loss] = undecoded.as_slice() else {
+        panic!("one loss for the one restated scope: {undecoded:?}");
     };
-    assert_eq!(loss.severity, Severity::Error);
+    assert_eq!(loss.severity, Severity::Warning);
     assert!(
         loss.message.contains(part.as_str()) && loss.message.contains("design.scopes"),
         "{}",

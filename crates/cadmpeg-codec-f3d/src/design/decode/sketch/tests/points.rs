@@ -530,11 +530,14 @@ fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> Gr
 fn assert_group_unread(bytes: &[u8], meta: &crate::metastream::MetaStream) {
     let (groups, losses, given_up) = decode_group_records(bytes, meta);
     assert!(groups.is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
+    let [frame] = given_up.as_slice() else {
+        panic!("one given-up group frame: {given_up:?}");
+    };
     assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()]
+        frame.reason().0,
+        cadmpeg_ir::unknown::part::Cause::Undecoded
     );
-    assert_eq!(given_up.len(), 1);
 }
 
 #[test]
@@ -596,10 +599,7 @@ fn unreadable_group_keeps_point_and_curve_values_without_its_owner_join() {
     );
     assert_eq!(curves[0].owner_reference, None);
     assert_eq!(curves[0].geometry_group, None);
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()]
-    );
+    assert!(losses.is_empty(), "{losses:?}");
     let [frame] = given_up.as_slice() else {
         panic!("one given-up group frame: {given_up:?}");
     };
@@ -799,13 +799,17 @@ fn unreadable_point_keeps_sibling_points_and_curves() {
             cadmpeg_ir::math::Point2::new(12.5, -25.0)
         );
         assert_eq!(curves.len(), 1, "{failure}");
+        assert!(losses.is_empty(), "{failure}: {losses:?}");
+        let [frame] = given_up.as_slice() else {
+            panic!("{failure}: one given-up point frame: {given_up:?}");
+        };
+        let (cause, text) = frame.reason();
         assert_eq!(
-            crate::test_support::loss_codes(&losses),
-            [crate::loss::F3dLossCode::SketchPointUndecoded.kind()],
+            cause,
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
             "{failure}"
         );
-        assert_eq!(given_up.len(), 1, "{failure}");
-        assert!(losses[0].message.contains("record 41 version 11"));
+        assert!(text.contains("record 41 version 11"), "{text}");
     }
 }
 

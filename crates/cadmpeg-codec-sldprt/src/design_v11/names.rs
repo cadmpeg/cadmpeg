@@ -69,6 +69,25 @@ pub(crate) struct Persistent<'a> {
     pub(crate) bodies: &'a [NativeIdentity<BodyId>],
 }
 
+/// Persistent id values by record id.
+type IdValues<'a> = HashMap<&'a str, &'a [u32]>;
+
+impl<'a> Persistent<'a> {
+    /// The persistent ids of the faces and of the bodies, by record id.
+    fn maps(self) -> (IdValues<'a>, IdValues<'a>) {
+        (
+            self.faces
+                .iter()
+                .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
+                .collect(),
+            self.bodies
+                .iter()
+                .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
+                .collect(),
+        )
+    }
+}
+
 /// What the history record of one native source id is.
 #[derive(Clone, Copy)]
 enum Producer<'a> {
@@ -84,8 +103,8 @@ enum Producer<'a> {
 /// The persistent ids of a part's entities and the timeline features their
 /// producers join.
 pub(super) struct Names<'a> {
-    faces: HashMap<&'a str, &'a [u32]>,
-    bodies: HashMap<&'a str, &'a [u32]>,
+    faces: IdValues<'a>,
+    bodies: IdValues<'a>,
     producers: HashMap<u32, Producer<'a>>,
     /// The sketch entity that generates a side face, by the producer's source
     /// id and the face's local identifier.
@@ -112,17 +131,10 @@ impl<'a> Names<'a> {
                 .and_modify(|joined| *joined = Producer::Ambiguous)
                 .or_insert(producer);
         }
+        let (faces, bodies) = persistent.maps();
         Self {
-            faces: persistent
-                .faces
-                .iter()
-                .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
-                .collect(),
-            bodies: persistent
-                .bodies
-                .iter()
-                .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
-                .collect(),
+            faces,
+            bodies,
             producers,
             generators: HashMap::new(),
         }
@@ -148,9 +160,34 @@ impl<'a> Names<'a> {
         bodies: &[BodyId],
         depends: impl Fn(&FeatureId) -> bool,
     ) -> BTreeMap<EntityRef, NameEntry> {
+        self.table(&self.faces, &self.bodies, topology, bodies, depends)
+    }
+
+    /// [`Names::entries`] of a state whose faces and bodies carry the
+    /// persistent ids `persistent`: a replayed state, whose records keep the
+    /// ids of the current geometry's records of the same node.
+    pub(super) fn state_entries(
+        &self,
+        persistent: Persistent<'_>,
+        topology: &Topology,
+        bodies: &[BodyId],
+        depends: impl Fn(&FeatureId) -> bool,
+    ) -> BTreeMap<EntityRef, NameEntry> {
+        let (faces, persistent_bodies) = persistent.maps();
+        self.table(&faces, &persistent_bodies, topology, bodies, depends)
+    }
+
+    fn table(
+        &self,
+        faces: &IdValues<'_>,
+        persistent_bodies: &IdValues<'_>,
+        topology: &Topology,
+        bodies: &[BodyId],
+        depends: impl Fn(&FeatureId) -> bool,
+    ) -> BTreeMap<EntityRef, NameEntry> {
         let mut table = BTreeMap::new();
         for body in bodies {
-            if let Some(values) = self.bodies.get(body.as_str()) {
+            if let Some(values) = persistent_bodies.get(body.as_str()) {
                 table.insert(
                     EntityRef::Body(body.clone()),
                     NameEntry {
@@ -161,7 +198,7 @@ impl<'a> Names<'a> {
             }
         }
         for face in faces_of(topology, bodies) {
-            let Some(values) = self.faces.get(face.as_str()) else {
+            let Some(values) = faces.get(face.as_str()) else {
                 continue;
             };
             let &[code, producer, _, 0, ref fields @ ..] = *values else {

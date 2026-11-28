@@ -72,12 +72,37 @@ pub const fn assemble_f64_be(bytes: [u8; 8]) -> f64 {
     f64::from_bits(assemble_u64_be(bytes))
 }
 
+/// First offset of `byte` in `haystack`.
+pub fn find_byte(haystack: &[u8], byte: u8) -> Option<usize> {
+    memchr::memchr(byte, haystack)
+}
+
+/// First offset of `byte` in `haystack[start..end]`, returned as an absolute offset.
+pub fn find_byte_in(haystack: &[u8], byte: u8, start: usize, end: usize) -> Option<usize> {
+    let window = haystack.get(start..end)?;
+    memchr::memchr(byte, window).map(|relative| start + relative)
+}
+
 /// First offset of `needle` in `haystack`, or `None` when `needle` is empty.
 pub fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
         return None;
     }
     memchr::memmem::find(haystack, needle)
+}
+
+/// Last offset of `needle` in `haystack`, or `None` when `needle` is empty.
+pub fn rfind(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return None;
+    }
+    memchr::memmem::rfind(haystack, needle)
+}
+
+/// Last offset of `needle` in `haystack[start..end]`, returned as an absolute offset.
+pub fn rfind_in(haystack: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
+    let window = haystack.get(start..end)?;
+    rfind(window, needle).map(|relative| start + relative)
 }
 
 /// First offset of `needle` at or after `from`, or `None` when `needle` is empty.
@@ -111,7 +136,9 @@ pub fn find_iter<'a>(haystack: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item
 
 #[cfg(test)]
 mod tests {
-    use super::{contains, find, find_from, find_in, find_iter};
+    use super::{
+        contains, find, find_byte, find_byte_in, find_from, find_in, find_iter, rfind, rfind_in,
+    };
 
     #[test]
     fn assembles_wire_byte_orders_without_host_endian_assumptions() {
@@ -141,7 +168,14 @@ mod tests {
     #[test]
     fn finds_absolute_and_ranged_offsets() {
         let haystack = b"xxabcxxabc";
+        assert_eq!(find_byte(haystack, b'a'), Some(2));
+        assert_eq!(find_byte_in(haystack, b'a', 3, 10), Some(7));
+        assert_eq!(find_byte_in(haystack, b'a', 3, 6), None);
         assert_eq!(find(haystack, b"abc"), Some(2));
+        assert_eq!(rfind(haystack, b"abc"), Some(7));
+        assert_eq!(rfind(haystack, b""), None);
+        assert_eq!(rfind_in(haystack, b"abc", 0, 6), Some(2));
+        assert_eq!(rfind_in(haystack, b"abc", 3, 6), None);
         assert_eq!(find_from(haystack, b"abc", 3), Some(7));
         assert_eq!(find_in(haystack, b"abc", 3, 10), Some(7));
         assert_eq!(find_in(haystack, b"abc", 3, 6), None);

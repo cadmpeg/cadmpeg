@@ -1935,21 +1935,6 @@ pub(crate) struct F3dNative {
 }
 
 impl F3dNative {
-    pub(crate) fn load(
-        namespace: &cadmpeg_ir::NativeNamespace,
-    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
-        let decode_ctx = &decode_ctx;
-
-        Self::load_inner(decode_ctx, namespace)
-    }
-
     /// Load the typed native records from `namespace` under `ctx`.
     pub(crate) fn load_inner(
         ctx: &DecodeContext<'_>,
@@ -1999,7 +1984,7 @@ impl F3dNative {
         let run_parallel_load = skipped.is_none() && big_history_count >= 512;
         let (native_res, states_outcome, changes_outcome, records_outcome) = if run_parallel_load {
             let checkpoint = ctx.checkpoint();
-            std::thread::scope(|scope| {
+            crate::scoped::scope(|scope| {
                 let states_handle = {
                     let cp = checkpoint.clone();
                     scope.spawn(move || {
@@ -2228,7 +2213,11 @@ impl F3dNative {
             act_table_references: read_arena!("act_table_references"),
             body_native_keys: read_arena!("body_native_keys"),
             body_visibilities: read_arena!("body_visibilities"),
-            design_types: read_arena!("design_types"),
+            design_types: {
+                let mut types: Vec<SegmentType> = read_arena!("design_types");
+                types.sort_by(|left, right| left.table_position().cmp(&right.table_position()));
+                types
+            },
             design_canvas_images: read_arena!("design_canvas_images"),
             design_decal_images: read_arena!("design_decal_images"),
             design_mesh_features: read_arena!("design_mesh_features"),
@@ -2367,7 +2356,7 @@ impl F3dNative {
             let res = (row.emit)(&local_ctx, self, row, &mut local_ns).map(|()| local_ns);
             (res, local_ctx.take_trace())
         };
-        let (prefix_res, delta_out, changes_out, records_out) = std::thread::scope(|scope| {
+        let (prefix_res, delta_out, changes_out, records_out) = crate::scoped::scope(|scope| {
             let delta_row = &F3D_FAMILIES[delta_idx];
             let changes_row = &F3D_FAMILIES[changes_idx];
             let records_row = &F3D_FAMILIES[records_idx];

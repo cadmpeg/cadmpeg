@@ -79,7 +79,6 @@ pub(super) struct ProductPrereqs {
     /// Sheet-metal settings records, decoded before the scopes that link them.
     pub(super) design_sheet_metal_settings:
         Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
-    pub(super) design_sheet_metal_settings_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Sheet-metal settings records given up with their frames, which design
     /// intent gives up as parts with their losses.
     pub(super) design_sheet_metal_settings_given_up:
@@ -105,7 +104,7 @@ pub(super) struct ProductPrereqs {
     pub(super) history_retained_allowance: u64,
     /// Container reference table. A parse failure that does not refuse the
     /// document stays here for the product report.
-    pub(super) xref: Result<Option<XrefTable>, CodecError>,
+    pub(super) xref: Result<Option<XrefTable>, crate::xref::XrefFailure>,
 }
 
 impl ProductPrereqs {
@@ -129,7 +128,10 @@ impl ProductPrereqs {
 
     /// Move every Design record into native storage and return the container
     /// reference outcome.
-    pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
+    pub(super) fn store(
+        self,
+        native: &mut F3dNative,
+    ) -> Result<Option<XrefTable>, crate::xref::XrefFailure> {
         let Self {
             given_up: _,
             construction_recipes,
@@ -156,7 +158,6 @@ impl ProductPrereqs {
             design_parameter_scopes,
             design_parameter_scope_losses: _,
             design_sheet_metal_settings: _,
-            design_sheet_metal_settings_losses: _,
             design_sheet_metal_settings_given_up: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
@@ -244,13 +245,12 @@ pub(super) fn decode(
         superseded: design_superseded_component_occurrences,
         ambiguous_current_poses: design_ambiguous_current_poses,
         losses: design_component_occurrence_losses,
+        given_up: design_component_occurrence_given_up,
         paths: design_component_paths,
     } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
-    let mut design_sheet_metal_settings_losses = Vec::new();
     let mut design_sheet_metal_settings_given_up = Vec::new();
     let design_sheet_metal_settings = crate::design::decode::sheet_metal_settings::decode_settings(
         scan,
-        &mut design_sheet_metal_settings_losses,
         &mut design_sheet_metal_settings_given_up,
     )?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
@@ -285,12 +285,14 @@ pub(super) fn decode(
         &design_parameter_scopes,
         &design_types,
     )?;
-    let (mut design_record_losses, primary_given_up) =
-        crate::design::decode::meta::decode_primary_frame_losses(scan)?;
+    let primary_given_up = crate::design::decode::meta::primary_frames_given_up(scan)?;
+    let mut design_record_losses = Vec::new();
     given_up.extend(crate::design::decode::record::give_up_frames(
         ctx,
         scan,
-        primary_given_up,
+        primary_given_up
+            .into_iter()
+            .chain(design_component_occurrence_given_up),
     )?);
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
         scan,
@@ -304,12 +306,24 @@ pub(super) fn decode(
         unbound: design_unbound_component_naming_spaces,
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-    let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+    let mut xref_unread = Vec::new();
+    let xref = match crate::xref::decode_with_scopes(
+        ctx,
+        scan,
+        &design_parameter_scopes,
+        &mut xref_unread,
+    ) {
+        Err(crate::xref::XrefFailure {
+            error: error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_)),
+            ..
+        }) => {
             return Err(error);
         }
         other => other,
     };
+    for failure in &xref_unread {
+        given_up.extend(failure.give_up(ctx, scan)?);
+    }
     let design_hidden_occurrences =
         crate::design::decode::hidden_occurrences::decode_hidden_occurrences(
             scan,
@@ -346,7 +360,6 @@ pub(super) fn decode(
         design_parameter_scopes,
         design_parameter_scope_losses,
         design_sheet_metal_settings,
-        design_sheet_metal_settings_losses,
         design_sheet_metal_settings_given_up,
         design_work_plane_inferred_axes,
         design_joint_motions,

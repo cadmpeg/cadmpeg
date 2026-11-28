@@ -34,8 +34,8 @@ pub(crate) enum DecodeLossCode {
     /// decoder stated.
     NormalizeIncomplete,
     /// A decoder dropped a record only because it needs a given-up record.
-    /// The wrapper names the record in that give-up's `record.unreadable`
-    /// and removes the note.
+    /// The wrapper names the record in that give-up's loss and removes the
+    /// note.
     RecordDroppedWith,
     /// The wrapper stated the tolerance of vertices the source stores
     /// farther from a compared position than the coincidence allowance.

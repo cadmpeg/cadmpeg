@@ -43,10 +43,15 @@ fn quarantined(
     defect: ParameterDefect,
 ) -> Vec<u8> {
     assert!(
-        result.report().losses.iter().any(|loss| loss.code
-            == IgesLossCode::ParameterDataQuarantined.kind()
-            && loss.message.contains(&format!("D{sequence} ("))
-            && loss.message.contains(defect.describe())),
+        result
+            .report()
+            .losses
+            .iter()
+            .any(
+                |loss| crate::test_support::reports(loss, IgesLossCode::ParameterDataQuarantined)
+                    && loss.message.contains(&format!("D{sequence} ("))
+                    && loss.message.contains(defect.describe())
+            ),
         "{:#?}",
         result.report().losses
     );
@@ -55,7 +60,10 @@ fn quarantined(
 
 fn no_quarantine_part(result: &cadmpeg_ir::codec::DecodeResult) {
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
         0
     );
     assert!(!result
@@ -107,7 +115,7 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
         1
     );
     assert_eq!(
-        code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        crate::test_support::reported_count(result.report(), IgesLossCode::GeometryNotProjected),
         1
     );
     assert!(matches!(
@@ -128,10 +136,13 @@ fn a_first_token_disagreeing_with_the_entity_type_quarantines_the_parameter_data
         &bytes[card_offset..card_offset + 80]
     );
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
         1
     );
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 1);
     assert_gives_up(result.report(), &[("parameter-data", 1)]);
 }
 
@@ -160,14 +171,17 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(quarantined(&result, 3, ParameterDefect::DeclaredCountZero).is_empty());
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 1);
     assert_gives_up(result.report(), &[("parameter-data", 3)]);
-    assert!(result.report().losses[1].message.contains(" length=0 "));
+    assert!(result.report().losses[0].message.contains(" length=0 "));
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
         1
     );
-    let stub = result.report().losses[1]
+    let stub = result.report().losses[0]
         .message
         .split(" record=")
         .nth(1)
@@ -215,7 +229,10 @@ fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
 
     assert!(quarantined(&result, 1, ParameterDefect::DeclaredCardMissing).is_empty());
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
         1
     );
     assert_eq!(
@@ -280,10 +297,13 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
         1
     );
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
         1
     );
-    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(result.report().losses.len(), 2);
     assert_gives_up(result.report(), &[("parameter-data", 3)]);
 }
 
@@ -299,7 +319,7 @@ fn a_non_ascii_literal_retains_its_framed_record() {
         1
     );
     assert_eq!(
-        code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        crate::test_support::reported_count(result.report(), IgesLossCode::GeometryNotProjected),
         1
     );
 }
@@ -310,10 +330,13 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
 
     quarantined(&result, 1, ParameterDefect::DelimiterMissing);
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
         1
     );
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 1);
     assert_gives_up(result.report(), &[("parameter-data", 1)]);
 }
 
@@ -348,27 +371,36 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.ir().geometry.points.is_empty());
     for sequence in [1, 3] {
-        assert!(result.report().losses.iter().any(|loss| loss.code
-            == IgesLossCode::ParameterDataQuarantined.kind()
-            && loss.message.contains(&format!("D{sequence} ("))
-            && loss
-                .message
-                .contains(ParameterDefect::OwnershipConflict.describe())));
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| crate::test_support::reports(
+                loss,
+                IgesLossCode::ParameterDataQuarantined
+            ) && loss.message.contains(&format!("D{sequence} ("))
+                && loss
+                    .message
+                    .contains(ParameterDefect::OwnershipConflict.describe())));
     }
-    // Both declared ranges start at one card, so one part holds it.
+    // Both declared ranges start at one card, so one part holds it, and its
+    // one give-up states the defect of each record.
     assert_eq!(
         quarantined(&result, 1, ParameterDefect::OwnershipConflict).len(),
         80
     );
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        2
+        crate::test_support::reported_count(
+            result.report(),
+            IgesLossCode::ParameterDataQuarantined
+        ),
+        1
     );
     assert_eq!(
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
     );
-    assert_eq!(result.report().losses.len(), 4);
+    assert_eq!(result.report().losses.len(), 2);
     assert_gives_up(result.report(), &[("parameter-data", 1)]);
 }
 
@@ -391,7 +423,7 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         ParameterDefect::HollerithPayloadTruncated,
     );
     assert_eq!(
-        code_count(
+        crate::test_support::reported_count(
             container_only.report(),
             IgesLossCode::ParameterDataQuarantined
         ),

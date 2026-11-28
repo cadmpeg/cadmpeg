@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{compose, invert, local_transform, Affine, IDENTITY};
+use super::{compose, invert, local_transform, Affine, XformError, IDENTITY};
 use crate::schema::tests::with_prim;
 
 const EPS_MATRIX: f64 = 1e-12;
@@ -72,7 +72,12 @@ fn a_matrix_op_is_transposed_and_divided_by_w() {
     );
     with_prim(
         "matrix4d xformOp:transform = ((1, 0, 0, 1), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))\nuniform token[] xformOpOrder = [\"xformOp:transform\"]",
-        |prim, issues| assert!(local_transform(prim, issues).is_err()),
+        |prim, issues| {
+            assert!(matches!(
+                local_transform(prim, issues),
+                Err(XformError::Unread(_))
+            ));
+        },
     );
 }
 
@@ -101,7 +106,12 @@ fn a_valueless_op_is_the_identity_and_a_reset_is_first() {
     );
     with_prim(
         "uniform token[] xformOpOrder = [\"xformOp:scaleX\", \"!resetXformStack!\"]",
-        |prim, issues| assert!(local_transform(prim, issues).is_err()),
+        |prim, issues| {
+            assert!(matches!(
+                local_transform(prim, issues),
+                Err(XformError::Malformed(_))
+            ));
+        },
     );
 }
 

@@ -166,6 +166,12 @@ pub(crate) fn plane_face_body() -> Vec<u8> {
 /// A solid made of one face on a surface record of class `surface`, in
 /// interned ACIS 32.0 form.
 pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
+    face_body_on(surface, 4)
+}
+
+/// The solid of [`face_body`], whose face names the record `surface_ref` as
+/// its surface.
+pub(crate) fn face_body_on(surface: &'static str, surface_ref: i32) -> Vec<u8> {
     use Sab::{End, False, Long, Name, Position, Ref, SubName, True, Vector};
     let low = Position([0.0, 0.0, 0.0]);
     let high = Position([1.0, 1.0, 0.0]);
@@ -204,7 +210,7 @@ pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
         Ref(-1),
         Ref(2),
         Ref(-1),
-        Ref(4),
+        Ref(surface_ref),
         False,
         False,
         True,
@@ -227,4 +233,14 @@ pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
         End,
     ]);
     acis_stream(&items)
+}
+
+/// A native binary Parasolid transmit with no nodes: the prologue, the
+/// maximum node type, `user_fields`, and the terminator.
+pub(crate) fn parasolid_record(description: &str, user_fields: u32) -> Vec<u8> {
+    let mut bytes = parasolid_prologue(description, "SCH_3401176_34101_13006");
+    bytes.extend_from_slice(&231_u16.to_le_bytes());
+    bytes.extend_from_slice(&user_fields.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    bytes
 }

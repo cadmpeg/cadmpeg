@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::{
     property, PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
@@ -77,7 +77,7 @@ pub(crate) const REFOLD_MODE_TYPE: [u8; 16] = [
     0x6e, 0x3d, 0xb2, 0xeb, 0x41, 0x49, 0xfe, 0x4f, 0x20, 0xfb, 0x6c, 0x81, 0x1f, 0x21, 0x10, 0xb4,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "record", rename_all = "snake_case")]
 pub(crate) enum SheetMetalProperty {
     AttachmentState {

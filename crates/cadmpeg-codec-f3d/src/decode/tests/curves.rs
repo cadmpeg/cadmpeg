@@ -14,7 +14,6 @@ use cadmpeg_core::convert::f64_from_index;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
 
@@ -47,7 +46,7 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
-fn transform_decodes_column_major_basis_and_scaled_translation() {
+fn transform_decodes_column_major_basis_and_centimetre_translation() {
     use cadmpeg_asm::sab::{Record, Token};
 
     let record = Record {
@@ -65,10 +64,10 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         offset: 0,
         len: 0,
     };
-    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
-    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 600.0]);
-    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 1200.0]);
-    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 1800.0]);
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record).unwrap();
+    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 10.0]);
+    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 20.0]);
+    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 30.0]);
     assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
 }
 
@@ -266,7 +265,7 @@ fn decode_retains_generated_helix_construction() {
         .clone();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less helix encode");
     let round_trip = F3dCodec
@@ -345,7 +344,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("cacheless helix source-less encode");
     let round_trip = F3dCodec
@@ -416,7 +415,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less law intcurve encode");
     let round_trip = F3dCodec
@@ -572,7 +571,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less vector-offset encode");
     let round_trip = F3dCodec
@@ -732,7 +731,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less subset encode");
     let round_trip = F3dCodec
@@ -817,7 +816,7 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less exact intcurve encode");
     let round_trip = F3dCodec
@@ -867,7 +866,7 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
 
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less spline carrier encode");
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
@@ -1067,7 +1066,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("canonical source-less intcurve encode");
         let round_trip = F3dCodec
@@ -1203,7 +1202,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     }
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound intcurve encode");
     let round_trip = F3dCodec
@@ -1360,7 +1359,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-sided offset encode");
     let round_trip = F3dCodec
@@ -1499,7 +1498,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         .clone();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less embedded offset-support encode");
     let round_trip = F3dCodec
@@ -1633,7 +1632,7 @@ fn generated_mixed_offset_supports_write_source_less() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less mixed offset-support encode");
     let round_trip = F3dCodec
@@ -1734,7 +1733,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     let expected_geometries = supports;
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less analytic offset-support encode");
     let round_trip = F3dCodec
@@ -1862,7 +1861,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less surface intersection encode");
     let round_trip = F3dCodec

@@ -568,13 +568,14 @@ fn charges_naming(
     Vec<String>,
 ) {
     let (_, native) =
-        crate::writer::target::synthesis_and_dispositions(ir, crate::IgesVersion::V5_3)
+        crate::writer::tests::synthesis_and_dispositions(ir, crate::IgesVersion::V5_3)
             .ok()
             .unwrap();
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(crate::IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+                crate::IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .unwrap();
     let messages = plan
@@ -1019,7 +1020,7 @@ fn a_binding_that_states_its_source_object_is_written_with_its_target_and_colour
         )]);
     }
     let (synthesis, _) =
-        crate::writer::target::synthesis_and_dispositions(&ir, crate::IgesVersion::V5_3)
+        crate::writer::tests::synthesis_and_dispositions(&ir, crate::IgesVersion::V5_3)
             .ok()
             .unwrap();
     let drops = appearances::AppearanceDrops::of(&ir, &synthesis);

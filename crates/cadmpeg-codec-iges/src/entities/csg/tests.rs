@@ -409,8 +409,16 @@ fn decode_requires_direct_brep_operand_for_boolean_form_one() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
+        .filter(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected))
         .map(|loss| {
+            if cadmpeg_ir::unknown::part::gives_up(&loss.code) {
+                let (name, _) = loss
+                    .message
+                    .strip_prefix("part entity \"")
+                    .and_then(|rest| rest.split_once('"'))
+                    .unwrap();
+                return format!("directory_entry:{name}");
+            }
             loss.provenance
                 .as_ref()
                 .and_then(|provenance| provenance.tag.as_deref())

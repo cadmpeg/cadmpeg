@@ -32,14 +32,6 @@
 
 **Need.** A part whose swept face stores a non-null `scale`, with its edge or pcurve parameters along the sweep.
 
-### DR-1012. Base of the decimal length options
-
-**Question.** Which length unit do the tenth, hundredth and thousandth options (length codes 68, 69 and 70) divide?
-
-**Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`.
-
-**Need.** A part with a known edge length saved under each option, with the displayed value of that length.
-
 ### DR-1015. Feature suppression, rollback and folders
 
 **Question.** Which fields store a feature's suppressed state, the feature-tree rollback position, and the features a folder holds?

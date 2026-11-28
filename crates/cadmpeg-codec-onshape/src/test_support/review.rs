@@ -94,10 +94,7 @@ pub(crate) fn two_body_step() -> Vec<u8> {
     }
     ir.geometry = json::from_value(geometry).unwrap();
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("step:ap214"),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
@@ -119,4 +116,44 @@ fn rename_geometry(value: &mut Value) {
         }
         _ => {}
     }
+}
+/// The wire form of the design operation of the feature `native`.
+pub(crate) fn design_operation(ir: &cadmpeg_ir::CadIr, native: &str) -> Value {
+    let id = crate::reader::id("feature", native);
+    let feature = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == id)
+        .unwrap_or_else(|| panic!("{native} has no design feature"));
+    json::to_value(&feature.definition.operation).unwrap()
+}
+/// The wire form of an `Unresolved` operation of `family`.
+pub(crate) fn unresolved(family: &str) -> Value {
+    json!({"kind":"unresolved","value":{"family":family}})
+}
+/// The document a CADIR write of `result` writes, read back, and the write's
+/// losses.
+pub(crate) fn cadir_round_trip(
+    result: &DecodeResult,
+) -> (cadmpeg_ir::CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(result.ir(), None))
+        .unwrap();
+    let losses = plan.report().losses.clone();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = cadmpeg_ir::CadIr::from_json(std::str::from_utf8(&bytes).unwrap()).unwrap();
+    (written, losses)
+}
+/// The `arena.omitted` losses of a write that name `id`.
+pub(crate) fn omitted<'l>(
+    losses: &'l [cadmpeg_ir::report::loss::LossNote],
+    id: &str,
+) -> Vec<&'l cadmpeg_ir::report::loss::LossNote> {
+    losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "arena.omitted" && loss.message.contains(id))
+        .collect()
 }

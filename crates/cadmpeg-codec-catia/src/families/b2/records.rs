@@ -108,7 +108,7 @@ impl B2ParameterPoint {
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum B2ParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided.
@@ -243,7 +243,7 @@ impl TryFrom<u8> for B2PlaneCarrierLayout {
 }
 
 /// Exact stored plane chart or an unclassified finite scalar lane.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum B2PlaneCarrierPayload {
     /// Point, unit U direction and increasing parameter bounds.
@@ -2369,10 +2369,11 @@ fn parse_b2_nurbs_curve(
         NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
-        cadmpeg_ir::ids::Identity::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "cgm", "b2-nurbs-curve-frame"),
-            frame.pos,
-        ),
+        crate::nurbs::SourceFrame {
+            kind: B2_NURBS_CURVE_PART,
+            offset: frame.pos,
+            bytes: data.get(frame.pos..frame.end)?,
+        },
     )
     .map(|geometry| B2NurbsCurve {
         pos: frame.pos,
@@ -2380,6 +2381,10 @@ fn parse_b2_nurbs_curve(
         geometry,
     })
 }
+
+/// The part a refused `b2 03 16` record is given up as (`catia.md`, Partial
+/// decode).
+const B2_NURBS_CURVE_PART: &str = "b2-nurbs-curve";
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
 #[derive(Debug, Clone)]
