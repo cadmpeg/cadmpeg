@@ -213,6 +213,7 @@ fn typed_with_lanes(
             definition: &ir.design.scopes[0].definition,
             outside_profile: &HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     )

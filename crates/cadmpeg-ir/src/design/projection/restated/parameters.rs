@@ -376,6 +376,7 @@ pub(super) fn parameter_cut(
                 .as_ref()
                 .or(held.evaluated)
                 .is_some_and(|stated| value_carried(value, &design.kind, stated))
+                || scalar_carried(model, value, design)
                 || driven_literal(design)
                     .is_some_and(|stated| value_carried(value, &design.kind, &stated))
         }),
@@ -426,6 +427,24 @@ fn value_carried(value: &ModelValue, kind: &ValueKind, stated: &ParameterValue) 
     }
 }
 
+fn scalar_carried(model: &ModelParameter, value: &ModelValue, design: &DesignParameter) -> bool {
+    let (Some(native), ModelValue::Real(raw), Some(ParameterValue::Number(stated))) =
+        (&model.native_ref, value, &design.value)
+    else {
+        return false;
+    };
+    if !native.starts_with("sldprt:feature-input:scalar#")
+        || design.native_ref.as_ref() != Some(native)
+    {
+        return false;
+    }
+    match design.kind {
+        ValueKind::Quantity(Quantity::LENGTH) => same_number(raw.get() * 1000.0, stated.get()),
+        ValueKind::Quantity(Quantity::ANGLE) => same_number(raw.get(), stated.get()),
+        _ => false,
+    }
+}
+
 fn driven_literal(design: &DesignParameter) -> Option<ParameterValue> {
     if !matches!(design.definition, ParameterDefinition::Driven) {
         return None;
@@ -470,7 +489,29 @@ fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool 
     match &design.definition {
         ParameterDefinition::Expression(Expression::Source { tokens, .. }) => spells(tokens, text),
         ParameterDefinition::Expression(Expression::Neutral(neutral)) => {
-            match (literal(&neutral.0), literal_number(text)) {
+            let number_text = match (&model.display, design.display) {
+                (Some(ModelDisplay::Diameter), Some(DimensionDisplay::Diameter)) => text
+                    .strip_prefix("<MOD-DIAM>")
+                    .or_else(|| text.strip_prefix("&lt;MOD-DIAM&gt;")),
+                (Some(ModelDisplay::Radius), Some(DimensionDisplay::Radius)) => text
+                    .strip_prefix("<MOD-RHO>")
+                    .or_else(|| text.strip_prefix("&lt;MOD-RHO&gt;")),
+                _ => None,
+            };
+            if let Some(operand) = text
+                .strip_prefix("-(")
+                .and_then(|text| text.strip_suffix(')'))
+            {
+                return negated_literal_carried(operand, &neutral.0);
+            }
+            let literal = literal(&neutral.0);
+            if let (Some(number), Some(Literal::Number(stated))) = (number_text, &literal) {
+                return number
+                    .trim()
+                    .parse::<f64>()
+                    .is_ok_and(|number| number.is_finite() && same_number(*stated, number));
+            }
+            match (literal, literal_number(text)) {
                 (Some(Literal::Number(stated)), Some(number)) => same_number(stated, number),
                 (Some(Literal::Flag(stated)), _) => text.eq_ignore_ascii_case(&stated.to_string()),
                 (Some(Literal::Text(stated)), _) => {
@@ -529,6 +570,30 @@ fn literal<R>(node: &Node<R>) -> Option<Literal<'_>> {
         Node::Text(text) => Some(Literal::Text(text)),
         _ => None,
     }
+}
+
+fn negated_literal_carried<R>(text: &str, tree: &Node<R>) -> bool {
+    let Node::Unary {
+        op: UnaryOp::Negate,
+        operand,
+    } = tree
+    else {
+        return false;
+    };
+    let Node::Number { value, unit } = operand.as_ref() else {
+        return false;
+    };
+    let mut words = text.split_whitespace();
+    let Some(number) = words.next().and_then(|word| word.parse::<f64>().ok()) else {
+        return false;
+    };
+    let symbol = words.next().unwrap_or("");
+    let unit_matches = match unit.0.as_slice() {
+        [] => matches!(symbol, "" | "ul"),
+        [factor] => factor.power.get() == 1 && factor.symbol.name() == symbol,
+        _ => false,
+    };
+    number.is_finite() && same_number(number, value.get()) && unit_matches && words.next().is_none()
 }
 
 /// The number of a literal's text: a number with an optional unit after
