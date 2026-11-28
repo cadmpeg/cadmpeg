@@ -17,7 +17,7 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
@@ -548,7 +548,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         "export/native.records-omitted",
         "module conflicts with MetaStream ownership",
     );
-    crate::test_support::zip_test::with_scan(&encoded, |scan| {
+    crate::test_support::zip_fixture::with_scan(&encoded, |scan| {
         let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let bulk = scan.entry_bytes(bulk_name).unwrap();
         let meta = scan

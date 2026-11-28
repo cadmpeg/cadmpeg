@@ -14,7 +14,7 @@ use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
-use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale, unit_length};
+use crate::vecmath::{add, dot, local_system_lanes, normalize, scale, unit_length};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::BTreeSet;
@@ -111,7 +111,10 @@ impl FeatureSectionTransform {
 
     /// Right-handed normal derived from the section axes.
     pub(crate) fn normal(&self) -> [f64; 3] {
-        cross(self.u_axis, self.v_axis)
+        <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(self.u_axis)
+                .cross(cadmpeg_ir::math::Vector3::from(self.v_axis)),
+        )
     }
 
     /// Returns the normal as the geometry vector the carrier constructors take.
@@ -243,14 +246,20 @@ fn generated_cylinder_section_transform(
             {
                 continue;
             }
-            let normal_cross_model = cross(normal, model);
+            let normal_cross_model = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(normal)
+                    .cross(cadmpeg_ir::math::Vector3::from(model)),
+            );
             let u_axis = std::array::from_fn(|index| {
                 (local[0] * model[index] - local[1] * normal_cross_model[index]) / local_squared
             });
             let Some(u_axis) = normalize(u_axis) else {
                 continue;
             };
-            let v_axis = cross(normal, u_axis);
+            let v_axis = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(normal)
+                    .cross(cadmpeg_ir::math::Vector3::from(u_axis)),
+            );
             let origin = std::array::from_fn(|index| {
                 first.1[index] - first.0[0] * u_axis[index] - first.0[1] * v_axis[index]
             });
@@ -443,7 +452,10 @@ fn generated_planar_section_transform(
                         (-second.0[0] * first_normal[axis] + first.0[0] * second_normal[axis])
                             / determinant
                     });
-                    let normal = cross(u_axis, v_axis);
+                    let normal = <[f64; 3]>::from(
+                        cadmpeg_ir::math::Vector3::from(u_axis)
+                            .cross(cadmpeg_ir::math::Vector3::from(v_axis)),
+                    );
                     let cap_alignment = dot(normal, caps[0].0);
                     if !close(cap_alignment.abs(), 1.0) {
                         continue;
@@ -730,7 +742,9 @@ fn definition_local_frame_transform(
     if reference_flip_for_reference(section, None) == Some(BinaryFlag::Set) {
         u_axis = scale(u_axis, -1.0);
     }
-    let v_axis = cross(normal, u_axis);
+    let v_axis = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(u_axis)),
+    );
     ((dot(v_axis, v_axis) - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
     FeatureSectionTransform::new(
         definition.identity.id(),
@@ -901,7 +915,10 @@ fn feature_generated_plane_equation(
         let magnitude = dot(direction, direction).sqrt();
         (magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
         let direction = scale(direction, magnitude.recip());
-        let normal = cross(direction, transform.normal());
+        let normal = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(direction)
+                .cross(cadmpeg_ir::math::Vector3::from(transform.normal())),
+        );
         let magnitude = dot(normal, normal).sqrt();
         (magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
         let normal = scale(normal, magnitude.recip());
@@ -1298,7 +1315,10 @@ pub(crate) fn resolve(
             add(reference_normal, scale(normal, -cosine)),
             denominator.sqrt().recip(),
         );
-        let u_axis = cross(reference_axis, normal);
+        let u_axis = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(reference_axis)
+                .cross(cadmpeg_ir::math::Vector3::from(normal)),
+        );
         if (dot(u_axis, u_axis) - 1.0).abs() > EPS_PLACEMENT_EXACT_GEOMETRY {
             continue;
         }

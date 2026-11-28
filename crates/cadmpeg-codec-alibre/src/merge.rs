@@ -21,7 +21,7 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::{CadIr, NativeRecord, SourceFidelity};
 use serde_json::Value;
 
-use crate::FORMAT;
+use crate::dialect::registry_ids::FORMAT;
 
 /// The kind of a component file's `File` definition, after its scope.
 const FILE_KIND: &str = ":product-definition#";

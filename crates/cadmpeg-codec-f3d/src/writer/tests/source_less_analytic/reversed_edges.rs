@@ -14,9 +14,9 @@ use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{EdgeCarrier, Sense};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 const EPS_EDGE_POINT_MM: f64 = 1.0e-9;

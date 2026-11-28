@@ -17,10 +17,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::DecodeParts;
 
 use crate::container::{AlibreContainer, DocumentKind, SAB_STREAM, STEP_STREAM};
+use crate::dialect::registry_ids::FORMAT;
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
 use crate::history::History;
 use crate::loss::AlibreLossCode;
-use crate::FORMAT;
 
 /// Millimetres per ASM model-space length unit: the shared binary reader
 /// reads every length in centimetres, and an Alibre header states that unit

@@ -14,13 +14,15 @@
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::dialect::KernelHeaderRef;
 use cadmpeg_asm::kernel_header::BinaryHeader;
-use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::AlibreLossCode;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{ALIBRE_CFB_ACIS_BINARY, ALIBRE_CFB_ASSEMBLY, ALIBRE_UNKNOWN};
 
 /// The `SAB_DATA` stream's kernel header and the offset its record stream starts at.
 pub(crate) struct KernelStream {
@@ -89,7 +91,8 @@ impl Classification {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify, kernel_stream, ALIBRE_CFB_ACIS_BINARY, ALIBRE_UNKNOWN};
+    use super::registry_ids::{ALIBRE_CFB_ACIS_BINARY, ALIBRE_CFB_ASSEMBLY, ALIBRE_UNKNOWN};
+    use super::{classify, kernel_stream};
     use cadmpeg_core::dialect::Admission;
 
     #[test]
@@ -105,7 +108,7 @@ mod tests {
     #[test]
     fn an_assembly_is_admitted_without_a_kernel_layer() {
         let classification = super::classify_assembly();
-        assert_eq!(classification.host.dialect(), &super::ALIBRE_CFB_ASSEMBLY);
+        assert_eq!(classification.host.dialect(), &ALIBRE_CFB_ASSEMBLY);
         assert_eq!(classification.host.admission(), &Admission::Admitted);
         assert!(classification.kernel.is_none());
         assert!(classification.kernel_loss().is_none());

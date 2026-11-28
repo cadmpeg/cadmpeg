@@ -220,3 +220,63 @@ fn an_unbound_fallback_body_has_a_stored_frame_definition() {
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::ComponentBodyOwnerFallback.kind()));
 }
+
+/// A history-only body-map pair at `offset` whose body has the entity suffix
+/// `suffix`, as the wire form states one: no body and no owner.
+fn history_only(offset: u64, suffix: u64) -> crate::records::bodies::DesignBodyBinding {
+    cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+        "id": format!("{}:design-body-binding#{offset}", super::STREAM),
+        "stream": "Design/BulkStream.dat",
+        "pair_count": 1,
+        "pair_ordinal": 0,
+        "asm_body_key": 11,
+        "asm_body_key_offset": offset,
+        "entity_suffix": suffix,
+        "entity_suffix_offset": offset + 8,
+        "blob_name": "BREP.",
+        "blob_name_offset": offset + 32,
+        "history_only": true,
+        "consumers": [7],
+    }))
+    .expect("a wire-valid history-only pair")
+}
+
+#[test]
+fn a_history_only_pair_takes_the_live_bodies_and_definition_of_its_entity_cluster() {
+    let components = two_component_stream(Some(276));
+    let in_component = cadmpeg_ir::ids::BodyId::mint(super::COMPONENT_BODY).unwrap();
+    let in_root = cadmpeg_ir::ids::BodyId::mint(super::ROOT_BODY).unwrap();
+    let mut live_cluster = super::binding(1000, COMPONENT_ROOT + 40, super::COMPONENT_BODY);
+    live_cluster.component_owner = None;
+    let live_member = super::binding(2000, DOCUMENT_ROOT + 624, super::ROOT_BODY);
+    let bindings = [
+        live_cluster,
+        live_member,
+        history_only(3000, COMPONENT_ROOT + 41),
+        history_only(4000, DOCUMENT_ROOT + 625),
+        history_only(5000, COMPONENT_ROOT - 60),
+    ];
+    let bodies = BTreeSet::from([in_component.clone(), in_root.clone()]);
+    let owners = super::super::history_pair_owners(&bindings, &components, Some(&bodies));
+    let pair =
+        |offset: u64| owners[&format!("{}:design-body-binding#{offset}", super::STREAM)].clone();
+    assert_eq!(
+        pair(3000),
+        super::super::HistoryPairOwner {
+            peers: BTreeSet::from([in_component]),
+            definition: Some(crate::ids::neutral_component_id(&super::guid(
+                super::COMPONENT_CONTEXT
+            ))),
+        }
+    );
+    assert_eq!(
+        pair(4000),
+        super::super::HistoryPairOwner {
+            peers: BTreeSet::from([in_root]),
+            definition: Some(crate::ids::neutral_component_id(&super::guid(
+                super::ROOT_CONTEXT
+            ))),
+        }
+    );
+    assert_eq!(pair(5000), super::super::HistoryPairOwner::default());
+}

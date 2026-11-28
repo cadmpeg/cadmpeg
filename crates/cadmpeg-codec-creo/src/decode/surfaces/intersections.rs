@@ -6,7 +6,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::decode::analytic::equations::{circular_cone, plane_cone_conic, CarrierEquation};
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 use super::intersection_candidates::apex_plane_cone_generator_candidates;
 
@@ -25,7 +25,10 @@ pub(in super::super) fn carrier_intersection_curve(
 ) -> Option<(CurveGeometry, &'static str)> {
     match (first, second) {
         (CarrierEquation::Plane(first), CarrierEquation::Plane(second)) => {
-            let direction = cross(first.normal, second.normal);
+            let direction = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(first.normal)
+                    .cross(cadmpeg_ir::math::Vector3::from(second.normal)),
+            );
             let denominator = dot(direction, direction);
             if denominator <= 1e-18 {
                 return None;
@@ -35,7 +38,10 @@ pub(in super::super) fn carrier_intersection_curve(
             let weighted = [0, 1, 2].map(|axis| {
                 first_distance * second.normal[axis] - second_distance * first.normal[axis]
             });
-            let point_numerator = cross(weighted, direction);
+            let point_numerator = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(weighted)
+                    .cross(cadmpeg_ir::math::Vector3::from(direction)),
+            );
             let origin = point_numerator.map(|value| value / denominator);
             let direction = normalize(direction)?;
             Some((

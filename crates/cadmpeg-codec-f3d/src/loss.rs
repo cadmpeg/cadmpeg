@@ -206,6 +206,9 @@ pub(crate) enum F3dLossCode {
     /// Sketches take the Feature label composed from the scope kind spelling
     /// and feature ordinal instead of a stored name.
     SketchNameComposedFromFeatureOrdinal,
+    /// A construction Feature takes the name composed from the scope kind
+    /// spelling and feature ordinal instead of a stored name.
+    FeatureConstructionNameComposed,
     SketchMembershipConflict,
     SketchFolderClosingReference,
     SketchFolderUnprojected,
@@ -251,16 +254,26 @@ pub(crate) enum F3dLossCode {
     AssemblyAlignmentPartial,
     /// An `Assemble` copy differs from the solved `JointOrigin` carrier matrix.
     AssemblyJointOriginEnvelopeMatrixDiscarded,
-    /// Design assembly joints projected as fixed because their freedom codes or
-    /// limit lanes do not map to a joint kind.
+    /// Design assembly joints projected as fixed: their joint record's motion
+    /// is not decoded, or, in a decode below the design depth, their freedom
+    /// codes or limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
-    /// Projected Design assembly joints whose stored rest is malformed or
-    /// enabled. The neutral joint carries no rest; the native record retains
-    /// the valid rest or the malformed-rest mark.
+    /// Projected Design assembly joints whose stored rest is malformed, or
+    /// enabled in a decode below the design depth. The neutral joint carries
+    /// no rest; the native record retains the valid rest or the malformed-rest
+    /// mark.
     AssemblyJointRestUnprojected,
+    /// Fusion joint features whose design record keeps `Unresolved`: their
+    /// joint record does not restate as a v11 joint or rigid group.
+    AssemblyDesignJointUnprojected,
     /// Projected Design assembly joints whose activation state is assumed
     /// active because the scope-tail booleans' activation meaning is unknown.
     AssemblyJointActivationAssumed,
+    /// Design joints stated rigid where the motion record of their scope is
+    /// unread: two motion records bind the scope, or the scope binds none
+    /// where a record of freedom entries binds no joint record of its
+    /// stream.
+    AssemblyJointMotionAssumedRigid,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
@@ -695,6 +708,37 @@ pub(crate) enum F3dLossCode {
     HistoryRollbackUnread,
     /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
     HistoryRollbackBoundUnread,
+    /// The stored state after a timeline item has no evaluation.
+    HistoryStateUnread,
+    /// The stored states after the items of a timeline have no evaluations.
+    HistoryStatesUnread,
+    /// The evaluations of a timeline's states omit a body of the history
+    /// head that the current geometry omits and that no timeline item
+    /// consumes.
+    HistoryStateBodyOmitted,
+    /// A history stores states after the state of its last timeline item;
+    /// the current state holds their change.
+    HistoryStateTailAssumed,
+    /// An evaluation gives a body the owner of the current bodies of its
+    /// history, which the file does not state for it.
+    HistoryStateOwnerAssumed,
+    /// The evaluations of a timeline's states hold a current body that lies
+    /// in no model blob with a history as the current geometry does.
+    HistoryStateBodyInherited,
+    /// An evaluation keeps the current state's name of an entity whose
+    /// record it changes.
+    HistoryStateNameInherited,
+    /// An evaluation before an unread timeline item that moves, creates, or
+    /// re-owns occurrences takes the current poses and occurrence membership.
+    HistoryStatePosesAssumed,
+    /// The state after a timeline item is taken from the chain of the
+    /// history that the walk places it in, which its scope tail does not
+    /// state.
+    HistoryStateInferred,
+    /// A timeline item matches its v10 feature by its position in its Design stream because no scope record states the pairing.
+    HistoryItemMatchedByPosition,
+    /// An archive member's feature does not name the component that owns it, because the member's scope does not span the owner's definition.
+    HistoryMemberComponentUnstated,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -968,6 +1012,10 @@ pub(crate) enum F3dLossCode {
     /// the state that last updates the slot before the Combine has no unique
     /// earlier scope.
     FeatureCombineOperandWriterAssumed,
+    /// A feature names a body slot of its input state by the feature that
+    /// inserts it, because the state that last updates the slot before the
+    /// feature has no unique earlier scope.
+    FeatureBodyOperandWriterAssumed,
     /// A Combine tool in an inserted design binds to that design's final
     /// body in the inserting occurrence's frame.
     FeatureCombineToolExternalFinalStateAssumed,
@@ -1305,9 +1353,11 @@ pub(crate) enum F3dLossCode {
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
     BodylessDesignCarrier,
-    /// Empty modern model-body maps select no body, and the design declares no
-    /// body, sketch entity, or reference image.
+    /// The design selects no body and declares no body, sketch entity,
+    /// reference image, or Design record.
     EmptyDesign,
+    /// A design stores Design records and no geometry carrier transferred.
+    DesignRecordsUntransferred,
     /// A part design stores mesh geometry containers and no BREP entry, and no mesh body transferred.
     MeshOnlyDesignUntransferred,
     /// An assembly document's geometry lives in external references.
@@ -1580,6 +1630,7 @@ impl F3dLossCode {
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
         Self::SketchNameComposedFromFeatureOrdinal,
+        Self::FeatureConstructionNameComposed,
         Self::SketchMembershipConflict,
         Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
@@ -1604,7 +1655,9 @@ impl F3dLossCode {
         Self::AssemblyJointOriginEnvelopeMatrixDiscarded,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
+        Self::AssemblyDesignJointUnprojected,
         Self::AssemblyJointActivationAssumed,
+        Self::AssemblyJointMotionAssumedRigid,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
@@ -1883,6 +1936,17 @@ impl F3dLossCode {
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackBoundUnread,
+        Self::HistoryStateUnread,
+        Self::HistoryStatesUnread,
+        Self::HistoryStateBodyOmitted,
+        Self::HistoryStateTailAssumed,
+        Self::HistoryStateOwnerAssumed,
+        Self::HistoryStateBodyInherited,
+        Self::HistoryStateNameInherited,
+        Self::HistoryStatePosesAssumed,
+        Self::HistoryStateInferred,
+        Self::HistoryItemMatchedByPosition,
+        Self::HistoryMemberComponentUnstated,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2027,6 +2091,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureCombineOperandWriterAssumed,
+        Self::FeatureBodyOperandWriterAssumed,
         Self::FeatureCombineToolExternalFinalStateAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
@@ -2227,6 +2292,7 @@ impl F3dLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::EmptyDesign,
+        Self::DesignRecordsUntransferred,
         Self::MeshOnlyDesignUntransferred,
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
@@ -2464,6 +2530,7 @@ impl F3dLossCode {
             Self::SketchNameComposedFromFeatureOrdinal => {
                 "sketch.name-composed-from-feature-ordinal"
             }
+            Self::FeatureConstructionNameComposed => "feature.construction-name-composed",
             Self::SketchMembershipConflict => "sketch.membership-conflict",
             Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
@@ -2495,7 +2562,9 @@ impl F3dLossCode {
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyDesignJointUnprojected => "assembly.design-joint-unprojected",
             Self::AssemblyJointActivationAssumed => "assembly.joint-activation-assumed",
+            Self::AssemblyJointMotionAssumedRigid => "assembly.joint-motion-assumed-rigid",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
@@ -2929,6 +2998,17 @@ impl F3dLossCode {
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
+            Self::HistoryStateUnread => "history.state-unread",
+            Self::HistoryStatesUnread => "history.states-unread",
+            Self::HistoryStateBodyOmitted => "history.state-body-omitted",
+            Self::HistoryStateTailAssumed => "history.state-tail-assumed",
+            Self::HistoryStateOwnerAssumed => "history.state-owner-assumed",
+            Self::HistoryStateBodyInherited => "history.state-body-inherited",
+            Self::HistoryStateNameInherited => "history.state-name-inherited",
+            Self::HistoryStatePosesAssumed => "history.state-poses-assumed",
+            Self::HistoryStateInferred => "history.state-inferred",
+            Self::HistoryItemMatchedByPosition => "history.item-matched-by-position",
+            Self::HistoryMemberComponentUnstated => "history.member-component-unstated",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -3155,6 +3235,7 @@ impl F3dLossCode {
                 "feature.combine-body-producer-unresolved"
             }
             Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
+            Self::FeatureBodyOperandWriterAssumed => "feature.body-operand-writer-assumed",
             Self::FeatureCombineToolExternalFinalStateAssumed => {
                 "feature.combine-tool-external-final-state-assumed"
             }
@@ -3464,6 +3545,7 @@ impl F3dLossCode {
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::EmptyDesign => "design.empty",
+            Self::DesignRecordsUntransferred => "design.records-untransferred",
             Self::MeshOnlyDesignUntransferred => "design.mesh-only-untransferred",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
@@ -3670,6 +3752,7 @@ impl F3dLossCode {
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
             | Self::MeshOnlyDesignUntransferred
+            | Self::DesignRecordsUntransferred
             | Self::MissingGeometryStream
             | Self::XrefCycle
             | Self::XrefMemberMissing
@@ -3728,6 +3811,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
             | Self::SketchNameComposedFromFeatureOrdinal
+            | Self::FeatureConstructionNameComposed
             | Self::SketchMembershipConflict
             | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
@@ -3753,7 +3837,9 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
+            | Self::AssemblyJointMotionAssumedRigid
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
@@ -4013,6 +4099,17 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryStateUnread
+            | Self::HistoryStatesUnread
+            | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateTailAssumed
+            | Self::HistoryStateOwnerAssumed
+            | Self::HistoryStateBodyInherited
+            | Self::HistoryStateNameInherited
+            | Self::HistoryStatePosesAssumed
+            | Self::HistoryStateInferred
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4156,6 +4253,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
+            | Self::FeatureBodyOperandWriterAssumed
             | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
@@ -4805,6 +4903,17 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryStateUnread
+            | Self::HistoryStatesUnread
+            | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateTailAssumed
+            | Self::HistoryStateOwnerAssumed
+            | Self::HistoryStateBodyInherited
+            | Self::HistoryStateNameInherited
+            | Self::HistoryStatePosesAssumed
+            | Self::HistoryStateInferred
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4943,6 +5052,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
+            | Self::FeatureBodyOperandWriterAssumed
             | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
@@ -5099,7 +5209,9 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
+            | Self::AssemblyJointMotionAssumedRigid
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
@@ -5154,6 +5266,7 @@ impl F3dLossCode {
             | Self::DesignBodyBindingUnresolved
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::SketchNameComposedFromFeatureOrdinal
+            | Self::FeatureConstructionNameComposed
             | Self::ReferenceImageNativeRetained
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
@@ -5174,6 +5287,7 @@ impl F3dLossCode {
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
             | Self::MeshOnlyDesignUntransferred
+            | Self::DesignRecordsUntransferred
             | Self::SketchCurveUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
@@ -5420,6 +5534,7 @@ mod tests {
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
                 "sketch.name-composed-from-feature-ordinal",
+                "feature.construction-name-composed",
                 "sketch.membership-conflict",
                 "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
@@ -5444,7 +5559,9 @@ mod tests {
                 "assembly.joint-origin-envelope-matrix-discarded",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
+                "assembly.design-joint-unprojected",
                 "assembly.joint-activation-assumed",
+                "assembly.joint-motion-assumed-rigid",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",
@@ -5723,6 +5840,17 @@ mod tests {
                 "configuration.property-unprojected",
                 "history.rollback-unread",
                 "history.rollback-bound-unread",
+                "history.state-unread",
+                "history.states-unread",
+                "history.state-body-omitted",
+                "history.state-tail-assumed",
+                "history.state-owner-assumed",
+                "history.state-body-inherited",
+                "history.state-name-inherited",
+                "history.state-poses-assumed",
+                "history.state-inferred",
+                "history.item-matched-by-position",
+                "history.member-component-unstated",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
@@ -5867,6 +5995,7 @@ mod tests {
                 "feature.reverse-normal-link-order-assumed",
                 "feature.combine-body-producer-unresolved",
                 "feature.combine-operand-writer-assumed",
+                "feature.body-operand-writer-assumed",
                 "feature.combine-tool-external-final-state-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
@@ -6067,6 +6196,7 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "design.empty",
+                "design.records-untransferred",
                 "design.mesh-only-untransferred",
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",

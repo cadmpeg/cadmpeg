@@ -31,7 +31,7 @@ use super::edges::{
 use super::equations::{CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
 use super::vertices::{finite_model_point, model_points_agree};
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 macro_rules! require_some {
     ($value:expr) => {
@@ -621,8 +621,14 @@ fn pcurve_plane_carrier_status(
         ));
     };
     if dot(
-        cross(face_plane.normal, other_plane.normal),
-        cross(face_plane.normal, other_plane.normal),
+        <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(face_plane.normal)
+                .cross(cadmpeg_ir::math::Vector3::from(other_plane.normal)),
+        ),
+        <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(face_plane.normal)
+                .cross(cadmpeg_ir::math::Vector3::from(other_plane.normal)),
+        ),
     ) <= PCURVE_CARRIER_PARALLEL_EPS_SQUARED
     {
         return Ok(PcurveCarrierStatus::Unknown(
@@ -1470,10 +1476,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let axis = cylinder_surface.frame().axis().as_raw();
             let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
-            let transverse = cross(
-                [axis.x, axis.y, axis.z],
-                [ref_direction.x, ref_direction.y, ref_direction.z],
-            );
+            let transverse: [f64; 3] = (*axis).cross(*ref_direction).into();
             let reference = [ref_direction.x, ref_direction.y, ref_direction.z];
             let radial: [f64; 3] = std::array::from_fn(|coordinate| {
                 start[0].cos() * reference[coordinate] + start[0].sin() * transverse[coordinate]
@@ -1554,11 +1557,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
                     ),
                 )))
             } else {
-                let transverse = cross(
-                    [axis.x, axis.y, axis.z],
-                    [ref_direction.x, ref_direction.y, ref_direction.z],
-                );
-                let transverse = Vector3::from(transverse);
+                let transverse = (*axis).cross(*ref_direction);
                 let (major_direction, major_radius, minor_radius) = if first_radius > second_radius
                 {
                     (
@@ -1611,17 +1610,14 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let axis = sphere_surface.frame().axis().as_raw();
             let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = require_some!(PositiveLength::try_from(sphere_surface.radius()).ok());
-            let transverse = cross(
-                [axis.x, axis.y, axis.z],
-                [ref_direction.x, ref_direction.y, ref_direction.z],
-            );
+            let transverse: [f64; 3] = (*axis).cross(*ref_direction).into();
             let radial = Vector3::new(
                 start[0].cos() * ref_direction.x + start[0].sin() * transverse[0],
                 start[0].cos() * ref_direction.y + start[0].sin() * transverse[1],
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
-            let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
-            let frame = require_some!(OrthonormalFrame3::new(Vector3::from(normal), radial));
+            let normal = radial.cross(*axis);
+            let frame = require_some!(OrthonormalFrame3::new(normal, radial));
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     sphere_surface.center(),
@@ -1660,22 +1656,19 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius =
                 require_some!(PositiveLength::try_from(torus_surface.minor_radius()).ok());
-            let transverse = cross(
-                [axis.x, axis.y, axis.z],
-                [ref_direction.x, ref_direction.y, ref_direction.z],
-            );
+            let transverse: [f64; 3] = (*axis).cross(*ref_direction).into();
             let radial = Vector3::new(
                 start[0].cos() * ref_direction.x + start[0].sin() * transverse[0],
                 start[0].cos() * ref_direction.y + start[0].sin() * transverse[1],
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
-            let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            let normal = radial.cross(*axis);
             let center = require_some!(FinitePoint3::new(offset_point(
                 center,
                 radial,
                 major_radius
             )));
-            let frame = require_some!(OrthonormalFrame3::new(Vector3::from(normal), radial));
+            let frame = require_some!(OrthonormalFrame3::new(normal, radial));
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, minor_radius),
             )))
@@ -2398,7 +2391,9 @@ pub(in crate::decode) fn bounded_cylinder_circle_parameter_range(
         let origin = <[f64; 3]>::from(cylinder.origin().get());
         let axis = <[f64; 3]>::from(*cylinder.frame().axis().as_raw());
         let u = <[f64; 3]>::from(*cylinder.frame().reference().as_raw());
-        let v = cross(axis, u);
+        let v = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(u)),
+        );
         let radius = cylinder.radius().get();
         let Some(frame) =
             crate::surface::PositionalCylinderFrame::new(origin, axis, u, radius, None)
@@ -2617,7 +2612,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
         let normal = unit_length(*plane_surface.frame().axis());
         let u_axis = unit_length(*plane_surface.frame().reference());
         (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
-        let v_axis = normalize(cross(normal, u_axis))?;
+        let v_axis = normalize(<[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(normal).cross(cadmpeg_ir::math::Vector3::from(u_axis)),
+        ))?;
         let project_point = |point: [f64; 3], tolerance: f64| {
             let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
             (dot(relative, normal).abs() <= tolerance)
@@ -2636,7 +2633,10 @@ pub(in crate::decode) fn planar_curve_pcurve(
             ((dot(axis, normal).abs() - 1.0).abs() <= EPS_ORTHO
                 && dot(axis, x_axis).abs() <= EPS_ORTHO)
                 .then_some(())?;
-            let y_axis = normalize(cross(axis, x_axis))?;
+            let y_axis = normalize(<[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(axis)
+                    .cross(cadmpeg_ir::math::Vector3::from(x_axis)),
+            ))?;
             Some((
                 project_point(center, EPS_AGREE * scale.max(1.0))?,
                 project_direction(x_axis)?,

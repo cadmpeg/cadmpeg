@@ -2,11 +2,18 @@
 //! The timelines of a Fusion design as ordered containers (§5.2), and one
 //! feature per timeline item.
 //!
-//! The v10 projection orders the features of one Design stream by the item
-//! runs of its timeline records, in their `MetaStream` order, so the feature
-//! at an item's position in that run is the item's feature. An item the v10
-//! projection did not resolve is a feature of the family its record type
-//! establishes, or a native feature named by that type.
+//! The v10 feature of an item is found in the item's Design stream, in this
+//! order. The feature whose scope record is the item's record. Else the
+//! feature of the scope that the stream's authored order places at the item's
+//! position: an object's owned `Base Feature` scope takes the object's
+//! position, and a `JointOrigin` scope takes the position of the `Assemble`
+//! envelope bound to it. Else, as a guess that a loss names, the feature at
+//! the item's ordinal in the stream order, which numbers linked followers
+//! with the items, counted from the stream's first feature ordinal, which the
+//! archive merge renumbers. A feature goes to one item. A reverse-normal
+//! linked scope that is no item is a member of its own before the item that
+//! follows it. An item with no feature is a feature of the family its record
+//! type establishes, or a native feature named by that type.
 //!
 //! The rolled-back flags of the items' scope tails place the rollback marker
 //! of a timeline before its first rolled-back item. A timeline whose items
@@ -17,7 +24,7 @@
 //! state after it holds; otherwise its bodies are typed with the carrier
 //! unread, and it is native.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -35,10 +42,13 @@ use cadmpeg_ir::ids::IdentityKeyTail;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::operation::{family, kind_family, Family};
+use crate::design::feature_project::scope_order::{
+    authored_scope_ordinals_for_stream, timeline_item_ordinals,
+};
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
-use crate::records::feature::scope::DesignScopeTailFlags;
+use crate::records::feature::scope::{DesignParameterScope, DesignScopeTailFlags};
 
 /// The tail flags of the parameter scopes, keyed by stream and record index.
 pub(super) type TailFlags<'a> = HashMap<(&'a str, u64), DesignScopeTailFlags>;
@@ -58,6 +68,8 @@ pub(super) struct Projected {
     pub(super) containers: Vec<Container>,
     /// The features of the items, in member order.
     pub(super) features: Vec<Feature>,
+    /// The stream and scope record of the item of each feature.
+    pub(super) items: BTreeMap<FeatureId, (String, u64)>,
 }
 
 /// The timeline containers and item features of every document of the
@@ -74,6 +86,56 @@ pub(super) fn project(
     bodies: &BTreeSet<&str>,
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
+    let mut scopes_of = HashMap::<&str, Vec<&DesignParameterScope>>::new();
+    for scope in scope_inputs.records {
+        scopes_of
+            .entry(native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM))
+            .or_default()
+            .push(scope);
+    }
+    project_ordered(
+        ctx,
+        &Sources {
+            features,
+            timelines,
+            types,
+        },
+        scope_inputs,
+        bodies,
+        &|stream, run| {
+            StreamOrder::new(
+                stream,
+                scopes_of.get(stream).map_or(&[][..], Vec::as_slice),
+                timelines,
+                run,
+            )
+        },
+        losses,
+    )
+}
+
+/// The v10 features, the timeline records and the type table of a decode.
+pub(super) struct Sources<'a> {
+    pub(super) features: &'a [LegacyFeature],
+    pub(super) timelines: &'a [DesignFeatureTimeline],
+    pub(super) types: &'a [SegmentType],
+}
+
+/// `project` with the authored order of each stream, given its name and its
+/// item run, from `order_of`.
+pub(super) fn project_ordered(
+    ctx: &DecodeContext<'_>,
+    sources: &Sources<'_>,
+    scope_inputs: &ScopeInputs<'_>,
+    bodies: &BTreeSet<&str>,
+    order_of: &dyn Fn(&str, &[u64]) -> StreamOrder,
+    losses: &mut Vec<LossNote>,
+) -> Result<BTreeMap<String, Projected>, CodecError> {
+    let Sources {
+        features,
+        timelines,
+        types,
+    } = *sources;
     let tail_flags = scope_inputs.tail_flags;
     let scopes = scope_inputs
         .records
@@ -96,20 +158,38 @@ pub(super) fn project(
             streams.entry(stream).or_default().push(timeline);
         }
     }
+    // The v10 features by the stream and the scope record that ends their
+    // key, and the first feature ordinal of each stream: the merge renumbers
+    // the ordinals of the features it places after those already merged.
+    let mut by_record = HashMap::<(&str, u64), Vec<&LegacyFeature>>::new();
     let mut positioned = HashMap::<(&str, u64), Vec<&LegacyFeature>>::new();
+    let mut ordinal_base = HashMap::<&str, u64>::new();
     for feature in features {
-        if let Some(stream) = feature.native_ref.as_deref().and_then(native_stream) {
-            positioned
-                .entry((stream, feature.ordinal))
-                .or_default()
-                .push(feature);
+        let Some(stream) = feature.native_ref.as_deref().and_then(native_stream) else {
+            continue;
+        };
+        let base = ordinal_base.entry(stream).or_insert(feature.ordinal);
+        *base = (*base).min(feature.ordinal);
+        positioned
+            .entry((stream, feature.ordinal))
+            .or_default()
+            .push(feature);
+        if let Some(record) = feature_record(feature) {
+            by_record.entry((stream, record)).or_default().push(feature);
         }
     }
+    let mut consumed = BTreeSet::<&str>::new();
     let mut documents = BTreeMap::<String, Projected>::new();
     for (stream, mut records) in streams {
         records.sort_by_key(|timeline| timeline.source_ordinal);
         let item_types = ItemTypes::new(types, stream);
-        let mut ordinal = 0_u64;
+        let run = records
+            .iter()
+            .flat_map(|timeline| timeline.frame().items().iter().map(|item| item.value))
+            .collect::<Vec<_>>();
+        let order = order_of(stream, &run);
+        let claimed = order.claimed(&run);
+        let mut position = 0_u64;
         for timeline in records {
             let items = timeline.frame().items();
             if items.is_empty() {
@@ -120,30 +200,76 @@ pub(super) fn project(
                 .or_default();
             let mut members = Vec::with_capacity(items.len());
             let mut rolled_back = Vec::with_capacity(items.len());
-            for item in items {
+            let entries = order.entries(&items.iter().map(|item| item.value).collect::<Vec<_>>());
+            for entry in entries {
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
-                let flags = tail_flags.get(&(stream, item.value)).copied();
-                rolled_back.push(flags.map(|flags| flags.rolled_back));
-                let feature = match positioned
-                    .get(&(stream, ordinal))
-                    .and_then(|candidates| item_feature(candidates, item.value))
-                {
-                    Some(feature) => resolved_item(feature, bodies, &scopes, losses),
-                    None => unprojected_item(
-                        stream,
-                        timeline,
-                        item.value,
-                        &item_types,
-                        flags,
-                        companion_suppressed.get(&(stream, item.value)).copied(),
-                        losses,
-                    )?,
+                let record = entry.record();
+                let flags = tail_flags.get(&(stream, record)).copied();
+                let companion = companion_suppressed.get(&(stream, record)).copied();
+                let take = |record: u64, consumed: &BTreeSet<&str>| {
+                    by_record
+                        .get(&(stream, record))
+                        .and_then(|candidates| item_feature(candidates, consumed))
                 };
+                let feature = match entry {
+                    Entry::Follower(record) => {
+                        let Some(feature) = take(record, &consumed) else {
+                            continue;
+                        };
+                        // discarded-value: a feature id is listed once however often it is taken.
+                        let _ = consumed.insert(feature.id.as_str());
+                        resolved_item(feature, bodies, &scopes, flags, companion, losses)
+                    }
+                    Entry::Item(record) => {
+                        let owned = order.owned(record);
+                        let exact = take(record, &consumed)
+                            .or_else(|| owned.iter().find_map(|owned| take(*owned, &consumed)));
+                        let matched = exact.or_else(|| {
+                            let position = order.records.get(&record).copied().unwrap_or(position);
+                            let ordinal = ordinal_base.get(stream)?.checked_add(position)?;
+                            let feature = positioned
+                                .get(&(stream, ordinal))?
+                                .iter()
+                                .filter(|feature| {
+                                    !consumed.contains(feature.id.as_str())
+                                        && !feature_record(feature)
+                                            .is_some_and(|record| claimed.contains(&record))
+                                })
+                                .min_by_key(|feature| feature.id.as_str())
+                                .copied()?;
+                            losses.push(F3dLossCode::HistoryItemMatchedByPosition.note(format!(
+                                "timeline item {record} of {stream}: no scope record states its feature; matched feature {} by the item's position in the stream",
+                                feature.id
+                            )));
+                            Some(feature)
+                        });
+                        position = position.checked_add(1).ok_or_else(|| {
+                            CodecError::malformed("F3D timeline ordinal exceeds u64")
+                        })?;
+                        match matched {
+                            Some(feature) => {
+                                // discarded-value: a feature id is listed once however often it is taken.
+                                let _ = consumed.insert(feature.id.as_str());
+                                resolved_item(feature, bodies, &scopes, flags, companion, losses)
+                            }
+                            None => unprojected_item(
+                                stream,
+                                timeline,
+                                record,
+                                &item_types,
+                                flags,
+                                companion,
+                                losses,
+                            )?,
+                        }
+                    }
+                };
+                rolled_back.push(flags.map(|flags| flags.rolled_back));
                 members.push(Member::Feature(feature.id.clone()));
+                projected
+                    .items
+                    .insert(feature.id.clone(), (stream.to_owned(), record));
                 projected.features.push(feature);
-                ordinal = ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::malformed("F3D timeline ordinal exceeds u64"))?;
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
             let id = container_id(timeline.id())?;
@@ -220,15 +346,148 @@ pub(super) fn document_prefix(stream: &str) -> &str {
         .map_or("", |(key, _)| &local[..=key.len()])
 }
 
-/// The v10 feature of the item whose record is `record`, among the features
-/// the v10 projection placed at the item's position: the one keyed by that
-/// record, else the first by id.
-fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a LegacyFeature> {
-    let suffix = format!(":{record}");
+/// The scope record that ends the key of a v10 feature.
+fn feature_record(feature: &LegacyFeature) -> Option<u64> {
+    feature
+        .id
+        .as_str()
+        .rsplit_once(':')
+        .and_then(|(_, record)| record.parse::<u64>().ok())
+}
+
+/// One entry of a timeline's member run: an item, or a reverse-normal linked
+/// scope that is no item, which stands before the item that follows it.
+enum Entry {
+    Item(u64),
+    Follower(u64),
+}
+
+impl Entry {
+    fn record(&self) -> u64 {
+        match self {
+            Self::Item(record) | Self::Follower(record) => *record,
+        }
+    }
+}
+
+/// The authored positions of one Design stream's records: the timeline items
+/// and the linked scopes that follow them, and the scopes the stream's scope
+/// order places. An empty order states no position.
+#[derive(Default)]
+pub(super) struct StreamOrder {
+    /// The position of each item or follower record.
+    records: HashMap<u64, u64>,
+    /// The scope records placed at each position, in record order.
+    scopes_at: HashMap<u64, Vec<u64>>,
+}
+
+impl StreamOrder {
+    /// The order of `stream`, whose scopes are `scopes` and whose timeline
+    /// items are `run`; empty where the authored order of the stream is not
+    /// stated.
+    fn new(
+        stream: &str,
+        scopes: &[&DesignParameterScope],
+        timelines: &[DesignFeatureTimeline],
+        run: &[u64],
+    ) -> Self {
+        let by_record = scopes
+            .iter()
+            .map(|scope| (scope.record_index, *scope))
+            .collect::<HashMap<_, _>>();
+        let (Ok(placed), Ok(records)) = (
+            authored_scope_ordinals_for_stream(scopes, timelines),
+            timeline_item_ordinals(scopes, &by_record, run),
+        ) else {
+            return Self::default();
+        };
+        Self::from_positions(
+            records,
+            placed
+                .into_iter()
+                .filter(|((scope_stream, _), _)| *scope_stream == stream)
+                .map(|((_, record), ordinal)| (u64::from(record), ordinal)),
+        )
+    }
+
+    pub(super) fn from_positions(
+        records: HashMap<u64, u64>,
+        scopes: impl IntoIterator<Item = (u64, u64)>,
+    ) -> Self {
+        let mut scopes_at = HashMap::<u64, Vec<u64>>::new();
+        for (record, ordinal) in scopes {
+            scopes_at.entry(ordinal).or_default().push(record);
+        }
+        for records in scopes_at.values_mut() {
+            records.sort_unstable();
+        }
+        Self { records, scopes_at }
+    }
+
+    /// The scope records the order places at the position of the item
+    /// `record`, other than the record itself: the owned `Base Feature` scope
+    /// of an object, or the `JointOrigin` scope of an `Assemble` envelope.
+    fn owned(&self, record: u64) -> Vec<u64> {
+        self.records
+            .get(&record)
+            .and_then(|ordinal| self.scopes_at.get(ordinal))
+            .map(|at| at.iter().copied().filter(|at| *at != record).collect())
+            .unwrap_or_default()
+    }
+
+    /// The scope records that the order or the item run gives to an item or a
+    /// follower.
+    fn claimed(&self, run: &[u64]) -> HashSet<u64> {
+        let positions = self.records.values().copied().collect::<HashSet<_>>();
+        run.iter()
+            .copied()
+            .chain(
+                self.scopes_at
+                    .iter()
+                    .filter(|(ordinal, _)| positions.contains(*ordinal))
+                    .flat_map(|(_, records)| records.iter().copied()),
+            )
+            .collect()
+    }
+
+    /// The members of one timeline whose items are `items`: each item in run
+    /// order, each follower before the first item that stands after it, and
+    /// those after the last item at the end.
+    fn entries(&self, items: &[u64]) -> Vec<Entry> {
+        let listed = items.iter().copied().collect::<HashSet<_>>();
+        let mut followers = self
+            .records
+            .iter()
+            .filter(|(record, _)| !listed.contains(*record))
+            .map(|(record, ordinal)| (*ordinal, *record))
+            .collect::<Vec<_>>();
+        followers.sort_unstable();
+        let mut followers = followers.into_iter().peekable();
+        let mut entries = Vec::with_capacity(items.len());
+        for item in items {
+            if let Some(at) = self.records.get(item) {
+                while let Some((_, record)) = followers.next_if(|(ordinal, _)| ordinal < at) {
+                    entries.push(Entry::Follower(record));
+                }
+            }
+            entries.push(Entry::Item(*item));
+        }
+        entries.extend(followers.map(|(_, record)| Entry::Follower(record)));
+        entries
+    }
+}
+
+/// The v10 feature of an item among the `candidates` whose key ends in the
+/// item's record: the first by id that no earlier item took, so that two
+/// features of one record never give two items one id.
+fn item_feature<'a>(
+    candidates: &[&'a LegacyFeature],
+    consumed: &BTreeSet<&str>,
+) -> Option<&'a LegacyFeature> {
     candidates
         .iter()
-        .find(|feature| feature.id.as_str().ends_with(&suffix))
-        .or_else(|| candidates.iter().min_by_key(|feature| feature.id.as_str()))
+        .filter(|feature| !consumed.contains(feature.id.as_str()))
+        .min_by_key(|feature| feature.id.as_str())
         .copied()
 }
 
@@ -236,8 +495,16 @@ fn resolved_item(
     feature: &LegacyFeature,
     bodies: &BTreeSet<&str>,
     scopes: &HashMap<&str, &crate::records::feature::scope::DesignParameterScope>,
+    flags: Option<DesignScopeTailFlags>,
+    companion: Option<bool>,
     losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let suppressed = feature.suppressed.or_else(|| {
+        if let Some(flags) = flags {
+            losses.extend(flags.assumption_notes(&format!("feature {}", feature.id)));
+        }
+        flags.map(|flags| flags.suppressed()).or(companion)
+    });
     let operation = feature.evaluation.definition().operation();
     let typed_pattern = |losses: &mut Vec<LossNote>| {
         let scope = scopes.get(feature.native_ref.as_deref()?)?;
@@ -261,7 +528,7 @@ fn resolved_item(
     Feature {
         id: feature.id.clone(),
         name: feature.name.clone(),
-        suppressed: feature.suppressed.map(Dimension::Literal),
+        suppressed: suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
             assembly: None,

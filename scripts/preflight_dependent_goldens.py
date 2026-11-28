@@ -6,13 +6,12 @@ codecs build on can change the goldens of a codec the branch never touched,
 for example a body kind that the SAT goldens pin. Running only the changed
 crate's tests misses that drift, and CI then fails. The check selects the
 reached crates the same way CI does (`scripts/ci_scope.py`) and lists the
-dependents that have golden tests. With `--full` it runs them.
+dependents that have golden tests.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import shlex
 import sys
 import tomllib
 from pathlib import Path
@@ -68,21 +67,9 @@ def run(context):
                         and has_goldens(context.root, directories[name]))
     if not dependents:
         return context.passed("no other crate's goldens depend on the changed crates")
-    command = ["cargo", "test", "-q", "--no-fail-fast",
-               *(argument for name in dependents for argument in ("-p", name)), "golden"]
-    shown = " ".join(shlex.quote(part) for part in command)
     changed_list = ", ".join(sorted(changed)) or "shared inputs"
-    if not context.options.full:
-        return context.warned(
-            f"changes to {changed_list} reach the goldens of {len(dependents)} other crate(s)",
-            *dependents, f"run: {shown}", "or rerun preflight with --full",
-        )
-    status, output = context.run(command)
-    if status:
-        return context.failed(
-            f"golden tests of dependent crates fail after changing {changed_list}",
-            *output.splitlines()[-25:],
-            "fix: if the new output is intended, regenerate with UPDATE_GOLDEN=1 and the same "
-            "command, review every changed snapshot, and commit it; otherwise fix the change",
-        )
-    return context.passed(f"goldens of {len(dependents)} dependent crate(s) pass", *dependents)
+    return context.warned(
+        f"changes to {changed_list} reach the goldens of {len(dependents)} other crate(s)",
+        *dependents, "run: cargo test-fast golden",
+        "regenerate intended changes with UPDATE_GOLDEN=1 cargo test-fast golden",
+    )

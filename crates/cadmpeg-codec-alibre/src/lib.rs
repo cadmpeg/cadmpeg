@@ -40,7 +40,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
-use dialect::FORMAT;
+use dialect::registry_ids::FORMAT;
 
 /// Read-only Alibre Design part codec.
 #[derive(Debug, Default, Clone, Copy)]

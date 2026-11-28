@@ -60,8 +60,8 @@ fn entity_header_meta_scope_follows_the_bulk_stream() {
 
 #[test]
 fn record_header_primary_index_overrides_a_header_shaped_payload() {
-    use crate::test_support::streams_test::design_metastream_with_records;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::streams_fixture::design_metastream_with_records;
+    use crate::test_support::zip_fixture::with_scan;
     use std::io::{Cursor, Write};
 
     let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -85,7 +85,7 @@ fn record_header_primary_index_overrides_a_header_shaped_payload() {
     );
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(bulk_name, stored).unwrap();
     zip.write_all(&bulk).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)

@@ -402,6 +402,22 @@ pub(crate) fn neutral_assembly_group_joint_id(
     )
 }
 
+/// The member of the rigid group whose first joint is `group` that the joint
+/// `member` ties to the first member: the inverse of
+/// [`neutral_assembly_group_joint_id`] under any archive qualifier the two
+/// identities share.
+pub(crate) fn assembly_group_member(
+    group: &cadmpeg_ir::products::JointId,
+    member: &cadmpeg_ir::products::JointId,
+) -> Option<usize> {
+    member
+        .as_str()
+        .strip_prefix(group.as_str())?
+        .strip_prefix('m')?
+        .parse()
+        .ok()
+}
+
 pub(crate) fn feature_input_edge_slot(
     feature: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
@@ -1191,6 +1207,31 @@ mod tests {
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
     use cadmpeg_core::serde_erase::json;
+
+    #[test]
+    fn a_group_member_joint_names_its_member_under_an_archive_qualifier() {
+        let scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+            10,
+        );
+        let group = super::neutral_assembly_joint_id(&scope);
+        let member = super::neutral_assembly_group_joint_id(&scope, 12);
+        assert_eq!(super::assembly_group_member(&group, &member), Some(12));
+        let qualified = |id: &cadmpeg_ir::products::JointId| {
+            cadmpeg_ir::products::JointId::mint(super::qualify(id.as_str(), "member").unwrap())
+                .unwrap()
+        };
+        assert_eq!(
+            super::assembly_group_member(&qualified(&group), &qualified(&member)),
+            Some(12)
+        );
+        assert_eq!(super::assembly_group_member(&group, &group), None);
+        assert_eq!(
+            super::assembly_group_member(&group, &qualified(&member)),
+            None
+        );
+    }
 
     #[test]
     fn sheet_metal_rule_ids_preserve_owner_stream_and_record_identity() {
