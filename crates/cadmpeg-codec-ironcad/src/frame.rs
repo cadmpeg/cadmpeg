@@ -7,11 +7,18 @@ use cadmpeg_core::CodecError;
 
 use crate::layout::frame_header as header;
 
+/// The payload of a framed stream.
+pub(crate) struct Frame<'a> {
+    pub(crate) payload: View<'a>,
+    /// Number of stream bytes after the last block.
+    pub(crate) trailing: usize,
+}
+
 /// Inflates a framed stream and returns its payload.
 pub(crate) fn payload<'a>(
     ctx: &DecodeContext<'a>,
     stream: View<'_>,
-) -> Result<View<'a>, CodecError> {
+) -> Result<Frame<'a>, CodecError> {
     let mut cursor = stream;
     if cursor.req_u32_le()? != header::MAGIC_VALUE {
         return Err(CodecError::Malformed("frame magic is absent".into()));
@@ -31,15 +38,12 @@ pub(crate) fn payload<'a>(
         }
         blocks.push(block(ctx, &mut cursor, compressed_length, block_size)?);
     }
-    if !cursor.unread().is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "frame holds bytes after its {count} block(s)"
-        )));
-    }
+    let trailing = cursor.unread().len();
     if let [only] = blocks.as_slice() {
-        return only
+        let payload = only
             .child(only.start(), only.start() + length)
-            .ok_or_else(|| CodecError::Malformed("frame payload escapes its block".into()));
+            .ok_or_else(|| CodecError::Malformed("frame payload escapes its block".into()))?;
+        return Ok(Frame { payload, trailing });
     }
     let mut writer = ctx.begin_expand(ExpandSpec::Exact(payload_length))?;
     let mut remaining = length;
@@ -48,7 +52,10 @@ pub(crate) fn payload<'a>(
         writer.write(&block.window()[..take])?;
         remaining -= take;
     }
-    writer.finalize()
+    Ok(Frame {
+        payload: writer.finalize()?,
+        trailing,
+    })
 }
 
 /// The number of blocks whose inflated bytes hold `length` payload bytes, and
