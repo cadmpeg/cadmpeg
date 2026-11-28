@@ -117,7 +117,6 @@ pub(super) fn project(
     let mut lists = BTreeMap::<&FeatureId, BTreeSet<List>>::new();
     let listed = by_id
         .values()
-        .filter(|parameter| !minted.contains(&parameter.id))
         .filter_map(|parameter| {
             let list = list(parameter, &carriers)?;
             lists
