@@ -677,6 +677,30 @@ impl Annotations {
         self.exactness.retain(|key, _| keep(key.owner()));
     }
 
+    /// The annotations of each entity that `keep` selects, keyed as the
+    /// record of that id in the delta of `qualifier` (§3.2).
+    #[must_use]
+    pub fn in_delta(&self, qualifier: &impl Qualifier, mut keep: impl FnMut(&str) -> bool) -> Self {
+        let mut out = Self::default();
+        let mut moved = |key: &AnnotationKey| match key.target() {
+            AnnotationTarget::Entity(id) if keep(id) => {
+                Some(AnnotationKey::qualified(qualifier.as_qualifier(), id))
+            }
+            _ => None,
+        };
+        for (key, provenance) in &self.provenance {
+            if let Some(key) = moved(key) {
+                out.provenance.insert(key, provenance.clone());
+            }
+        }
+        for (key, note) in &self.exactness {
+            if let Some(key) = moved(key) {
+                out.exactness.insert(key, note.clone());
+            }
+        }
+        out
+    }
+
     /// Replace each id that a key of either table holds by `map` of that id,
     /// calling `map` once per id in increasing order. A collision leaves both
     /// tables unchanged.
