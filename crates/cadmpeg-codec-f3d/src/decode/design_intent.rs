@@ -1106,6 +1106,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             model.feature_result_topologies.push(result);
         }
     }
+    super::mesh_body_selections::bind(
+        scan,
+        &mut model.features,
+        &design.design_construction_operand_groups,
+        &design.design_parameter_scopes,
+        geometry.mesh_projection,
+        &mut losses,
+    )?;
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
@@ -1355,6 +1363,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             parameters: &prereqs.design_parameters,
             placements: &design.design_sketch_placements,
             sketches: &model.sketches,
+            mesh_bodies: Some(geometry.mesh_projection),
         },
         &mut losses,
     )?;
@@ -1363,6 +1372,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &mut model.features,
         &design.design_parameter_scopes,
+        geometry.mesh_projection,
         &mut losses,
     )?;
     super::mesh_operations::combine::bind_features(

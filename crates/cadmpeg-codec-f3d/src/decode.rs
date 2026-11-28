@@ -4807,6 +4807,17 @@ struct MeshProjection {
     unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
+    /// The tessellation of each joined mesh body, keyed by its Design stream
+    /// and mesh-body record; `None` for a record that joins two tessellations.
+    tessellations_by_body: std::collections::HashMap<(String, u32), Option<MeshBodyTessellation>>,
+}
+
+/// The tessellation that one mesh body projects, and the feature scope that
+/// owns the body.
+#[derive(PartialEq, Eq)]
+struct MeshBodyTessellation {
+    tessellation: String,
+    scope_record_index: Option<u32>,
 }
 
 fn extend_unique_assets(
@@ -5010,6 +5021,7 @@ fn project_mesh_bodies(
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
+                tessellations_by_body: std::collections::HashMap::new(),
             });
         }
     };
@@ -5125,6 +5137,7 @@ fn project_mesh_bodies(
         count: bodies.len(),
         unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
+        tessellations_by_body: std::collections::HashMap::new(),
     };
     for mut body in bodies {
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
@@ -5192,10 +5205,27 @@ fn project_mesh_bodies(
     }
     for feature in &native.design_mesh_features {
         let stream = crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        for body in feature.all_bodies() {
+            let Some(tessellation) = &body.tessellation_id else {
+                continue;
+            };
+            let joined = MeshBodyTessellation {
+                tessellation: tessellation.clone(),
+                scope_record_index: body.scope_record_index,
+            };
+            projection
+                .tessellations_by_body
+                .entry((stream.to_owned(), body.placement.record().record_index()))
+                .and_modify(|existing| {
+                    if existing.as_ref() != Some(&joined) {
+                        *existing = None;
+                    }
+                })
+                .or_insert(Some(joined));
+        }
         for scope in feature.scopes() {
             let mut bodies = feature
-                .bodies()
-                .iter()
+                .scope_bodies()
                 .filter(|body| body.scope_record_index == Some(scope.record().record_index()))
                 .collect::<Vec<_>>();
             bodies.sort_by_key(|body| body.scope_body_ordinal);
@@ -7164,6 +7194,7 @@ pub(crate) fn apply_body_presentation_names(
 
 pub(crate) mod design_intent;
 mod geometry_admission;
+mod mesh_body_selections;
 mod mesh_import;
 mod mesh_operations;
 mod prereqs;

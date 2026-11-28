@@ -110,7 +110,7 @@ const MESH_CUT_SCOPE_TYPE_GUID: &str = "E3EB3760-4362-48D6-ABF3-698B0C12C5A9";
 const MESH_CUT_SCOPE_BASE_TYPE_GUID: &str = "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF";
 const MESH_OPERATION_GROUP_TYPE_GUID: &str = "22975A91-16AD-4CC9-A5E4-B4F8B4C27881";
 const MESH_OPERATION_GROUP_BASE_TYPE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
-const MESH_OPERATION_MEMBER_TYPE_GUID: &str = "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2";
+pub(crate) const MESH_OPERATION_MEMBER_TYPE_GUID: &str = "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2";
 const MESH_OPERATION_MEMBER_BASE_TYPE_GUID: &str = "6144EA59-3ACA-4172-9F14-A6531E94D69B";
 const MESH_BODY_OWNER_ALTERNATE_TYPE_GUID: &str = "3A8E00DC-E342-4C03-8521-846BD9F7513E";
 const MESH_BODY_OWNER_ALTERNATE_BASE_TYPE_GUID: &str = "A193F53F-86D7-4F45-A01C-51F5ECEEFC0E";
@@ -871,13 +871,12 @@ fn parse_variable_mesh_body_at(
     parsed.transpose()
 }
 
-/// Parse one mesh-collection record. `None` for an empty collection, an empty
-/// `ParaMesh` registry with no mesh graph.
+/// Parse one mesh-collection record.
 fn parse_mesh_collection_record(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     frame: TypedPrimaryFrame<'_>,
-) -> Result<Option<MeshCollectionRecord>, CodecError> {
+) -> Result<MeshCollectionRecord, CodecError> {
     validate_mesh_registration(
         frame,
         MESH_COLLECTION_TYPE_VERSION,
@@ -979,9 +978,6 @@ fn parse_mesh_collection_record(
         };
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
-        if body_records.is_empty() {
-            return Some(None);
-        }
         let collection = DesignMeshCollection::new(
             identity,
             base_record,
@@ -1004,12 +1000,12 @@ fn parse_mesh_collection_record(
                 .with_received_count(u32::try_from(first_count).ok()?)
                 .ok()?
         };
-        Some(Some(MeshCollectionRecord {
+        Some(MeshCollectionRecord {
             collection,
             texture_table_record_index,
             body_records,
             owner_record_index,
-        }))
+        })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-collection", frame.entity_id))
 }
@@ -1878,13 +1874,7 @@ where
     let collections = collection_frames
         .into_iter()
         .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    if collections.is_empty() {
-        return Ok(Vec::new());
-    }
+        .collect::<Result<Vec<_>, _>>()?;
     let mut entry_names = unique_record_map(
         typed_primary_frames_from(
             primary_frames,
@@ -1949,6 +1939,13 @@ where
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
+    if collections
+        .iter()
+        .all(|collection| collection.body_records.is_empty())
+        && scopes.values().all(|scope| scope.body_records.is_empty())
+    {
+        return Ok(Vec::new());
+    }
     let mut states = unique_record_map(
         typed_primary_frames_from(
             primary_frames,
@@ -2081,6 +2078,33 @@ where
                 None => scopeless_bodies += 1,
             }
         }
+        let mut removed_records = bodies
+            .iter()
+            .filter(|(index, body)| {
+                body.collection_record_index == collection_index
+                    && !collection_bodies.contains(*index)
+                    && body.scope_record_index.is_some_and(|scope_index| {
+                        scopes
+                            .get(&scope_index)
+                            .is_some_and(|scope| scope.body_records.contains(index))
+                    })
+            })
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>();
+        removed_records.sort_unstable();
+        for index in &removed_records {
+            collection_bodies.insert(*index);
+            if let Some(scope_index) = bodies.get(index).and_then(|body| body.scope_record_index) {
+                if !scope_indices.contains(&scope_index) {
+                    scope_indices.push(scope_index);
+                }
+            }
+        }
+        if collection.body_records.is_empty() && removed_records.is_empty() {
+            texture_tables.remove(&collection.texture_table_record_index);
+            collection_owners.remove(&collection.owner_record_index);
+            continue;
+        }
         let mut scope_ordinals = HashMap::new();
         let mut selected_scopes = Vec::new();
         for scope_index in scope_indices {
@@ -2110,7 +2134,9 @@ where
             }
             selected_scopes.push(scope.scope);
         }
-        if scope_ordinals.len() + scopeless_bodies != collection.body_records.len() {
+        if scope_ordinals.len() + scopeless_bodies
+            != collection.body_records.len() + removed_records.len()
+        {
             return Err(stream_error("scope bodies partition collection bodies"));
         }
         let scope_offset = selected_scopes.first().map_or_else(
@@ -2169,7 +2195,8 @@ where
         }
 
         let mut feature_bodies = Vec::new();
-        for body_record_index in &collection.body_records {
+        let mut removed_bodies = Vec::new();
+        for body_record_index in collection.body_records.iter().chain(&removed_records) {
             let body = bodies.remove(body_record_index).ok_or_else(|| {
                 stream_error("each collection body reference targets one unused mesh body")
             })?;
@@ -2214,7 +2241,12 @@ where
                 .copied()
                 .ok_or_else(|| stream_error("each mesh body references a typed Body owner"))?;
             let body_owner = parse_mesh_body_owner(bytes, body_owner_frame)?;
-            feature_bodies.push(DesignMeshBody {
+            let destination = if removed_records.contains(body_record_index) {
+                &mut removed_bodies
+            } else {
+                &mut feature_bodies
+            };
+            destination.push(DesignMeshBody {
                 scope_record_index: body.scope_record_index,
                 scope_body_ordinal: scope_ordinals.get(body_record_index).copied(),
                 words: body.words,
@@ -2338,10 +2370,80 @@ where
             })?,
             collection_owner.owner,
             feature_bodies,
+            removed_bodies,
         )
         .map_err(|message| malformed_mesh_graph(&stream, &message))?;
         feature.operation_bodies = operation_bodies;
         features.push(feature);
+    }
+    for index in mesh_operation_geometry_states(bytes, primary_frames, meta)? {
+        if used_guids.contains(&index) {
+            continue;
+        }
+        if let Some(guid) = guids.get(&index).filter(|guid| {
+            entry_names
+                .get(&guid.entry_name_record_index)
+                .is_some_and(|entry| entry.guid_record_index == index)
+        }) {
+            used_guids.insert(index);
+            used_entries.insert(guid.entry_name_record_index);
+        }
+    }
+    let tessellate_scopes = {
+        use crate::design::decode::mesh_operations::tessellate;
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            tessellate::SCOPE_TYPE_GUID,
+            "mesh-tessellate-scope",
+        )?
+        .into_iter()
+        .filter(|frame| {
+            validate_mesh_registration(
+                *frame,
+                tessellate::SCOPE_TYPE_VERSION,
+                tessellate::SCOPE_BASE_TYPE_GUID,
+                FUSION_MODULE,
+                "mesh-tessellate-scope",
+            )
+            .is_ok()
+        })
+        .filter_map(|frame| u32::try_from(frame.entity_id).ok())
+        .collect::<HashSet<_>>()
+    };
+    let mut consumed = bodies
+        .iter()
+        .filter(|(_, body)| {
+            body.scope_record_index
+                .is_some_and(|scope| tessellate_scopes.contains(&scope))
+        })
+        .map(|(index, _)| *index)
+        .collect::<Vec<_>>();
+    consumed.sort_unstable();
+    for index in consumed {
+        let stream_error = |invariant| malformed_mesh_graph(&stream, invariant);
+        let body = bodies
+            .remove(&index)
+            .ok_or_else(|| stream_error("each consumed produced body is unique"))?;
+        wrappers
+            .remove(&body.wrapper_record_index)
+            .filter(|wrapper| wrapper.body_record_index == index)
+            .ok_or_else(|| {
+                stream_error("each consumed produced body has one unused reciprocal wrapper")
+            })?;
+        let entry = guids
+            .get(&body.guid_record_index)
+            .map(|guid| guid.entry_name_record_index)
+            .filter(|entry| {
+                entry_names
+                    .get(entry)
+                    .is_some_and(|entry| entry.guid_record_index == body.guid_record_index)
+            })
+            .ok_or_else(|| {
+                stream_error("each consumed produced body has a GUID with a reciprocal entry name")
+            })?;
+        used_guids.insert(body.guid_record_index);
+        used_entries.insert(entry);
     }
     scopes.retain(|_, scope| !scope.body_records.is_empty());
     entry_names.retain(|index, _| !used_entries.contains(index));
@@ -2361,6 +2463,50 @@ where
         )));
     }
     Ok(features)
+}
+
+/// The Design GUID records that the geometry tails of the mesh operation
+/// scopes name as input or output geometry states.
+fn mesh_operation_geometry_states(
+    bytes: &[u8],
+    primary_frames: &[DesignPrimaryFrame<'_>],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<u32>, CodecError> {
+    use crate::design::decode::mesh_operations::{
+        read_scope, MeshOperationKind, GEOMETRY_TAIL_SCOPE_BASE_TYPE_GUID,
+    };
+    let mut states = Vec::new();
+    for kind in MeshOperationKind::GEOMETRY_TAIL {
+        let (type_guid, version) = kind.registration();
+        for frame in
+            typed_primary_frames_from(primary_frames, meta, type_guid, "mesh-operation-scope")?
+        {
+            if validate_mesh_registration(
+                frame,
+                version,
+                GEOMETRY_TAIL_SCOPE_BASE_TYPE_GUID,
+                FUSION_MODULE,
+                "mesh-operation-scope",
+            )
+            .is_err()
+            {
+                continue;
+            }
+            let Some(record) = bytes.get(frame.start..frame.end) else {
+                continue;
+            };
+            let Ok(scope) = read_scope(kind, record) else {
+                continue;
+            };
+            states.extend(scope.output_geometry);
+            if scope.input_geometry != 0 {
+                states.push(scope.input_geometry);
+            }
+        }
+    }
+    states.sort_unstable();
+    states.dedup();
+    Ok(states)
 }
 
 fn decode_mesh_design_records(
@@ -2730,6 +2876,7 @@ mod tests {
     mod losses;
     mod owner;
     mod placement;
+    mod unlisted_states;
     mod validation;
     use super::{
         parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,
@@ -3689,8 +3836,7 @@ mod tests {
             let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
             frame.end = record.len();
             let collection = super::parse_mesh_collection_record(&record, &graph.meta, frame)
-                .expect("valid collection")
-                .expect("nonempty collection");
+                .expect("valid collection");
             assert_eq!(collection.body_records, [189, 325]);
             let flagged = collection.collection.flagged_data.as_ref().unwrap();
             assert_eq!(flagged.word, 4);
@@ -3982,7 +4128,8 @@ mod tests {
         assert!(
             super::parse_mesh_collection_record(&record, &graph.meta, frame)
                 .expect("empty flagged registry")
-                .is_none()
+                .body_records
+                .is_empty()
         );
         record[66] = 1;
         assert!(super::parse_mesh_collection_record(&record, &graph.meta, frame).is_err());

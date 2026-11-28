@@ -25,6 +25,7 @@ mod fusion_combine_producers;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
 mod fusion_joint_tail;
+mod fusion_mesh_import;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;

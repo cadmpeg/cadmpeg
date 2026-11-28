@@ -2666,7 +2666,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.mesh-operation-source-unresolved` and `feature.mesh-plane-cut-source-unresolved` for historical geometry. Plane-cut admission, framing, plane components and selection membership report `feature.mesh-plane-cut-scope-unparsed`, `feature.mesh-plane-cut-tail-partial`, `feature.mesh-plane-cut-plane-partial` and `feature.mesh-plane-cut-selection-unresolved`. Unruled controls and retained construction fields report `feature.mesh-plane-cut-selector-unruled` and `feature.mesh-plane-cut-fields-uninterpreted`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
+**Note.** The decoder reports `feature.mesh-operation-source-unresolved` and `feature.mesh-plane-cut-source-unresolved` for historical geometry. An operation that changes the geometry of a mesh body with a tessellation reports `feature.mesh-geometry-state-unjoined`: the tessellation holds the geometry after the operation, and the input geometry state joins no tessellation. Plane-cut admission, framing, plane components and selection membership report `feature.mesh-plane-cut-scope-unparsed`, `feature.mesh-plane-cut-tail-partial`, `feature.mesh-plane-cut-plane-partial` and `feature.mesh-plane-cut-selection-unresolved`. Unruled controls and retained construction fields report `feature.mesh-plane-cut-selector-unruled` and `feature.mesh-plane-cut-fields-uninterpreted`. An unreadable scope or source group reports `feature.mesh-operation-scope-unparsed`. A partially decoded geometry tail reports `feature.mesh-operation-tail-partial` and retains the preceding controls and references.
 
 ### DR-474. Mesh operation selector values and fixed fields
 
@@ -2696,7 +2696,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which source member tail fields select face groups or subsets of a mesh body?
 
-**Known.** A source member contains a body reference followed by selection fields. The decoder retains the body reference as an input-local body selection.
+**Known.** A source member contains a body reference followed by selection fields. A `Modify` body group can list the same member record. The decoder retains the body reference as an input-local body selection; in a `Modify` body group it selects the tessellation of the mesh body.
 
 **Need.** Controlled saves with whole-body and face-group selections changed independently.
 

@@ -271,6 +271,42 @@ fn body_selection(selection: MeshSelection) -> BodySelection {
     }
 }
 
+/// The tessellations of the mesh bodies that a mesh operation source
+/// selects, when every selected body joins one.
+fn body_tessellations(
+    source: &MeshSelection,
+    stream: Option<&str>,
+    projection: Option<&super::MeshProjection>,
+) -> Option<NativeSelections> {
+    let MeshSelection::Native {
+        members: Some(members),
+        ..
+    } = source
+    else {
+        return None;
+    };
+    let (stream, projection) = (stream?, projection?);
+    let mut tessellations = Vec::with_capacity(members.len());
+    for member in members.iter() {
+        let body = member.parse::<u32>().ok()?;
+        let joined = projection
+            .tessellations_by_body
+            .get(&(stream.to_owned(), body))?
+            .as_ref()?;
+        tessellations.push(joined.tessellation.clone());
+    }
+    NativeSelections::try_from(tessellations).ok()
+}
+
+fn source_reference(source: &MeshSelection) -> Result<String, CodecError> {
+    match source {
+        MeshSelection::Native { native, .. } => Ok(native.as_str().to_owned()),
+        _ => Err(CodecError::malformed(
+            "mesh removal source has no native reference",
+        )),
+    }
+}
+
 fn shell(
     source: MeshSelection,
     thickness: Option<PositiveLength>,
@@ -374,6 +410,8 @@ pub(super) struct MeshOperationInputs<'a> {
     pub(super) parameters: &'a [DesignParameter],
     pub(super) placements: &'a [DesignSketchPlacement],
     pub(super) sketches: &'a [Sketch],
+    /// The tessellations of the joined mesh bodies.
+    pub(super) mesh_bodies: Option<&'a super::MeshProjection>,
 }
 
 fn section_binding(
@@ -617,6 +655,17 @@ pub(super) fn bind_features(
                     None => Err(MeshOperationFraming("source metadata")),
                 };
                 let source = source_selection(&operation, bodies, &mut notes)?;
+                if let (Some(_), Some(tessellations)) = (
+                    operation.output_geometry,
+                    body_tessellations(&source, stream, inputs.mesh_bodies),
+                ) {
+                    notes.losses.push(F3dLossCode::FeatureMeshGeometryStateUnjoined.note(format!(
+                        "Mesh operation {source_id} changes the geometry of mesh bodies {tessellations:?}; their tessellations store the geometry after it, and its input geometry state {} joins no tessellation.",
+                        operation.input_geometry,
+                        source_id = notes.source,
+                        tessellations = tessellations.as_slice(),
+                    )));
+                }
                 match operation.fields {
                     MeshOperationFields::Section { .. } => FeatureOperation::MeshSection {
                         source,
@@ -635,7 +684,22 @@ pub(super) fn bind_features(
                         source: body_selection(source),
                     },
                     MeshOperationFields::Remove => FeatureOperation::DeleteBody {
-                        bodies: body_selection(source),
+                        bodies: match body_tessellations(&source, stream, inputs.mesh_bodies) {
+                            Some(bodies) => {
+                                notes.losses.retain(|loss| {
+                                    loss.code
+                                        != F3dLossCode::FeatureMeshOperationSourceUnresolved.kind()
+                                });
+                                BodySelection::Local {
+                                    bodies,
+                                    native: SelectionReference::try_from(source_reference(
+                                        &source,
+                                    )?)
+                                    .map_err(CodecError::malformed)?,
+                                }
+                            }
+                            None => body_selection(source),
+                        },
                         mode: BodyRetentionMode::DeleteSelected,
                     },
                     _ => FeatureOperation::MeshModify {

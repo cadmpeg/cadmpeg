@@ -298,6 +298,7 @@ fn bind(
             parameters: &[],
             placements: &[],
             sketches: &[],
+            mesh_bodies: None,
         },
     )
 }
@@ -889,6 +890,7 @@ fn section_retains_the_unique_native_plane_without_resolved_sketch_geometry() {
                     parameters: &[],
                     placements: &placements,
                     sketches: &[],
+                    mesh_bodies: None,
                 },
             );
             let FeatureDefinition::Operation(FeatureOperation::MeshSection {
@@ -939,6 +941,7 @@ fn section_rejects_ambiguous_native_planes_and_sketch_feature_links() {
         parameters: &[],
         placements: &placements,
         sketches: &[],
+        mesh_bodies: None,
     };
     assert_eq!(
         section_binding(
@@ -1005,6 +1008,7 @@ fn section_prefers_the_linked_model_sketch_plane() {
         parameters: &[],
         placements: &placements,
         sketches: &sketches,
+        mesh_bodies: None,
     };
     let (plane, sketch) = section_binding(
         &inputs,
@@ -1089,6 +1093,7 @@ fn shell_keeps_ordered_local_bodies_and_unknown_controls() {
                 parameters: &parameters,
                 placements: &[],
                 sketches: &[],
+                mesh_bodies: None,
             },
         );
         let FeatureDefinition::Operation(FeatureOperation::Shell {
@@ -1162,6 +1167,7 @@ fn smoothness_requires_a_dimensionless_parameter_owned_by_its_scope() {
                 parameters: &parameters,
                 placements: &[],
                 sketches: &[],
+                mesh_bodies: None,
             },
         );
         let FeatureDefinition::Operation(FeatureOperation::MeshModify {
@@ -1210,6 +1216,7 @@ fn null_section_sketch_reference_ignores_zero_identity_records() {
         parameters: &[],
         placements: &placements,
         sketches: &[],
+        mesh_bodies: None,
     };
     assert_eq!(
         section_binding(

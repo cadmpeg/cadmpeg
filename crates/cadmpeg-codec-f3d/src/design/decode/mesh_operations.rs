@@ -29,7 +29,36 @@ pub(crate) enum MeshOperationKind {
     Remove,
 }
 
+/// The base-type GUID of the mesh operation scopes that end with the
+/// geometry tail.
+pub(crate) const GEOMETRY_TAIL_SCOPE_BASE_TYPE_GUID: &str = "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF";
+
 impl MeshOperationKind {
+    /// The kinds whose scopes end with the geometry tail.
+    pub(crate) const GEOMETRY_TAIL: [Self; 7] = [
+        Self::Section,
+        Self::Reduce,
+        Self::Repair,
+        Self::Remesh,
+        Self::Smooth,
+        Self::Shell,
+        Self::ReverseNormals,
+    ];
+
+    /// The scope type GUID and type version of the kind.
+    pub(crate) fn registration(self) -> (&'static str, u32) {
+        match self {
+            Self::Section => ("8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB", 1),
+            Self::Reduce => ("BE693D4C-741E-4794-A93E-5BFED71E9E13", 2),
+            Self::Repair => ("68691143-5EE3-428E-9CD3-F728E4718559", 4),
+            Self::Remesh => ("828DDA62-2750-447D-8728-06C9B7C2B117", 2),
+            Self::Smooth => ("F84CD988-9696-458D-8AF3-795D12E6B9EF", 2),
+            Self::Shell => ("1514CDB8-BB81-4895-A953-7B12F4504F99", 2),
+            Self::ReverseNormals => ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", 0),
+            Self::Remove => ("57A2E341-A23A-469D-B41D-59B57A9AD8B8", 0),
+        }
+    }
+
     pub(crate) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "MeshSection" => Self::Section,
@@ -338,20 +367,11 @@ impl<'a> MeshOperationRecords<'a> {
         kind: MeshOperationKind,
         scope_index: u32,
     ) -> Result<View<'a>, MeshOperationFraming> {
-        let (guid, version) = match kind {
-            MeshOperationKind::Section => ("8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB", 1),
-            MeshOperationKind::Reduce => ("BE693D4C-741E-4794-A93E-5BFED71E9E13", 2),
-            MeshOperationKind::Repair => ("68691143-5EE3-428E-9CD3-F728E4718559", 4),
-            MeshOperationKind::Remesh => ("828DDA62-2750-447D-8728-06C9B7C2B117", 2),
-            MeshOperationKind::Smooth => ("F84CD988-9696-458D-8AF3-795D12E6B9EF", 2),
-            MeshOperationKind::Shell => ("1514CDB8-BB81-4895-A953-7B12F4504F99", 2),
-            MeshOperationKind::ReverseNormals => ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", 0),
-            MeshOperationKind::Remove => ("57A2E341-A23A-469D-B41D-59B57A9AD8B8", 0),
-        };
+        let (guid, version) = kind.registration();
         let base = if matches!(kind, MeshOperationKind::Remove) {
             "63A5A106-D239-4D6B-A96B-319CA9B9BA6A"
         } else {
-            "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF"
+            GEOMETRY_TAIL_SCOPE_BASE_TYPE_GUID
         };
         self.record(
             scope_index,
@@ -443,6 +463,41 @@ impl<'a> MeshOperationRecords<'a> {
         Ok(record)
     }
 
+    /// The mesh-body record that the mesh operation member `index` names.
+    pub(crate) fn member_body_reference(&self, index: u32) -> Result<u32, MeshOperationFraming> {
+        let record = self.source_record(
+            index,
+            "source member record",
+            "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2",
+            "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+        )?;
+        Cursor {
+            bytes: record,
+            at: member::BODY_REFERENCE,
+            deviations: Vec::new(),
+        }
+        .reference("source member body reference")
+    }
+
+    /// The mesh body that `member` names, when `member` is a mesh operation
+    /// member whose reference names a mesh-body record.
+    pub(crate) fn member_body(&self, member: u32) -> Result<u32, MeshOperationFraming> {
+        let body = self.member_body_reference(member)?;
+        self.mesh_body_record(body)?;
+        Ok(body)
+    }
+
+    fn mesh_body_record(&self, index: u32) -> Result<View<'a>, MeshOperationFraming> {
+        self.record(
+            index,
+            "source body record",
+            "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
+            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            "ParaMesh",
+            None,
+        )
+    }
+
     pub(crate) fn group_bodies(
         &self,
         ctx: &DecodeContext<'_>,
@@ -514,31 +569,10 @@ impl<'a> MeshOperationRecords<'a> {
                     }
                 };
                 *member = index;
-                let read = (|| {
-                    let record = self.source_record(
-                        index,
-                        "source member record",
-                        "1AA9CC7B-5C34-45DA-AE14-0444E7F966F2",
-                        "6144EA59-3ACA-4172-9F14-A6531E94D69B",
-                    )?;
-                    Cursor {
-                        bytes: record,
-                        at: member::BODY_REFERENCE,
-                        deviations: Vec::new(),
-                    }
-                    .reference("source member body reference")
-                })();
-                match read {
+                match self.member_body_reference(index) {
                     Ok(index) => {
                         *body = index;
-                        if let Err(error) = self.record(
-                            index,
-                            "source body record",
-                            "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
-                            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
-                            "ParaMesh",
-                            None,
-                        ) {
+                        if let Err(error) = self.mesh_body_record(index) {
                             failure.get_or_insert(error);
                         }
                     }

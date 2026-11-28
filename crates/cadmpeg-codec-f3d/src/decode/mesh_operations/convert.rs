@@ -1,5 +1,6 @@
 use super::{scope_bytes, Notes};
 use crate::container::ContainerScan;
+use crate::decode::MeshProjection;
 use crate::design::decode::mesh_operations::{MeshOperationFraming, MeshOperationRecords};
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
@@ -7,16 +8,51 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::mesh::{MeshConversion, MeshConversionMethod, MeshSelection};
-use cadmpeg_ir::features::selections::{NativeSelections, SelectionReference};
+use cadmpeg_ir::features::selections::{NativeSelections, SelectionMembers, SelectionReference};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::tessellation::TessellationId;
 use std::collections::HashMap;
+
+/// The tessellations of the mesh bodies `bodies` of `stream`, when each
+/// body joins one tessellation.
+fn joined_tessellations(
+    ctx: &DecodeContext<'_>,
+    bodies: &[u32],
+    stream: Option<&str>,
+    projection: &MeshProjection,
+) -> Result<Option<SelectionMembers<TessellationId>>, CodecError> {
+    let Some(stream) = stream else {
+        return Ok(None);
+    };
+    let mut joined = Vec::new();
+    for body in bodies {
+        let Some(Some(tessellation)) = projection
+            .tessellations_by_body
+            .get(&(stream.to_owned(), *body))
+        else {
+            return Ok(None);
+        };
+        joined.push(&tessellation.tessellation);
+    }
+    let Some(first) = joined.first() else {
+        return Ok(None);
+    };
+    let first = TessellationId::mint((*first).clone()).map_err(CodecError::malformed)?;
+    let mut identities =
+        ctx.alloc_filled(joined.len(), first, "F3D mesh conversion tessellations")?;
+    for (value, identity) in joined.into_iter().zip(&mut identities) {
+        *identity = TessellationId::mint(value.clone()).map_err(CodecError::malformed)?;
+    }
+    Ok(SelectionMembers::try_from(identities).ok())
+}
 
 fn source_selection(
     ctx: &DecodeContext<'_>,
     records: &MeshOperationRecords<'_>,
     ordinal: usize,
     wrapper: u32,
+    joined: (Option<&str>, &MeshProjection),
     notes: &mut Notes<'_>,
 ) -> Result<MeshSelection, CodecError> {
     notes.property(format!("mesh-conversion-input:{ordinal}"), wrapper);
@@ -48,6 +84,14 @@ fn source_selection(
         }
         Err(error) => Err(error),
     };
+    if let Ok(bodies) = &bodies {
+        if let Some(tessellations) = joined_tessellations(ctx, bodies, joined.0, joined.1)? {
+            notes.losses.push(F3dLossCode::FeatureMeshBodySelectionAssumed.note(format!(
+                "Mesh conversion {} reads input {ordinal} member body references as whole mesh-body selections; member-tail selections remain unresolved.", notes.source
+            )));
+            return Ok(MeshSelection::Tessellations(tessellations));
+        }
+    }
     let members = match bodies {
         Ok(bodies) => {
             match NativeSelections::try_from(bodies.iter().map(u32::to_string).collect::<Vec<_>>())
@@ -88,6 +132,7 @@ pub(in crate::decode) fn bind_features(
     scan: &ContainerScan<'_>,
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
+    projection: &MeshProjection,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut records = HashMap::<String, Option<MeshOperationRecords<'_>>>::new();
@@ -188,9 +233,15 @@ pub(in crate::decode) fn bind_features(
                         "Mesh conversion {source} retains uninterpreted field values {:?} in its source properties.", parsed.deviations
                     )));
                 }
+                let stream = scope.and_then(|scope| crate::ids::native_stream(&scope.id));
                 for (ordinal, wrapper) in parsed.input_wrappers.into_iter().enumerate() {
                     sources.push(source_selection(
-                        ctx, records, ordinal, wrapper, &mut notes,
+                        ctx,
+                        records,
+                        ordinal,
+                        wrapper,
+                        (stream, projection),
+                        &mut notes,
                     )?);
                 }
                 for (ordinal, wrapper) in parsed.output_wrappers.into_iter().enumerate() {
