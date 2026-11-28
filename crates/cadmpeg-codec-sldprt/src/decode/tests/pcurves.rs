@@ -102,10 +102,7 @@ fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
     let faces = &decoded.ir().geometry.faces;
     assert!(!faces.is_empty() && faces.iter().all(|face| face.loops.is_partial()));
     assert_eq!(
-        super::given_up(
-            &decoded,
-            crate::loss::SldprtLossCode::TopologyRingEdgeWithheld
-        ),
+        super::given_up(&decoded, &[crate::brep::graph::RING_EDGE_WITHHELD]),
         2
     );
 }

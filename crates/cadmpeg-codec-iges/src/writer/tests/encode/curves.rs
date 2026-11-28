@@ -25,8 +25,9 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         .expect("the ellipse fixture decodes");
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_0.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_0.descriptor().id.as_str(),
+            )),
         )
         .expect("V5.0 admits a typed ellipse");
     let mut written = Vec::new();
@@ -119,6 +120,7 @@ fn the_type_126_closed_flag_follows_the_stated_parameter_range() {
         ([domain[0].midpoint(domain[1]), domain[1]], "0"),
     ] {
         let entity = crate::writer::encode_nurbs(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &circle,
             cadmpeg_ir::units::FiniteVector::new(range).expect("a finite range"),
             "circle",

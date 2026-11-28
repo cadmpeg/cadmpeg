@@ -140,24 +140,65 @@ pub(crate) fn vector(value: [f64; 3]) -> Vector3 {
     Vector3::new(value[0], value[1], value[2])
 }
 
+/// Why a scaled archive coordinate has no finite millimetre value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unscaled {
+    /// The archive value is not finite.
+    NonFinite,
+    /// The archive value is finite, and its product with the unit scale
+    /// passes the range of an f64.
+    Overflow,
+}
+
+impl Unscaled {
+    /// The charge of the refusal `error`: `error` for a non-finite archive
+    /// value, and `error` restated as a decoder bound for an overflow.
+    pub(crate) fn charge<E: DecoderBound>(self, error: E) -> E {
+        match self {
+            Self::NonFinite => error,
+            Self::Overflow => error.decoder_bound(),
+        }
+    }
+}
+
+/// A refusal that a decoder bound, and no broken rule, can cause.
+pub(crate) trait DecoderBound {
+    /// The refusal restated as a decoder bound.
+    fn decoder_bound(self) -> Self;
+}
+
 /// Multiplies an archive coordinate by a unit scale and admits the product
 /// when it is finite.
 ///
-/// The product is the only defect the caller can observe. A `MillimeterScale`
-/// is finite and greater than zero, so a non-finite input value always makes a
-/// non-finite product: `NaN` propagates and an infinity stays infinite.
-pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<FiniteReal> {
-    FiniteReal::new(value * scale.value())
+/// A `MillimeterScale` is finite and greater than zero, so a finite input
+/// value fails only by overflow.
+pub(crate) fn scaled_coordinate(
+    value: f64,
+    scale: MillimeterScale,
+) -> Result<FiniteReal, Unscaled> {
+    FiniteReal::new(value * scale.value()).ok_or(if value.is_finite() {
+        Unscaled::Overflow
+    } else {
+        Unscaled::NonFinite
+    })
 }
 
 /// Multiplies the three archive coordinates of a point by a unit scale and
 /// admits the product when every coordinate is finite.
-pub(crate) fn scaled_point(value: [f64; 3], scale: MillimeterScale) -> Option<FinitePoint3> {
+pub(crate) fn scaled_point(
+    value: [f64; 3],
+    scale: MillimeterScale,
+) -> Result<FinitePoint3, Unscaled> {
     FinitePoint3::new(Point3::new(
         value[0] * scale.value(),
         value[1] * scale.value(),
         value[2] * scale.value(),
     ))
+    .ok_or(if value.iter().all(|value| value.is_finite()) {
+        Unscaled::Overflow
+    } else {
+        Unscaled::NonFinite
+    })
 }
 
 /// Whether two vectors agree on every component within a tolerance.

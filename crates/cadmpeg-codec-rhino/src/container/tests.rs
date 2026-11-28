@@ -1209,28 +1209,29 @@ fn optional_properties_tables_do_not_control_independent_objects() {
     }
 }
 
-/// Asserts that `losses` holds one `record.unreadable` for the given-up part
-/// of `kind` at `offset`, that `ir` holds its `unknowns` stub linked to the
-/// document record `link` (or to no record), and that `fidelity` keeps only
-/// the digest of the part, whose bytes the retained record `keeper` keeps.
-pub(crate) fn assert_part_given_up(
+/// Asserts that `losses` holds one give-up loss, for `cause`, of the given-up
+/// part of `kind` at `offset`, and returns it. Asserts also that `ir` holds
+/// its `unknowns` stub linked to the document record `link` (or to no
+/// record), and that `fidelity` keeps only the digest of the part, whose
+/// bytes the retained record `keeper` keeps.
+pub(crate) fn assert_part_given_up<'a>(
     ir: &cadmpeg_ir::document::CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
-    losses: &[cadmpeg_ir::report::loss::LossNote],
-    kind: &str,
-    offset: usize,
+    losses: &'a [cadmpeg_ir::report::loss::LossNote],
+    (kind, offset): (&str, usize),
     link: Option<&str>,
     keeper: &str,
-) {
+    cause: cadmpeg_ir::unknown::part::Cause,
+) -> &'a cadmpeg_ir::report::loss::LossNote {
     let head = format!("part {kind} stream=\"\" offset={offset} ");
     let charges = losses
         .iter()
         .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(&head)
+            cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&head)
         })
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{losses:?}");
+    assert_eq!(charges[0].code, cause.kind(), "{losses:?}");
     let stub = charges[0]
         .message
         .split_once(" record=")
@@ -1259,6 +1260,7 @@ pub(crate) fn assert_part_given_up(
     assert!(fidelity
         .retained_record(keeper)
         .is_some_and(|keeper| keeper.data().is_some()));
+    charges[0]
 }
 
 /// A given-up record that no other record retains keeps its bytes; past the
@@ -1267,8 +1269,6 @@ pub(crate) fn assert_part_given_up(
 #[test]
 fn a_given_up_record_past_the_caller_ceiling_keeps_its_digest() {
     let data = vec![0x5a_u8; 4096];
-    let why =
-        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
     let charge = |max_retained_bytes: u64| {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1281,7 +1281,8 @@ fn a_given_up_record_past_the_caller_ceiling_keeps_its_digest() {
             super::TABLE_RECORD_PART,
             0..data.len(),
             None,
-            &why,
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
+            "invented record",
         )
         .expect("give up the record");
         let stub = part.id().as_str().to_owned();
@@ -1314,8 +1315,6 @@ fn a_given_up_record_past_the_caller_ceiling_keeps_its_digest() {
 #[test]
 fn a_given_up_record_that_outgrows_the_remaining_ceiling_names_it() {
     let data = vec![0x5a_u8; 4096];
-    let why =
-        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 8192;
@@ -1327,7 +1326,8 @@ fn a_given_up_record_that_outgrows_the_remaining_ceiling_names_it() {
         super::TABLE_RECORD_PART,
         0..data.len(),
         None,
-        &why,
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        "invented record",
     )
     .expect("give up the record");
     ctx.retain_bytes(6144, "other retained content")
@@ -1357,8 +1357,6 @@ fn a_given_up_record_that_outgrows_the_remaining_ceiling_names_it() {
 #[test]
 fn a_record_of_another_stream_does_not_cover_a_given_up_record() {
     let data = vec![0x5a_u8; 64];
-    let why =
-        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -1369,7 +1367,8 @@ fn a_record_of_another_stream_does_not_cover_a_given_up_record() {
         super::TABLE_RECORD_PART,
         0..data.len(),
         None,
-        &why,
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        "invented record",
     )
     .expect("give up the record");
     let stub = part.id().as_str().to_owned();

@@ -144,7 +144,7 @@ fn check_equations(id: &str, equations: &BendEquations, findings: &mut Vec<Findi
 
 /// A selection holds one pick, of a kind `allowed` admits.
 fn check_one(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     what: &str,
     selection: &SetSelection,
@@ -166,7 +166,7 @@ fn check_one(
 
 pub(super) fn check_sheet_metal(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     sheet: &SheetMetal,
     findings: &mut Vec<Finding>,
 ) {
@@ -639,7 +639,7 @@ pub(super) fn check_sheet_metal(
 /// the profile names its sketch.
 fn check_open_edge(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     profile: &ProfileRef,
     open_edge: &SetSelection,
     findings: &mut Vec<Finding>,
@@ -691,7 +691,7 @@ fn check_open_edge(
     }
 }
 
-fn check_bends(site: Site<'_>, bends: Option<&BendSet>, findings: &mut Vec<Finding>) {
+fn check_bends(site: Site<'_, '_>, bends: Option<&BendSet>, findings: &mut Vec<Finding>) {
     if let Some(BendSet::Selected(selection)) = bends {
         if let Some(class) = picks::refused(selection, picks::is_face) {
             error(
@@ -706,14 +706,14 @@ fn check_bends(site: Site<'_>, bends: Option<&BendSet>, findings: &mut Vec<Findi
     }
 }
 
-fn check_outline(site: Site<'_>, outline: &StampOutline, findings: &mut Vec<Finding>) {
+fn check_outline(site: Site<'_, '_>, outline: &StampOutline, findings: &mut Vec<Finding>) {
     if let StampOutline::Profile(profile) = outline {
         options::check_profile(site, "StampOutline::Profile", profile, findings);
     }
 }
 
 fn check_relief(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     bend: &crate::design::ops::sheet_metal::BendSpec,
     findings: &mut Vec<Finding>,
 ) {
@@ -731,7 +731,7 @@ fn check_relief(
     }
 }
 
-fn check_flange(site: Site<'_>, flange: &Flange, findings: &mut Vec<Finding>) {
+fn check_flange(site: Site<'_, '_>, flange: &Flange, findings: &mut Vec<Finding>) {
     let distance = matches!(flange.height, Some(FlangeHeight::Distance(_)));
     if flange.height_datum.is_some() && !distance && flange.outline.is_none() {
         error(
@@ -793,7 +793,7 @@ fn check_flange(site: Site<'_>, flange: &Flange, findings: &mut Vec<Finding>) {
 
 /// A rip's faces pick faces and are not empty; a ruling or a line picks one
 /// face, and a line's ends differ.
-pub(super) fn check_rip(site: Site<'_>, rip: &Rip, convert: bool, findings: &mut Vec<Finding>) {
+pub(super) fn check_rip(site: Site<'_, '_>, rip: &Rip, convert: bool, findings: &mut Vec<Finding>) {
     match rip {
         Rip::Faces { faces } => {
             if picks::is_empty(faces) {
@@ -830,7 +830,7 @@ pub(super) fn check_rip(site: Site<'_>, rip: &Rip, convert: bool, findings: &mut
     }
 }
 
-fn check_rip_path(site: Site<'_>, path: &RipPath, findings: &mut Vec<Finding>) {
+fn check_rip_path(site: Site<'_, '_>, path: &RipPath, findings: &mut Vec<Finding>) {
     match path {
         RipPath::Ruling { face, .. } => {
             check_one(

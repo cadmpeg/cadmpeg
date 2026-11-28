@@ -62,7 +62,10 @@ fn assert_root(decoded: &EditableDecodeResult, id: &str) {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(!decoded
         .source_fidelity()
-        .edited(decoded.ir())
+        .edited(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            decoded.ir(),
+        )
         .expect("final document digest"));
 }
 

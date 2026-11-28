@@ -14,6 +14,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::names::{
     NameEntry, NameKind, NameTable, NativeName, NativeNameValue, TopoName,
 };
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::design::selection::{PickTarget, Picked};
 use cadmpeg_ir::document::CadIr;
@@ -171,6 +172,72 @@ impl Names {
             }
         }
         Ok(NameTable::from(entries))
+    }
+
+    /// States that the name table restates each result topology of the
+    /// model that names a current face or edge, where the table names every
+    /// face and edge member with the producing feature (§5.7). A result
+    /// topology with a member the table does not name so is restated without
+    /// its members: a member a later feature consumed is no current entity.
+    pub(super) fn restate_results(&self, ir: &mut CadIr) {
+        let numbered = |id: &str, prefix: &str| crate::identity::numbered_identity(id, prefix);
+        let surfaces = ir
+            .geometry
+            .faces
+            .iter()
+            .filter_map(|face| numbered(face.id.as_str(), FACE))
+            .chain(
+                ir.geometry
+                    .surfaces
+                    .iter()
+                    .filter_map(|surface| numbered(surface.id.as_str(), SURFACE)),
+            )
+            .collect::<BTreeSet<_>>();
+        let edges = ir
+            .geometry
+            .edges
+            .iter()
+            .filter_map(|edge| numbered(edge.id.as_str(), EDGE))
+            .collect::<BTreeSet<_>>();
+        let named = |kind: NameKind,
+                     member: &str,
+                     prefix: &str,
+                     current: &BTreeSet<u32>,
+                     feature: &FeatureId| {
+            numbered(member, prefix)
+                .filter(|id| current.contains(id))
+                .is_some_and(|id| self.producer(kind, id).as_ref() == Some(feature))
+        };
+        let mut restated = Vec::new();
+        for result in &ir.model.feature_result_topologies {
+            let feature = &result.output_of;
+            let members =
+                result
+                    .faces()
+                    .iter()
+                    .map(|face| {
+                        named(
+                            NameKind::Face,
+                            face.as_str(),
+                            "surface#",
+                            &surfaces,
+                            feature,
+                        )
+                    })
+                    .chain(result.edges().iter().map(|edge| {
+                        named(NameKind::Edge, edge.as_str(), "curve#", &edges, feature)
+                    }))
+                    .collect::<Vec<_>>();
+            if members.contains(&true) {
+                let cut = (members.contains(&false)).then_some("members");
+                restated.push((result.id.as_str().to_owned(), cut));
+            }
+        }
+        for (result, cut) in restated {
+            ir.model
+                .restated_mut()
+                .record(&result, Restater::Names, cut);
+        }
     }
 }
 

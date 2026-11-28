@@ -134,7 +134,7 @@ pub(super) fn cross_component_paste(
 /// stored kind and family-local ordinal.
 pub(super) fn timeline_name(scope: &DesignParameterScope) -> Option<String> {
     let name = scope.base_feature_construction()?.owner_timeline_name()?;
-    Some(format!("{} {}", name.kind.value, name.ordinal.value))
+    Some(format!("{}{}", name.kind.value, name.ordinal.value))
 }
 
 #[cfg(test)]

@@ -258,7 +258,7 @@ fn color_definition_requires_definition_directory_fields() {
         .unwrap();
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::DisplayDataNotProjected)
             && loss.message.contains("color definition Directory fields")
     }));
     assert!(!result
@@ -413,7 +413,7 @@ fn color_definition_requires_a_standard_fallback_color() {
         .unwrap();
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::DisplayDataNotProjected)
             && loss.message.contains("color definition Directory fields")
     }));
     assert!(!result

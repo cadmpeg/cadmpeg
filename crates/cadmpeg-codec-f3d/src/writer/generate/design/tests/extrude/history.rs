@@ -370,7 +370,7 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
         .iter()
         .filter_map(|feature| feature.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, ["Sketch 1", "Extrude 1", "Extrude 2"]);
+    assert_eq!(names, ["Sketch1", "Extrude1", "Extrude2"]);
     let missing = loss(&report, EVALUATION_MISSING);
     let rolled = missing
         .iter()
@@ -1020,6 +1020,35 @@ fn a_history_true_join_after_a_held_state_writes_that_state_and_its_body() {
         omitted.contains("test:design:evaluation#cube") && omitted.contains("#second-"),
         "{omitted}"
     );
+}
+
+/// The history-true form resolves the held state under the caller's chain
+/// ceiling: a chain one link past it refuses the session (cadir-v11.md
+/// §2.5), and a ceiling that admits the chain writes the state.
+#[test]
+fn a_history_true_held_state_past_the_chain_ceiling_refuses_the_session() {
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceLimits};
+    use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+
+    let (ir, _) = joined_after_the_cube(true);
+    let plan = |max_state_chain_depth| {
+        crate::F3dCodec.plan(
+            EncodeInput::new(&ir, None)
+                .with_missing_states(MissingStateForm::HistoryTrue)
+                .with_limits(ResourceLimits {
+                    max_state_chain_depth,
+                    ..ResourceLimits::desktop()
+                }),
+        )
+    };
+    let refused = plan(0);
+    let Err(EncodeError::ResourceLimit(limit)) = &refused else {
+        panic!("a chain past the ceiling refuses the write: {refused:?}");
+    };
+    assert_eq!(limit.scope, LimitScope::Session);
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!((limit.limit, limit.additional), (0, 1));
+    assert!(plan(1).is_ok(), "the ceiling admits the chain");
 }
 
 /// [`with_a_second_extrude`] with a new body whose faces lie on the cube's

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_protein::{
+    CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
+};
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -79,6 +82,44 @@ pub(crate) fn fixture_with_ufrx(ufrx: &[u8]) -> Vec<u8> {
     file
 }
 
+pub(crate) fn push_lp(bytes: &mut Vec<u8>, value: &str) {
+    bytes.extend_from_slice(
+        &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
+    bytes.extend_from_slice(value.as_bytes());
+}
+
+pub(crate) fn paged_instance(record: &[u8]) -> Vec<u8> {
+    const BODY_SIZE: usize = PAGE_SIZE - 8;
+    let mut bytes = (u32::try_from(PAGE_SIZE).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
+    bytes.resize(STREAM_HEADER_LEN, 0);
+    let mut chunks = record.chunks(BODY_SIZE).peekable();
+    let first = chunks.next().expect("record is nonempty");
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(RECORD_MARKER);
+    bytes.extend_from_slice(first);
+    bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
+    while let Some(chunk) = chunks.next() {
+        if chunks.peek().is_some() {
+            bytes.extend_from_slice(&[0, 0, 0, 0]);
+            bytes.extend_from_slice(CONTINUATION_MARKER);
+        } else {
+            bytes.extend_from_slice(TERMINAL_MARKER);
+            bytes.extend_from_slice(
+                &(u16::try_from(chunk.len()).expect("fixture value fits u16")).to_le_bytes(),
+            );
+            bytes.extend_from_slice(&[0, 0]);
+        }
+        bytes.extend_from_slice(chunk);
+        let page_bytes = bytes.len() - STREAM_HEADER_LEN;
+        let next_page = STREAM_HEADER_LEN + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
+        bytes.resize(next_page, 0);
+    }
+    bytes
+}
+
 fn directory_entry(
     directory: &mut [u8],
     index: usize,
@@ -155,6 +196,18 @@ pub(crate) fn primary_envelope_fixture_with(declarations: EnvelopeDeclarations) 
 pub(crate) fn primary_envelope_fixture_with_broken_database() -> Vec<u8> {
     primary_envelope_fixture_with_kernel_and_failures(
         EnvelopeDeclarations::default(),
+        &asm_kernel_stream(),
+        true,
+        false,
+    )
+}
+
+pub(crate) fn primary_envelope_fixture_with_unframed_foreign_database() -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(
+        EnvelopeDeclarations {
+            schema: 12,
+            ..EnvelopeDeclarations::default()
+        },
         &asm_kernel_stream(),
         true,
         false,
@@ -256,10 +309,33 @@ pub(crate) fn primary_envelope_fixture_with_drawing(
     )
 }
 
+/// A drawing envelope whose drawing segment stores the segment-pair,
+/// revision, and external-reference tables of `tables` in metadata
+/// sections 7, 8, and 10.
+pub(crate) fn primary_envelope_fixture_with_drawing_tables(
+    kernel: &[u8],
+    drawing: &[([u8; 16], Vec<u8>)],
+    tables: &BaseEnvelopeRecords,
+) -> Vec<u8> {
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(kernel),
+        (&DRAWING_SEGMENT, drawing),
+        false,
+        false,
+        [1, 1],
+        Some(tables),
+    )
+}
+
 pub(crate) struct BaseEnvelopeRecords {
     pub(crate) design_version: u8,
     pub(crate) brep: Vec<([u8; 16], Vec<u8>)>,
     pub(crate) pairs: Vec<u8>,
+    /// The stored count of the segment-pair section, in place of the count
+    /// of whole 32-byte entries in `pairs`.
+    pub(crate) pair_count: Option<u32>,
+    pub(crate) revision_count: Option<u32>,
     pub(crate) revisions: Vec<u8>,
     pub(crate) references: Vec<u8>,
 }
@@ -786,6 +862,12 @@ fn meta_table_body(records: &[([u8; 16], usize)], base: Option<&BaseEnvelopeReco
             payloads[index].clone_from(bytes);
             discriminators[index] =
                 u32::try_from(bytes.len() / width).expect("synthetic table count");
+        }
+        if let Some(count) = base.pair_count {
+            discriminators[2] = count;
+        }
+        if let Some(count) = base.revision_count {
+            discriminators[3] = count;
         }
     }
     push_u32(&mut body, discriminators[0]);

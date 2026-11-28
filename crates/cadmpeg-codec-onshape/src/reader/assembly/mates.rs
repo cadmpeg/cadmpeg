@@ -14,6 +14,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::part::dropped_with;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -47,7 +48,7 @@ pub(super) fn project(
             structure.report.give_up_as(
                 &format!("{source}/features"),
                 &key(path),
-                OnshapeLossCode::MateUnsupported,
+                (Cause::Unreadable, OnshapeLossCode::MateUnsupported),
                 reason,
             );
             return Ok(());
@@ -96,12 +97,19 @@ pub(super) fn project(
                         structure.report.give_up_as(
                             &format!("{source}/features/{position}"),
                             native,
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             "mate identity repeats with different content; retained the first joint",
                         );
                     }
                     continue;
                 }
+                structure.joint_paths.insert(
+                    mapped.joint.id.clone(),
+                    super::NativePaths {
+                        connectors: mapped.paths,
+                        listed: path.to_vec(),
+                    },
+                );
                 kept.insert(mapped.joint.id.clone(), feature);
                 structure.model.ir.model.assembly_joints.push(mapped.joint);
                 if mapped.nested {
@@ -184,6 +192,7 @@ fn dropped_joint(
 
 struct MappedMate {
     joint: AssemblyJoint,
+    paths: [Vec<String>; 2],
     nested: bool,
     unresolved_sense: bool,
 }
@@ -191,6 +200,8 @@ struct Connector {
     joint: JointConnector,
     world: Option<Transform>,
     nested: bool,
+    /// The native path from the root to the mated occurrence.
+    steps: Vec<String>,
 }
 type MateResult = Result<MappedMate, (OnshapeLossCode, String)>;
 fn unsupported(reason: String) -> (OnshapeLossCode, String) {
@@ -251,6 +262,7 @@ fn mate(
         }
     };
     let native = text(feature, "id").map_err(unsupported)?;
+    let paths = [first.steps, second.steps];
     let mut joint = AssemblyJoint::paired(
         id("joint", &format!("{}:{native}", key(path)))
             .try_into()
@@ -268,6 +280,7 @@ fn mate(
             .unwrap_or(false);
     Ok(MappedMate {
         joint,
+        paths,
         nested: first.nested || second.nested,
         unresolved_sense: sense.is_none(),
     })
@@ -338,6 +351,7 @@ fn connector(
         },
         world,
         nested: path.len() - parent.len() > 1,
+        steps: path,
     })
 }
 
