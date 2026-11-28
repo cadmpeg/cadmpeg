@@ -217,7 +217,7 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "B0556F58-EE09-46A7-B18F-E296F48E5B13",
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",

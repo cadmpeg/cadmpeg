@@ -620,7 +620,7 @@ pub(super) fn body_member<B>(
     ))
 }
 
-pub(super) fn historical_brep_source(state_id: &str) -> Option<&str> {
+pub(crate) fn historical_brep_source(state_id: &str) -> Option<&str> {
     state_id
         .rsplit_once("/BREP.")
         .or_else(|| state_id.rsplit_once("BREP."))?

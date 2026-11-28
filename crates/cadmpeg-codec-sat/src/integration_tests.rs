@@ -18,7 +18,7 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
 /// `offset`.
 fn unread_part(offset: usize) -> String {
     cadmpeg_ir::unknown::part::Part::at(
-        crate::FORMAT,
+        crate::registry_ids::FORMAT,
         crate::decode::UNREAD_PART,
         cadmpeg_core::decode::u64_from_index(offset),
         &[],

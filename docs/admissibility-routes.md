@@ -27,13 +27,23 @@ This table does not describe every entity-level admission rule.
 Successful decode is not a valid IR. Decoder gates use lists of named rules
 ([`Admission`](../crates/cadmpeg-ir/src/validate/admit.rs)); final document
 validation remains `validate_neutral` (+ fidelity + native at the application
-boundary). Accept/reject fixtures are in
-[admissibility-fixtures.md](admissibility-fixtures.md).
+boundary).
 
 Application validation uses the physical input byte length measured by the
 loader to establish input-proportional allowances in its fresh processing
 context. Check and conversion keep the configured absolute resource ceilings;
 they do not retain another source copy or infer the allowance from metadata.
+
+## Shared IR fixtures
+
+`crates/cadmpeg-test-support/src/admissibility.rs` supplies these builders:
+
+| Fixture | Outcome | Driving check |
+| --- | --- | --- |
+| `accepted_empty` | Accept | — |
+| `rejected_missing_point` | Reject | `ReferentialIntegrity` |
+| `rejected_missing_region` | Reject | `ReferentialIntegrity` and topology |
+| `rejected_outside_admission` | Full validation rejects; admission sets accept | `Counts` |
 
 ## Shared core
 

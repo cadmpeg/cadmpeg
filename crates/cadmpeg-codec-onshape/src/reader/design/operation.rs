@@ -285,7 +285,7 @@ fn bound<Q>(parameter: Option<ParameterId>, value: Q) -> Dimension<Q> {
 fn native(kind: &str) -> FeatureOperation {
     FeatureOperation::Native {
         kind: cadmpeg_ir::design::names::CodecName::new(
-            &cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+            &cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
             kind,
         )
         .unwrap_or_else(|| cadmpeg_ir::codec_name!("onshape:feature")),
@@ -1170,6 +1170,7 @@ fn sweep_twist(
             id: id.clone(),
             scope: context.scope.clone(),
             owner: Some(ParameterOwner::Feature(feature.id.clone())),
+            position: None,
             name: Some(cadmpeg_core::nonblank_const!("Total twist")),
             kind: ValueKind::Quantity(Quantity::ANGLE),
             unit: None,

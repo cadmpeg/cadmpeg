@@ -72,6 +72,7 @@ use indexed::IndexedTopology;
 /// work grows with the state count times the live record count. A stream
 /// that reaches the cap keeps its bulletin boards and history records
 /// without historical topology.
+// resource-cap: MAX_HISTORY_BINDING_WORK = 4
 pub(crate) const MAX_HISTORY_BINDING_WORK: usize = 1 << 23;
 
 #[derive(Debug, Default)]

@@ -36,8 +36,6 @@ pub(crate) mod kernel_record_header {
     pub(crate) const LEN: usize = 28;
     /// Offset of `marker` (`u32`, little-endian). Spec §3.
     pub(crate) const MARKER: usize = 4;
-    /// Stated value of `marker` (`u32`). Spec §3.
-    pub(crate) const MARKER_VALUE: u32 = 0x0009_b401;
     /// Offset of `kernel` (`u32`, little-endian). Spec §3.
     pub(crate) const KERNEL: usize = 8;
     /// Offset of `words` (`u32[3]`, little-endian). Spec §3.

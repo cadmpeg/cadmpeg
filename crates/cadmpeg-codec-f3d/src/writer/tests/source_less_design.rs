@@ -17,7 +17,7 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
@@ -420,18 +420,19 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         Some("322")
     );
     assert_eq!(bounded.record_index.map(|index| index.value), Some(102));
-    assert_eq!(native.persistent_references.len(), 3);
+    let mut references = native
+        .persistent_references
+        .iter()
+        .map(|reference| (reference.value, reference.kind))
+        .collect::<Vec<_>>();
+    references.sort_by_key(|&(value, _)| value);
     assert_eq!(
-        native
-            .persistent_references
-            .iter()
-            .map(|reference| reference.value)
-            .collect::<Vec<_>>(),
-        [900, 100, 500]
-    );
-    assert_eq!(
-        native.persistent_references[1].kind,
-        PersistentReferenceKind::CurvePrimary
+        references,
+        [
+            (100, PersistentReferenceKind::CurvePrimary),
+            (500, PersistentReferenceKind::CurveSecondary),
+            (900, PersistentReferenceKind::Point),
+        ]
     );
     assert_eq!(native.lost_edge_references.len(), 1);
     assert_eq!(native.lost_edge_references[0].class_tag.as_str(), "419");
@@ -547,7 +548,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         "export/native.records-omitted",
         "module conflicts with MetaStream ownership",
     );
-    crate::test_support::zip_test::with_scan(&encoded, |scan| {
+    crate::test_support::zip_fixture::with_scan(&encoded, |scan| {
         let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let bulk = scan.entry_bytes(bulk_name).unwrap();
         let meta = scan
@@ -594,8 +595,9 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert_eq!(native.design_record_headers[1].class_tag.as_str(), "351");
 }
 
-#[test]
-fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+/// The unit cube with sketch `0_277`: point `100` with companion `101`,
+/// curves `600` to `602`, and relation `33` between the point and the line.
+pub(super) fn sketch_graph_cube() -> cadmpeg_ir::document::CadIr {
     use crate::records::{
         entity_header::{DesignEntityHeader, SegmentType},
         sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
@@ -903,7 +905,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             })
             .unwrap(),
         ];
+    drop(native);
+    source_less
+}
 
+#[test]
+fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+    use crate::records::sketch_relations::{SketchRelationMember, SketchRelationReturnMember};
+    use cadmpeg_ir::math::Point2;
+
+    let mut source_less = sketch_graph_cube();
+    let native = f3d_native(&source_less);
     let expected_geometries = native
         .sketch_curve_identities
         .iter()
@@ -1053,7 +1065,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "share record index 600",
+        "of sketch records that the Design type registration of their class tag does not name",
     );
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     let round_trip = F3dCodec

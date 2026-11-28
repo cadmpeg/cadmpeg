@@ -63,6 +63,7 @@ pub(crate) fn nodes(a: f64, b: f64) -> [f64; NODES] {
 }
 
 /// Intervals of one integral.
+// resource-cap: MAX_QUADRATURE_INTERVALS = 4
 const MAX_QUADRATURE_INTERVALS: usize = 1 << 12;
 
 /// The target of one integral: per component, the scale `scale^d` the

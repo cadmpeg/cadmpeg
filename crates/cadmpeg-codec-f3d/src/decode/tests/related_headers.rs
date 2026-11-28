@@ -56,13 +56,13 @@ fn split_face_collector_retains_metadata_selected_carrier_header_for_native_admi
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(meta_name, stored).unwrap();
     zip.write_all(&meta).unwrap();
     zip.start_file(bulk_name, stored).unwrap();
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut indices =
             super::super::design_intent::scope_related_indices(std::slice::from_ref(&scope));
         assert!(indices.contains(&(stream.clone(), 55)));
@@ -79,7 +79,7 @@ fn split_face_collector_retains_metadata_selected_carrier_header_for_native_admi
         );
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             native.design_types = crate::design::decode::meta::decode_types(scan).unwrap();
             native.design_record_headers = headers;
             native.design_parameter_scopes.push(scope.clone());

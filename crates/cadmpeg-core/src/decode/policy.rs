@@ -96,10 +96,38 @@ impl DecodePolicy {
     }
 }
 
+impl DecodePolicy {
+    /// The largest size one expansion may declare in a session whose input is
+    /// `input_bytes` long: the smaller of `max_decompressed_bytes_per_expand`
+    /// and its input-proportional allowance.
+    #[must_use]
+    pub fn per_expand_allowance(&self, input_bytes: u64) -> u64 {
+        proportional_allowance(
+            self.limits.max_decompressed_bytes_per_expand,
+            DECOMPRESSED_PER_EXPAND_BASE,
+            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
+            input_bytes,
+        )
+    }
+}
+
 impl Default for DecodePolicy {
     fn default() -> Self {
         Self::desktop()
     }
+}
+
+/// The smaller of `ceiling` and `base + per_input_byte * input_bytes`.
+pub(super) fn proportional_allowance(
+    ceiling: u64,
+    base: u64,
+    per_input_byte: u64,
+    input_bytes: u64,
+) -> u64 {
+    per_input_byte
+        .checked_mul(input_bytes)
+        .and_then(|amount| base.checked_add(amount))
+        .map_or(ceiling, |proportional| ceiling.min(proportional))
 }
 
 /// Resource options for container inspection.

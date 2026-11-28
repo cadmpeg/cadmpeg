@@ -320,3 +320,46 @@ fn state_zero_curves_are_needed_where_live_curves_close_only_through_them() {
     assert_eq!(needed(&map(&closed), &map(&zero)), HashSet::new());
     assert_eq!(needed(&HashMap::new(), &map(&with_top)), HashSet::new());
 }
+
+#[test]
+fn stored_regions_keep_holes_with_their_nearest_outer_boundary() {
+    let rings = [
+        (id("outer"), circle([0.0, 0.0], 10.0)),
+        (id("hole"), circle([0.0, 0.0], 7.0)),
+        (id("island"), circle([0.0, 0.0], 4.0)),
+        (id("island-hole"), circle([0.0, 0.0], 2.0)),
+        (id("other"), circle([25.0, 0.0], 5.0)),
+    ];
+    let loops = rings
+        .iter()
+        .rev()
+        .map(|(id, _)| {
+            vec![SketchEntityUse {
+                entity: id.clone(),
+                reversed: false,
+            }]
+        })
+        .collect::<Vec<_>>();
+    let regions = super::stored_regions(&loops, &map(&rings)).expect("disjoint closed boundaries");
+    let boundaries = regions
+        .iter()
+        .map(|region| {
+            (
+                &region.outer[0].entity,
+                region
+                    .holes
+                    .iter()
+                    .map(|hole| &hole[0].entity)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        boundaries,
+        vec![
+            (&rings[4].0, vec![]),
+            (&rings[2].0, vec![&rings[3].0]),
+            (&rings[0].0, vec![&rings[1].0]),
+        ]
+    );
+}

@@ -83,8 +83,8 @@ fn emboss_auxiliary_counted_frame_uses_its_table_slot_without_asserting_contours
         compact_group(&mut bytes, &stream, 41, 44),
         compact_group(&mut bytes, &stream, 72, 80),
     ];
-    let archive = crate::test_support::zip_test::f3d_with_configuration(&[], &name, &bytes);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let archive = crate::test_support::zip_fixture::f3d_with_configuration(&[], &name, &bytes);
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let groups =
             decode_extrude_selection_groups(scan, std::slice::from_ref(&scope), &headers).unwrap();
         assert_eq!(groups.len(), 1);

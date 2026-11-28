@@ -22,6 +22,7 @@ use crate::layout::draft_plane_reference_prefix as draft_plane;
 const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
 
 const DIRECTION_FRAME_PREFIX_LEN: usize = 24;
+// resource-cap: MAX_PATH_CELLS = 1
 const MAX_PATH_CELLS: usize = 65;
 
 #[derive(Clone, Debug)]

@@ -15,10 +15,10 @@ use cadmpeg_ir::geometry::ProceduralCurve;
 use crate::loss::F3dLossCode;
 use crate::records::configuration::DesignConfiguration;
 use crate::test_support::configuration_table::project;
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
-use crate::test_support::smbh_curves_test::synthetic_geometry_with_subset_curve_smbh;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_configuration;
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
+use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_subset_curve_smbh;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_configuration;
 use crate::F3dCodec;
 
 fn is_subset(procedural: &ProceduralCurve) -> bool {

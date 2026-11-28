@@ -23,6 +23,7 @@ use cadmpeg_ir::scalar::NonZeroReal;
 use super::evaluation;
 
 /// Patches a cache may hold along its spine.
+// resource-cap: MAX_PATCHES = 4
 const MAX_PATCHES: usize = 512;
 /// Patches the first fit uses along its spine.
 const SEED_PATCHES: usize = 4;

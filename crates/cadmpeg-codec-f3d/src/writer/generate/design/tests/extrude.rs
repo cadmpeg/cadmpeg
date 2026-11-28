@@ -306,7 +306,7 @@ fn the_extrude_replaces_the_base_feature() {
 #[test]
 fn a_decoded_design_is_rewritten_from_its_neutral_records() {
     let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
-    assert!(!crate::test_support::native_test::f3d_native(&decoded)
+    assert!(!crate::test_support::native_fixture::f3d_native(&decoded)
         .design_parameter_scopes
         .is_empty());
     decoded.source = None;
@@ -331,7 +331,7 @@ fn a_decoded_design_is_rewritten_from_its_neutral_records() {
 #[test]
 fn a_rewritten_design_replaces_the_decoded_names_of_the_entities_it_names() {
     let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     let tag = native
         .persistent_subentity_tags
         .first()
@@ -361,7 +361,7 @@ fn a_rewritten_design_replaces_the_decoded_names_of_the_entities_it_names() {
             "{id}: {omitted:#?}"
         );
     }
-    let rewritten = crate::test_support::native_test::f3d_native(&rewritten);
+    let rewritten = crate::test_support::native_fixture::f3d_native(&rewritten);
     assert!(!rewritten.persistent_subentity_tags.is_empty());
     assert!(!rewritten.persistent_design_links.is_empty());
 }
@@ -684,7 +684,7 @@ fn planes(decoded: &CadIr) -> Vec<(&cadmpeg_ir::ids::FaceId, [f64; 3], [f64; 3])
 #[test]
 fn caps_and_sides_are_named_by_the_walk() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     let planes = planes(&decoded);
     // Token, the axis the face is normal to, and its offset along it: the
     // walk starts on l4 (the line written last, at x = 0) and runs
@@ -780,7 +780,7 @@ fn a_cap_link_takes_the_traversal_flag_of_its_loop_entry() {
         "{:#?}",
         report.losses
     );
-    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let native = crate::test_support::native_fixture::f3d_native(&decoded);
     let mut senses = native
         .sketch_curve_links
         .iter()
