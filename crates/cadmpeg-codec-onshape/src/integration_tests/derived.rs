@@ -71,6 +71,20 @@ fn derived_studio_keeps_neutral_reference_and_generated_boolean_operands() {
         "intermediate bodies must not enter final geometry"
     );
     assert!(!has_unsupported(&report), "{:?}", report.losses());
+    let combine = crate::test_support::review::design_operation(&model.ir, "Cut");
+    assert_eq!(combine["kind"], "combine");
+    assert_eq!(combine["value"]["op"]["kind"], "cut");
+    for (role, source_id) in [("target", "base"), ("tools", "inserted")] {
+        let picks = combine["value"][role]["picks"]["value"].as_array().unwrap();
+        assert!(!picks.is_empty());
+        for pick in picks {
+            assert_eq!(pick["target"]["kind"], "native");
+            assert_eq!(pick["native"]["value"]["value"], source_id);
+            let within = &pick["target"]["value"]["within"];
+            assert_eq!(within["kind"], "feature");
+            assert!(dependencies.contains(&within["value"]), "{pick}");
+        }
+    }
 }
 
 #[test]
@@ -254,7 +268,7 @@ fn derived_subtraction_keeps_the_tools_choice_and_reads_the_targets() {
 }
 
 #[test]
-fn derived_union_and_intersection_over_peer_tools_stay_native_and_ignore_stale_targets() {
+fn derived_union_and_intersection_use_peer_tools_and_ignore_stale_targets() {
     for source in ["UNION", "INTERSECTION"] {
         for stale_targets in [false, true] {
             let bytes = changed(&fixture("derived"), |path, value| {
@@ -276,13 +290,13 @@ fn derived_union_and_intersection_over_peer_tools_stay_native_and_ignore_stale_t
                 "{source}: {:?}",
                 report.losses()
             );
-            assert!(
-                report.losses().iter().any(|loss| loss.code.as_deref()
-                    == Some("onshape/history.not-supported")
-                    && loss.detail.contains("as peers")),
-                "{source}: {:?}",
-                report.losses()
-            );
+            let op = crate::test_support::review::design_operation(&model.ir, "Cut");
+            assert_eq!(op["kind"], "combine");
+            assert!(op["value"].get("target").is_none());
+            assert!(!report
+                .losses()
+                .iter()
+                .any(|loss| loss.detail.contains("as peers")));
         }
     }
 }

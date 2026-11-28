@@ -1771,6 +1771,135 @@ A `TolWiDRF` declaration has four scalars. Scalar `1` is the number of leading f
 
 A `TTRSBloc` field references the `CATMmrTTRS` roots of a tolerance or datum. Each root is a source shape aspect. Open item DI-28 records its face and edge relation.
 
+#### 7.3.2 Compact record form and feature-tree membership
+
+A nested `7C05` record is in the compact record form when its complete definition prefix is `<lead> <flags> <class> <second>`:
+
+| Field | Offset | Values |
+|---|---|---|
+| `lead` | 0 | `00`, `01`, `08`, or `10` |
+| `flags` | 1 | a combination of bits `04` and `08` |
+| `class` | 2 | a tag byte, or a wide field `32 <ordinal:u32le>` |
+| `second` | after `class` | a tag byte, or a wide field `32 <ordinal:u32le>`; it ends the prefix |
+
+| `class` | `second` | Prefix length |
+|---|---|---|
+| tag | tag | 4 |
+| tag | wide | 8 |
+| wide | tag | 8 |
+| wide | wide | 12 |
+
+| Field form | Values | Entry the field selects |
+|---|---|---|
+| tag | `34` through `33 + n`, for a catalog of `n` entries; another value selects no class | zero-based catalog ordinal `tag − 34` |
+| wide | `1` through `n`; another value selects no class | one-based catalog ordinal `ordinal` |
+
+A tag byte is never `32`, so the first byte of each field gives its form.
+
+The class field names the record's class. The second field selects one entry of the same catalog:
+
+| Class | Entry the second field selects |
+|---|---|
+| `HybridBody` | `HybridBody` |
+| `MechanicalTool` | `MechanicalTool` |
+| `GSMTool` | `Open_body` |
+| `MechanicalPart` | the part's name |
+
+Preserve the class tag or wide ordinal, the selected zero-based ordinal, and the selected entry and name. Each wide field is also a definition selector under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
+
+The paired `7C0A` payload of a part root, a body, a geometrical set, or a Boolean feature (`Add`, `Remove`, `Assemble`, `Intersect`) in the compact form is a run of tagged segments:
+
+```text
+payload := segment* FE+
+segment := <field> value
+field   := <tag> | 32 <ordinal:u32le>
+value   := list | field-of | <entity>
+list    := <count> 81 (<entity> <persistent-id>){count}
+field-of := FD <entity> field
+```
+
+A field is a tag byte or a wide field, and it names a catalog entry under the field-form rule above. Every count, entity, and persistent identity is one integer token:
+
+| Token | Bytes | Value |
+|---|---|---|
+| escaped | `80 <value:u32le>` | `value`; the token ends before the payload's final byte |
+| compact atom | `81..D0` | `byte − 81` |
+| paged atom | `D1..E4 <low>` | `(byte − D1)·256 + low` |
+
+| Condition | Reading |
+|---|---|
+| all `count` pairs are present, and the list ends at the final `FE` run or at the start of a field | `list` |
+| `FD`, one entity token, and one field, which end at the final `FE` run or at the start of a field | `field-of`: the field of the record that the entity selects |
+| any other value | one `<entity>` token |
+| bytes that start no field where a segment starts | the walk stops; the remaining bytes are unsegmented |
+| the final `FE` run | the walk is complete |
+
+Preserve each segment's field tag or wide ordinal, payload offset, selected entry and name, and value, and the payload offset where an incomplete walk stops. An entity token selects the same graph's unique paired entity and object record, and the compact class of that record is preserved with it. An identity that selects no paired record keeps its value and position. A persistent identity is preserved as stored.
+
+| Class | Record |
+|---|---|
+| `MechanicalPart` | the part root |
+| `MechanicalTool` | a body |
+| `HybridBody` | the main body where the root's `MainTool` selects it; a body where its `_FtrList` lists a solid feature; otherwise a body, an ordered geometrical set, or a geometrical set |
+| `GSMTool` | an ordered geometrical set or a geometrical set |
+
+A solid feature is a record of class `Pad`, `Pocket`, `Shaft`, `Groove`, `Hole`, `Rib`, `Slot`, `Stiffener`, `EdgeFillet`, `TritangentFillet`, `Chamfer`, `Draft`, `Shell`, `Thickness`, `ThickSurface`, `CloseSurface`, `SewSurface`, `Add`, `Remove`, `Assemble`, `Intersect`, `Split`, `RemoveFace`, `Thread`, or `Mirror`. Only a body holds a solid feature.
+
+Each container's `_FtrList` segment lists its members in stored order. A member that is a container is a set nested in the set that lists it. A member list states containment and order.
+
+| Stored `_FtrList` | Member list |
+|---|---|
+| one segment whose value is a list | the list's entities, in stored order |
+| no segment, in a complete walk | empty |
+| no segment before the walk stops, a single-token value, or a repeated segment | unread |
+
+The part root's other segments are its remaining fields:
+
+| Root field | Value | Selects |
+|---|---|---|
+| `CurrentFeature` | entity | the in-work object: a member of a body or set, or a body |
+| `MainTool` | entity | the main body |
+| `_ReferencePlanes` | list | the principal planes |
+
+The root's other fields, such as `PartAlgoConfigs`, have the same segment form. The `_ReferencePlanes` list selects the same three `GSMPlane` records as the first three members of the root's `_FtrList`.
+
+A Boolean feature's `_FtrList` starts with the result record. The list can end after the result or carry a second member. When that member is a body, it is the Boolean's tool. `ToolList` lists the tool body independently of the result list. In the two-member form it can repeat the second member. The tool body stands outside the set member lists. A `Remove` can also store a record of class `Boolean` as the second member. A Boolean feature listed by a body targets that body.
+
+The compact class of a member names its feature kind. Each class below has the operation family of CADIR v11 §6:
+
+| Family | Classes |
+|---|---|
+| `Sketch` | `PRTSketch` |
+| `Datum` | `GSMPoint`, `GSMPointBetween`, `GSMPointCenter`, `GSMPointCoord`, `GSMPointOnCurve`, `GSMPointOnPlane`, `GSMPointOnSurface`, `GSMPlane`, `GSMPlane2Lines`, `GSMPlaneAngle`, `GSMPlaneBetween`, `GSMPlaneEquation`, `GSMPlaneNormal`, `GSMPlaneOffset`, `GSMPlaneOffsetPt`, `GSMPlaneTangent`, `AxisSystem` |
+| `Extrude` | `Pad`, `Pocket`, `GSMExtrude` |
+| `Revolve` | `Shaft`, `Groove` |
+| `Sweep` | `Rib`, `Slot` |
+| `Rib` | `Stiffener` |
+| `Loft` | `GSMLoft` |
+| `Fillet` | `EdgeFillet`, `TritangentFillet` |
+| `Chamfer` | `Chamfer` |
+| `Shell` | `Shell` |
+| `Draft` | `Draft` |
+| `Thicken` | `ThickSurface` |
+| `Offset` | `GSMOffset`, `Thickness` |
+| `Hole` | `Hole`, `CATSm_Hole3D` |
+| `Thread` | `Thread` |
+| `Pattern` | `RectPattern`, `CircPattern`, `UserPattern`, `Mirror` |
+| `TemplateInstance` | `UdfFeature` |
+| `Combine` | `Add`, `Remove`, `Assemble`, `Intersect` |
+| `Split` | `Split`, `GSMSplit`, `GSMTrim` |
+| `DeleteFaces` | `RemoveFace` |
+| `Patch` | `GSMFill` |
+| `Knit` | `GSMAssemble`, `CloseSurface` |
+| `Graft` | `SewSurface` |
+| `Extract` | `GSMExtract` |
+| `Extend` | `GSMExtrapol` |
+| `TransformBodies` | `GSMTranslate`, `GSMRotate`, `GSMSymmetry` |
+| `Curve` | `GSMLine`, `GSMLinePtDir`, `GSMLinePtPt`, `GSMAxisLine`, `GSMHelix`, `GSMSpiral`, `GSMIntersect`, `GSMProject`, `GSMCombine`, `GSMBoundary` |
+| `SheetMetal` | `ShePart`, `PredefinedFlange`, `CATSmd_Stamp`, `CATSmCorner`, `CATSmCutOut`, `CATSmd_Extrusion`, `CATSmd_Wall`, `CATSmd_NewWallOnEdge`, `CATSm_ExtrudedHolePunch`, `CATSmd_BendExtremity` |
+
+The root also lists records that hold no operation: `MechanicalPartProperties` (the part's properties), `TTRSSet` (its annotation set), `RelationSet` and `ParameterSet` (its relation and parameter sets), `String` (a parameter), `GSMWSupportSet` (its work-on-support set), and `StDynAnalysisRootNodeFeature` (its analysis root).
+
 ### 7.4 `7C0B` visualization value blocks
 
 ```text

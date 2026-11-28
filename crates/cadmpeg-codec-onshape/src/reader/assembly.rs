@@ -319,12 +319,14 @@ pub(super) fn read<'a>(
         given_up: BTreeMap::new(),
         products,
         joint_ids,
+        joint_paths: BTreeMap::new(),
         count: 0,
         mate_work: 0,
         mate_notes: 0,
         omitted_mate_notes: 0,
         mate_exhausted: false,
     };
+    let mut structure_root = None;
     if let Some(root) = definition
         .get("rootAssembly")
         .filter(|root| root.is_object())
@@ -336,6 +338,7 @@ pub(super) fn read<'a>(
             false,
             &format!("{definition_path}#/rootAssembly"),
         )?;
+        structure_root = Some(product.clone());
         if let Some(position) = structure.products.get(&product) {
             if let Some(product) = structure
                 .model
@@ -372,7 +375,18 @@ pub(super) fn read<'a>(
         );
     }
 
+    let root = structure_root;
+    let joint_paths = structure.resolved_paths();
     release_bound_bodies(&mut model.ir.model.product_definitions, studio_definitions);
+    if let Some(root) = root {
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "Onshape assembly",
+            &mut model.ir,
+            &mut report.notes,
+            |ir, _| crate::reader::design::assembly::project(ctx, ir, &root, &joint_paths),
+        )?;
+    }
     Ok(model)
 }
 
@@ -513,6 +527,12 @@ struct Placement {
     id: OccurrenceId,
     world: Option<Transform>,
 }
+/// The native paths of a mate: of each connector's occurrence, and of the
+/// sub-assembly that lists it, empty at the root.
+struct NativePaths {
+    connectors: [Vec<String>; 2],
+    listed: Vec<String>,
+}
 struct Structure<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
     report: &'a mut Report,
@@ -532,11 +552,62 @@ struct Structure<'a, 'ctx> {
     given_up: BTreeMap<Vec<String>, String>,
     products: BTreeMap<ProductDefinitionId, usize>,
     joint_ids: BTreeSet<cadmpeg_ir::products::JointId>,
+    /// The native path from the root of each connector of each mate, and of
+    /// the sub-assembly that lists the mate.
+    joint_paths: BTreeMap<cadmpeg_ir::products::JointId, NativePaths>,
     count: usize,
     mate_work: usize,
     mate_notes: usize,
     omitted_mate_notes: usize,
     mate_exhausted: bool,
+}
+impl Structure<'_, '_> {
+    /// The occurrence path of each mate whose native paths every placement
+    /// resolves.
+    fn resolved_paths(&self) -> crate::reader::design::assembly::JointPaths {
+        let steps = |path: &[String]| {
+            (1..=path.len())
+                .map(|level| {
+                    self.placements
+                        .get(&path[..level])
+                        .map(|placement| placement.id.clone())
+                })
+                .collect::<Option<Vec<_>>>()
+        };
+        self.joint_paths
+            .iter()
+            .filter_map(|(joint, paths)| {
+                let component = if paths.listed.is_empty() {
+                    None
+                } else {
+                    let placed = self.placements.get(&paths.listed)?;
+                    Some(
+                        self.model
+                            .ir
+                            .model
+                            .occurrences
+                            .iter()
+                            .find(|occurrence| occurrence.id == placed.id)?
+                            .prototype
+                            .clone(),
+                    )
+                };
+                // A path starts at the definition that lists the mate.
+                let local = |path: &[String]| {
+                    let steps = steps(path)?;
+                    steps.get(paths.listed.len()..).map(<[_]>::to_vec)
+                };
+                let [first, second] = &paths.connectors;
+                Some((
+                    joint.clone(),
+                    crate::reader::design::assembly::Paths {
+                        connectors: [local(first)?, local(second)?],
+                        component,
+                    },
+                ))
+            })
+            .collect()
+    }
 }
 fn element_id(eid: &str) -> bool {
     !eid.is_empty()

@@ -370,7 +370,10 @@ fn thin_open_curves_refuse_unresolved_sides_for_both_directions_and_flips() {
             });
             let result = decode(&bytes);
             assert_eq!(kind(&wire(&result), 1), "native");
-            assert!(result.ir().design.features.is_empty());
+            assert_eq!(
+                crate::test_support::review::design_operation(result.ir(), "Plate"),
+                crate::test_support::review::unresolved("extrude")
+            );
             assert!(loss(
                 &result,
                 "onshape/extrude.thin-not-supported",
@@ -887,15 +890,29 @@ fn unresolved_variables_refuse_sketch_dimension_values_and_leave_inactive_values
                 "Plate"
             },
         );
-        assert!(result.ir().model.parameters.iter().all(|p| p
-            .owner
-            .as_ref()
-            .is_none_or(|owner| owner.as_str() != consumer)));
         if constraint_consumer {
-            assert!(result.report().losses.iter().any(|l| l.code.to_string()
-                == "onshape/sketch.constraint-not-supported"
-                && l.message.contains("unresolved latest binding")));
+            let definition = wire["design"]["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|parameter| parameter["owner"]["value"] == consumer)
+                .unwrap();
+            assert_eq!(definition["definition"]["value"]["kind"], "source");
+            assert_eq!(
+                definition["definition"]["value"]["value"]["tokens"][0]["value"],
+                "#span"
+            );
+            assert!(definition.get("value").is_none());
         } else {
+            assert!(result
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .all(|parameter| parameter
+                    .owner
+                    .as_ref()
+                    .is_none_or(|owner| owner.as_str() != consumer)));
             assert_eq!(
                 wire["model"]["features"][3]["definition"]["value"]["value"]["extent"]["side"]
                     ["termination"]["kind"],
