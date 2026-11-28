@@ -1723,8 +1723,17 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
             .checked_mul(3)
             .map_or(triangles.len(), |edges| edges / 2 + 1),
     );
+    // Map each oriented edge `(a, b)` to the third vertex `c` of its unique
+    // oriented triangle `[a, b, c]` so pinch vertices can be decomposed by
+    // walking the local triangle fan.
+    let mut half_edge_opp = HashMap::<(u32, u32), u32>::with_capacity(
+        triangles
+            .len()
+            .checked_mul(3)
+            .map_or(triangles.len(), |edges| edges),
+    );
     for &[a, b, c] in triangles {
-        for (start, end) in [(a, b), (b, c), (c, a)] {
+        for (start, end, opp) in [(a, b, c), (b, c, a), (c, a, b)] {
             if start == end {
                 return None;
             }
@@ -1741,9 +1750,11 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
             } else {
                 edge_directions.insert(edge, direction);
             }
+            half_edge_opp.insert((start, end), opp);
         }
     }
-    let mut successors = HashMap::with_capacity(edge_directions.len());
+    let mut boundary_edges = HashSet::<(u32, u32)>::new();
+    let mut out_map = HashMap::<u32, Vec<u32>>::new();
     for (&(low, high), &directions) in &edge_directions {
         let boundary = match directions {
             1 => Some((low, high)),
@@ -1752,37 +1763,69 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
             _ => return None,
         };
         if let Some((start, end)) = boundary {
-            if successors.contains_key(&start) {
-                return None;
-            }
-            successors.insert(start, end);
+            boundary_edges.insert((start, end));
+            out_map.entry(start).or_default().push(end);
         }
     }
-    let mut seen = HashSet::new();
+    if boundary_edges.is_empty() {
+        return None;
+    }
+    // Pair every incoming boundary half-edge `(prev, v)` with its unique
+    // outgoing boundary half-edge `(v, next)`: directly when `out_deg(v) == 1`,
+    // or by walking the oriented triangle fan around `v` across shared interior
+    // edges when `out_deg(v) > 1` (pinch vertex).
+    let mut next_edge = HashMap::<(u32, u32), (u32, u32)>::with_capacity(boundary_edges.len());
+    let mut used_out = HashSet::<(u32, u32)>::with_capacity(boundary_edges.len());
+    for &(prev, v) in &boundary_edges {
+        let outs = out_map.get(&v)?;
+        let next = if outs.len() == 1 {
+            outs[0]
+        } else {
+            let mut cur_other = *half_edge_opp.get(&(prev, v))?;
+            let mut steps = 0usize;
+            loop {
+                if boundary_edges.contains(&(v, cur_other)) {
+                    break cur_other;
+                }
+                steps += 1;
+                if steps > triangles.len() {
+                    return None;
+                }
+                // Cross interior edge `(v, cur_other)` to twin `(cur_other, v)`.
+                cur_other = *half_edge_opp.get(&(cur_other, v))?;
+            }
+        };
+        if !used_out.insert((v, next)) {
+            return None;
+        }
+        next_edge.insert((prev, v), (v, next));
+    }
+    let mut seen = HashSet::<(u32, u32)>::with_capacity(boundary_edges.len());
+    let mut sorted_edges: Vec<(u32, u32)> = boundary_edges.into_iter().collect();
+    sorted_edges.sort_unstable();
     let mut cycles = Vec::new();
-    for &start in successors.keys() {
-        if seen.contains(&start) {
+    for start_edge in sorted_edges {
+        if !seen.insert(start_edge) {
             continue;
         }
         let mut cycle = Vec::new();
-        cycle.push(start);
-        seen.insert(start);
-        let &mut_current = successors.get(&start)?;
-        let mut current = mut_current;
-        while current != start {
-            if !seen.insert(current) {
+        let mut current = start_edge;
+        loop {
+            cycle.push(current.0);
+            let &following = next_edge.get(&current)?;
+            if following == start_edge {
+                break;
+            }
+            if !seen.insert(following) {
                 return None;
             }
-            cycle.push(current);
-            let &next = successors.get(&current)?;
-            current = next;
+            current = following;
         }
         let minimum = cycle
             .iter()
             .enumerate()
             .min_by_key(|(_, handle)| *handle)
-            .map(|(index, _)| index);
-        let minimum = minimum?;
+            .map(|(index, _)| index)?;
         cycle.rotate_left(minimum);
         cycles.push(cycle);
     }
@@ -1975,6 +2018,16 @@ mod tests {
     fn boundary_cycles_reject_duplicate_directed_edges() {
         let triangles = [[0, 1, 2], [0, 1, 3]];
         assert_eq!(boundary_cycles(&triangles), None);
+    }
+
+    #[test]
+    fn boundary_cycles_decompose_pinch_vertex_fan_into_disjoint_loops() {
+        // Two triangles sharing only pinch vertex 0 form two separate loops
+        // around the pinch vertex.
+        let triangles = [[0, 1, 2], [0, 3, 4]];
+        let mut cycles = boundary_cycles(&triangles).expect("pinch vertex loops decompose cleanly");
+        cycles.sort();
+        assert_eq!(cycles, vec![vec![0, 1, 2], vec![0, 3, 4]]);
     }
 }
 

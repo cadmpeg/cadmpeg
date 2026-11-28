@@ -362,12 +362,38 @@ where
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
         );
     }
+    let symmetric_class_pairs = verified_symmetric_edge_class_pairs(
+        &class_constraint.ordered,
+        &SymmetricEdgeClassContext {
+            edge_rows: &edge_rows,
+            edge_faces,
+            edge_geometry,
+            edge_identity_evidence,
+            edge_direction_evidence,
+            port_identities: &port_identities,
+            mesh_domains: &mesh_domains,
+        },
+    );
+    let symmetric_pairs_ordered = |pairs: &[Option<[usize; 2]>]| -> bool {
+        symmetric_class_pairs.iter().all(|&(left, right)| {
+            let (Some(mut a), Some(mut b)) = (pairs[left], pairs[right]) else {
+                return true;
+            };
+            a.sort_unstable_by(Ord::cmp);
+            b.sort_unstable_by(Ord::cmp);
+            a <= b
+        })
+    };
     let constrained_partial_solution_valid = |pairs: &[Option<[usize; 2]>]| {
-        endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
+        symmetric_pairs_ordered(pairs)
+            && endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
             && partial_solution_valid(pairs)
     };
     let complete_preference_rejected = Cell::new(false);
     let constrained_complete_solution_valid = |pairs: &[Option<[usize; 2]>]| {
+        if !symmetric_pairs_ordered(pairs) {
+            return false;
+        }
         let valid = endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
             && complete_solution_valid(pairs);
         if !valid {
@@ -532,14 +558,34 @@ where
     }
     let fallback = (|| -> Result<Option<MeshEndpointResolve>, CodecError> {
         let mut assignments = Vec::new();
-
-        for domain in mesh_domains {
+        let mut all_ordered = true;
+        for domain in &mesh_domains {
             match domain {
-                MeshFaceBoundaryDomain::Ordered(face) => assignments.push(face),
+                MeshFaceBoundaryDomain::Ordered(face) => assignments.push(face.clone()),
                 MeshFaceBoundaryDomain::UnorderedFullCycle(_)
-                | MeshFaceBoundaryDomain::DeferredValidation(_) => return Ok(None),
+                | MeshFaceBoundaryDomain::DeferredValidation(_) => {
+                    all_ordered = false;
+                    break;
+                }
             }
         }
+        let assignments = if all_ordered {
+            assignments
+        } else if completed_edge_candidates.iter().all(|c| c.len() == 1) {
+            let pairs: Vec<[usize; 2]> = completed_edge_candidates.iter().map(|c| c[0]).collect();
+            let completed: Vec<Option<[usize; 2]>> = pairs.iter().copied().map(Some).collect();
+            if !constrained_complete_solution_valid(&completed) {
+                return Ok(None);
+            }
+            let Some(mut materialized) = materialize_boundary_domains(&mesh_domains, &pairs)?
+            else {
+                return Ok(None);
+            };
+            deduplicate_mesh_quotient_assignments(&mut materialized);
+            materialized
+        } else {
+            return Ok(None);
+        };
         let resolution = resolve_standard_mesh_endpoint_candidates(
             ctx,
             ResolveStandardMeshEndpointCandidatesInputs {
@@ -587,6 +633,187 @@ where
             ))
         }
     })
+}
+
+struct SymmetricEdgeClassContext<'a> {
+    edge_rows: &'a [crate::families::standard::topology::EdgeRow],
+    edge_faces: &'a [[usize; 2]],
+    edge_geometry: &'a [MeshEdgeGeometry],
+    edge_identity_evidence: &'a [bool],
+    edge_direction_evidence: &'a [bool],
+    port_identities: &'a [[u32; 2]],
+    mesh_domains: &'a [MeshFaceBoundaryDomain],
+}
+
+/// Return the subset of `ordered` edge-class pairs `(left, right)` (`left < right`)
+/// for which swapping `left <-> right` is a proven gauge automorphism of edge
+/// metadata, port identities, and incident face boundary domains, so enforcing
+/// `canonical(pairs[left]) <= canonical(pairs[right])` eliminates exponential
+/// gauge permutations without discarding any distinct topology solution.
+fn verified_symmetric_edge_class_pairs(
+    ordered: &[(usize, usize)],
+    ctx: &SymmetricEdgeClassContext<'_>,
+) -> Vec<(usize, usize)> {
+    let SymmetricEdgeClassContext {
+        edge_rows,
+        edge_faces,
+        edge_geometry,
+        edge_identity_evidence,
+        edge_direction_evidence,
+        port_identities,
+        mesh_domains,
+    } = *ctx;
+    if ordered.is_empty() {
+        return Vec::new();
+    }
+    let mut port_users = HashMap::<u32, Vec<(usize, usize)>>::new();
+    for (edge, ports) in port_identities.iter().enumerate() {
+        for (slot, &id) in ports.iter().enumerate() {
+            port_users.entry(id).or_default().push((edge, slot));
+        }
+    }
+    let port_swap_symmetric = |left: usize, right: usize| -> bool {
+        let lp = port_identities[left];
+        let rp = port_identities[right];
+        if (lp[0] == lp[1]) != (rp[0] == rp[1]) {
+            return false;
+        }
+        for (l_id, r_id) in [(lp[0], rp[0]), (lp[1], rp[1])] {
+            if l_id == r_id {
+                continue;
+            }
+            let l_ext: Vec<(usize, usize)> = port_users
+                .get(&l_id)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|&(e, _)| e != left && e != right)
+                .collect();
+            let r_ext: Vec<(usize, usize)> = port_users
+                .get(&r_id)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|&(e, _)| e != left && e != right)
+                .collect();
+            if l_ext.is_empty() && r_ext.is_empty() {
+                continue;
+            }
+            if l_ext.len() != r_ext.len() {
+                return false;
+            }
+            let ok = l_ext.iter().all(|&(le, ls)| {
+                !edge_identity_evidence[le]
+                    && r_ext.contains(&(le, 1 - ls))
+                    && port_identities[le][0] != port_identities[le][1]
+            });
+            if !ok {
+                return false;
+            }
+        }
+        true
+    };
+    let canonical_assignment_sig =
+        |assignment: &crate::solve::missing_edge::MeshFaceBoundaryAssignment,
+         swap: Option<(usize, usize)>|
+         -> Vec<Vec<(usize, Option<bool>)>> {
+            let mut boundaries: Vec<Vec<(usize, Option<bool>)>> = assignment
+                .boundaries
+                .iter()
+                .map(|b| {
+                    let raw: Vec<(usize, Option<bool>)> = b
+                        .iter()
+                        .map(|u| {
+                            let e = match swap {
+                                Some((l, r)) if u.edge == l => r,
+                                Some((l, r)) if u.edge == r => l,
+                                _ => u.edge,
+                            };
+                            let rev = u.reversed.filter(|_| {
+                                edge_direction_evidence
+                                    .get(u.edge)
+                                    .copied()
+                                    .unwrap_or(false)
+                            });
+                            (e, rev)
+                        })
+                        .collect();
+                    if raw.is_empty() {
+                        return raw;
+                    }
+                    let n = raw.len();
+                    let min_rot = |seq: &[(usize, Option<bool>)]| -> Vec<(usize, Option<bool>)> {
+                        let mut best = seq.to_vec();
+                        for start in 1..n {
+                            let mut rot = Vec::with_capacity(n);
+                            rot.extend_from_slice(&seq[start..]);
+                            rot.extend_from_slice(&seq[..start]);
+                            if rot < best {
+                                best = rot;
+                            }
+                        }
+                        best
+                    };
+                    let fwd = min_rot(&raw);
+                    let rev_raw: Vec<(usize, Option<bool>)> =
+                        raw.iter().rev().map(|&(e, r)| (e, r.map(|v| !v))).collect();
+                    let rev = min_rot(&rev_raw);
+                    if rev < fwd {
+                        rev
+                    } else {
+                        fwd
+                    }
+                })
+                .collect();
+            boundaries.sort_unstable();
+            boundaries
+        };
+    let domain_swap_symmetric = |face: usize, left: usize, right: usize| -> bool {
+        match mesh_domains.get(face) {
+            Some(MeshFaceBoundaryDomain::Ordered(assignments)) => {
+                let mut orig: Vec<_> = assignments
+                    .iter()
+                    .map(|a| canonical_assignment_sig(a, None))
+                    .collect();
+                let mut swapped: Vec<_> = assignments
+                    .iter()
+                    .map(|a| canonical_assignment_sig(a, Some((left, right))))
+                    .collect();
+                orig.sort_unstable();
+                swapped.sort_unstable();
+                orig == swapped
+            }
+            Some(
+                MeshFaceBoundaryDomain::UnorderedFullCycle(_)
+                | MeshFaceBoundaryDomain::DeferredValidation(_),
+            ) => true,
+            None => false,
+        }
+    };
+
+    let mut verified = Vec::new();
+    for &(left, right) in ordered {
+        let mut lf = edge_faces[left];
+        let mut rf = edge_faces[right];
+        lf.sort_unstable();
+        rf.sort_unstable();
+        let meta_ok = left < right
+            && !edge_identity_evidence[left]
+            && !edge_identity_evidence[right]
+            && edge_rows[left].kind() == edge_rows[right].kind()
+            && edge_rows[left].boundary_layout() == edge_rows[right].boundary_layout()
+            && edge_rows[left].handles().len() == edge_rows[right].handles().len()
+            && edge_geometry[left] == edge_geometry[right]
+            && lf == rf;
+        let port_ok = meta_ok && port_swap_symmetric(left, right);
+        let dom_ok = port_ok
+            && domain_swap_symmetric(lf[0], left, right)
+            && (lf[1] == lf[0] || domain_swap_symmetric(lf[1], left, right));
+        if dom_ok {
+            verified.push((left, right));
+        }
+    }
+    verified
 }
 
 /// Solve a standard mesh whose repeated edge-face rows still carry alternate
