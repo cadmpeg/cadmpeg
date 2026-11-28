@@ -1005,7 +1005,7 @@ fn mesh_collection_constructs_only_complete_nested_body_runs() {
         )
         .is_err());
     }
-    for length in [72, 74, 77, 73 + 11 * (u64::from(u32::MAX) + 1)] {
+    for length in [72, 74, 73 + 11 * (u64::from(u32::MAX) + 1)] {
         assert!(crate::records::mesh::DesignMeshCollection::new(
             identity(104, 100, length),
             identity(104, 138, length - 38),

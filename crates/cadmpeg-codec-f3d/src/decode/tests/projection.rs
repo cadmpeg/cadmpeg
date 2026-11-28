@@ -351,7 +351,6 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         source_tag: Some("Base Mesh Feature".into()),
         source_text: None,
         source_content: Default::default(),
-
         evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
@@ -370,6 +369,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 "test:model:tessellation#a-body".into(),
             ],
         )]),
+        tessellations_by_body: std::collections::HashMap::new(),
     };
 
     let archive = crate::test_support::zip_test::synthetic_f3d(false);

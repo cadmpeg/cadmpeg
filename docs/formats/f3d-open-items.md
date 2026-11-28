@@ -2696,7 +2696,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which source member tail fields select face groups or subsets of a mesh body?
 
-**Known.** A source member contains a body reference followed by selection fields. The decoder retains the body reference as an input-local body selection.
+**Known.** A source member contains a body reference followed by selection fields. A `Modify` body group can list the same member record. The decoder retains the body reference as an input-local body selection; in a `Modify` body group it selects the tessellation of the mesh body.
 
 **Need.** Controlled saves with whole-body and face-group selections changed independently.
 

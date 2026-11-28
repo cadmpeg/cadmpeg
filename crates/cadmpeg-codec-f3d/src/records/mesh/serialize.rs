@@ -332,6 +332,8 @@ impl Serialize for DesignMeshFeature {
             texture_flags_count_offset: u64,
             texture_filename_count_offset: u64,
             bodies: SliceColumn<'a, DesignMeshBody, BodyRef<'a>>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            removed_bodies: SliceColumn<'a, DesignMeshBody, BodyRef<'a>>,
             textures: TextureRows<'a>,
             #[serde(skip_serializing_if = "<[super::DesignMeshOperationBody]>::is_empty")]
             operation_bodies: &'a [super::DesignMeshOperationBody],
@@ -370,6 +372,7 @@ impl Serialize for DesignMeshFeature {
             texture_flags_count_offset: self.texture_table.flags_count_offset(),
             texture_filename_count_offset: self.texture_table.filename_count_offset(),
             bodies: SliceColumn::new(&self.bodies, BodyRef),
+            removed_bodies: SliceColumn::new(&self.removed_bodies, BodyRef),
             textures: TextureRows(&self.texture_table),
             operation_bodies: &self.operation_bodies,
         }

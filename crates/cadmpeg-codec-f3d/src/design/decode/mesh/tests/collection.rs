@@ -440,3 +440,66 @@ fn collection_prefix_count_below_the_list_is_rejected() {
     let graph = with_received_count(synthetic_mesh_graph_with_body_count(false, 2), 1);
     assert!(parse(&graph).is_err());
 }
+
+#[test]
+fn a_body_removed_from_its_collection_stays_in_its_scope() {
+    let mut graph = synthetic_mesh_graph(false);
+    let frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+    let (start, end) = (frame.start, frame.end);
+    let mut collection = graph.bytes[start..end].to_vec();
+    collection[21..25].copy_from_slice(&0_u32.to_le_bytes());
+    collection[58..62].copy_from_slice(&0_u32.to_le_bytes());
+    collection.drain(62..73);
+    let delta = i64::try_from(collection.len()).unwrap() - i64::try_from(end - start).unwrap();
+    graph.bytes.splice(start..end, collection);
+    for record in graph
+        .meta
+        .records
+        .iter_mut()
+        .chain(graph.meta.secondary_records.iter_mut())
+    {
+        if record.bulk_offset > u64_from_index(start + 38) {
+            record.bulk_offset = record.bulk_offset.checked_add_signed(delta).unwrap();
+        }
+    }
+    let features = parse_mesh_design_records(
+        &graph.bytes,
+        &graph.meta,
+        "Synthetic/BulkStream.dat",
+        &mut no_texture_asset,
+    )
+    .unwrap();
+    let [feature] = features.as_slice() else {
+        panic!("one mesh feature");
+    };
+    assert!(feature.bodies().is_empty());
+    let [removed] = feature.removed_bodies() else {
+        panic!("one removed body");
+    };
+    assert_eq!(removed.placement.record().record_index(), 104);
+    assert_eq!(removed.scope_record_index, Some(109));
+    assert_eq!(removed.scope_body_ordinal, Some(0));
+    assert_eq!(feature.scope_bodies().count(), 1);
+    let wire = cadmpeg_core::serde_erase::json::to_value(feature).unwrap();
+    assert!(wire["bodies"].as_array().unwrap().is_empty());
+    assert_eq!(
+        wire["removed_bodies"][0]["body_record"]["record_index"],
+        104
+    );
+    let decoded: crate::records::mesh::DesignMeshFeature =
+        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    assert_eq!(decoded, *feature);
+}
+
+#[test]
+fn an_empty_collection_that_no_body_names_has_no_mesh_feature() {
+    let graph = synthetic_mesh_graph_with_body_count(false, 0);
+    let features = parse_mesh_design_records(
+        &graph.bytes,
+        &graph.meta,
+        "Synthetic/BulkStream.dat",
+        &mut no_texture_asset,
+    )
+    .unwrap();
+    assert!(features.is_empty());
+}

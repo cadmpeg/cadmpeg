@@ -448,6 +448,7 @@ impl MergeSession<'_, '_> {
                 rescope_partial_pattern_sources(&mut component_ir.model, &|text| {
                     rescope(text, &occurrence)
                 });
+                rescope_mesh_body_selections(&mut component_ir.model, &occurrence);
                 let native_text = TextReplacements::build(targets.iter())?;
                 let mut scope = OccurrenceScope {
                     native_text: &native_text,
@@ -2479,6 +2480,48 @@ pub(super) fn rescope_partial_pattern_sources(
     }
 }
 
+/// Rescopes each member of a local body selection that names a tessellation
+/// of `model`, as the tessellation identity itself is rescoped.
+fn rescope_mesh_body_selections(model: &mut Model, occurrence: &str) {
+    use cadmpeg_ir::features::selections::{BodySelection, NativeSelections};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let tessellations = model
+        .tessellations
+        .iter()
+        .map(|tessellation| tessellation.id.as_str().to_owned())
+        .collect::<std::collections::HashSet<_>>();
+    if tessellations.is_empty() {
+        return;
+    }
+    for feature in &mut model.features {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(
+                FeatureOperation::MoveBody { bodies, .. }
+                | FeatureOperation::DeleteBody { bodies, .. },
+            ) = definition
+            else {
+                return;
+            };
+            let BodySelection::Local { bodies, .. } = bodies else {
+                return;
+            };
+            let members = bodies
+                .iter()
+                .map(|member| {
+                    tessellations
+                        .contains(member)
+                        .then(|| rescope(member, occurrence))
+                        .flatten()
+                        .unwrap_or_else(|| member.clone())
+                })
+                .collect::<Vec<_>>();
+            if let Ok(members) = NativeSelections::try_from(members) {
+                *bodies = members;
+            }
+        });
+    }
+}
+
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.
 struct OccurrenceScope<'r, 'a> {
     native_text: &'r TextReplacements<'r>,
@@ -2875,6 +2918,73 @@ mod tests {
         };
         assert_eq!(definition.id, id);
         assert_eq!(ir.model.tessellations[0].of, Meshed::definition(id));
+    }
+
+    #[test]
+    fn a_member_mesh_move_names_the_rescoped_tessellation() {
+        use cadmpeg_ir::features::selections::{BodySelection, SelectionReference};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+        let mut model = cadmpeg_ir::CadIr::empty().model;
+        model.tessellations.push(
+            cadmpeg_ir::tessellation::Tessellation::new(
+                cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#0").unwrap(),
+                cadmpeg_ir::tessellation::TessellationMesh::List {
+                    vertices: vec![
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                    ],
+                    triangles: vec![[0, 1, 2]],
+                },
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        let selection = BodySelection::Local {
+            bodies: vec!["f3d:test:mesh-body#0".to_owned(), "7".to_owned()]
+                .try_into()
+                .unwrap(),
+            native: SelectionReference::try_from("f3d:test:group#1".to_owned()).unwrap(),
+        };
+        model.features.push(Feature {
+            product_definition: None,
+            id: FeatureId::mint("f3d:test:feature#move").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Modify".into()),
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                    bodies: selection,
+                    translation: cadmpeg_ir::features::geometry::FiniteVector3::new(
+                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                    rotation: None,
+                    copies: 0,
+                }),
+            ),
+            native_ref: None,
+        });
+        super::rescope_mesh_body_selections(&mut model, "occurrence");
+        let FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Local { bodies, .. },
+            ..
+        }) = model.features[0].evaluation.definition()
+        else {
+            panic!("a local body move");
+        };
+        assert_eq!(
+            bodies.as_slice(),
+            [
+                super::rescope("f3d:test:mesh-body#0", "occurrence").unwrap(),
+                "7".to_owned()
+            ]
+        );
     }
 
     #[test]

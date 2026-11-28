@@ -218,8 +218,30 @@ pub(super) fn validate_operand_group_carriers<'a>(
     edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
+    let mut stream_types_by_stream = std::collections::HashMap::new();
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
+        let stream_types = stream_types_by_stream
+            .entry(native_stream)
+            .or_insert_with(|| {
+                native_stream
+                    .strip_prefix("f3d:")
+                    .and_then(crate::ids::decode_identity_key_component)
+                    .map(|entry| {
+                        design::decode::meta::stream_types_by_entity(&native.design_types, &entry)
+                    })
+                    .unwrap_or_default()
+            });
+        let has_exact_mesh_operation_members = !group.members().is_empty()
+            && group.members().iter().all(|member| {
+                stream_types
+                    .get(&u64::from(member.value))
+                    .is_some_and(|(guid, _)| {
+                        guid.eq_ignore_ascii_case(
+                            design::decode::mesh::MESH_OPERATION_MEMBER_TYPE_GUID,
+                        )
+                    })
+            });
         let mut identity_members = native
             .design_edge_identity_operands
             .iter()
@@ -390,7 +412,8 @@ pub(super) fn validate_operand_group_carriers<'a>(
             || has_exact_topology_recipe_members
             || has_exact_sketch_profile_member
             || has_exact_native_profile_members
-            || has_exact_group_members;
+            || has_exact_group_members
+            || has_exact_mesh_operation_members;
         if !has_exact_member_carrier {
             push_constant_finding(
                 findings,

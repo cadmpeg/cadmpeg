@@ -32,6 +32,7 @@
 
 pub(crate) mod configurations;
 mod datum;
+mod mesh_states;
 mod operation;
 pub(crate) mod parameters;
 mod pattern;
@@ -84,6 +85,17 @@ struct ScopeTail {
 /// its v10 records, and push what it leaves unstated to `losses`. The root
 /// definition is already stated.
 pub(crate) fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    depth: DecodeDepth,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    project_design(ctx, ir, depth, losses)?;
+    mesh_states::bind(ctx, ir, depth, losses)
+}
+
+/// [`project`] without the states of removed mesh bodies.
+fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     depth: DecodeDepth,

@@ -338,6 +338,8 @@ pub(crate) enum F3dLossCode {
     FeatureMeshShellControlsUnresolved,
     FeatureMeshOperationTailPartial,
     FeatureMeshBodySelectionAssumed,
+    FeatureMeshImportPlacementCombined,
+    FeatureMeshRemovedStateUnresolved,
     FeatureMeshOperationSourceUnresolved,
     FeatureMeshOperationScopeUnparsed,
     FeatureMeshOperationSelectorUnruled,
@@ -1656,6 +1658,8 @@ impl F3dLossCode {
         Self::FeatureMeshShellControlsUnresolved,
         Self::FeatureMeshOperationTailPartial,
         Self::FeatureMeshBodySelectionAssumed,
+        Self::FeatureMeshImportPlacementCombined,
+        Self::FeatureMeshRemovedStateUnresolved,
         Self::FeatureMeshOperationSourceUnresolved,
         Self::FeatureMeshOperationScopeUnparsed,
         Self::FeatureMeshOperationSelectorUnruled,
@@ -2700,6 +2704,8 @@ impl F3dLossCode {
             Self::FeatureMeshShellControlsUnresolved => "feature.mesh-shell-controls-unresolved",
             Self::FeatureMeshOperationTailPartial => "feature.mesh-operation-tail-partial",
             Self::FeatureMeshBodySelectionAssumed => "feature.mesh-body-selection-assumed",
+            Self::FeatureMeshImportPlacementCombined => "feature.mesh-import-placement-combined",
+            Self::FeatureMeshRemovedStateUnresolved => "feature.mesh-removed-state-unresolved",
             Self::FeatureMeshOperationSourceUnresolved => {
                 "feature.mesh-operation-source-unresolved"
             }
@@ -3883,6 +3889,8 @@ impl F3dLossCode {
             | Self::FeatureMeshShellControlsUnresolved
             | Self::FeatureMeshOperationTailPartial
             | Self::FeatureMeshBodySelectionAssumed
+            | Self::FeatureMeshImportPlacementCombined
+            | Self::FeatureMeshRemovedStateUnresolved
             | Self::FeatureMeshOperationSourceUnresolved
             | Self::FeatureMeshOperationScopeUnparsed
             | Self::FeatureMeshOperationSelectorUnruled
@@ -4670,6 +4678,8 @@ impl F3dLossCode {
             | Self::FeatureMeshShellControlsUnresolved
             | Self::FeatureMeshOperationTailPartial
             | Self::FeatureMeshBodySelectionAssumed
+            | Self::FeatureMeshImportPlacementCombined
+            | Self::FeatureMeshRemovedStateUnresolved
             | Self::FeatureMeshOperationSourceUnresolved
             | Self::FeatureMeshOperationScopeUnparsed
             | Self::FeatureMeshOperationSelectorUnruled
@@ -5508,6 +5518,8 @@ mod tests {
                 "feature.mesh-shell-controls-unresolved",
                 "feature.mesh-operation-tail-partial",
                 "feature.mesh-body-selection-assumed",
+                "feature.mesh-import-placement-combined",
+                "feature.mesh-removed-state-unresolved",
                 "feature.mesh-operation-source-unresolved",
                 "feature.mesh-operation-scope-unparsed",
                 "feature.mesh-operation-selector-unruled",
