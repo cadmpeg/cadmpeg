@@ -89,12 +89,15 @@ pub(crate) const WELD_TOLERANCE_MM: f64 = 0.001;
 pub(crate) const FINE_WELD_TOLERANCE_MM: f64 = 1.0e-6;
 
 /// Largest accepted triangle count.
+// resource-cap: MAX_TRIANGLES = 2
 pub(crate) const MAX_TRIANGLES: usize = 5_000_000;
 
 /// Largest accepted absolute coordinate in millimetres.
+// resource-cap: MAX_COORDINATE_MM = 2
 const MAX_COORDINATE_MM: f64 = 1.0e9;
 
 /// Largest accepted point count.
+// resource-cap: MAX_POSITIONS = 2
 pub(crate) const MAX_POSITIONS: usize = 15_000_000;
 
 /// A vertex may lie this far from its region plane.
@@ -121,12 +124,14 @@ const T_JUNCTION_TOLERANCE_MM: f64 = 0.01;
 const WELD_ULP_FACTOR: f64 = 8.0;
 
 /// Repair rounds per body; a round splits one edge of each triangle.
+// resource-cap: MAX_REPAIR_ROUNDS = 4
 const MAX_REPAIR_ROUNDS: usize = 8;
 
 /// Grid cells one repair round may probe per triangle.
 const REPAIR_PROBES_PER_TRIANGLE: usize = 64;
 
 /// Grid cells one repair round may probe at least, whatever the triangle count.
+// resource-cap: MAX_REPAIR_PROBES = 4
 const MAX_REPAIR_PROBES: usize = 1 << 16;
 
 /// Repair grid cells are at least this many tolerances wide.
@@ -151,6 +156,7 @@ const NESTING_BBOX_SLACK_MM: f64 = 0.001;
 
 /// Triangle-ray tests one body may spend on containment. Past the allowance a
 /// component lies within another when its box does and its volume is smaller.
+// resource-cap: MAX_NESTING_RAY_TESTS = 4
 const MAX_NESTING_RAY_TESTS: usize = 1 << 27;
 
 /// Unpaired end points closer than this merge, closing a crack the weld left.

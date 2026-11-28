@@ -248,7 +248,15 @@ fn native_header_flags_supply_suppression_for_unplaced_features() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut losses = Vec::new();
-    project(&ctx, &mut ir, &inventory, &sketches, &[], &[], &mut losses).expect("projection");
+    project(
+        &ctx,
+        &mut ir,
+        &inventory,
+        &sketches,
+        crate::design_v11::ParameterRecords::default(),
+        &mut losses,
+    )
+    .expect("projection");
     assert_eq!(
         ir.design.features[0].suppressed,
         Some(Dimension::Literal(true))
@@ -390,8 +398,7 @@ fn native_design_validation_uses_the_decoder_projection() {
         &mut ir,
         &inventory,
         &sketches,
-        &[],
-        &[],
+        crate::design_v11::ParameterRecords::default(),
         &mut Vec::new(),
     )
     .expect("projection");
@@ -527,8 +534,7 @@ fn native_validation_rejects_bodies_the_predicate_places_elsewhere() {
             ir,
             &crate::feature::FeatureInventory::default(),
             &sketches,
-            &[],
-            &[],
+            crate::design_v11::ParameterRecords::default(),
             &mut Vec::new(),
         )
         .expect("projection");

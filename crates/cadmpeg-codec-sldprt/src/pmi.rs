@@ -20,6 +20,7 @@ mod patch_slots;
 use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
 
 fn exact_count(value: f64) -> Option<i64> {
+    // resource-cap: MAX_EXCLUSIVE_COUNT = N
     const MAX_EXCLUSIVE_COUNT: f64 = 9_223_372_036_854_775_808.0;
     if !(0.0..MAX_EXCLUSIVE_COUNT).contains(&value) {
         return None;
@@ -222,7 +223,7 @@ pub(crate) fn patch_payload(
     block_id: &str,
     payload: &mut [u8],
     edited: &dyn Fn(&cadmpeg_ir::features::ParameterId) -> bool,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
 
@@ -241,7 +242,7 @@ pub(crate) fn patch_payload(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);
     };
-    let native = crate::native::SldprtNative::load_under(namespace, limits, ir.tolerances.linear)
+    let native = crate::native::SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
         .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
@@ -315,8 +316,8 @@ pub(crate) fn patch_payload(
                 continue;
             }
         };
-        FloatPatchSlot::read(payload, record.offset, limits)?.write(native_value);
-        IntegerPatchSlot::read(payload, record.offset, "valPrecision", limits)?
+        FloatPatchSlot::read(payload, record.offset, ctx)?.write(native_value);
+        IntegerPatchSlot::read(payload, record.offset, "valPrecision", ctx)?
             .write(semantic.precision)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (field, value) in [
@@ -324,7 +325,7 @@ pub(crate) fn patch_payload(
             ("isInspection", semantic.inspection),
             ("isReferenceOnly", semantic.reference_only),
         ] {
-            BooleanPatchSlot::read(payload, record.offset, field, limits)?.write(value);
+            BooleanPatchSlot::read(payload, record.offset, field, ctx)?.write(value);
         }
         if semantic.display_text.as_deref() != record.display_text() {
             let (Some((previous, offset)), Some(text)) = (

@@ -10,13 +10,17 @@
 //! [`EdrawingsLossCode::SourceDialectUnverified`]. The residual path walks the
 //! stream with the rules of `edrawings:hsf-19-10` (open item EDR-04).
 
-use cadmpeg_core::dialect::{DialectId, DialectMatch};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::EdrawingsLossCode;
 use crate::stream::StreamVersion;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    EDRAWINGS_HSF_18_00, EDRAWINGS_HSF_19_00, EDRAWINGS_HSF_19_10, EDRAWINGS_UNKNOWN,
+};
 
 /// Key of the stream version in [`DialectMatch::declared`].
 const DECLARED_HSF_VERSION: &str = "hsf_version";
@@ -142,10 +146,10 @@ mod tests {
     use cadmpeg_core::decode::View;
     use cadmpeg_core::dialect::Admission;
 
-    use super::{
-        classify, Grammar, EDRAWINGS_HSF_18_00, EDRAWINGS_HSF_19_00, EDRAWINGS_HSF_19_10,
-        EDRAWINGS_UNKNOWN,
+    use super::registry_ids::{
+        EDRAWINGS_HSF_18_00, EDRAWINGS_HSF_19_00, EDRAWINGS_HSF_19_10, EDRAWINGS_UNKNOWN,
     };
+    use super::{classify, Grammar};
     use crate::loss::EdrawingsLossCode;
     use crate::stream::read_wrapper;
     use crate::test_support::emodel_with;

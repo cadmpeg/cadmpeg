@@ -321,7 +321,9 @@ fn assert_dialect(decoded: &DecodeResult, global_complete: bool) {
     assert_eq!(
         matched.admission(),
         &Admission::Unverified {
-            using: cadmpeg_core::dialect::Grammar::of(&crate::dialect::IGES_5_3_FIXED_ASCII),
+            using: cadmpeg_core::dialect::Grammar::of(
+                &crate::dialect::registry_ids::IGES_5_3_FIXED_ASCII
+            ),
         }
     );
     assert_eq!(declared["representation"], "fixed-ascii");

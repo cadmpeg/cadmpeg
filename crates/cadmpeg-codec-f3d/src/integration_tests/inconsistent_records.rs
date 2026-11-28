@@ -7,12 +7,12 @@ use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::body_map_test::{f3d_with_model_breps, ModelBlob};
-use crate::test_support::lost_edge_test::{GROUP, OPERAND_COUNT};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::smbh_surfaces_test::synthetic_off_spl_sur_smbh;
+use crate::test_support::body_map_fixture::{f3d_with_model_breps, ModelBlob};
+use crate::test_support::lost_edge_fixture::{GROUP, OPERAND_COUNT};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::smbh_surfaces_fixture::synthetic_off_spl_sur_smbh;
 use crate::test_support::step_conversion::convert_to_step;
-use crate::test_support::zip_test::f3d_with_smbh_and_remove_body_lost_edge_run;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_remove_body_lost_edge_run;
 
 /// Lost-edge records the generated Design stream holds before the group's run.
 const BASE_LOST_EDGES: usize = 1;

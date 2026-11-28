@@ -29,6 +29,7 @@ const FOLDED_SHARE: f64 = 1e-3;
 /// Deepest bisection of one derived pcurve segment.
 const PCURVE_DEPTH: u32 = 24;
 /// Largest sample count of one derived pcurve.
+// resource-cap: MAX_PCURVE_SAMPLES = N
 const MAX_PCURVE_SAMPLES: usize = 1 << 16;
 /// Ratio of a triangle's model area to the squared surface size below which
 /// it is dropped as degenerate.

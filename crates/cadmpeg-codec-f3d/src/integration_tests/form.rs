@@ -6,10 +6,10 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 #[test]
 fn form_cage_program_failures_retain_the_active_resource_and_native_parser_loss() {
     for (valid, program) in [
-        (true, crate::test_support::zip_test::generated_form_tsm()),
+        (true, crate::test_support::zip_fixture::generated_form_tsm()),
         (false, b"invalid synthetic cage program".to_vec()),
     ] {
-        let bytes = crate::test_support::zip_test::f3d_with_form_body_resource(&program);
+        let bytes = crate::test_support::zip_fixture::f3d_with_form_body_resource(&program);
         let decoded = super::decode(bytes);
         let feature = decoded
             .ir()
@@ -51,13 +51,13 @@ fn form_cage_program_failures_retain_the_active_resource_and_native_parser_loss(
 
 #[test]
 fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
-    use crate::test_support::assembly_test::{
+    use crate::test_support::assembly_fixture::{
         f3d_with_reference_table_and_identity_xrefs, f3z_archive, redirections_json, XREF_ROLE,
     };
     const SECOND_ROLE: &str = "12345678-1234-4234-8234-123456789abc";
-    let program = crate::test_support::zip_test::generated_form_tsm();
+    let program = crate::test_support::zip_fixture::generated_form_tsm();
     let probe = super::decode(
-        crate::test_support::zip_test::f3d_with_partial_form_body_resource_aliases(
+        crate::test_support::zip_fixture::f3d_with_partial_form_body_resource_aliases(
             &program,
             "literal:probe",
         ),
@@ -80,7 +80,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
         "shortest native ID is {} bytes",
         collision.len()
     );
-    let child = crate::test_support::zip_test::f3d_with_partial_form_body_resource_aliases(
+    let child = crate::test_support::zip_fixture::f3d_with_partial_form_body_resource_aliases(
         &program, &collision,
     );
     let unmerged = super::decode(child.clone());
@@ -272,15 +272,14 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
 /// decodes with the cage and is kept whole.
 #[test]
 fn a_radial_map_that_repeats_a_source_decodes_and_keeps_the_map() {
-    let mut program = crate::test_support::zip_test::generated_form_tsm();
+    let mut program = crate::test_support::zip_fixture::generated_form_tsm();
     program.extend_from_slice(
         b"105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
           105r segments 4\n105r sweep 1\n105r ef 0 1 0 2\n105r er 1 0\n\
           105r ff 0 0\n105r fr 0 0\n105r vf 0 1\n105r vr 1 0\n",
     );
-    let decoded = super::decode(crate::test_support::zip_test::f3d_with_form_body_resource(
-        &program,
-    ));
+    let decoded =
+        super::decode(crate::test_support::zip_fixture::f3d_with_form_body_resource(&program));
     assert!(!decoded
         .report()
         .losses
@@ -313,7 +312,7 @@ fn a_repeated_radial_source_over_live_edges_projects_only_pairs_with_an_inverse(
         ("1 0", vec![[0_u32, 1]], 1),
         ("1 0 2 0", Vec::new(), 4_usize),
     ] {
-        let mut program = crate::test_support::zip_test::generated_form_tsm();
+        let mut program = crate::test_support::zip_fixture::generated_form_tsm();
         program.extend_from_slice(
             format!(
                 "105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
@@ -322,9 +321,8 @@ fn a_repeated_radial_source_over_live_edges_projects_only_pairs_with_an_inverse(
             )
             .as_bytes(),
         );
-        let decoded = super::decode(crate::test_support::zip_test::f3d_with_form_body_resource(
-            &program,
-        ));
+        let decoded =
+            super::decode(crate::test_support::zip_fixture::f3d_with_form_body_resource(&program));
         let losses = &decoded.report().losses;
         assert!(!losses
             .iter()

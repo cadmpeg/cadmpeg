@@ -14,7 +14,9 @@ use crate::reason::UnavailableReason;
 use crate::region::{winding_number, LoopShape, Region};
 
 const BOX_RELATIVE_RESOLUTION: f64 = 1.0e-8;
+// resource-cap: MAX_NURBS_BOX_WORK = 4
 const MAX_NURBS_BOX_WORK: usize = 1 << 20;
+// resource-cap: MAX_NURBS_BOX_PATCHES = 4
 const MAX_NURBS_BOX_PATCHES: usize = 65_536;
 
 type Control = [f64; 4];
