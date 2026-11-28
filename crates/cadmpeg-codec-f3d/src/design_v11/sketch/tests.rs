@@ -1232,6 +1232,8 @@ fn the_design_point_keeps_the_stored_flag_lanes() {
             ctx,
             &mut ir,
             cadmpeg_core::decode::DecodeDepth::Design,
+            &crate::design_v11::joint::RootOperands::new(),
+            None,
             &mut Vec::new(),
         )
         .unwrap();

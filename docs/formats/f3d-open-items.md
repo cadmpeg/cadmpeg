@@ -1019,6 +1019,26 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
 
+### DR-1070. The history of an item state that several histories store
+
+**Question.** Where several `.smbh` histories of a document store a state whose identity is the current history-state identity of a timeline item, and the item's parameter scope stores no body-map entity suffix, whole-body recipe, or edge-selection recipe that selects one of them, which history holds the state after the item?
+
+**Known.** `f3d.md` §3.1 "**States of a document.**" gives the state after a timeline item: the stored state with the item's current identity, in the one history that stores it, or in the history that the item's parameter scope selects. Each history numbers its states on a counter of its own, and two histories of one document store states with equal identities. The current identities of the items that commit a state can decrease from one item to a later one when the later item lies in another history: a timeline stores the current identities `3` and `4` for two items and `3` for a later item, in a document whose two histories store the states `2`, `3`, `4` and `2`, `3`.
+
+**Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Move` of the body of the second component whose parameter scope stores no body-map entity suffix, saved once. For the `Move` item, its current identity compared with the `delta_state` chain of each history, and the history whose state changes the moved body.
+
+**Note.** A compatible history reaches the item's current identity or a higher identity in the walk. Its state before the item is at or above the state of the nearest earlier item bound to that history, when there is one. The decoder prefers a unique compatible history at the item's current identity. Without an exact match, it takes a unique compatible history across a forward gap. Either assignment charges `history.state-inferred`. Without a unique compatible history, the decoder takes the item to commit no state and charges `history.state-unread` for its missing evaluation before the current position.
+
+### DR-1071. History states that no timeline item stores
+
+**Question.** A `.smbh` history can store states whose identities are above the current history-state identity of the last timeline item that commits a state to it, and states whose identities lie above the current identity of an item and up to the preceding identity of the next later item of that history. Which timeline position, if any, holds each such state, and does the current geometry of the blob equal the last of them or the state of the last item?
+
+**Known.** `f3d.md` §3.1 "**States of a document.**" gives the state after a timeline item: the stored state whose identity is the item's current history-state identity, and the tiling of a history's chain by the states of its items. The `delta_state` chain of a history numbers its states on a counter of its own, and its head is the state with the largest identity. A history stores the states `2` to `7`, and its last item stores the current identity `6`. An item stores the current identity `4`, and the next later item of its history stores the preceding identity `9`. Each state after the root state has one bulletin board (DR-1054). The current geometry of the blob holds the records that its head state holds.
+
+**Need.** A Sketch and a new-body `Extrude`, then a `Fillet` of one edge, saved once with the timeline marker at the end and once after a `Move` of the body that stores no history-state identity: for each save, the identity of the head compared with the current identity of the last item, the bulletin boards of the states above that identity, and the records of each such state compared with the current geometry.
+
+**Note.** Where exactly one timeline item after the last item of the history stores no scope tail, the decoder takes that item to store the head state, with the state of the last item before it, and charges `history.state-inferred`. The decoder does the same for the one item with no scope tail between two items of a history whose stored states do not meet. Elsewhere the decoder takes the current state to hold the change of the states after the last item, states the item's evaluation from the state with its current identity, and charges `history.state-tail-assumed`. Between two items of a history whose stored states do not meet, it states the evaluations of the two items from their own states, states no evaluation of the items of other histories between them, and charges `history.state-unread`.
+
 ### DR-1054. Bulletin board of a state that changes an earlier body
 
 **Question.** Which entity slots does the bulletin board of a history state keep as updates, and which does it delete and insert, when the item of the state changes a body of the state before it?
@@ -4304,3 +4324,15 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A save whose copy body stores key `-1`, with a Fusion readback of its body list. The forms above do not give that key, so the save needs another construction of the copy, for example a Mirror edited after a later feature or a design saved by an earlier Fusion version. Compare the body record keys, the body-map pairs, and the Body container entities with the bodies that the Fusion browser lists.
 
 **Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").
+
+### DR-1094. Default name of a construction feature
+
+**Question.** Which name does the timeline give a `WorkPlane`, `WorkAxis`, or `WorkPoint` feature whose scope stores no display name and no label?
+
+**Known.** The scope stores its kind spelling and its family-local feature ordinal. The type GUID selects the family, and the kind spelling is `WorkAxis`, `WorkPoint`, or a spelling in the authoring language such as `Plan de construction` or `Axe de construction`. A French application session shows `Plan1`, `Axe1`, and `Point1` for scopes of ordinal 1 with the spellings `Plan de construction`, `Axe de construction`, and `WorkPoint`, and `Axe1` for a scope of ordinal 1 that stores `WorkAxis`. Each shown name differs from the kind spelling followed by the ordinal.
+
+**Need.** Save one offset plane, one two-plane axis, and one three-plane point without renaming them, once in an English application session and once in a French session. Read the timeline names of each save in both sessions, and compare the scope records of the two saves.
+
+**Conflict.** None.
+
+**Note.** The decoder names the feature with the kind spelling directly followed by the ordinal and charges `feature.construction-name-composed`.
