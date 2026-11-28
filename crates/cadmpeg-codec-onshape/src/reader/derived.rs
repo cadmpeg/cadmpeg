@@ -63,7 +63,7 @@ pub(super) fn is_derived(feature: &Value) -> bool {
 /// The pinned document, version and element of the `partStudio` reference parameter.
 /// It is a structured REST reference, never an evaluated `FeatureScript` query or a
 /// guessed URL.
-fn reference(feature: &Value) -> Mapping<(&str, &str, &str)> {
+pub(super) fn reference(feature: &Value) -> Mapping<(&str, &str, &str)> {
     let mut found = None;
     for parameter in rows(feature, "parameters")? {
         if parameter.get("parameterId").and_then(Value::as_str) != Some("partStudio") {
@@ -443,14 +443,24 @@ pub(super) fn map(
     Ok(payload)
 }
 
-/// A Boolean whose operands are bodies made by earlier features of a studio with a
-/// derived insert. The operands name the stored result topology of their producers.
-pub(super) fn boolean(
-    feature: &Value,
+pub(super) struct BooleanBody<'a> {
+    pub native: &'a str,
+    pub producer: String,
+}
+
+pub(super) struct BooleanInputs<'a> {
+    pub operation: &'static str,
+    pub keep: bool,
+    pub target: Vec<BooleanBody<'a>>,
+    pub tools: Vec<BooleanBody<'a>>,
+}
+
+pub(super) fn boolean_inputs<'a>(
+    feature: &'a Value,
     ordinal: usize,
     inputs: &topology::Inputs<'_>,
-    model: &cadmpeg_ir::document::Model,
-) -> Mapping<Value> {
+    usage: Option<&super::parameter_usage::ParameterUsage<'_>>,
+) -> Mapping<BooleanInputs<'a>> {
     if feature
         .get("namespace")
         .and_then(Value::as_str)
@@ -494,9 +504,20 @@ pub(super) fn boolean(
         return Err("Boolean parameter offset is not supported yet".into());
     }
     let keep = features::enabled(feature, "keepTools")?;
+    if let Some(usage) = usage {
+        usage.account(&["operationType", "keepTools"]);
+        usage.account(&[
+            "offset",
+            "offsetAll",
+            "entitiesToOffset",
+            "offsetDistance",
+            "oppositeDirection",
+            "reFillet",
+        ]);
+    }
     let parts = inputs.solid_parts(ordinal)?;
-    let selected = |key| -> Mapping<Vec<(String, String)>> {
-        let mut picked = Vec::new();
+    let selected = |key| -> Mapping<Vec<BooleanBody<'a>>> {
+        let mut picked: Vec<BooleanBody<'a>> = Vec::new();
         for query in features::queries(feature, key)? {
             let ids = rows(query, "deterministicIds")?;
             if query.get("queryString").is_some()
@@ -509,43 +530,73 @@ pub(super) fn boolean(
             }
             for value in ids {
                 let native = value.as_str().ok_or("a Boolean body identity is missing")?;
-                if !parts.contains_key(native)
-                    || picked.iter().any(|(local, _)| local == &id("body", native))
-                {
+                if !parts.contains_key(native) || picked.iter().any(|body| body.native == native) {
                     return Err(
                         "a Boolean body is missing or repeats in its input rollback state".into(),
                     );
                 }
                 let producer = inputs.producer(ordinal, native, topology::OperandKind::Body)?;
                 inputs.unique_feature(&producer, ordinal)?;
-                picked.push((id("body", native), id("feature", &producer)));
+                picked.push(BooleanBody {
+                    native,
+                    producer: id("feature", &producer),
+                });
             }
         }
         Ok(picked)
     };
-    // `targets` is visible only for SUBTRACTION. For UNION and INTERSECTION only `tools`
-    // is operative and a stored `targets` is stale. The combine form names one target
-    // body, so peer tools cannot be stated and the feature stays native.
-    if operation != "SUBTRACTION" {
-        let tools = selected("tools")?;
+    let tools = selected("tools")?;
+    let target = if operation == "SUBTRACTION" {
+        let target = selected("targets")?;
+        if target.len() != 1
+            || target
+                .iter()
+                .any(|body| tools.iter().any(|tool| tool.native == body.native))
+        {
+            return Err("this Boolean needs one target and disjoint tool bodies".into());
+        }
+        target
+    } else {
+        Vec::new()
+    };
+    if tools.is_empty() {
+        return Err("the Boolean names no tools".into());
+    }
+    if let Some(usage) = usage {
+        usage.account(&["tools", "targets"]);
+    }
+    Ok(BooleanInputs {
+        operation,
+        keep,
+        target,
+        tools,
+    })
+}
+
+/// A Boolean whose operands are bodies made by earlier features of a studio with a
+/// derived insert. The operands name the stored result topology of their producers.
+pub(super) fn boolean(
+    feature: &Value,
+    ordinal: usize,
+    inputs: &topology::Inputs<'_>,
+    model: &cadmpeg_ir::document::Model,
+) -> Mapping<Value> {
+    let BooleanInputs {
+        operation,
+        keep,
+        target,
+        tools,
+    } = boolean_inputs(feature, ordinal, inputs, None)?;
+    if target.is_empty() {
         return Err(format!(
             "a {operation} Boolean combines its {} tool bodies as peers; the combine form names one target body, so the operands cannot be stated",
             tools.len()
         ));
     }
-    let target = selected("targets")?;
-    let tools = selected("tools")?;
-    if target.len() != 1
-        || tools.is_empty()
-        || target
-            .iter()
-            .any(|(local, _)| tools.iter().any(|(tool, _)| tool == local))
-    {
-        return Err("this Boolean needs one target and disjoint tool bodies".into());
-    }
-    let generated = |selected: Vec<(String, String)>| -> Mapping<Value> {
+    let generated = |selected: Vec<BooleanBody<'_>>| -> Mapping<Value> {
         let mut references = Vec::new();
-        for (local, producer) in selected {
+        for body in selected {
+            let local = id("body", body.native);
             let owners: Vec<_> = model
                 .feature_result_topologies
                 .iter()
@@ -556,7 +607,7 @@ pub(super) fn boolean(
                     "a Boolean body cannot be tied uniquely to an earlier feature result".into(),
                 );
             };
-            if owner.output_of.as_str() != producer {
+            if owner.output_of.as_str() != body.producer {
                 return Err(
                     "the Boolean body producer disagrees with its stored rollback transition"
                         .into(),

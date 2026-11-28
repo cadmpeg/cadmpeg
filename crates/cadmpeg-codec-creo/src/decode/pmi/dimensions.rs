@@ -16,7 +16,7 @@ use cadmpeg_ir::pmi::{
     PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::loss::CreoLossCode;
@@ -207,7 +207,6 @@ pub(super) fn transfer(
             continue;
         }
         let (Some(owner), Some(owner_type)) = (attribute.owner, attribute.owner_type) else {
-            unresolved += 1;
             ownerless.push((attribute.offset, attribute.end));
             continue;
         };
@@ -242,33 +241,27 @@ pub(super) fn transfer(
     for (owner, fields) in fields_by_owner {
         let record = super::pmi_record(format_args!("{}:{}", owner.1, owner.0));
         let Some(kind) = fields.kind else {
-            unresolved += 1;
             unformed.push(record);
             continue;
         };
         let Some(candidates) = elements_by_owner.get(&owner) else {
-            unresolved += 1;
             unformed.push(record);
             continue;
         };
         // More than one annotation element claims the owner.
         if candidates.len() != 1 {
-            unresolved += 1;
             unformed.push(record);
             continue;
         }
         if fields.duplicate {
             conflicting += 1;
         }
-        if fields.invalid {
-            unresolved += 1;
-        }
+        let mut partial = fields.invalid;
         let (section, element) = candidates[0];
         let Some(kind_text) = std::str::from_utf8(kind)
             .ok()
             .filter(|text| !text.is_empty())
         else {
-            unresolved += 1;
             unformed.push(record);
             continue;
         };
@@ -293,7 +286,6 @@ pub(super) fn transfer(
             Some(value) => match value_for(value, quantity, length_scale) {
                 Some(value) => Some(value),
                 None => {
-                    unresolved += 1;
                     unformed.push(record);
                     continue;
                 }
@@ -315,7 +307,7 @@ pub(super) fn transfer(
             }
         }
         let assumed_form = !form_selected && dimension_tolerance.is_some() && reads_limits(&fields);
-        unresolved += usize::from(unresolved_tolerance);
+        partial |= unresolved_tolerance;
         let definition = match admit(&dimension_kind, nominal, dimension_tolerance, fields.mode) {
             Ok(definition) => {
                 if assumed_form {
@@ -327,11 +319,11 @@ pub(super) fn transfer(
                 definition
             }
             Err(_) => {
-                unresolved += 1;
                 let Ok(definition) = admit(&dimension_kind, nominal, None, fields.mode) else {
                     unformed.push(record);
                     continue;
                 };
+                partial = true;
                 definition
             }
         };
@@ -339,7 +331,6 @@ pub(super) fn transfer(
             length_dimensions += 1;
         }
         let Some(offset) = fields.offset else {
-            unresolved += 1;
             unformed.push(record);
             continue;
         };
@@ -351,6 +342,7 @@ pub(super) fn transfer(
         let targets = target
             .map(|target| target.faces.clone())
             .unwrap_or_default();
+        unresolved += usize::from(partial);
         projected.push(ProjectedDimension {
             owner: element.owner,
             owner_type: element.owner_type,
@@ -397,7 +389,7 @@ pub(super) fn transfer(
 
     if unresolved != 0 {
         losses.push(CreoLossCode::PmiRecordUnresolved.note(format!(
-            "{unresolved} dimensional attribute owner(s) have an ambiguous join, invalid value, or unresolved tolerance mode."
+            "{unresolved} transferred dimension(s) have an invalid attribute value or an unresolved tolerance mode."
         )));
     }
     let code = CreoLossCode::PmiRecordUnresolved.kind();
@@ -405,6 +397,7 @@ pub(super) fn transfer(
         losses.push(
             GivenUpRecord::new(
                 cadmpeg_ir::ids::Identity::new(record)?,
+                Cause::Undecoded,
                 format_args!("{code}: the dimensional attributes form no PMI record"),
             )
             .loss(),

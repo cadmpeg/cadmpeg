@@ -153,15 +153,15 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
             161,
             "{status}"
         );
-        assert_eq!(losses.len(), 2, "{status}: {losses:#?}");
+        assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,
-            IgesLossCode::DirectoryRecordQuarantined.kind()
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
         );
         assert!(losses[0]
             .message
             .contains("the status number is neither blank"));
-        crate::test_support::assert_given_up(&losses[1], ("directory-entry", 1));
+        crate::test_support::assert_given_up(&losses[0], ("directory-entry", 1));
     }
 }
 

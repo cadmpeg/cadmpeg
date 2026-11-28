@@ -66,10 +66,10 @@ fn two_sided_distances_of_every_sign_pair_span_the_final_bodies() {
     let ir = decoded();
     // Side one / side two in millimetres, and the z range of the final body.
     for (name, expected) in [
-        ("Extrude 1", (5.0, 20.0)),   // +20 / -5
-        ("Extrude 2", (-20.0, -5.0)), // -20 / +5
-        ("Extrude 3", (-20.0, 5.0)),  // -20 / -5
-        ("Extrude 4", (-5.0, 20.0)),  // +20 / +5
+        ("Extrude1", (5.0, 20.0)),   // +20 / -5
+        ("Extrude2", (-20.0, -5.0)), // -20 / +5
+        ("Extrude3", (-20.0, 5.0)),  // -20 / -5
+        ("Extrude4", (-5.0, 20.0)),  // +20 / +5
     ] {
         let definition = definition(&ir, name);
         assert_eq!(definition["kind"], "operation", "{name}: {definition}");
@@ -85,7 +85,7 @@ fn two_sided_distances_of_every_sign_pair_span_the_final_bodies() {
 #[test]
 fn drafted_and_wall_thickness_extrudes_of_opposite_sign_stay_native() {
     let ir = decoded();
-    for name in ["Extrude 6", "Extrude 7"] {
+    for name in ["Extrude6", "Extrude7"] {
         let definition = definition(&ir, name);
         assert_ne!(
             definition["value"]["kind"], "extrude",

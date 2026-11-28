@@ -551,6 +551,7 @@ pub fn parse<R: Clone>(text: &str, refs: &[R], measures: &[Measure]) -> Result<N
     }
     let depth = node.depth();
     if depth > MAX_EXPRESSION_DEPTH {
+        crate::bounds::note_expression_refused();
         return malformed(format!(
             "the expression is {depth} levels deep, past the {MAX_EXPRESSION_DEPTH} levels of an \
              expression"

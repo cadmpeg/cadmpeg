@@ -51,13 +51,22 @@ fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
     bytes
 }
 
+/// Whether `loss` is a `record.undecoded` give-up whose text states `code`.
+fn gives_up_for(
+    loss: &cadmpeg_ir::report::loss::LossNote,
+    code: &cadmpeg_ir::report::loss::LossKind,
+) -> bool {
+    loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+        && loss.message.contains(&code.to_string())
+}
+
 /// The `(offset, length)` of each part of stream 0 that `decoded` gives up.
 fn given_up_spans(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<(usize, usize)> {
     decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .filter(|loss| {
             loss.message.starts_with("part ") && loss.message.contains(" stream=\"nx:parasolid#0:")
         })
@@ -269,7 +278,7 @@ fn primary_edge_complete_prefix_survives_a_later_stop() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == code)
+            .filter(|loss| gives_up_for(loss, &code))
             .count(),
         1
     );
@@ -330,7 +339,7 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == code)
+            .filter(|loss| gives_up_for(loss, &code))
             .count(),
         2
     );
@@ -522,7 +531,7 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == code)
+                .filter(|loss| gives_up_for(loss, &code))
                 .count(),
             1
         );
@@ -619,7 +628,7 @@ fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection(
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == code)
+                .filter(|loss| gives_up_for(loss, &code))
                 .count(),
             1
         );

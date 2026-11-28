@@ -14,6 +14,7 @@ use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::{DeclaredMeasureId, IdentityKey, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids::{self, kind};
 use crate::loss::StepLossCode;
@@ -163,16 +164,14 @@ pub(super) fn decode(
                 // A point stays in the document where another record
                 // references it; it is given up when it is removed below.
                 if item.partial("CARTESIAN_POINT").is_some() {
-                    unsupported_points.insert(item_id, why.clone());
-                    losses.push(why);
+                    unsupported_points.insert(item_id, why);
                 } else {
-                    losses.extend(super::give_up_instance(exchange, item_id, why));
+                    exchange.lost().give_up_for(item_id, Cause::Undecoded, &why);
                 }
                 given_up_items.insert(item_id);
                 continue;
             };
-            let Some(quantity) = scaled(stated, item_id, item, exchange, scale, &mut losses, ctx)?
-            else {
+            let Some(quantity) = scaled(stated, item_id, item, exchange, scale, ctx)? else {
                 given_up_items.insert(item_id);
                 continue;
             };
@@ -234,12 +233,13 @@ pub(super) fn decode(
             !validation_points.contains(&id) || referenced_validation_points.contains(&id);
         if !retained {
             removed_points.insert(point.id.as_str().to_owned());
-            if let Some(why) = unsupported_points.get(&id) {
-                exchange.lost().give_up_for(id, why);
+            if let Some(why) = unsupported_points.remove(&id) {
+                exchange.lost().give_up_for(id, Cause::Undecoded, &why);
             }
         }
         retained
     });
+    losses.extend(unsupported_points.into_values());
     ir.model.attributes.retain(|attribute| {
         !matches!(&attribute.target.entity, AttributeTarget::Point(point) if removed_points.contains(point.as_str()))
     });
@@ -429,7 +429,6 @@ fn scaled(
     record: &RawRecord,
     exchange: &Exchange,
     length_scale: f64,
-    losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<DeclaredQuantity>, CodecError> {
     let point = |[x, y, z]: [f64; 3]| {
@@ -444,8 +443,8 @@ fn scaled(
             ))
         })
     };
-    let mut measure = |value: f64, kind: &str| {
-        measure_scale(id, record, exchange, kind, losses, ctx)?
+    let measure = |value: f64, kind: &str| {
+        measure_scale(id, record, exchange, kind, ctx)?
             .map(|scale| {
                 FiniteReal::new(value * scale).ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -482,7 +481,6 @@ fn measure_scale(
     record: &RawRecord,
     exchange: &Exchange,
     kind: &str,
-    losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<f64>, CodecError> {
     let resolved = measure_unit(record)
@@ -525,13 +523,13 @@ fn measure_scale(
     match resolved {
         Some(scale) => Ok(Some(scale)),
         None => {
-            losses.extend(super::give_up_instance(
-                exchange,
+            exchange.lost().give_up(
                 id,
-                StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
+                Cause::Undecoded,
+                format!(
                     "geometric validation {kind} measure #{id} unit scale did not resolve; the quantity is not compared",
-                )),
-            ));
+                ),
+            );
             Ok(None)
         }
     }

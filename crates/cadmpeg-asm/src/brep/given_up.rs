@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{Identity, ShellId};
 use cadmpeg_ir::topology::Unstated;
-use cadmpeg_ir::unknown::part::Part;
+use cadmpeg_ir::unknown::part::{Cause, Part};
 
 use super::attributes::unknown_record_id;
 use super::geometry::{
@@ -41,8 +41,12 @@ pub struct WithheldRecord {
     pub offset: usize,
     /// The record's bytes, from `offset`.
     pub bytes: Vec<u8>,
+    /// The give-up's cause: [`Cause::Unreadable`] where the record breaks
+    /// the topology rules of the format, [`Cause::Undecoded`] where it needs
+    /// a record the decode does not state.
+    pub cause: Cause,
     /// Why the decode leaves the record out.
-    pub cause: &'static str,
+    pub reason: &'static str,
     /// The neutral id the record would carry, then the ids of the records
     /// that need it and never reached the B-rep.
     pub dropped: Vec<Identity>,
@@ -70,7 +74,7 @@ impl WithheldRecord {
     /// The error the part's give-up states.
     #[must_use]
     pub fn error(&self) -> CodecError {
-        CodecError::malformed(self.cause)
+        CodecError::malformed(self.reason)
     }
 }
 
@@ -117,28 +121,35 @@ pub(super) fn list_withheld(
         if emitted.contains(own.as_str()) {
             continue;
         }
-        if let Some((kind, cause)) = withheld_cause(r, i, by_index, reach) {
-            withheld.push((r, kind, cause, own));
+        if let Some((kind, cause, reason)) = withheld_cause(r, i, by_index, reach) {
+            withheld.push((r, kind, cause, reason, own));
         }
     }
-    let mut named = withheld
-        .iter()
-        .map(|(.., own)| own.as_str().to_owned())
-        .collect::<HashSet<_>>();
-    let (shells, retained) = if withheld.iter().any(|(_, kind, ..)| *kind == "face") {
-        (
-            subshell_ancestor_shells(records, by_index)?,
-            out.unknowns
-                .iter()
-                .map(|record| record.id().as_str().to_owned())
-                .collect::<HashSet<_>>(),
-        )
+    let mut named = HashSet::new();
+    let mut retained = HashSet::new();
+    if bytes.is_some() {
+        named.extend(withheld.iter().map(|(.., own)| own.as_str().to_owned()));
+        retained.extend(out.unknowns.iter().map(|record| record.id().as_str()));
+    }
+    let shells = if withheld.iter().any(|(_, kind, ..)| *kind == "face") {
+        subshell_ancestor_shells(records, by_index)?
     } else {
-        (HashMap::new(), HashSet::new())
+        HashMap::new()
     };
-    for (r, kind, cause, own) in withheld {
+    for (r, kind, cause, reason, own) in withheld {
+        let mut marked = None;
+        if let ("face", Some(owner)) = (kind, r.ref_at(5)) {
+            let shell = id(format, shells.get(&owner).copied().unwrap_or(owner));
+            let shell_id = ShellId::from(shell.clone());
+            if let Some(record) = out.shells.iter_mut().find(|record| record.id == shell_id) {
+                record.unstated = Some(Unstated::Members);
+                marked = Some(shell);
+            }
+        }
+        let Some(bytes) = bytes else {
+            continue;
+        };
         let mut dropped = vec![own];
-        let mut marked = Vec::new();
         if kind == "face" {
             for (index, child) in face_children(r, by_index) {
                 let child_id = id(format, index);
@@ -151,18 +162,7 @@ pub(super) fn list_withheld(
                     dropped.push(child_id);
                 }
             }
-            if let Some(owner) = r.ref_at(5) {
-                let shell = id(format, shells.get(&owner).copied().unwrap_or(owner));
-                let shell_id = ShellId::from(shell.clone());
-                if let Some(record) = out.shells.iter_mut().find(|record| record.id == shell_id) {
-                    record.unstated = Some(Unstated::Members);
-                    marked.push(shell);
-                }
-            }
         }
-        let Some(bytes) = bytes else {
-            continue;
-        };
         let span = r.bytes_in(bytes)?;
         let mut record_bytes = ctx.alloc_filled(span.len(), 0_u8, "withheld ASM record bytes")?;
         record_bytes.copy_from_slice(span);
@@ -171,87 +171,115 @@ pub(super) fn list_withheld(
             offset: r.offset,
             bytes: record_bytes,
             cause,
+            reason,
             dropped,
-            marked,
+            marked: marked.into_iter().collect(),
         });
     }
     Ok(())
 }
 
-/// The part kind of record `r` and why the decode leaves it out, where it
-/// does.
+/// The part kind of record `r`, the cause of its give-up and why the decode
+/// leaves it out, where it does. A null or dangling topology reference
+/// breaks the format; a record that needs a record the decode reads and
+/// does not state is undecoded.
 fn withheld_cause(
     r: &Record,
     i: i64,
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
-) -> Option<(&'static str, &'static str)> {
+) -> Option<(&'static str, Cause, &'static str)> {
+    use Cause::{Undecoded, Unreadable};
     match r.head() {
         // A face with no shell is retained as a source record; a face the
         // face pass kept that no emit states has no other cause.
-        "face" if reach.faces.contains(&i) => {
-            Some(("face", "the face record names no shell or no surface"))
-        }
+        "face" if reach.faces.contains(&i) => Some((
+            "face",
+            Undecoded,
+            "the face record names no shell or no surface",
+        )),
         "face" if r.ref_at(5).is_none() => None,
         "face" => match r.ref_at(7) {
-            None => Some(("face", "the face record states no surface")),
+            None => Some(("face", Unreadable, "the face record states no surface")),
             Some(surface) if !by_index.contains_key(&surface) => Some((
                 "face",
+                Unreadable,
                 "the face record's surface reference names no record",
             )),
             Some(_) => None,
         },
-        "loop" if reach.loops.contains(&i) => Some((
-            "loop",
-            if r.ref_at(5).is_none() {
-                "the loop record names no face"
-            } else {
-                "the loop record's coedge ring holds no coedge the loop owns"
-            },
-        )),
+        "loop" if reach.loops.contains(&i) => Some(if r.ref_at(5).is_none() {
+            ("loop", Unreadable, "the loop record names no face")
+        } else {
+            (
+                "loop",
+                Undecoded,
+                "the loop record's coedge ring holds no coedge the loop owns",
+            )
+        }),
         _ if is_coedge_record(r) && reach.coedges.contains(&i) => {
             let held = |slot: usize, set: &HashSet<i64>| r.ref_at(slot).map(|at| set.contains(&at));
-            let cause = match (
+            let (cause, reason) = match (
                 held(3, &reach.coedges),
                 held(4, &reach.coedges),
                 held(6, &reach.edges),
                 held(8, &reach.loops),
             ) {
-                (None, ..) => "the coedge record states no next coedge",
-                (_, None, ..) => "the coedge record states no previous coedge",
-                (_, _, None, _) => "the coedge record states no edge",
-                (.., None) => "the coedge record names no loop",
-                (Some(false), ..) => "the coedge record's next coedge is no coedge of its ring",
-                (_, Some(false), ..) => {
-                    "the coedge record's previous coedge is no coedge of its ring"
-                }
-                (_, _, Some(false), _) => "the coedge record's edge reference names no edge record",
-                (.., Some(false)) => "the coedge record's loop is no loop of a kept face",
-                _ => "the coedge record names a reference the decode does not hold",
+                (None, ..) => (Unreadable, "the coedge record states no next coedge"),
+                (_, None, ..) => (Unreadable, "the coedge record states no previous coedge"),
+                (_, _, None, _) => (Unreadable, "the coedge record states no edge"),
+                (.., None) => (Unreadable, "the coedge record names no loop"),
+                (Some(false), ..) => (
+                    Unreadable,
+                    "the coedge record's next coedge is no coedge of its ring",
+                ),
+                (_, Some(false), ..) => (
+                    Unreadable,
+                    "the coedge record's previous coedge is no coedge of its ring",
+                ),
+                (_, _, Some(false), _) => (
+                    Unreadable,
+                    "the coedge record's edge reference names no edge record",
+                ),
+                (.., Some(false)) => (
+                    if r.ref_at(8).is_some_and(|at| by_index.contains_key(&at)) {
+                        Undecoded
+                    } else {
+                        Unreadable
+                    },
+                    "the coedge record's loop is no loop of a kept face",
+                ),
+                _ => (
+                    Undecoded,
+                    "the coedge record names a reference the decode does not hold",
+                ),
             };
-            Some(("coedge", cause))
+            Some(("coedge", cause, reason))
         }
         _ if is_edge_record(r) && reach.edges.contains(&i) => Some((
             "edge",
+            Unreadable,
             if r.ref_at(3).is_none() || r.ref_at(5).is_none() {
                 "the edge record states no start or end vertex"
             } else {
                 "the edge record's vertex reference names no vertex record"
             },
         )),
-        _ if is_vertex_record(r) && reach.vertices.contains(&i) => Some((
-            "vertex",
-            if vertex_point_ref(r).is_none() {
-                "the vertex record states no point"
-            } else {
-                "the vertex record's point reference names no point the decode holds"
-            },
-        )),
+        _ if is_vertex_record(r) && reach.vertices.contains(&i) => {
+            Some(match vertex_point_ref(r) {
+                None => ("vertex", Unreadable, "the vertex record states no point"),
+                Some(_) => (
+                    "vertex",
+                    Undecoded,
+                    "the vertex record's point reference names no point the decode holds",
+                ),
+            })
+        }
         "point" if reach.points.contains(&i) && collect_carrier(r).positions.is_empty() => {
-            Some(("point", "the point record states no position"))
+            Some(("point", Unreadable, "the point record states no position"))
         }
         "region" | "lump" if r.ref_at(5).is_none() => {
-            Some(("region", "the region record names no body"))
+            Some(("region", Unreadable, "the region record names no body"))
         }
         _ => None,
     }

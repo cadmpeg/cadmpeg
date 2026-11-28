@@ -2,7 +2,7 @@
 //! Synthetic configuration-table documents and Design configuration root records.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
@@ -400,6 +400,7 @@ pub(crate) struct Natives {
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) neutral_parameters: Vec<NeutralParameter>,
     pub(crate) neutral_features: Vec<Feature>,
+    pub(crate) producers: BTreeSet<FeatureId>,
 }
 
 impl Natives {
@@ -409,6 +410,7 @@ impl Natives {
         Self {
             neutral_parameters: parameters.iter().map(neutral_parameter).collect(),
             neutral_features: vec![neutral_feature(&scopes[0], "f3d:model:feature#sketch")],
+            producers: BTreeSet::new(),
             owners: vec![owner(STREAM, 330, 329)],
             parameters,
             scopes,
@@ -432,6 +434,7 @@ impl Natives {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.parameters = self.neutral_parameters.clone();
         ir.model.features = std::mem::take(&mut self.neutral_features);
+        self.producers = crate::design::configurations::body_producers(&ir.model.features);
         let archive = super::zip_test::f3d_with_configurations(
             &super::smbh_geometry_test::synthetic_geometry_smbh(),
             &[],

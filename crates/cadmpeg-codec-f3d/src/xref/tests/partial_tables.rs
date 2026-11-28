@@ -8,7 +8,6 @@ use std::io::Cursor;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::redirections_json;
 use crate::test_support::native_test::f3d_native;
 use crate::F3dCodec;
@@ -33,7 +32,12 @@ fn malformed_component_reference_data_gives_up_its_own_entry() {
         let mut source = Cursor::new(&document);
         let decoded = F3dCodec.decode(&mut source, &options).unwrap();
         let losses = &decoded.report().losses;
-        crate::test_support::charged_part(decoded.ir(), losses, head, "");
+        crate::test_support::charged_part(
+            decoded.ir(),
+            losses,
+            (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+            "",
+        );
         let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
         assert!(
             !losses
@@ -41,9 +45,6 @@ fn malformed_component_reference_data_gives_up_its_own_entry() {
                 .any(|loss| loss.code == unreadable
                     && loss.message.contains("RedirectionsStream.dat"))
         );
-        assert!(losses
-            .iter()
-            .all(|loss| loss.code != F3dLossCode::XrefTableUndecoded.kind()));
         if depth == DecodeDepth::Full {
             let references = &f3d_native(decoded.ir()).xref_references;
             assert_eq!(references.len(), 1);

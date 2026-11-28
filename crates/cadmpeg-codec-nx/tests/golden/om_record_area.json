@@ -32,6 +32,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
           }
         ],

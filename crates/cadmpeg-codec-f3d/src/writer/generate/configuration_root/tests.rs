@@ -107,7 +107,11 @@ fn planning(
         &written,
         &ir.model.configurations,
     );
-    losses.extend(written.compare_in_memory(plan.active(), &TARGETS).unwrap());
+    losses.extend(
+        written
+            .compare_in_memory(plan.active(), &TARGETS, &BTreeSet::new())
+            .unwrap(),
+    );
     losses.append(&mut plan.losses);
     plan.losses = losses;
     (plan, written.documents.into_owned())

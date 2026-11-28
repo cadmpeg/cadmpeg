@@ -49,6 +49,7 @@ use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, 
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
+use cadmpeg_ir::unknown::part::Cause;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -563,12 +564,12 @@ fn decode_sketch_visibilities_in_stream_with_scan(
         .flatten();
         let Some(members) = members else {
             RecordFrame::new(stream, frame.start, frame.end).give_up(
-                F3dLossCode::SketchOrdinalCollectionUndecoded.note(format!(
+                Cause::Undecoded,
+                format!(
                     "F3D sketch ordinal collection {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
                     frame.entity_id,
                     listing_sketches(frame.entity_id)
-                )),
-                losses,
+                ),
                 given_up,
             );
             unread_containers.insert(frame.entity_id);
@@ -607,12 +608,12 @@ fn decode_sketch_visibilities_in_stream_with_scan(
         .flatten();
         let Some(folder) = folder else {
             RecordFrame::new(stream, frame.start, frame.end).give_up(
-                F3dLossCode::SketchFolderUndecoded.note(format!(
+                Cause::Undecoded,
+                format!(
                     "F3D sketch folder {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
                     frame.entity_id,
                     listing_sketches(frame.entity_id)
-                )),
-                losses,
+                ),
                 given_up,
             );
             unread_containers.insert(frame.entity_id);
@@ -2126,7 +2127,6 @@ fn decode_headers_for_indices_from_stream(
 pub(crate) fn decode_sketch_relations(
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
-    losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
@@ -2161,9 +2161,8 @@ pub(crate) fn decode_sketch_relations(
                     u32::try_from(frame.entity_id).map_err(|_| {
                         CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
                     }),
-                    losses,
                     given_up,
-                    F3dLossCode::SketchRelationUndecoded,
+                    Cause::Undecoded,
                     RecordFrame::new(&entry.name, frame.start, frame.end),
                     format_args!(
                         "Sketch relation record {} in {}",
@@ -2184,13 +2183,12 @@ pub(crate) fn decode_sketch_relations(
                     byte_offset: u64_from_index(frame.start),
                 };
                 framed_offsets.insert(record.byte_offset);
-                decode_sketch_relation_with_losses(
+                decode_sketch_relation_or_give_up(
                     &mut out,
                     &entry.name,
                     &record,
                     &bytes[frame.start..frame.end],
                     (design_type.type_guid.as_str(), design_type.version),
-                    losses,
                     given_up,
                 )?;
             }
@@ -2212,13 +2210,12 @@ pub(crate) fn decode_sketch_relations(
             let Some(design_type) = stream_types.get(&record.class_tag.code()) else {
                 continue;
             };
-            decode_sketch_relation_with_losses(
+            decode_sketch_relation_or_give_up(
                 &mut out,
                 &entry.name,
                 record,
                 payload,
                 (design_type.type_guid.as_str(), design_type.version),
-                losses,
                 given_up,
             )?;
         }
@@ -2226,13 +2223,12 @@ pub(crate) fn decode_sketch_relations(
     Ok(out)
 }
 
-fn decode_sketch_relation_with_losses(
+fn decode_sketch_relation_or_give_up(
     out: &mut Vec<SketchRelation>,
     stream: &str,
     record: &DesignRecordHeader,
     payload: &[u8],
     (type_guid, version): (&str, u32),
-    losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<(), CodecError> {
     let previous = out.len();
@@ -2253,9 +2249,8 @@ fn decode_sketch_relation_with_losses(
         .ok_or_else(|| CodecError::malformed("F3D sketch relation frame exceeds the stream"))?;
     super::record::recover_frame(
         result,
-        losses,
         given_up,
-        F3dLossCode::SketchRelationUndecoded,
+        Cause::Undecoded,
         RecordFrame::new(stream, start, end),
         format_args!("Sketch relation record {} in {stream}", record.record_index),
     )
@@ -2634,9 +2629,8 @@ fn decode_sketch_points_with_frames(
         })();
         if let Some((point, is_unlisted)) = super::record::recover_frame(
             result,
-            losses,
             given_up,
-            F3dLossCode::SketchPointUndecoded,
+            Cause::Undecoded,
             RecordFrame::new(stream, frame.start, frame.end),
             format_args!(
                 "Sketch point record {} version {} in {stream}",
@@ -2658,8 +2652,8 @@ fn decode_sketch_points_with_frames(
 /// closure, trailing reference, and paired reverse curve-incidence record,
 /// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
-/// point record with a malformed or non-finite member sequence adds a bounded
-/// `sketch.point-undecoded` loss; the remaining points continue decoding.
+/// point record with a malformed or non-finite member sequence gives up its
+/// frame; the remaining points continue decoding.
 pub(crate) fn decode_sketch_points(
     scan: &ContainerScan,
     losses: &mut Vec<LossNote>,
@@ -2785,18 +2779,16 @@ fn decode_sketch_texts_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-    losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<Vec<SketchText>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
-    decode_sketch_texts_with_frames(bytes, stream, &frames, losses, given_up)
+    decode_sketch_texts_with_frames(bytes, stream, &frames, given_up)
 }
 
 fn decode_sketch_texts_with_frames(
     bytes: &[u8],
     stream: &str,
     frames: &[super::meta::DesignPrimaryFrame<'_>],
-    losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
@@ -2813,9 +2805,8 @@ fn decode_sketch_texts_with_frames(
         let Some(record_index) = super::record::recover_frame(
             u32::try_from(frame.entity_id)
                 .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into())),
-            losses,
             given_up,
-            F3dLossCode::SketchTextUndecoded,
+            Cause::Undecoded,
             RecordFrame::new(stream, frame.start, frame.end),
             format_args!("Sketch text record {} in {stream}", frame.entity_id),
         )?
@@ -2838,9 +2829,8 @@ fn decode_sketch_texts_with_frames(
                     CodecError::malformed("F3D sketch text has an unread member sequence")
                 })
             }),
-            losses,
             given_up,
-            F3dLossCode::SketchTextUndecoded,
+            Cause::Undecoded,
             RecordFrame::new(stream, frame.start, frame.end),
             format_args!("Sketch text record {record_index} in {stream}"),
         )? {
@@ -2854,11 +2844,10 @@ fn decode_sketch_texts_with_frames(
 /// UTF-16 content, and an owning-sketch reference.
 pub(crate) fn decode_sketch_texts(
     scan: &ContainerScan,
-    losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<Vec<SketchText>, CodecError> {
     decode_sketch_streams_with_frames(scan, |bytes, _meta, stream, frames| {
-        decode_sketch_texts_with_frames(bytes, stream, frames, losses, given_up)
+        decode_sketch_texts_with_frames(bytes, stream, frames, given_up)
     })
 }
 
@@ -4126,10 +4115,8 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGro
 struct SketchGeometryGroups {
     records: HashMap<u32, SketchGeometryGroup>,
     unread: HashSet<u64>,
-    /// Losses for groups the reader could not decode, and the frames of the
-    /// groups it gives up. Exactly one caller charges them, so three readers
-    /// of one stream do not repeat them.
-    losses: Vec<LossNote>,
+    /// The frames of the groups the reader gives up. Exactly one caller gives
+    /// them up, so three readers of one stream do not repeat them.
     given_up: Vec<GivenUpFrame>,
 }
 
@@ -4139,7 +4126,6 @@ fn collect_sketch_geometry_groups(
     stream: &str,
     frames: &[super::meta::DesignPrimaryFrame<'_>],
 ) -> Result<SketchGeometryGroups, CodecError> {
-    let mut losses = Vec::new();
     let mut given_up = Vec::new();
     let readable_entities = frames
         .iter()
@@ -4153,7 +4139,6 @@ fn collect_sketch_geometry_groups(
             .map(|record| record.entity_id)
             .filter(|entity| !readable_entities.contains(entity))
             .collect(),
-        losses: Vec::new(),
         given_up: Vec::new(),
     };
     for frame in frames
@@ -4163,9 +4148,8 @@ fn collect_sketch_geometry_groups(
         let Some(index) = super::record::recover_frame(
             u32::try_from(frame.entity_id)
                 .map_err(|_| CodecError::malformed("F3D sketch geometry group index exceeds u32")),
-            &mut losses,
             &mut given_up,
-            F3dLossCode::SketchGeometryGroupUndecoded,
+            Cause::Undecoded,
             RecordFrame::new(stream, frame.start, frame.end),
             format_args!(
                 "Sketch geometry group record {} in {stream}",
@@ -4207,9 +4191,8 @@ fn collect_sketch_geometry_groups(
         });
         let Some(parsed) = super::record::recover_frame(
             parsed,
-            &mut losses,
             &mut given_up,
-            F3dLossCode::SketchGeometryGroupUndecoded,
+            Cause::Undecoded,
             RecordFrame::new(stream, frame.start, frame.end),
             format_args!("Sketch geometry group record {index} in {stream}"),
         )?
@@ -4233,7 +4216,6 @@ fn collect_sketch_geometry_groups(
             },
         );
     }
-    groups.losses = losses;
     groups.given_up = given_up;
     Ok(groups)
 }
@@ -4290,7 +4272,6 @@ fn decode_sketch_geometry_groups_with_frames(
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<Vec<SketchGeometryGroup>, CodecError> {
     let collected = collect_sketch_geometry_groups(bytes, meta, stream, frames)?;
-    losses.extend(collected.losses);
     given_up.extend(collected.given_up);
     let mut groups = collected.records.into_values().collect::<Vec<_>>();
     if groups.is_empty() {
@@ -4496,9 +4477,8 @@ fn decode_sketch_curve_identities_with_frames(
                             CodecError::malformed("F3D sketch-curve entity ID exceeds u32")
                         })
                 }),
-                losses,
                 given_up,
-                F3dLossCode::SketchCurveRecordUndecoded,
+                Cause::Undecoded,
                 RecordFrame::new(stream, frame.start, frame.end),
                 format_args!("Sketch curve record {} in {stream}", frame.entity_id),
             )?
@@ -4761,7 +4741,7 @@ pub(crate) fn decode_sketch_surfaces(
             let Some(surface) = super::record::recover(
                 parse_sketch_surface(payload, record_at),
                 losses,
-                F3dLossCode::SketchSurfaceUndecoded,
+                Cause::Undecoded,
                 DesignRecord::entity(&entry.name, record_index).at(record_at),
                 format_args!("Sketch surface record {record_index} in {}", entry.name),
             )?

@@ -83,9 +83,9 @@ from a conformant file.
 
 **Question.** What disposition applies when a NURBS coordinate or parameter transformation produces a non-finite value?
 
-**Known.** The decoder charges `iges/geometry.nurbs-transform-non-finite` and skips the rail when reversed second-rail knots are non-finite (`surfaces.rs:1619`).
+**Known.** When reversed second-rail knots of a Type 118 ruled surface are non-finite, the decoder gives up the surface with one `record.undecoded` whose message names the non-finite knots. When the placement of a Type 122 directrix or a Type 120 generatrix produces a non-finite pole, the decoder gives up the surface in the same way.
 
-**Need.** A source file that produces a non-finite knot under transformation must establish whether the rail is skipped or the record is refused.
+**Need.** A source file that produces a non-finite knot or pole under transformation must show whether the stored values state a finite surface that a different evaluation order reaches. Such a file lets the decoder keep the surface; otherwise the give-up stays.
 
 ## 6. Product structure, annotation, and presentation
 

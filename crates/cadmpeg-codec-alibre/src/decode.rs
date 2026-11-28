@@ -85,7 +85,7 @@ pub(crate) fn decode_part<'a>(
         .iter()
         .map(|record| {
             let part = record.part(FORMAT).in_stream(stream.clone());
-            ctx.give_up_part(part, record.error())
+            ctx.give_up_part(part, record.cause, record.error())
         })
         .collect::<Result<Vec<_>, _>>()?;
     losses.extend(extensions_loss(removed));
