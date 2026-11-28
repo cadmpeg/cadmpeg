@@ -1874,8 +1874,11 @@ fn legacy_attributed_placement_generation(
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
     let leading_len = if leading_placement {
+        // The leading placement follows either attribute form: the empty run or
+        // the three gating attributes.
         if attributes_len
             != crate::layout::legacy_attributed_external_placement_empty_attributes::LEN
+            && attributes_len != legacy_attributes::LEN
         {
             return None;
         }
