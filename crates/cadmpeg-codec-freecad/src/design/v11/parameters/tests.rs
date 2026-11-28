@@ -959,3 +959,49 @@ fn spreadsheet_expressions_bind_unicode_aliases() {
         );
     }
 }
+
+#[test]
+fn a_spreadsheet_path_through_a_local_link_takes_the_stored_property_kind() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Segment" type="App::FeaturePython"/></Objects>
+<ObjectData Count="3">
+<Object name="Vars"><Properties Count="2">
+<Property name="Member" type="App::PropertyLink"><Link value="Segment"/></Property>
+<Property name="Empty" type="App::PropertyLink"><Link value=""/></Property>
+</Properties></Object>
+<Object name="Segment"><Properties Count="1">
+<Property name="Length" type="App::PropertyLength"><Float value="12"/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1">
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2">
+<Cell address="A1" content="=Vars.Member.Length"/>
+<Cell address="A2" content="=Vars.Empty.Length"/>
+</Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let linked = "fcstd:design:parameter#Sheet:cell:A1";
+    let missing = "fcstd:design:parameter#Sheet:cell:A2";
+    assert_eq!(
+        parameter(&ir, linked).kind,
+        ValueKind::Quantity(Quantity::LENGTH)
+    );
+    assert_eq!(parameter(&ir, linked).value, None);
+    let expression = json::to_value(&parameter(&ir, linked).definition).unwrap();
+    assert_eq!(
+        expression["value"]["value"]["tokens"][0]["value"],
+        "Vars.Member.Length"
+    );
+    assert!(!charged(
+        &losses,
+        crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+        linked
+    ));
+    assert_eq!(
+        parameter(&ir, missing).kind,
+        ValueKind::Quantity(Quantity::REAL)
+    );
+    assert!(charged(
+        &losses,
+        crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+        missing
+    ));
+}

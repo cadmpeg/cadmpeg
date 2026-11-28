@@ -678,6 +678,7 @@ rules, with the cells it references read first in dependency order:
   typed property of an object, or a placement or vector component, takes the property's quantity;
   a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
   property names are text, where the link stores no sub-name.
+  A path through scalar local links to a stored property takes that property's kind.
 - Addition and subtraction of equal quantities keep the quantity; a
   product and a quotient add and subtract the exponents of the units; the remainder of a quantity
   keeps its quantity, and the remainder of a plain number by a quantity raises;

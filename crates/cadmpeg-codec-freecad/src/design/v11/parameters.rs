@@ -197,8 +197,7 @@ struct Catalog<'a> {
     objects: HashMap<FeatureId, &'a ObjectRecord>,
     /// The feature of each object, by the object's id.
     features: HashMap<&'a str, FeatureId>,
-    /// The type of each property, by its owner's id and its name.
-    types: HashMap<(&'a str, &'a str), &'a str>,
+    properties: HashMap<(&'a str, &'a str), &'a PropertyRecord>,
     /// The link properties whose value is a tuple or `None`, by owner's id
     /// and name: an `XLink` that stores a sub-name, and a link that stores no
     /// target.
@@ -235,7 +234,7 @@ impl<'a> Catalog<'a> {
             labels: HashMap::new(),
             objects: HashMap::new(),
             features: HashMap::new(),
-            types: HashMap::new(),
+            properties: HashMap::new(),
             refused: HashSet::new(),
             named: HashMap::new(),
             cells: HashMap::new(),
@@ -254,10 +253,9 @@ impl<'a> Catalog<'a> {
         let mut holders = HashMap::new();
         for property in properties {
             holders.insert(property.id.as_str(), property.owner.as_str());
-            catalog.types.insert(
-                (property.owner.as_str(), property.name.as_str()),
-                property.type_name.as_str(),
-            );
+            catalog
+                .properties
+                .insert((property.owner.as_str(), property.name.as_str()), property);
             let empty = |tag: &str, key: &str| {
                 property.values().iter().any(|value| {
                     value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
@@ -377,26 +375,63 @@ impl<'a> Catalog<'a> {
             .chain(rest[1..].iter().cloned())
             .collect::<Vec<_>>()
             .join(".");
-        let typed = self.types.get(&(object.id().as_str(), property.as_str()));
+        let held = (object.id().as_str(), property.as_str());
+        let stored = self.properties.get(&held).copied();
+        let sub = &rest[1..];
         if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
             return Target::Parameter(
                 id,
-                typed.map(|type_name| property_python(type_name, &rest[1..])),
+                stored.map(|property| property_python(&property.type_name, sub)),
             );
         }
-        if self
-            .refused
-            .contains(&(object.id().as_str(), property.as_str()))
-        {
+        if self.refused.contains(&held) {
             return Target::Property(Value::new(Kind::Unknown, Python::Refused));
         }
-        match typed {
-            Some(type_name) => Target::Property(Value::new(
-                property_kind(type_name, &rest[1..]),
-                property_python(type_name, &rest[1..]),
-            )),
-            None => Target::Unresolved,
+        let Some(stored) = stored else {
+            return Target::Unresolved;
+        };
+        let (type_name, sub) = self
+            .linked_property(stored, sub)
+            .map_or((stored.type_name.as_str(), sub), |property| {
+                (property.type_name.as_str(), &[])
+            });
+        Target::Property(Value::new(
+            property_kind(type_name, sub),
+            property_python(type_name, sub),
+        ))
+    }
+
+    fn linked_property(
+        &self,
+        mut property: &'a PropertyRecord,
+        path: &[String],
+    ) -> Option<&'a PropertyRecord> {
+        for name in path {
+            if !matches!(
+                property.type_name.as_str(),
+                "App::PropertyLink"
+                    | "App::PropertyLinkChild"
+                    | "App::PropertyLinkGlobal"
+                    | "App::PropertyLinkHidden"
+                    | "App::PropertyXLink"
+            ) || self
+                .refused
+                .contains(&(property.owner.as_str(), property.name.as_str()))
+            {
+                return None;
+            }
+            let [Some(link)] = property.links() else {
+                return None;
+            };
+            if link.document().is_some() || !link.subelements().is_empty() {
+                return None;
+            }
+            let target = link
+                .object()
+                .filter(|target| *target != property.owner.as_str())?;
+            property = self.properties.get(&(target, name.as_str())).copied()?;
         }
+        Some(property)
     }
 
     /// The cells of the sheet `owner` from `from` to `to`, each an address or
