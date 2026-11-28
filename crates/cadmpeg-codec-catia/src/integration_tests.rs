@@ -241,37 +241,43 @@ fn fbb_only_mesh_incidence_stays_within_every_topology_allowance() {
     assert_valid(&smallest);
 }
 
-/// A topology search cut short at its allowance drops the population's faces,
-/// so a pinned decode refuses through `record.unreadable` naming a face.
+/// A topology search cut short at its allowance drops the population's faces
+/// as undecoded records, each named by one give-up, and a pinned decode
+/// admits them.
 #[test]
-fn a_pinned_decode_refuses_faces_dropped_at_the_topology_allowance() {
+fn a_pinned_decode_admits_faces_dropped_at_the_topology_allowance() {
     let bytes = fbb_only_quad_unmatched_edge_catpart();
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = crate::test_support::with_standard_topology_limit(0, || {
+    let decoded = crate::test_support::with_standard_topology_limit(0, || {
         CatiaCodec.decode(&mut Cursor::new(bytes), &options)
     })
-    .expect_err("a pinned decode refuses the dropped faces");
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    let loss = rejection.loss();
-    assert_eq!(
-        loss.code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
-    );
-    assert!(
-        loss.message
-            .split_whitespace()
-            .any(|token| token.starts_with("catia:standard:face#")),
-        "{}",
-        loss.message
-    );
-    assert!(
-        loss.message.contains("exhausted its operation"),
-        "{}",
-        loss.message
-    );
+    .expect("a pinned decode admits the dropped faces");
+    let given_up = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    assert!(!given_up.is_empty());
+    for loss in given_up {
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
+        assert!(
+            loss.message
+                .split_whitespace()
+                .any(|token| token.starts_with("catia:standard:face#")),
+            "{}",
+            loss.message
+        );
+        assert!(
+            loss.message.contains("exhausted its operation"),
+            "{}",
+            loss.message
+        );
+    }
 }
 
 #[test]

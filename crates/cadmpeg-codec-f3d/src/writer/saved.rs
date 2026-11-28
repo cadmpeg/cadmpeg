@@ -9,7 +9,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
@@ -26,34 +25,26 @@ use crate::loss::F3dLossCode;
 /// fails for a reason other than a limit, leaves the document as read, which
 /// the generator writes from its `design` records, adds the reason to
 /// `notes`, and charges it as `f3d:writer.history-unrestored` to `losses`.
-pub(crate) fn restore(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    input: EncodeInput<'_>,
+/// A restored document comes with the decode of the archive, which the patch
+/// compares it with.
+pub(crate) fn restore<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'a>,
+    input: EncodeInput<'a>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<CadIr>, CodecError> {
+) -> Result<Option<(CadIr, super::RetainedArchive<'a>)>, CodecError> {
     let replays = target.entry().is_none() || target.preserves_source();
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let restored = super::decode_retained_source(image, *ctx.policy())
-        .map_err(|failure| match failure {
-            DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format!(
-                "the retained F3D archive cannot be decoded: {other}"
-            )),
-        })
-        .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText))
-        .and_then(|restored| {
-            let rows = reproject(ctx, &restored.ir)?;
-            Ok((restored, rows))
-        });
+    let restored = super::RetainedArchive::read(ctx, image).and_then(|source| {
+        let mut restored = restore_history(input.ir, source.decoded.ir(), &FusionText)?;
+        restored.ir.model.configurations = reproject(ctx, &restored.ir)?;
+        Ok((restored, source))
+    });
     match restored {
-        Ok((mut restored, rows)) if restored.unwritten.is_empty() => {
-            restored.ir.model.configurations = rows;
-            Ok(Some(restored.ir))
-        }
+        Ok((restored, source)) if restored.unwritten.is_empty() => Ok(Some((restored.ir, source))),
         Ok((restored, _)) => {
             let reason = format!(
                 "the document was read from CADIR, and its history arenas cannot state these \
@@ -63,7 +54,7 @@ pub(crate) fn restore(
             unrestored(reason, notes, losses);
             Ok(None)
         }
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             unrestored(error.to_string(), notes, losses);
             Ok(None)

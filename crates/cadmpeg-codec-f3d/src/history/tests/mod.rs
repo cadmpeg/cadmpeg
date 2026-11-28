@@ -7,7 +7,7 @@ mod body_incidence;
 mod body_recipe;
 mod body_recipe_selections;
 mod body_selection;
-mod budgets;
+pub(super) mod budgets;
 mod combine_producer_bodies;
 mod component_spaces;
 mod delete_face;
@@ -32,6 +32,7 @@ mod state_pairs;
 mod state_visits;
 mod stored_chain;
 mod surface_stitch;
+mod terminal_operands;
 
 mod recipe_transitions;
 

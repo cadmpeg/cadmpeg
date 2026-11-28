@@ -526,6 +526,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "INTERSECTION"
           },
+          "nx:s0:intersection-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
+            "tag": "INTERSECTION"
+          },
           "nx:s0:loop#5": {
             "offset": 160,
             "stream": "nx:parasolid#0:partition",

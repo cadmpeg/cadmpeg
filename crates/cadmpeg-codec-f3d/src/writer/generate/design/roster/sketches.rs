@@ -488,6 +488,7 @@ impl Item<'_> {
         match entity {
             Entity::Point(point) => self.records.points.get(point).map(|[point, _]| *point),
             Entity::Curve(curve) => self.records.curves.get(curve).copied(),
+            Entity::Origin => Some(self.records.origin[0]),
         }
         .ok_or_else(|| CodecError::malformed(format_args!("sketch entity {entity:?}")))
     }

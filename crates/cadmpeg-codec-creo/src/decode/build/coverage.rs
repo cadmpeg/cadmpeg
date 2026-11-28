@@ -919,7 +919,10 @@ where
     for record in records {
         match record.payload {
             crate::legacy::NumericPayload::Scalar { .. } => counts.scalars += 1,
-            crate::legacy::NumericPayload::Array(_) => counts.arrays += 1,
+            crate::legacy::NumericPayload::Array(_)
+            | crate::legacy::NumericPayload::Empty { .. } => {
+                counts.arrays += 1;
+            }
         }
         counts.elements = counts
             .elements

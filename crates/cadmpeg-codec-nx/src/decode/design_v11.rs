@@ -3,14 +3,15 @@
 //!
 //! The scope is the design of the part's root definition. The part navigator
 //! history is one ordered timeline of the decoded features in construction
-//! order. A part with no decoded history states no design records.
+//! order. A part with no decoded history states a scope only where it holds
+//! expressions or arrangements; its bodies are then unproduced (§5.5).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::{Arrangement, ArrangementKind, Overrides};
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
@@ -18,7 +19,9 @@ use cadmpeg_ir::design::feature::{
 };
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
 use cadmpeg_ir::design::names::CodecName;
-use cadmpeg_ir::design::projection::fields::{FeatureField, ModelFeatureField};
+use cadmpeg_ir::design::projection::fields::{
+    ArrangementField, FeatureField, ModelConfigurationField, ModelFeatureField,
+};
 use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::refs::{Member, Position};
@@ -27,44 +30,55 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
+    Feature as LegacyFeature, FeatureOperation as LegacyOperation, SketchFeatureBinding,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::report::loss::LossNote;
+
+use crate::loss::NxLossCode;
 
 mod parameters;
+mod sketches;
 
 /// The root definition of an NX part that states no assembly root.
 pub(super) const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
 
-/// Project the decoded NX history into `ir.design` as the design of
-/// `definition`.
-pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result<(), CodecError> {
+/// Project the decoded NX history, sketches, expressions and arrangements
+/// into `ir.design` as the design of `definition`.
+pub(super) fn project(
+    ir: &mut CadIr,
+    definition: ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     let mut history = ir
         .model
         .features
         .iter()
         .filter(|feature| is_history(feature))
         .collect::<Vec<_>>();
-    if history.is_empty() {
-        return Ok(());
-    }
     history.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
-    let bodies = ir
-        .geometry
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
+    let owners = sketches::owners(ir, &history);
     let mut features = Vec::with_capacity(history.len());
     for feature in &history {
+        let operation = match sketches::sketch_of(feature).map(SketchFeatureBinding::id) {
+            None => operation(feature)?,
+            Some(Some(sketch)) if owners.get(sketch) == Some(&feature.id) => {
+                FeatureOperation::Sketch(sketch.clone())
+            }
+            Some(sketch) => {
+                losses.push(sketches::unheld(&feature.id, sketch, &owners));
+                operation(feature)?
+            }
+        };
         features.push(Feature {
             id: feature.id.clone(),
             name: feature.name.clone(),
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
-                operation: operation(feature)?,
+                operation,
                 assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
@@ -75,20 +89,37 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
             native_ref: feature.native_ref.clone(),
         });
     }
-    let (container, current) = timeline(&features, bodies)?;
-    let (arrangements, active_arrangements) = arrangements(ir, &definition)?;
-    parameters::project(ir, &definition);
-    let design = &mut ir.design;
-    design.scopes.push(DesignScope {
+    let bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let (arrangements, active_arrangements) = arrangements(ir, &definition, losses)?;
+    sketches::project(ir, &owners, losses);
+    parameters::project(ir, &definition, losses)?;
+    if features.is_empty() && arrangements.is_empty() && ir.design.parameters.is_empty() {
+        return Ok(());
+    }
+    let mut scope = DesignScope {
         definition,
-        roots: vec![container.id().clone()],
+        roots: Vec::new(),
         active_configuration: None,
         active_arrangements,
         occurrences: BTreeMap::default(),
-        current,
+        current: Vec::new(),
         unproduced: BTreeSet::default(),
-    });
-    design.containers.push(container);
+    };
+    let design = &mut ir.design;
+    if features.is_empty() {
+        scope.unproduced = bodies.into_iter().collect();
+    } else {
+        let (container, current) = timeline(&features, bodies)?;
+        scope.roots.push(container.id().clone());
+        scope.current = current;
+        design.containers.push(container);
+    }
+    design.scopes.push(scope);
     design.features.extend(features);
     design.arrangements.extend(arrangements);
     design
@@ -104,6 +135,8 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
 pub(super) const RESTATEMENT: Restatement = Restatement {
     feature: feature_inputs,
     parameter: parameters::inputs,
+    arrangement: arrangement_inputs,
+    active_arrangements: &[ModelConfigurationField::Active],
 };
 
 /// The model feature fields [`project`] reads to build `field`: the
@@ -120,6 +153,23 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
         ],
         FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
         FeatureField::Placement | FeatureField::Component | FeatureField::DrivenBy => &[],
+    }
+}
+
+/// The model configuration fields [`project`] reads to build each field of
+/// the arrangement that restates the configuration.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn arrangement_inputs(field: ArrangementField) -> &'static [ModelConfigurationField] {
+    match field {
+        ArrangementField::Name => &[ModelConfigurationField::Name],
+        ArrangementField::NativeRef => &[ModelConfigurationField::NativeRef],
+        ArrangementField::Scope
+        | ArrangementField::Kind
+        | ArrangementField::Configuration
+        | ArrangementField::Overrides
+        | ArrangementField::Appearances
+        | ArrangementField::Moves
+        | ArrangementField::Nested => &[],
     }
 }
 
@@ -166,11 +216,9 @@ fn is_history(feature: &LegacyFeature) -> bool {
 }
 
 /// One ordered timeline of the history in construction order. The decoder
-/// reads no current feature (part 11, entry B.95), so the rollback of a
-/// timeline with members is unstated and its one current state, at
-/// `After(Container(timeline))` (§5.3), holds every current body. A timeline
-/// with no member has no member to stand before: it is built through its end,
-/// and its current state is at its start.
+/// reads no current feature (part 11, entry B.96), so the rollback is
+/// unstated and the one current state, at `After(Container(timeline))`
+/// (§5.3), holds every current body.
 fn timeline(
     features: &[Feature],
     bodies: Vec<BodyId>,
@@ -180,17 +228,13 @@ fn timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let (rollback, at) = if members.is_empty() {
-        (Some(Rollback::End), Position::Start(id.clone()))
-    } else {
-        (None, Position::After(Member::Container(id.clone())))
-    };
+    let at = Position::After(Member::Container(id.clone()));
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback,
+        rollback: None,
         placement: None,
     };
     let current = vec![CurrentState {
@@ -204,29 +248,31 @@ fn timeline(
 }
 
 /// The NX arrangements, each a positional arrangement that states no
-/// overrides and restates the configuration it is minted from (§5.11), and
-/// the one the part names as in use. An arrangement restates the
-/// configuration without each field it holds that no arrangement field
-/// holds: its properties, material, parameter values and expressions,
-/// feature states and bodies, and a name the arrangement spells otherwise.
+/// overrides and restates the model configuration of its id, and the ones
+/// the part names as in use. An arrangement with no name has no design
+/// record.
 fn arrangements(
     ir: &mut CadIr,
     scope: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<Arrangement>, BTreeSet<ArrangementId>), CodecError> {
     let mut arrangements = Vec::with_capacity(ir.model.configurations.len());
     let mut active = BTreeSet::new();
     let mut restated = Vec::new();
     for configuration in &ir.model.configurations {
         let Some(name) = configuration.name.clone().and_then(NonBlankString::new) else {
+            let stored = if configuration.name.is_some() {
+                "a blank name"
+            } else {
+                "no name"
+            };
+            losses.push(NxLossCode::ArrangementUnnamed.note(format!(
+                "NX arrangement {} stores {stored} and has no design record.",
+                configuration.id
+            )));
             continue;
         };
-        let id = ArrangementId::mint(
-            configuration
-                .id
-                .as_str()
-                .replace(":configuration#", ":arrangement#"),
-        )
-        .map_err(CodecError::malformed)?;
+        let id = ArrangementId::mint(configuration.id.as_str()).map_err(CodecError::malformed)?;
         if configuration.active {
             active.insert(id.clone());
         }

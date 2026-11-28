@@ -20,6 +20,20 @@ impl Sha256Digest {
         Self::from_bytes(super::sha256(bytes))
     }
 
+    /// Hash borrowed extents in order and return their combined byte length.
+    #[must_use]
+    pub(crate) fn digest_chunks<'a>(chunks: impl IntoIterator<Item = &'a [u8]>) -> (u64, Self) {
+        use sha2::{Digest, Sha256};
+
+        let mut byte_len = 0;
+        let mut hasher = Sha256::new();
+        for chunk in chunks {
+            byte_len += cadmpeg_core::decode::u64_from_index(chunk.len());
+            hasher.update(chunk);
+        }
+        (byte_len, Self::from_bytes(hasher.finalize().into()))
+    }
+
     /// Encode the 32 bytes produced by a SHA-256 hasher.
     #[must_use]
     pub fn from_bytes(bytes: [u8; 32]) -> Self {

@@ -27,6 +27,7 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
     let attributes = super::attributes(
         &ctx,
         &scan,
+        None,
         &mut annotations,
         &mut Vec::new(),
         &mut Vec::new(),
@@ -315,6 +316,7 @@ fn scanned_metadata(payload: &[u8]) -> Vec<cadmpeg_ir::attributes::SourceAttribu
     super::attributes(
         &ctx,
         &scan,
+        None,
         &mut cadmpeg_ir::annotations::Annotations::default(),
         &mut Vec::new(),
         &mut Vec::new(),
@@ -555,6 +557,7 @@ fn unsupported_part_roots_report_loss_and_embedded_tokens_do_not_create_metadata
         let attributes = super::attributes(
             &ctx,
             &scan,
+            None,
             &mut cadmpeg_ir::annotations::Annotations::default(),
             &mut losses,
             &mut Vec::new(),
@@ -669,8 +672,15 @@ fn unsupported_configuration_manager_roots_retain_bytes_without_scalar_attribute
             DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let mut losses = Vec::new();
-        let attributes =
-            super::attributes(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new()).unwrap();
+        let attributes = super::attributes(
+            &ctx,
+            &scan,
+            None,
+            &mut annotations,
+            &mut losses,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(!attributes.iter().any(|a| a.name == "configuration_manager"));
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -702,8 +712,15 @@ fn embedded_or_truncated_manager_tokens_do_not_establish_an_mfc_root() {
             DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let mut losses = Vec::new();
-        let attributes =
-            super::attributes(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new()).unwrap();
+        let attributes = super::attributes(
+            &ctx,
+            &scan,
+            None,
+            &mut annotations,
+            &mut losses,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(!attributes.iter().any(|a| a.name == "configuration_manager"));
         assert!(losses.is_empty());
     }

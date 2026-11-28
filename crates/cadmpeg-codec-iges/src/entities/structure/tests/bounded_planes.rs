@@ -13,8 +13,8 @@ const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,
 
 fn has_entity_projection_loss(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
-            || loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
+            || crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
     })
 }
 
@@ -109,16 +109,14 @@ fn a_rejected_bounded_plane_face_gives_up_no_decoded_plane() {
         .iter()
         .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
             && loss
-                .provenance
-                .as_ref()
-                .and_then(|provenance| provenance.tag.as_deref())
-                == Some("directory_entry:D1")
+                .message
+                .starts_with("record iges:model:face#bounded-plane-D1 ")
     }));
     assert!(
         !result.report().losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            cadmpeg_ir::unknown::part::gives_up(&loss.code)
                 && loss.message.starts_with("part entity \"D1\" ")
         }),
         "{:#?}",
@@ -196,7 +194,7 @@ fn bounded_plane_over_the_pair_budget_is_skipped_with_a_loss() {
     assert!(result.ir().geometry.faces.is_empty());
     assert!(
         result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::EntityNotProjected.kind()
+            crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
                 && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
         }),
         "{:#?}",
@@ -382,7 +380,7 @@ fn a_rejected_bounded_plane_face_is_given_up_by_its_face_id() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), 1, "{given_up:#?}");
     assert!(

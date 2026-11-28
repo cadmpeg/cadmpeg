@@ -660,26 +660,26 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 }
 
 #[test]
-fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
+fn a_pinned_decode_accepts_a_degraded_composite_carrier() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
 
-    let error = IgesCodec
+    let result = IgesCodec
         .decode(
             &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
             &options,
         )
-        .unwrap_err();
+        .unwrap();
 
-    match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(
-                rejection.loss().code.to_string(),
-                IgesLossCode::CompositeCarrierDegraded.kind().to_string()
-            );
-        }
-        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
-    }
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::CompositeCarrierDegraded.kind())
+            .count(),
+        1
+    );
 }
 
 #[test]

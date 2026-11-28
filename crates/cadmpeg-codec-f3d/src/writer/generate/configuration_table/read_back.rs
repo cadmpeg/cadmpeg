@@ -211,7 +211,6 @@ impl<'a> Destination<'a> {
                         &local,
                         &scan,
                         &mut Vec::new(),
-                        &mut Vec::new(),
                     )?;
                     self.compare_wire(&decoded.documents).losses
                 } else {

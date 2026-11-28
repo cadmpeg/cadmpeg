@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -131,7 +132,7 @@ pub(super) fn mark(
     let Some(text) = crate::container::xml_text(payload) else {
         return Ok(None);
     };
-    match ctx.parse_input_xml(&text, "SLDPRT stale configuration mark") {
+    match ctx.parse_xml(&text, "SLDPRT stale configuration mark") {
         Ok(document) => Ok(marked(&document, &text, payload, names)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(_) => Ok(None),
@@ -141,7 +142,7 @@ pub(super) fn mark(
 /// `text`, parsed as `document`, with the stale mark on each row of `names`
 /// ([`mark`]).
 fn marked(
-    document: &roxmltree::Document<'_>,
+    document: &XmlDocument<'_>,
     text: &str,
     payload: &[u8],
     names: &BTreeSet<String>,
@@ -162,13 +163,12 @@ fn marked(
         let mut attributes = row.attributes();
         match attributes.find(|attribute| attribute.name() == "swConfigurationNeedsUpdate") {
             Some(mark) if mark.value().eq_ignore_ascii_case("yes") => {}
-            Some(mark) => edits.push((mark.range(), MARK.to_owned())),
+            Some(mark) => edits.push((document.source_range(mark.range()), MARK.to_owned())),
             None => {
-                let end = row
+                let stored = row
                     .attributes()
-                    .find(|attribute| attribute.name() == "swName")?
-                    .range()
-                    .end;
+                    .find(|attribute| attribute.name() == "swName")?;
+                let end = document.source_range(stored.range()).end;
                 edits.push((end..end, format!(" {MARK}")));
             }
         }
@@ -208,3 +208,6 @@ pub(super) fn mark_sections(
     }
     Ok(marked)
 }
+
+#[cfg(test)]
+mod tests;

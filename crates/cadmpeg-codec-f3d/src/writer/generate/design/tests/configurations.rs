@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration cells and their actual timeline record bindings.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::design::configuration::{
     DesignConfiguration, FeatureStateOverride, Overrides, ParameterOverride,
@@ -54,6 +54,7 @@ fn native_parameters() -> (
     ir.model.parameters = legacy.clone();
     ir.design.parameters = crate::design_v11::parameters::project(
         &legacy,
+        &HashMap::default(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::new(),
@@ -66,8 +67,15 @@ fn native_parameters() -> (
 fn unchanged_native_parameters_keep_their_document_scopes() {
     let (ir, projected) = native_parameters();
     assert!(matches!(
-        super::super::parameters::native_or_neutral(&ir, &projected),
-        super::super::parameters::ParameterSource::Native
+        super::super::parameters::native_or_neutral(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &ir,
+            &crate::native::F3dNative::default(),
+            &ir.model.parameters,
+            &projected
+        )
+        .unwrap(),
+        super::super::parameters::ParameterSource::Native(_)
     ));
 }
 
@@ -78,7 +86,14 @@ fn a_v11_only_parameter_value_edit_selects_the_neutral_writer() {
         crate::test_support::real(9.0),
     ));
     assert!(matches!(
-        super::super::parameters::native_or_neutral(&ir, &projected),
+        super::super::parameters::native_or_neutral(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &ir,
+            &crate::native::F3dNative::default(),
+            &ir.model.parameters,
+            &projected
+        )
+        .unwrap(),
         super::super::parameters::ParameterSource::Neutral(_)
     ));
 }
@@ -87,6 +102,7 @@ fn configuration(name: &str) -> DesignConfiguration {
     DesignConfiguration {
         id: ConfigurationId::mint(format!("test:design:configuration#{name}")).unwrap(),
         scope: root(),
+        position: None,
         name: name.to_owned(),
         parent: None,
         comment: None,

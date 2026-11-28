@@ -384,7 +384,7 @@ pub enum DecodePurpose {
 #[derive(Clone, Copy)]
 enum Purpose<'a> {
     Model(&'a [u8]),
-    Inspect,
+    Inspect(Option<&'a [u8]>),
     History(&'a [u8]),
 }
 
@@ -534,7 +534,35 @@ pub fn inspect_with_table(
     stream: &str,
     format: IdFormat,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
-    decode_graph(scratch, records, tables, stream, format, Purpose::Inspect)
+    decode_graph(
+        scratch,
+        records,
+        tables,
+        stream,
+        format,
+        Purpose::Inspect(None),
+    )
+}
+
+/// Inspect a materialized state with its source bytes and record locations.
+pub fn inspect_with_source(
+    scratch: &ScratchContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    header: Option<&crate::kernel_header::KernelHeader>,
+    stream: &str,
+    format: IdFormat,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let token_table = nurbs::toks::SubtypeTable::from_records(records)
+        .with_save_format_version(header.and_then(|header| header.save_format_version));
+    decode_graph(
+        scratch,
+        records,
+        (header, &token_table),
+        stream,
+        format,
+        Purpose::Inspect(Some(bytes)),
+    )
 }
 
 fn decode_graph(
@@ -571,10 +599,10 @@ fn decode_graph(
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records)?;
     let mut reach = Reachable::default();
 
-    let (topology, shell_bytes, model_bytes) = match purpose {
-        Purpose::Model(bytes) => (DecodePurpose::Model, Some(bytes), Some(bytes)),
-        Purpose::Inspect => (DecodePurpose::Model, None, None),
-        Purpose::History(bytes) => (DecodePurpose::History, Some(bytes), None),
+    let (topology, shell_bytes, source_bytes, withheld_bytes) = match purpose {
+        Purpose::Model(bytes) => (DecodePurpose::Model, Some(bytes), Some(bytes), Some(bytes)),
+        Purpose::Inspect(bytes) => (DecodePurpose::Model, bytes, bytes, None),
+        Purpose::History(bytes) => (DecodePurpose::History, Some(bytes), None, None),
     };
     let topology_context = TopologyContext {
         ctx,
@@ -662,7 +690,7 @@ fn decode_graph(
         },
     )?;
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
-    if let Some(bytes) = model_bytes {
+    if let Some(bytes) = source_bytes {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
     }
     if topology == DecodePurpose::Model {
@@ -670,13 +698,13 @@ fn decode_graph(
             ctx,
             &mut out,
             records,
-            model_bytes,
+            withheld_bytes,
             &by_index,
             &reach,
             format,
         )?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
-        if model_bytes.is_some() {
+        if source_bytes.is_some() {
             emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
         }
 

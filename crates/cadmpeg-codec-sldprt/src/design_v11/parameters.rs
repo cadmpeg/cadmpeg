@@ -12,8 +12,9 @@
 //! tree is one reference or the document's values confirm it. Any other
 //! text is a `Source` expression in the `SolidWorks` dialect, its references
 //! to parameters as reference tokens. A value is the cache the file stores:
-//! the literal, the dimension's stored `Value`, or the value the decoder
-//! read from a record that stores it in a stated unit.
+//! the value of the scalar record the dimension is bound to where it is the
+//! literal's number, else the literal, the dimension's stored `Value`, or the
+//! value the decoder read from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -42,6 +43,14 @@
 //! stores, as a `Native` kind holds it (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
 //! bare number and that still has no value.
+//!
+//! A dimension that the history does not name and that the decoder read from
+//! another record (a `ResolvedFeatures` scalar, a PMI dimension, a Move Face
+//! translation) is a parameter of its feature under the decoder's id, its
+//! literal the stored value (§5.12). A parameter of a feature-tree node
+//! outside the timeline (the annotations node, a detail folder) has no owner
+//! that §5.12 types; the `design.parameter-owner-outside-timeline` note names
+//! it. Interim reading until the specification types that owner.
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroI8;
@@ -56,6 +65,7 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
+use cadmpeg_ir::design::projection::sketch::{driven_parameter, stored_quantity};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
@@ -68,13 +78,17 @@ use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
     expression_identifier_tokens, native_parameter_is_length, parse_native_parameter_literal,
 };
-use crate::history::project::{neutral_parameter_id, projected_parameter_names};
+use crate::history::project::{
+    neutral_feature_id, neutral_parameter_id, projected_parameter_names,
+};
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{
-    ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
+    ArchiveParameterClass, Feature, FeatureContent, FeatureHistory, FeatureInputLane,
+    FeatureInputScalarRole, HistoryFeatures,
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
+use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
 /// number, or an expression over other parameters, that no stored record
@@ -341,6 +355,31 @@ impl<'a> Decoded<'a> {
             .is_some_and(|parameter| parameter.pmi.is_some())
     }
 
+    /// The cache the scalar record bound to the decoder's parameter of id
+    /// `id` named `name` stores for a parameter of `kind`, where it is the
+    /// number `literal` of the dimension's literal text: the stored value
+    /// (§5.12).
+    fn bound_cache(
+        &self,
+        id: &ParameterId,
+        name: &str,
+        kind: &ValueKind,
+        literal: &ParameterValue,
+    ) -> Option<ParameterValue> {
+        let parameter = self
+            .parameter(id, name)
+            .filter(|parameter| parameter.native_ref.is_some())?;
+        let cache = typed_cache(kind, parameter.value.clone()?)?;
+        match (&cache, literal) {
+            (ParameterValue::Number(stored), ParameterValue::Number(read))
+                if same_stored(stored.get(), read.get()) =>
+            {
+                Some(cache)
+            }
+            _ => None,
+        }
+    }
+
     /// The decoder's parameter of id `id` named `name`.
     fn parameter(
         &self,
@@ -580,7 +619,7 @@ fn reads_display(value: &cadmpeg_ir::features::parameters::ParameterValue, displ
 
 /// The cache of the decoder's `value` for a parameter of `kind`, or `None`
 /// where the value is not of that kind.
-fn typed_cache(
+pub(super) fn typed_cache(
     kind: &ValueKind,
     value: cadmpeg_ir::features::parameters::ParameterValue,
 ) -> Option<ParameterValue> {
@@ -594,6 +633,9 @@ fn typed_cache(
             number(exact_integer_f64(integer)?)
         }
         (ValueKind::Integer, V10::Integer(integer)) => Some(ParameterValue::Integer(integer)),
+        (ValueKind::Boolean, V10::Boolean(flag)) => Some(ParameterValue::Boolean(flag)),
+        (ValueKind::Text, V10::String(text)) => Some(ParameterValue::Text(text)),
+        (ValueKind::Native(_), V10::Real(real)) => number(real.get()),
         _ => None,
     }
 }
@@ -646,7 +688,12 @@ struct Entry<'a> {
     owner: Option<FeatureId>,
     name: NonBlankString,
     id: ParameterId,
+    /// The parameter's place in its feature's dimension list.
+    position: Option<u32>,
     text: &'a str,
+    /// The history names no such dimension: the decoder's own readings of
+    /// the feature's records hold it, and `text` is the decoder's rendering.
+    added: bool,
 }
 
 /// What the decoder read beside a parameter's text: its own parameters and
@@ -676,16 +723,31 @@ pub(super) struct Readings<'a> {
 /// before their expressions are read.
 pub(super) struct Entries<'a> {
     list: Vec<Entry<'a>>,
+    /// The decoder's parameters of the features outside the timeline that
+    /// are no equations folder.
+    outside: Vec<Outside>,
     by_owner: HashMap<(FeatureId, String), ParameterId>,
     ids: HashSet<ParameterId>,
 }
 
+/// A decoder's parameter of a feature outside the timeline that is no
+/// equations folder.
+struct Outside {
+    id: ParameterId,
+    /// The feature lies under a tree node that is no member.
+    beneath: bool,
+}
+
 impl<'a> Entries<'a> {
+    /// The parameters of `parameter_histories`, the copy of `histories`
+    /// whose features also hold the dimensions the decoder read from other
+    /// records.
     pub(super) fn new(
         histories: &'a [FeatureHistory],
+        parameter_histories: &'a [FeatureHistory],
         timeline: &Timeline,
     ) -> Result<Self, CodecError> {
-        let entries = entries(histories, timeline)?;
+        let (entries, outside) = entries(histories, parameter_histories, timeline)?;
         let by_owner = entries
             .iter()
             .filter_map(|entry| {
@@ -698,9 +760,59 @@ impl<'a> Entries<'a> {
         let ids = entries.iter().map(|entry| entry.id.clone()).collect();
         Ok(Self {
             list: entries,
+            outside,
             by_owner,
             ids,
         })
+    }
+
+    /// The notes naming the decoder's parameters, of `decoded`, that a
+    /// feature-tree node outside the timeline owns, or a feature under such
+    /// a node, which no design feature states: §5.12 gives such an owner no
+    /// home.
+    pub(super) fn outside(
+        &self,
+        decoded: &[cadmpeg_ir::features::parameters::DesignParameter],
+    ) -> Vec<LossNote> {
+        let decoded = decoded
+            .iter()
+            .map(|parameter| &parameter.id)
+            .collect::<HashSet<_>>();
+        let mut nodes = NamedCount::default();
+        let mut under = NamedCount::default();
+        for outside in self
+            .outside
+            .iter()
+            .filter(|outside| decoded.contains(&outside.id))
+        {
+            let named = if outside.beneath {
+                &mut under
+            } else {
+                &mut nodes
+            };
+            named.push(outside.id.as_str());
+        }
+        let mut notes = Vec::new();
+        if !nodes.is_empty() {
+            notes.push(
+                SldprtLossCode::DesignParameterOwnerOutsideTimeline.note(format!(
+                    "{} model parameters whose owner is a feature-tree node outside the timeline \
+                 state no design parameter: {nodes}",
+                    nodes.count()
+                )),
+            );
+        }
+        if !under.is_empty() {
+            notes.push(
+                SldprtLossCode::DesignParameterOwnerOutsideTimeline.note(format!(
+                    "{} model parameters whose owner is a feature under a feature-tree node \
+                 outside the timeline state no design parameter: no design feature states \
+                 their owner: {under}",
+                    under.count()
+                )),
+            );
+        }
+        notes
     }
 
     /// The parameter of `owner` named `name`.
@@ -808,22 +920,74 @@ impl<'a> Entries<'a> {
     }
 }
 
+/// The entries of the features of `parameter_histories`, each id the
+/// decoder's own (its ordinal among the enriched feature's names), and the
+/// ids of the parameters of the features outside the timeline that are no
+/// equations folder and no member of the sketches' `Group`. A dimension the
+/// history names keeps the history's feature and text: each enriched
+/// feature is paired with the feature of the same record in `histories`.
 fn entries<'a>(
     histories: &'a [FeatureHistory],
+    parameter_histories: &'a [FeatureHistory],
     timeline: &Timeline,
-) -> Result<Vec<Entry<'a>>, CodecError> {
+) -> Result<(Vec<Entry<'a>>, Vec<Outside>), CodecError> {
+    let under = timeline
+        .skipped
+        .iter()
+        .map(|(record, _)| record.as_str())
+        .collect::<HashSet<_>>();
     let mut entries = Vec::new();
+    let mut outside = Vec::new();
     let mut user_names = HashSet::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        let owner = match timeline.features_by_record.get(&feature.id) {
+    let raw = HistoryFeatures::new(histories);
+    let enriched = HistoryFeatures::new(parameter_histories);
+    for enriched in enriched.iter() {
+        let feature = raw.get(&enriched.id);
+        let owner = match timeline.features_by_record.get(&enriched.id) {
             Some(owner) => Some(owner.clone()),
-            None if timeline.equation_records.contains(&feature.id) => None,
-            None => continue,
+            None if timeline.equation_records.contains(&enriched.id) => None,
+            None => match neutral_feature_id(&enriched.id)
+                .ok()
+                .filter(|id| timeline.grouped.contains(id))
+            {
+                Some(grouped) => Some(grouped),
+                None => {
+                    for (ordinal, name) in
+                        projected_parameter_names(enriched).into_iter().enumerate()
+                    {
+                        if enriched.parameters.contains_key(name.as_str()) {
+                            outside.push(Outside {
+                                id: neutral_parameter_id(enriched, ordinal)?,
+                                beneath: under.contains(enriched.id.as_str()),
+                            });
+                        }
+                    }
+                    continue;
+                }
+            },
         };
-        for (ordinal, name) in projected_parameter_names(feature).into_iter().enumerate() {
-            let Some(text) = feature.parameters.get(name.as_str()) else {
-                continue;
-            };
+        let listed_feature = feature.unwrap_or(enriched);
+        let listed = listed_feature
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                FeatureContent::Dimension(name) => listed_feature
+                    .parameters
+                    .contains_key(name.as_str())
+                    .then_some(name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>()
+            .len();
+        for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
+            let (text, added) =
+                match feature.and_then(|feature| feature.parameters.get(name.as_str())) {
+                    Some(text) => (text, false),
+                    None => match enriched.parameters.get(name.as_str()) {
+                        Some(text) => (text, true),
+                        None => continue,
+                    },
+                };
             if owner.is_none() && !user_names.insert(name.clone()) {
                 continue;
             }
@@ -831,15 +995,36 @@ fn entries<'a>(
                 continue;
             };
             entries.push(Entry {
-                feature,
+                feature: feature.unwrap_or(enriched),
                 owner: owner.clone(),
                 name: key,
-                id: neutral_parameter_id(feature, ordinal)?,
+                id: neutral_parameter_id(enriched, ordinal)?,
+                position: (ordinal < listed)
+                    .then(|| u32::try_from(ordinal).ok())
+                    .flatten(),
                 text,
+                added,
             });
         }
     }
-    Ok(entries)
+    let mut lists = HashMap::<Option<&FeatureId>, HashSet<&str>>::new();
+    for entry in &entries {
+        lists
+            .entry(entry.owner.as_ref())
+            .or_default()
+            .insert(entry.feature.id.as_str());
+    }
+    let merged = lists
+        .into_iter()
+        .filter(|(_, features)| features.len() > 1)
+        .map(|(owner, _)| owner.cloned())
+        .collect::<HashSet<_>>();
+    for entry in &mut entries {
+        if merged.contains(&entry.owner) {
+            entry.position = None;
+        }
+    }
+    Ok((entries, outside))
 }
 
 fn parameter(
@@ -852,6 +1037,7 @@ fn parameter(
         id: entry.id.clone(),
         scope: scope.clone(),
         owner: entry.owner.clone().map(ParameterOwner::Feature),
+        position: entry.position,
         name: Some(entry.name.clone()),
         kind: reading.kind,
         unit: None,
@@ -867,7 +1053,10 @@ fn parameter(
         comment: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-        native_ref: None,
+        native_ref: readings
+            .decoded
+            .parameter(&entry.id, entry.name.as_str())
+            .and_then(|parameter| parameter.native_ref.clone()),
     }
 }
 
@@ -960,10 +1149,16 @@ fn read(
     readings: &Readings<'_>,
     places: Option<u32>,
 ) -> Reading {
+    if entry.added {
+        return added(entry, readings);
+    }
     let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
     if let Some((node, kind, value)) = literal(text, user) {
+        let value = decoded
+            .bound_cache(&entry.id, name, &kind, &value)
+            .unwrap_or(value);
         return Reading {
             kind,
             expression: Expression::Neutral(Neutral(node)),
@@ -1023,7 +1218,12 @@ fn read(
     let mut assumed = false;
     let mut decided = false;
     let (kind, value) = match parsed.and_then(cache) {
-        Some((kind, value)) => (kind, Some(value)),
+        Some((kind, value)) => {
+            let value = decoded
+                .bound_cache(&entry.id, name, &kind, &value)
+                .unwrap_or(value);
+            (kind, Some(value))
+        }
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
         None => match decoded
             .dimension(
@@ -1144,6 +1344,214 @@ fn read(
         assumed,
         decided,
         unvalued,
+    }
+}
+
+/// The reading of a dimension that only the decoder's own readings hold:
+/// the kind and value of the decoder's parameter of the same id and name, a
+/// real typed by the archive class of the scalar it is bound to, as a
+/// literal (§5.12). A value whose kind no record states keeps its number
+/// under a `Native` kind, and a parameter with no value states none, each
+/// with a `Source` expression from which nothing was read (§3.3).
+fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    let name = entry.name.as_str();
+    let decoded = readings.decoded.parameter(&entry.id, name);
+    let mut assumed = false;
+    let typed = decoded
+        .and_then(|parameter| parameter.value.clone())
+        .and_then(|value| match value {
+            V10::Real(real) => {
+                match readings
+                    .decoded
+                    .dimension(&entry.id, name, None, readings.length_unit, None)
+                {
+                    Ok(Some(Typed {
+                        kind,
+                        value: Some(value),
+                        assumed: from_lane,
+                    })) => {
+                        assumed = from_lane;
+                        Some((kind, value))
+                    }
+                    _ => Some((
+                        ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+                        ParameterValue::Number(FiniteReal::new(real.get())?),
+                    )),
+                }
+            }
+            V10::Integer(integer) => Some((ValueKind::Integer, ParameterValue::Integer(integer))),
+            value => cache(value),
+        });
+    let unread = || Expression::Source {
+        dialect: ExpressionDialect::SolidWorks,
+        tokens: Vec::new(),
+    };
+    let (kind, expression, value) = match typed {
+        Some((kind, value)) => {
+            let expression = stored_literal(&kind, &value, readings.length_unit)
+                .map_or_else(unread, |node| Expression::Neutral(Neutral(node)));
+            (kind, expression, Some(value))
+        }
+        None => (
+            ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+            unread(),
+            None,
+        ),
+    };
+    let display = decoded
+        .and_then(|parameter| parameter.display)
+        .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
+        .map(|display| match display {
+            cadmpeg_ir::features::parameters::DimensionDisplay::Diameter => {
+                DimensionDisplay::Diameter
+            }
+            cadmpeg_ir::features::parameters::DimensionDisplay::Radius => DimensionDisplay::Radius,
+        })
+        .filter(|display| readings.measured.get(&entry.id) != Some(display));
+    Reading {
+        kind,
+        expression,
+        value,
+        display,
+        rounded: false,
+        assumed,
+        decided: false,
+        unvalued: None,
+    }
+}
+
+/// States in `stated`, for each reference-dimension parameter of `decoded`
+/// that no parameter of `stated` states, a `Driven` parameter of its owner,
+/// where that owner is a feature of `features` and the parameter's record
+/// stores a length, an angle or a real: a model parameter that no dimension
+/// binds is legal (§5.12). Its value is the stored value, with the radius or
+/// diameter display its record states, and its name the record's where no
+/// other parameter of the owner has it. Returns the note naming, with its
+/// stored expression, each other one.
+pub(super) fn references_unbound(
+    decoded: &[cadmpeg_ir::features::parameters::DesignParameter],
+    stated: &mut Vec<DesignParameter>,
+    features: &HashSet<&FeatureId>,
+    scope: &ProductDefinitionId,
+) -> Option<LossNote> {
+    use cadmpeg_ir::features::parameters::DimensionDisplay as V10;
+    let ids = stated
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<HashSet<_>>();
+    let mut unbound = NamedCount::default();
+    for parameter in decoded.iter().filter(|parameter| {
+        is_reference_relation_parameter(parameter) && !ids.contains(&parameter.id)
+    }) {
+        let owner = parameter
+            .owner
+            .as_ref()
+            .filter(|owner| features.contains(owner));
+        let (Some(owner), Some(quantity)) = (owner, stored_quantity(decoded, &parameter.id)) else {
+            unbound.push(&format!("{} = {}", parameter.id, parameter.expression));
+            continue;
+        };
+        let owned = ParameterOwner::Feature(owner.clone());
+        let name = NonBlankString::new(parameter.name.clone()).filter(|name| {
+            stated.iter().all(|other| {
+                other.owner.as_ref() != Some(&owned) || other.name.as_ref() != Some(name)
+            })
+        });
+        let mut driven = driven_parameter(decoded, &parameter.id, quantity, scope, owner, name);
+        driven.display = parameter
+            .display
+            .filter(|_| quantity == Quantity::LENGTH)
+            .map(|display| match display {
+                V10::Diameter => DimensionDisplay::Diameter,
+                V10::Radius => DimensionDisplay::Radius,
+            });
+        stated.push(driven);
+    }
+    (!unbound.is_empty()).then(|| {
+        SldprtLossCode::DesignParameterReferenceUnbound.note(format!(
+            "{} reference-dimension parameters state no design parameter: no sketch dimension \
+             of the design binds them, and their owner is no design feature or their record \
+             stores no length, angle or real: {unbound}",
+            unbound.count()
+        ))
+    })
+}
+
+/// Whether two caches are one value at [`LITERAL_DIGITS`] significant
+/// digits.
+pub(super) fn same_value(left: &ParameterValue, right: &ParameterValue) -> bool {
+    match (left, right) {
+        (ParameterValue::Number(left), ParameterValue::Number(right)) => {
+            significant(left.get()) == significant(right.get())
+        }
+        _ => left == right,
+    }
+}
+
+/// The literal of the canonical `value` in the unit of `expression`, where
+/// that expression is one signed number literal.
+pub(super) fn literal_like(
+    expression: &Expression,
+    value: &ParameterValue,
+) -> Option<Node<ParameterRef>> {
+    let Expression::Neutral(Neutral(node)) = expression else {
+        return None;
+    };
+    let node = match node {
+        Node::Unary {
+            op: UnaryOp::Negate,
+            operand,
+        } => operand.as_ref(),
+        node => node,
+    };
+    let Node::Number { unit, .. } = node else {
+        return None;
+    };
+    let symbol = match unit.0.as_slice() {
+        [] => None,
+        [UnitFactor { symbol, power }] if power.get() == 1 => Some(*symbol),
+        _ => return None,
+    };
+    let (number, scale) = match (value, symbol) {
+        (ParameterValue::Number(number), Some(symbol)) => (number.get(), canonical(symbol)?.1),
+        (ParameterValue::Number(number), None) => (number.get(), 1.0),
+        (ParameterValue::Integer(integer), None) => (exact_integer_f64(*integer)?, 1.0),
+        _ => return None,
+    };
+    number_node(significant(number / scale)?, symbol)
+}
+
+/// The literal of the canonical `value` of a parameter of kind `kind` that
+/// a record stores with no text: a length in the definition's length unit
+/// `length_unit`, else in metres, the unit the records store it in; an angle
+/// in degrees; a real or a count with no unit; a flag or a text as itself.
+/// Its number is the value in that unit to 15 significant digits (§5.12).
+pub(super) fn stored_literal(
+    kind: &ValueKind,
+    value: &ParameterValue,
+    length_unit: Option<UnitSymbol>,
+) -> Option<Node<ParameterRef>> {
+    match (kind, value) {
+        (ValueKind::Quantity(quantity), ParameterValue::Number(number)) => {
+            let symbol = match *quantity {
+                Quantity::LENGTH => Some(length_unit.unwrap_or(UnitSymbol::M)),
+                Quantity::ANGLE => Some(UnitSymbol::Deg),
+                Quantity::REAL => None,
+                _ => return None,
+            };
+            let scale = match symbol {
+                Some(symbol) => canonical(symbol)?.1,
+                None => 1.0,
+            };
+            number_node(significant(number.get() / scale)?, symbol)
+        }
+        (ValueKind::Integer, ParameterValue::Integer(integer)) => {
+            number_node(exact_integer_f64(*integer)?, None)
+        }
+        (ValueKind::Boolean, ParameterValue::Boolean(flag)) => Some(Node::Boolean(*flag)),
+        (ValueKind::Text, ParameterValue::Text(text)) => Some(Node::Text(text.clone())),
+        _ => None,
     }
 }
 

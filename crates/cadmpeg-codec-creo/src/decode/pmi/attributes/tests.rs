@@ -2,6 +2,8 @@
 
 use cadmpeg_core::decode::View;
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use super::{attributes, Value};
 
 const VALUE_TOLERANCE: f64 = 1.0e-12;
@@ -45,7 +47,7 @@ fn reads_counted_rows_with_a_non_utf8_display_prefix() {
     crate::decode::with_service_context(|ctx| {
         let rows = attributes(ctx, View::over_retained(&data))
             .expect("allocation")
-            .expect("complete table");
+            .expect("a complete table");
         let kind = rows[1].expect("type row");
         assert_eq!(kind.owner, Some(42));
         assert!(matches!(kind.value, Value::Text(b"POSITION")));
@@ -61,9 +63,42 @@ fn a_truncated_last_row_does_not_form_a_complete_table() {
     let mut data = fixture();
     data.pop();
     crate::decode::with_service_context(|ctx| {
-        assert!(attributes(ctx, View::over_retained(&data))
+        let unread = attributes(ctx, View::over_retained(&data))
             .expect("allocation")
-            .is_none());
+            .expect_err("no complete table");
+        // The row grammar is partial, so a row it does not match is a form
+        // without a reading.
+        assert_eq!(unread.cause, Cause::Undecoded);
+    });
+}
+
+#[test]
+fn a_row_count_past_the_section_breaks_the_array_framing() {
+    let data = fixture();
+    let count = data
+        .windows(3)
+        .position(|window| window == b"\xf4\x05\xf8")
+        .expect("the array header")
+        + 3;
+    assert_eq!(data[count], 4, "a one-byte count of four rows");
+    // Two bytes follow the count: fewer than one per declared row.
+    crate::decode::with_service_context(|ctx| {
+        let unread = attributes(ctx, View::over_retained(&data[..count + 3]))
+            .expect("allocation")
+            .expect_err("no complete table");
+        assert_eq!(unread.cause, Cause::Unreadable);
+    });
+}
+
+#[test]
+fn a_repeated_attributes_field_is_a_form_without_a_reading() {
+    let mut data = fixture();
+    data.extend_from_slice(b"\xe0\x00attributes\0");
+    crate::decode::with_service_context(|ctx| {
+        let unread = attributes(ctx, View::over_retained(&data))
+            .expect("allocation")
+            .expect_err("no single field");
+        assert_eq!(unread.cause, Cause::Undecoded);
     });
 }
 
@@ -75,7 +110,7 @@ fn retains_the_attribute_unit() {
     crate::decode::with_service_context(|ctx| {
         let rows = attributes(ctx, View::over_retained(&data))
             .expect("allocation")
-            .expect("complete table");
+            .expect("a complete table");
         assert_eq!(rows[3].expect("magnitude row").unit, b"mm");
     });
 }

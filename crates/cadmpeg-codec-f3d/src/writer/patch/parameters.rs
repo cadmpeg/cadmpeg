@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::value_unwritable;
-use cadmpeg_ir::codec::{DecodeFailure, DecodeResult};
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignParameter as Legacy, ParameterValue as LegacyValue};
@@ -224,9 +224,9 @@ impl Parameters {
         if self.changes.is_empty() {
             return Ok(());
         }
-        let decoded = match crate::writer::decode_retained_source(archive, *ctx.policy()) {
+        let decoded = match decode_retained_source(ctx, archive) {
             Ok(decoded) => Some(decoded),
-            Err(DecodeFailure::Codec(error)) if is_fatal(&error) => return Err(error),
+            Err(error) if is_fatal(&error) => return Err(error),
             Err(_) => None,
         };
         let mut legacy = BTreeMap::new();
@@ -643,3 +643,26 @@ pub(super) fn adopt(supported: &mut CadIr, target: &CadIr) {
 
 #[cfg(test)]
 mod tests;
+
+fn decode_retained_source(
+    ctx: &DecodeContext<'_>,
+    image: &[u8],
+) -> Result<DecodeResult, CodecError> {
+    use cadmpeg_ir::codec::CodecBackend;
+    let arena = DecodeArena::new();
+    ctx.with_arena(&arena, |ctx| {
+        let root = ctx.open_input(image, "F3D staged archive")?;
+        let scan = crate::container::scan_for_write(ctx, root)?;
+        let decoded = ctx.run_part(|| crate::decode::decode_scanned(ctx, &scan))??;
+        DecodeResult::from_decoded_without_digests(
+            ctx,
+            decoded,
+            <crate::F3dCodec as CodecBackend>::FORMAT,
+            &cadmpeg_ir::report::strictness::Strictness::default(),
+        )
+        .map_err(|error| match error {
+            cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+            other => CodecError::malformed(format!("staged archive decode refused: {other}")),
+        })
+    })
+}

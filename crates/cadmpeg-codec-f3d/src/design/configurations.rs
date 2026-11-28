@@ -38,7 +38,6 @@ pub(crate) struct DecodedConfigurations {
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
@@ -52,13 +51,8 @@ pub(crate) fn decode_configurations(
             Ok(document) => documents.push(document),
             Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
             Err(error) => {
-                losses.push(
-                    crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
-                        "Configuration document {} remains in the source archive because its decoding failed: {error}",
-                        entry.name
-                    )),
-                );
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, cause, error)?);
             }
         }
     }

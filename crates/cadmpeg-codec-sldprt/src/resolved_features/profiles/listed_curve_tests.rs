@@ -474,6 +474,7 @@ fn selector_twelve_role_one_circle_construction_agrees_between_projection_paths(
         SketchGeometryDefinition::Circle { .. }
     ));
     assert!(!entity.construction);
+    assert!(entity.construction_read());
     assert!(losses.is_empty());
     let held = SketchGeometry::native(cadmpeg_core::nonblank_const!("sldprt:synthetic-circle"));
     for geometry in [&entity.geometry, &held] {
