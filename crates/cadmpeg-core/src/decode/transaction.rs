@@ -6,7 +6,7 @@ use super::{
     ResourceLimit, SpaceId,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct BudgetState {
     pub(super) policy: DecodePolicy,
     pub(super) input: u64,
@@ -27,6 +27,12 @@ pub(super) enum Event {
     Expand(ExpandSpec),
     Space(usize),
     Batch(Charges),
+    OptionalOutput {
+        bytes: u64,
+        entities: u64,
+        operation: &'static str,
+        refusal: Option<ResourceLimit>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -315,6 +321,12 @@ impl DecodeContext<'_> {
                     let adjusted = i128::from(remaining) + allowance_delta;
                     (adjusted >= i128::from(requested)) == (remaining >= requested)
                 }
+                Event::OptionalOutput {
+                    bytes,
+                    entities,
+                    operation,
+                    refusal,
+                } => candidate.admit_optional(bytes, entities, operation).err() == refusal,
                 Event::Expand(spec) => candidate.admit_expand(spec).is_ok(),
                 Event::Space(expected) => {
                     let Some(old_next) = expected.checked_add(1) else {

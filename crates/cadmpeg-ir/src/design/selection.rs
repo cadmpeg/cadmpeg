@@ -680,6 +680,27 @@ pub struct Witness {
     pub body: Option<Box<Topology>>,
 }
 
+impl Witness {
+    /// The witness of an edge as a feature's stored input state samples it:
+    /// its interior point, the carrier tangent there, and its two end points
+    /// where both are stored.
+    #[must_use]
+    pub fn edge_sample(sample: &crate::features::evaluation::HistoricalEdgeGeometry) -> Self {
+        Self {
+            point: Some(sample.interior),
+            direction: sample.tangent,
+            endpoints: sample
+                .start
+                .zip(sample.end)
+                .map(|(start, end)| [start, end]),
+            frame: None,
+            curves: Vec::new(),
+            surface: None,
+            body: None,
+        }
+    }
+}
+
 /// The part of an entity that a pick is restricted to.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

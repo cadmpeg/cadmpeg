@@ -2735,6 +2735,7 @@ pub(crate) fn decode_bodies(
 }
 
 /// The merged record state of one site.
+#[derive(Default)]
 struct SiteState {
     mesh_bodies: HashSet<u32>,
     carriers: CarrierIndex,
@@ -2806,54 +2807,55 @@ fn scan_site(
     for (((payload, header), stream), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
-        let node_stream = (!stream.prefixed)
+        let primary = (!stream.prefixed)
             .then(|| topology::nodes::sequence(payload))
-            .flatten()
-            .and_then(|records| {
-                mesh_bodies.extend(super::mesh::bodies(&records));
-                let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let mut lane_refusals = Vec::new();
-                let splines = super::spline::nodes::carriers(
-                    &records,
-                    header.body_offset,
-                    &mut lane_refusals,
-                );
-                if splines.is_none() {
-                    lane_refusals.clear();
-                }
-                let analytic = super::carrier_nodes::analytic(
-                    &records,
-                    header.body_offset,
-                    &mut lane_refusals,
-                );
-                let sp_curves = splines.as_ref().and_then(|splines| {
-                    super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
-                });
-                Some((
-                    typed::nodes::facts(&records, header.body_offset)?,
-                    (
-                        attrib::Records::from_nodes(&records),
-                        entity::NodeEntities::from_nodes(&records, header.body_offset),
-                    ),
-                    (
-                        tables,
-                        Some(NodeCarriers {
-                            analytic,
-                            splines,
-                            offsets: super::offset::from_nodes(&records, header.body_offset),
-                            blends: super::blend::from_nodes(&records, header.body_offset),
-                            sweeps: super::sweep::from_nodes(&records, header.body_offset),
-                            sp_curves,
-                            bounded: super::subset::from_nodes(&records, header.body_offset),
-                            intersections: super::intersection::from_nodes(
-                                &records,
-                                header.body_offset,
-                            ),
-                            lane_refusals,
-                        }),
-                    ),
-                ))
+            .flatten();
+        if primary
+            .as_ref()
+            .is_some_and(|records| records.is_terminated() && records.records().is_empty())
+            && empty_backward_partition(&entity_streams, &deltas_records)
+        {
+            return Ok(SiteState::default());
+        }
+        let node_stream = primary.and_then(|records| {
+            mesh_bodies.extend(super::mesh::bodies(&records));
+            let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
+            let mut lane_refusals = Vec::new();
+            let splines =
+                super::spline::nodes::carriers(&records, header.body_offset, &mut lane_refusals);
+            if splines.is_none() {
+                lane_refusals.clear();
+            }
+            let analytic =
+                super::carrier_nodes::analytic(&records, header.body_offset, &mut lane_refusals);
+            let sp_curves = splines.as_ref().and_then(|splines| {
+                super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
             });
+            Some((
+                typed::nodes::facts(&records, header.body_offset)?,
+                (
+                    attrib::Records::from_nodes(&records),
+                    entity::NodeEntities::from_nodes(&records, header.body_offset),
+                ),
+                (
+                    tables,
+                    Some(NodeCarriers {
+                        analytic,
+                        splines,
+                        offsets: super::offset::from_nodes(&records, header.body_offset),
+                        blends: super::blend::from_nodes(&records, header.body_offset),
+                        sweeps: super::sweep::from_nodes(&records, header.body_offset),
+                        sp_curves,
+                        bounded: super::subset::from_nodes(&records, header.body_offset),
+                        intersections: super::intersection::from_nodes(
+                            &records,
+                            header.body_offset,
+                        ),
+                        lane_refusals,
+                    }),
+                ),
+            ))
+        });
         let deltas_stream = deltas
             .filter(|_| node_stream.is_none())
             .and_then(|records| {
@@ -3079,6 +3081,27 @@ fn scan_site(
         facts,
         typed_facts: evidence.typed,
     })
+}
+
+/// A backward delta from an empty partition can only restore earlier nodes.
+fn empty_backward_partition(
+    streams: &[topology::ScopedBody<'_>],
+    deltas: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
+) -> bool {
+    let [_, deltas @ ..] = deltas else {
+        return false;
+    };
+    !deltas.is_empty()
+        && streams.iter().skip(1).all(|stream| stream.prefixed)
+        && deltas.iter().all(|frame| {
+            frame.is_some_and(|frame| {
+                cadmpeg_parasolid::deltas::replay::MainLine::read(frame).is_ok_and(|line| {
+                    line.deltas()
+                        .first()
+                        .is_none_or(|delta| delta.created().is_empty() && delta.older().is_empty())
+                })
+            })
+        })
 }
 
 /// Read the streams of one site as [`decode_bodies`] does, without building
