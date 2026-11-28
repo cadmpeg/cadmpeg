@@ -497,6 +497,141 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
 }
 
+#[test]
+fn rigid_group_operand_in_the_root_component_takes_its_current_pose() {
+    use crate::design::components::{project_local_components, LocalComponentSources};
+    use crate::design::decode::components::{ComponentDefinition, StreamComponents};
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::xref::XrefCurrentPose;
+
+    let bytes = rigid_as_built_stream();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let class_tag = crate::records::references::DesignClassTag::try_from("405".to_owned()).unwrap();
+    let mut scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &bytes, &records, 10, &class_tag, 0,
+    )
+    .unwrap()
+    .unwrap();
+    scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+    let locator = "2E3AC990-483D-4A55-8662-C064B976A957";
+    let types = std::collections::HashMap::from([
+        (64, (locator, 5)),
+        (65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+        (67, (locator, 5)),
+        (68, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+    ]);
+    let alignment = crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &[], &types)
+    })
+    .unwrap()
+    .unwrap();
+    let DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut() else {
+        panic!("As-built alignment slot");
+    };
+    *slot = Some(alignment.clone());
+    let paths = alignment.operand_path_refs().unwrap();
+    // The second carrier is in the root component (entity 1). `first_owner`
+    // is the entity that contains the first carrier, and `posed` states
+    // whether a component path stores its current pose.
+    let project = |first_owner: u64, posed: bool| {
+        let mut occurrences =
+            [(100, paths[0], first_owner), (101, paths[1], 1)].map(|(index, path, owner)| {
+                DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+                    id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{index}"),
+                    class_tag: "271".to_owned().try_into().unwrap(),
+                    record_index: index,
+                    byte_offset: 3000 + u64::from(index) * 300,
+                    component_record_index: u64::from(index) + 3,
+                    component_guid: path.identity_guids()[0].value.clone(),
+                    occurrence_guid: path.occurrence_guids()[0].value.clone(),
+                    placement: DesignComponentOccurrencePlacement::Base,
+                    owner_entity: owner,
+                })
+                .unwrap()
+            });
+        if posed {
+            let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
+            rows[0][3] = 4.0;
+            occurrences[0].current_pose = Some(XrefCurrentPose {
+                carrier_record_index: 400,
+                frame_bytes: Vec::new().into(),
+                transform: Some(rows.try_into().unwrap()),
+            });
+        }
+        let root = ComponentDefinition {
+            root_entity: 1,
+            context_uuid: "77777777-7777-7777-7777-777777777777"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            name: None,
+        };
+        let roots = std::iter::once((1, root))
+            .chain(occurrences.iter().map(|carrier| {
+                (
+                    carrier.component_record_index,
+                    ComponentDefinition {
+                        root_entity: carrier.component_record_index,
+                        context_uuid: carrier.component_guid.clone(),
+                        name: None,
+                    },
+                )
+            }))
+            .collect();
+        let components = [(
+            "f3d:Design/BulkStream.dat".into(),
+            StreamComponents {
+                roots,
+                root_component: Some(1),
+                ..Default::default()
+            },
+        )]
+        .into();
+        let model = project_local_components(&LocalComponentSources {
+            scopes: std::slice::from_ref(&scope),
+            occurrences: &occurrences,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&Default::default()),
+            hidden_bodies: None,
+            limits: Default::default(),
+        })
+        .unwrap();
+        let x = model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.as_ref() == Some(&occurrences[0].id))
+            .unwrap()
+            .transform
+            .unwrap()
+            .rows()[0][3];
+        let codes = crate::test_support::loss_codes(&model.losses);
+        let applied = codes.contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPose.kind());
+        let native =
+            codes.contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseNative.kind());
+        assert_eq!(applied, posed && !native);
+        (x, applied)
+    };
+    let (x, applied) = project(1, true);
+    assert!((x - 40.0).abs() < f64::EPSILON);
+    assert!(applied);
+    // The first carrier inside the second carrier's component keeps its
+    // stored placement.
+    let (x, applied) = project(104, true);
+    assert!(x.abs() < f64::EPSILON);
+    assert!(!applied);
+    let (x, applied) = project(1, false);
+    assert!(x.abs() < f64::EPSILON);
+    assert!(!applied);
+}
+
 /// A 268-byte rigid group of three members (record 10, class tags 328/264)
 /// whose locators are records 64, 67, and 73.
 fn three_member_rigid_group_stream() -> Vec<u8> {

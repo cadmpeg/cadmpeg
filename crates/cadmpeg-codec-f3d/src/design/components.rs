@@ -129,16 +129,29 @@ pub(crate) fn project_local_components_with_types(
                     .occurrence_id(stream, &root.occurrence_guid)
                     .as_str()
                     .to_owned();
-                if !projector.occurrences.contains_key(&occurrence_key) {
-                    qualifier_placed.insert(occurrence_key);
+                let unplaced = !projector.occurrences.contains_key(&occurrence_key);
+                let pose = projector
+                    .root_contained_pose(root)
+                    .filter(|_| unplaced && super::assembly::rigid_as_built_scope(scope));
+                if unplaced {
+                    qualifier_placed.insert(occurrence_key.clone());
                 }
                 projector.place(
                     stream,
                     ComponentIdentity::CarrierGuid(&root.component_guid),
                     &root.occurrence_guid,
-                    root.transform()
-                        .map_or(IDENTITY, |frame| frame.value.into()),
+                    pose.unwrap_or_else(|| {
+                        root.transform()
+                            .map_or(IDENTITY, |frame| frame.value.into())
+                    }),
                 )?;
+                if pose.is_some() {
+                    projector.current_poses += 1;
+                    projector
+                        .path_poses
+                        .applied_instances
+                        .insert(occurrence_key);
+                }
             }
         }
         if let Some(operation) = scope.copy_paste_component_operation() {
@@ -425,7 +438,8 @@ struct PathPoseOutcome {
     /// Occurrences that an assembly operation or a derived-instance
     /// construction placed from an operation matrix before any carrier
     /// matrix was read. An occurrence that an assembly alignment qualifier
-    /// places from its carrier's closing matrix is not among them.
+    /// places from its carrier's closing matrix or component-path pose is not
+    /// among them.
     operation_placed: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
@@ -632,6 +646,19 @@ impl<'a> Projector<'a> {
             stream,
             components.roots.get(&carrier.component_record_index)?,
         ))
+    }
+
+    /// The component-path pose of a carrier that the stream's root component
+    /// contains.
+    fn root_contained_pose(&self, carrier: &DesignComponentOccurrence) -> Option<[[f64; 4]; 4]> {
+        let (_, components) = self.stream_components(carrier)?;
+        let root = components.roots.get(&components.root_component?)?;
+        let rows = carrier
+            .current_pose
+            .as_ref()?
+            .transform
+            .map_or(IDENTITY, crate::records::xref::XrefPlacementTransform::rows);
+        (root.root_entity == carrier.owner_entity).then_some(rows)
     }
 
     /// Place one occurrence once. The first placement of an occurrence wins.
