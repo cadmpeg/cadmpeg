@@ -5,9 +5,8 @@ use super::decode;
 
 #[test]
 fn joint_record_lanes_select_the_joint_kind_and_limits() {
-    let result = decode(
-        include_bytes!("../../../../corpus/f3d/joint_record_freedom_lanes.f3d").to_vec(),
-    );
+    let result =
+        decode(include_bytes!("../../../../corpus/f3d/joint_record_freedom_lanes.f3d").to_vec());
     let wire = cadmpeg_test_support::wire::in_memory_json(result.ir());
     let joints = wire["model"]["assembly_joints"]
         .as_array()

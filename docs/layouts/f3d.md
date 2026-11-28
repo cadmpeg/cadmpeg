@@ -16360,6 +16360,30 @@ Parsed by:
 | 157 | 60 | `repeated_target` | `bytes[60]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
 | 217 | 1 | `identity_flag` | `u8` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
 
+## `joint_record_freedom_lane`
+
+Spec §Assembly operands · layout: byte offsets · size: 55 B
+
+Offsets start at the lane's u32 `1`. A joint record stores one lane per degree of freedom; zero bytes can separate lanes.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/joint_motion.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `presence` | `u32` | little | spec | A lane is u32 `1` |
+| 4 | 1 | `self_reference_marker` | `u8` | little | spec | 51 bytes from the marked self-reference through the freedom code |
+| 5 | 8 | `self_reference_index` | `u64` | little | spec | 51 bytes from the marked self-reference through the freedom code |
+| 15 | 1 | `limit_flags` | `u8` | little | spec | the two limit flags and the rest flag eleven bytes after the self-reference |
+| 27 | 8 | `maximum` | `f64` | little | spec | the maximum, minimum and rest f64 values twenty-three bytes after it |
+| 51 | 4 | `freedom_code` | `u32` | little | spec | the u32 freedom code forty-seven bytes after it |
+
+Unstated regions:
+
+- `13..15` (2 B): Bytes between the self-reference and the limit flags.
+- `16..27` (11 B): The second limit flag, the rest flag and the bytes before the maximum.
+- `35..51` (16 B): The minimum and the rest value, both f64 after the maximum.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

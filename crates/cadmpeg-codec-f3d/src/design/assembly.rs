@@ -1338,7 +1338,14 @@ fn joint_motion_kind(
             })
         }
         // Joint-record lanes: the three rotations of a ball.
-        [3, 4, 5] if motion.lane_limits.iter().all(|limited| !limited) => Ok(JointMotionKind::Ball),
+        // Only joint-record lanes confirm the ball's codes; a motion record
+        // has no lanes.
+        [3, 4, 5]
+            if !motion.lane_limits.is_empty()
+                && motion.lane_limits.iter().all(|limited| !limited) =>
+        {
+            Ok(JointMotionKind::Ball)
+        }
         [2, 6] => Err("pin-slot motion has no paired joint kind".to_owned()),
         [2, 6, 7] => Err("planar motion has no paired joint kind".to_owned()),
         codes => Err(format!("freedom codes {codes:?}")),

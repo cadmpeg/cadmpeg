@@ -51,15 +51,27 @@ fn an_assemble_scope_with_associated_tail_references_projects_its_joint() {
         [scope.record_index, operand_frames[1].reference_record_index]
     );
 
-    // The version-6 joint record's motion is not read; the joint takes the
-    // fixed fallback and the report says so.
+    // The version-6 joint record states its motion in one lane: a revolute
+    // joint with limits -30 to 60 degrees.
     assert!(
         result
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind()),
+            .all(|loss| loss.code != crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind()),
         "{:#?}",
         result.report().losses
+    );
+    let wire = cadmpeg_test_support::wire::in_memory_json(result.ir());
+    let kind = &wire["model"]["assembly_joints"][0]["operands"]["value"]["kind"];
+    assert_eq!(kind["kind"], "revolute", "{kind:#}");
+    let limits = &kind["angular_limits"];
+    assert!(
+        (limits["minimum"].as_f64().unwrap() + 30f64.to_radians()).abs() < 1e-12,
+        "{kind:#}"
+    );
+    assert!(
+        (limits["maximum"].as_f64().unwrap() - 60f64.to_radians()).abs() < 1e-12,
+        "{kind:#}"
     );
 }
