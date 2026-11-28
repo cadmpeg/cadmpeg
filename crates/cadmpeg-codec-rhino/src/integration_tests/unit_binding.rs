@@ -132,7 +132,7 @@ fn presentation_tables_retain_unit_dependent_records_without_binding() {
             );
         }
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss.message.contains("no physical millimetre binding")
         }));
         assert_valid(&result);

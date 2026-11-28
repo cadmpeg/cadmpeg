@@ -229,6 +229,134 @@ fn native_region_uses_the_boundary_toward_the_infinite_void_as_exterior() {
 }
 
 #[test]
+fn native_roles_survive_independent_cavity_evidence_failures() {
+    for lose_carrier in [false, true] {
+        let mut nodes = two_sphere_shells(true);
+        if lose_carrier {
+            nodes.retain(|(kind, attr, _)| (*kind, *attr) != (53, 20));
+        } else {
+            nodes[3].2[13] = F::P(1);
+        }
+        let (ir, messages) = decode(&nodes);
+        assert_eq!(
+            ir.geometry.faces.len(),
+            if lose_carrier { 1 } else { 2 },
+            "{messages:#?}"
+        );
+        let [region] = ir.geometry.regions.as_slice() else {
+            panic!("one solid region: {messages:#?}");
+        };
+        assert_eq!(region.unstated, None, "{messages:#?}");
+        assert_eq!(
+            ids(region.stated_shells()),
+            ["sldprt:brep:shell#7", "sldprt:brep:shell#4"]
+        );
+        if lose_carrier {
+            let cavity = ir
+                .geometry
+                .shells
+                .iter()
+                .find(|shell| shell.id.as_str() == "sldprt:brep:shell#4")
+                .unwrap();
+            assert_eq!(cavity.unstated, Some(Unstated::Members));
+            assert!(messages.iter().any(|message| message.contains("face#5")));
+        }
+    }
+}
+
+#[test]
+fn an_unread_front_chain_leaves_its_shell_role_unresolved() {
+    let mut nodes = two_sphere_shells(true);
+    nodes[3].2[13] = F::P(1);
+    nodes
+        .iter_mut()
+        .find(|(kind, attr, _)| (*kind, *attr) == (13, 33))
+        .unwrap()
+        .2[8] = F::P(1);
+    let (ir, messages) = decode(&nodes);
+    let [region] = ir.geometry.regions.as_slice() else {
+        panic!("one solid region: {messages:#?}");
+    };
+    assert!(
+        matches!(&region.unstated, Some(RegionUnstated::Unclassified { shells })
+        if ids(shells) == ["sldprt:brep:shell#4", "sldprt:brep:shell#7"])
+    );
+    assert!(
+        messages.iter().any(
+            |message| message.contains("Stored face chains prove sldprt:brep:shell#7 exterior")
+        ),
+        "{messages:#?}"
+    );
+}
+
+#[test]
+fn a_cut_shell_chain_marks_its_missing_member_beside_proved_roles() {
+    let mut nodes = two_sphere_shells(true);
+    nodes
+        .iter_mut()
+        .find(|(kind, attr, _)| (*kind, *attr) == (13, 7))
+        .unwrap()
+        .2[3] = F::P(99);
+    let (ir, messages) = decode(&nodes);
+    let [region] = ir.geometry.regions.as_slice() else {
+        panic!("one solid region: {messages:#?}");
+    };
+    assert_eq!(region.unstated, Some(RegionUnstated::Voids));
+    assert_eq!(
+        ids(region.stated_shells()),
+        ["sldprt:brep:shell#7", "sldprt:brep:shell#4"]
+    );
+}
+
+#[test]
+fn a_manifold_general_body_keeps_the_roles_of_its_solid_region() {
+    let mut nodes = two_sphere_shells(true);
+    nodes[0].2[14] = F::B(6);
+    nodes[0].2[16] = F::P(1);
+    for (kind, _, fields) in &mut nodes {
+        if *kind == 13 {
+            fields[2] = F::P(1);
+        }
+    }
+    nodes.retain(|(kind, attr, _)| (*kind, *attr) != (53, 20));
+    let (ir, messages) = decode(&nodes);
+    assert_eq!(ir.geometry.faces.len(), 1, "{messages:#?}");
+    assert_eq!(
+        ir.geometry.bodies[0].kind,
+        BodyKind::General,
+        "{messages:#?}"
+    );
+    let [region] = ir.geometry.regions.as_slice() else {
+        panic!("one solid region: {messages:#?}");
+    };
+    assert_eq!(region.unstated, None);
+    assert_eq!(
+        ids(region.stated_shells()),
+        ["sldprt:brep:shell#7", "sldprt:brep:shell#4"]
+    );
+}
+
+#[test]
+fn a_region_with_unclassified_shells_follows_the_stored_chain() {
+    let mut nodes = two_sphere_shells(false);
+    nodes[1].2[5] = F::P(7);
+    nodes[2].2[3] = F::P(1);
+    nodes
+        .iter_mut()
+        .find(|(kind, attr, _)| (*kind, *attr) == (13, 7))
+        .unwrap()
+        .2[3] = F::P(4);
+    let (ir, messages) = decode(&nodes);
+    let [region] = ir.geometry.regions.as_slice() else {
+        panic!("one solid region: {messages:#?}");
+    };
+    assert!(
+        matches!(&region.unstated, Some(RegionUnstated::Unclassified { shells })
+        if ids(shells) == ["sldprt:brep:shell#7", "sldprt:brep:shell#4"])
+    );
+}
+
+#[test]
 fn native_region_leaves_disjoint_shells_unclassified_with_all_faces_stated() {
     let (ir, messages) = decode(&two_sphere_shells(false));
     assert_eq!(ir.geometry.faces.len(), 2, "{messages:#?}");

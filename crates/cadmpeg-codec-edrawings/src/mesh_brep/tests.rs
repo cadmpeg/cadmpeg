@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::validate::validate_neutral;
 
 use super::{
@@ -361,6 +362,12 @@ fn hostile_inputs_are_refused_without_panic() {
         convert(&collinear, &[[0, 1, 2]]).unwrap_err(),
         MeshBrepError::AllDegenerate
     );
+    assert_eq!(MeshBrepError::AllDegenerate.cause(), Cause::Unreadable);
+    let within_weld = [[0.0; 3], [1.0e-4, 0.0, 0.0], [0.0, 1.0e-4, 0.0]];
+    let collapsed = convert(&within_weld, &[[0, 1, 2]]).unwrap_err();
+    assert_eq!(collapsed, MeshBrepError::Collapsed);
+    assert_eq!(collapsed.cause(), Cause::Undecoded);
+    assert_eq!(MeshBrepError::Empty.cause(), Cause::Undecoded);
     assert_eq!(
         convert(
             &[[1.0e300, 0.0, 0.0], [0.0; 3], [0.0, 1.0, 0.0]],

@@ -7,7 +7,9 @@
 //! `MultiTransform` lists, which are its layout (§6.5). Each design object
 //! outside every Body is one feature, a member of the scope's root unordered
 //! `Group` (§5.2), whose own result is its current state (§5.3), and each
-//! `App::Link` is a `Place` feature in that `Group` (§6.7). A document with
+//! `App::Link` is a `Place` feature in that `Group` (§6.7). Each
+//! `Spreadsheet::Sheet` is a `Spreadsheet` feature whose cells are its
+//! parameters (§5.12). A document with
 //! no design object, no link, and no parameter has no scope (§5.1).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -30,6 +32,7 @@ use cadmpeg_ir::design::projection::restated::{
 };
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::spreadsheet::Spreadsheet;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::operation_settings::FuzzyTolerance as LegacyFuzzyTolerance;
@@ -48,11 +51,21 @@ use cadmpeg_ir::units::UnitVector3;
 
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
+use crate::native::joint::JointRecord;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
 use crate::product::{ProductNodes, UnresolvedLink};
 
+mod joints;
 mod parameters;
 pub(crate) mod states;
+
+/// The link records of a document, its joint records, and the decoded
+/// topology the joints' element names select.
+pub(crate) struct Assembly<'a> {
+    pub(crate) nodes: &'a ProductNodes,
+    pub(crate) joints: &'a [JointRecord],
+    pub(crate) topology: &'a [crate::topology_transfer::TopologyOccurrence],
+}
 
 /// Project the decoded design of `ir` into its v11 design layer, a scope of
 /// the root definition `definition`. A record the projection cannot state in
@@ -71,15 +84,16 @@ pub(crate) fn project(
     definition: ProductDefinitionId,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-    nodes: &ProductNodes,
+    assembly: &Assembly<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
+    let sheets = sheets(ir, &history);
     let mut features = history
         .features
         .values()
-        .map(|legacy| feature(legacy, &source))
+        .map(|legacy| feature(legacy, &source, &sheets))
         .collect::<Vec<_>>();
     let mut grouped = history
         .features
@@ -87,10 +101,13 @@ pub(crate) fn project(
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
-    let mut places = places(ir, &definition, objects, nodes, losses);
-    places.extend(unresolved_places(objects, &nodes.unresolved));
+    let mut places = places(ir, &definition, objects, assembly.nodes, losses);
+    places.extend(unresolved_places(objects, &assembly.nodes.unresolved));
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
+    let joints = joints::project(ir, &definition, assembly, objects, properties, losses);
+    grouped.extend(joints.loose);
+    features.extend(joints.features);
     let mut containers = Vec::new();
     let mut body_containers = BTreeMap::new();
     let mut roots = Vec::new();
@@ -174,6 +191,8 @@ pub(crate) fn project(
                 .and_then(|object| source.placement(object)),
         });
     }
+    roots.extend(joints.groups.iter().map(|group| group.id().clone()));
+    containers.extend(joints.groups);
     if !grouped.is_empty() {
         let id = ContainerId::from(Identity::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "design", "container"),
@@ -188,16 +207,13 @@ pub(crate) fn project(
     }
     containers.sort_by(|a, b| a.id().cmp(b.id()));
     features.sort_by(|a, b| a.id.cmp(&b.id));
-    let carriers = properties
-        .iter()
-        .map(|property| (property.id.as_str(), property.type_name.as_str()))
-        .collect::<HashMap<_, _>>();
     let parameters = parameters::project(
-        ir,
+        [&ir.model.parameters, &joints.parameters],
         &definition,
         &body_containers,
         &features,
-        &carriers,
+        objects,
+        properties,
         losses,
     );
     if features.is_empty() && parameters.is_empty() {
@@ -206,6 +222,7 @@ pub(crate) fn project(
     ir.design.containers = containers;
     ir.design.features = features;
     ir.design.parameters = parameters;
+    ir.design.spreadsheets = sheets.into_values().collect();
     // A member of the Group that changes state has its own result, the
     // bodies of its shape (§5.3).
     for member in grouped {
@@ -235,7 +252,7 @@ pub(crate) fn project(
         roots,
         active_configuration: None,
         active_arrangements: BTreeSet::default(),
-        occurrences: BTreeMap::default(),
+        occurrences: joints.grounded,
         current,
         unproduced: BTreeSet::new(),
     });
@@ -555,7 +572,18 @@ fn scale_factors(factors: [f64; 3]) -> Option<ScaleFactors> {
 /// The frame `frame` a source stores as a placement: one fixed step
 /// (§5.9).
 fn fixed(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
-    let transform = frame.transform();
+    Some(Construction {
+        inputs: Vec::new(),
+        after: vec![PostStep::Fixed(frame.transform())],
+        solution: None,
+        mode: None,
+        resolved: Some(frame_value(frame)?),
+        resolved_in: BTreeMap::new(),
+    })
+}
+
+/// The origin and axes of frame `frame`.
+fn frame_value(frame: FiniteFrame) -> Option<FrameValue> {
     let rows = frame.rows();
     let axis = |column: usize| {
         UnitVector3::new(Vector3::new(
@@ -564,18 +592,11 @@ fn fixed(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
             rows[2][column],
         ))
     };
-    Some(Construction {
-        inputs: Vec::new(),
-        after: vec![PostStep::Fixed(transform)],
-        solution: None,
-        mode: None,
-        resolved: Some(FrameValue {
-            origin: FinitePoint3::new(Point3::new(rows[0][3], rows[1][3], rows[2][3]))?,
-            x_axis: axis(0)?,
-            y_axis: axis(1)?,
-            z_axis: axis(2)?,
-        }),
-        resolved_in: BTreeMap::new(),
+    Some(FrameValue {
+        origin: FinitePoint3::new(Point3::new(rows[0][3], rows[1][3], rows[2][3]))?,
+        x_axis: axis(0)?,
+        y_axis: axis(1)?,
+        z_axis: axis(2)?,
     })
 }
 
@@ -761,12 +782,38 @@ impl<'a> History<'a> {
     }
 }
 
+/// The sheet record of each spreadsheet feature of `history`, by its
+/// feature (§5.12).
+fn sheets<'a>(ir: &CadIr, history: &History<'a>) -> BTreeMap<&'a FeatureId, Spreadsheet> {
+    ir.model
+        .spreadsheets
+        .iter()
+        .filter_map(|sheet| {
+            let (feature, _) = history.features.get_key_value(&sheet.feature)?;
+            let record = Spreadsheet::new(
+                sheet.id.clone(),
+                sheet.cells().to_vec(),
+                sheet.column_widths().to_vec(),
+                sheet.row_heights().to_vec(),
+                sheet.merged_ranges().to_vec(),
+                sheet.native_ref.clone(),
+            )
+            .ok()?;
+            Some((*feature, record))
+        })
+        .collect()
+}
+
 /// The feature of `legacy`. Its `refine` and `fuzzy_tolerance` are stated only
 /// where the object stores `Refine` and `FuzzyTolerance` (§2.4): the decoded
 /// definition fills the one the object lacks. A Part workbench feature that
 /// applies its `Placement` after its operation states it as its `placement`
 /// (§5.10); a primitive or a curve primitive places its own local frame.
-fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
+fn feature(
+    legacy: &LegacyFeature,
+    source: &Source<'_>,
+    sheets: &BTreeMap<&FeatureId, Spreadsheet>,
+) -> Feature {
     let (operation, refine, fuzzy_tolerance) = match legacy.evaluation.definition() {
         LegacyDefinition::PostProcess {
             operation,
@@ -787,7 +834,10 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
         ),
         LegacyDefinition::Operation(operation) => (operation, None, None),
     };
-    let operation = self::operation(legacy, operation);
+    let operation = match sheets.get(&legacy.id) {
+        Some(sheet) => FeatureOperation::Spreadsheet(sheet.id.clone()),
+        None => self::operation(legacy, operation),
+    };
     let kind = legacy.source_tag.as_deref();
     let placed = kind.is_some_and(|kind| kind.starts_with("Part::"))
         && match &operation {
@@ -850,10 +900,6 @@ fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOper
             }
         }
         LegacyOperation::Sketch { .. } => OperationFamily::Sketch,
-        LegacyOperation::TreeNode {
-            role: FeatureTreeNodeRole::Equations,
-            ..
-        } => OperationFamily::Spreadsheet,
         LegacyOperation::SpatialSketch { .. } => OperationFamily::SpatialSketch,
         LegacyOperation::DatumPrincipalPlane { .. }
         | LegacyOperation::DatumPlane { .. }

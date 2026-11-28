@@ -15,7 +15,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
     Severity,
 };
-use cadmpeg_ir::unknown::part::Part;
+use cadmpeg_ir::unknown::part::{Cause, Part};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -417,51 +417,63 @@ impl<'a> PhysicalParse<'a> {
     }
 
     /// The framing recoveries, the give-up by `give_up` of the part of each
-    /// quarantined record in `image`, and the notes of unreadable Parameter
-    /// Data literals.
+    /// quarantined record in `image` with its error text and the consequence
+    /// that `costing` states for its Directory sequence, and the notes of
+    /// unreadable Parameter Data literals.
     fn record_losses(
         &self,
         image: &entities::CardImage<'_>,
-        mut give_up: impl FnMut(Part<'_>, &LossNote) -> Result<LossNote, CodecError>,
+        mut costing: BTreeMap<u32, String>,
+        mut give_up: impl FnMut(Part<'_>, String) -> Result<LossNote, CodecError>,
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes();
         for record in &self.quarantined_directory {
-            let why = record.loss_note();
             let length = record.source_length.ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES Directory Entry D{} has no card span",
                     record.sequence
                 ))
             })?;
-            let part = image.part(
+            let mut part = image.part(
                 entities::DIRECTORY_ENTRY_PART,
                 record.sequence,
                 record.source_offset,
                 length,
             )?;
-            let unreadable = give_up(part, &why)?;
-            losses.extend([why, unreadable]);
-        }
-        let mut parameter_parts = BTreeSet::new();
-        for record in &self.quarantined_parameters {
-            let why = record.loss_note()?;
-            // Records whose declared ranges conflict can start at one card.
-            // The first gives up the part that starts there, and that part
-            // keeps the cards of each.
-            if !parameter_parts.insert(record.source_offset()) {
-                losses.push(why);
-                continue;
+            if let Some(consequence) = costing.remove(&record.sequence) {
+                part = part.costing(consequence);
             }
+            losses.push(give_up(part, record.defect_message())?);
+        }
+        // Records whose declared ranges conflict can start at one card. The
+        // first gives up the part that starts there, which keeps the cards
+        // of each, and its give-up states the defect of each.
+        let mut claimants = BTreeMap::<u64, (Vec<String>, Vec<String>)>::new();
+        for record in &self.quarantined_parameters {
+            let (defects, consequences) = claimants.entry(record.source_offset()).or_default();
+            defects.push(record.loss_note()?.message);
+            consequences.extend(costing.remove(&record.sequence));
+        }
+        for record in &self.quarantined_parameters {
+            let Some((defects, consequences)) = claimants.remove(&record.source_offset()) else {
+                continue;
+            };
+            let why = record.loss_note()?;
             // A record that owns no card is a part of no bytes at the offset
             // of its Directory Entry.
-            let part = image.part(
+            let mut part = image.part(
                 entities::PARAMETER_DATA_PART,
                 record.sequence,
                 record.source_offset(),
                 record.source_length().unwrap_or(0),
             )?;
-            let unreadable = give_up(part, &why)?;
-            losses.extend([why, unreadable]);
+            if !consequences.is_empty() {
+                part = part.costing(consequences.join("; "));
+            }
+            losses.push(give_up(
+                part,
+                format!("{}: {}", why.code, defects.join("; ")),
+            )?);
         }
         let mut entries = BTreeMap::new();
         for record in &self.parameters {
@@ -501,8 +513,8 @@ pub(crate) fn inspect(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     let image = entities::CardImage::new(window, representation);
-    let record_losses = parse.record_losses(&image, |part, why| {
-        Ok(entities::give_up_part(ctx, part, why)?.loss())
+    let record_losses = parse.record_losses(&image, BTreeMap::new(), |part, error| {
+        Ok(entities::give_up_part(ctx, part, Cause::Unreadable, error)?.loss())
     })?;
 
     losses.extend(record_losses);
@@ -651,7 +663,7 @@ fn decode_with_limits(
         ),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
-    entities::give_up_entities(
+    let (mut given_up, unplaced) = entities::give_up_entities(
         &mut projection.losses,
         &parse.directory,
         &given_up_ids,
@@ -659,8 +671,30 @@ fn decode_with_limits(
         &mut ir,
         &mut source_fidelity,
     )?;
-    let record_losses = parse.record_losses(&image, |part, why| {
-        entities::give_up_part(ctx, part, why)?.commit(ctx, &mut ir, &mut source_fidelity)
+    // An explicit B-rep input that no shell decodes is dropped with the
+    // given-up entity that reads it, so the give-up is its one loss.
+    loop {
+        let dropped = projection
+            .supports
+            .iter()
+            .filter(|&(input, readers)| {
+                !projection.decoded.contains(input)
+                    && !given_up.contains(input)
+                    && readers.iter().any(|reader| given_up.contains(reader))
+            })
+            .map(|(input, _)| *input)
+            .collect::<Vec<_>>();
+        if dropped.is_empty() {
+            break;
+        }
+        given_up.extend(dropped);
+    }
+    let record_losses = parse.record_losses(&image, unplaced, |part, error| {
+        entities::give_up_part(ctx, part, Cause::Unreadable, error)?.commit(
+            ctx,
+            &mut ir,
+            &mut source_fidelity,
+        )
     })?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
@@ -688,7 +722,12 @@ fn decode_with_limits(
     losses.extend(attribute_losses);
     if invalid_resolution
         && !losses.iter().any(|loss| {
-            loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
+            [
+                IgesLossCode::GlobalSemanticContextSubstituted,
+                IgesLossCode::GlobalSemanticContextInvalid,
+            ]
+            .iter()
+            .any(|code| loss.code.local_code() == code.code())
         })
     {
         let message =
@@ -793,7 +832,8 @@ fn decode_with_limits(
     };
     if !ctx.container_only() {
         if let Some(table) = global_table {
-            let attributed_before_generic = attributed_sequences(&losses);
+            let mut attributed_before_generic = attributed_sequences(&losses);
+            attributed_before_generic.extend(&given_up);
             append_generic_losses(
                 &mut losses,
                 &parse.directory,
@@ -807,7 +847,9 @@ fn decode_with_limits(
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
-        attributed_sequences(&losses)
+        let mut attributed = attributed_sequences(&losses);
+        attributed.append(&mut given_up);
+        attributed
     };
     let mut transfer_ledger = TransferLedger::default();
     for entry in parse

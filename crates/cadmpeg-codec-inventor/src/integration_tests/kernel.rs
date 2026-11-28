@@ -76,7 +76,7 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
 
 /// A pinned decode refuses a part whose kernel carrier it gave up, through
 /// the `record.unreadable` of the carrier part; a default decode admits the
-/// part and reports the codec loss beside it. The part's stub links to the
+/// part, and the give-up is the one loss of the carrier. The part's stub links to the
 /// `RSe` record that frames the carrier, which the document keeps.
 #[test]
 fn strict_decode_refuses_a_given_up_kernel_carrier() {
@@ -98,7 +98,7 @@ fn strict_decode_refuses_a_given_up_kernel_carrier() {
             .expect("a default decode admits the given-up carrier");
         let losses = &decoded.report().losses;
         assert!(
-            losses
+            !losses
                 .iter()
                 .any(|loss| loss.code
                     == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()),

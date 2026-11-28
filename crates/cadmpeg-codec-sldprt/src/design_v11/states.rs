@@ -27,7 +27,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{
+    DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::DesignConfiguration;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -107,17 +109,8 @@ pub(super) fn configuration_states(
             .is_some_and(|native| crate::decode::configuration_source_needs_update(ir, native));
         let bodies = native.and_then(|native| native.bodies.as_deref());
         let content = match bodies {
-            Some(_) if ctx.policy().limits.max_state_chain_depth == 0 => {
-                losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
-                    "configuration {}: the part's evaluation-chain depth limit is reached.",
-                    configuration.id,
-                )));
-                if !stale {
-                    continue;
-                }
-                None
-            }
             Some(bodies) if bodies.iter().all(|body| !current.contains(body)) => {
+                admit_state(ctx, 0)?;
                 if index.is_none() {
                     index = Some(Reach::new(ctx, &ir.geometry)?);
                 }
@@ -201,6 +194,23 @@ pub(super) fn configuration_states(
         records,
         retired,
     })
+}
+
+fn admit_state(ctx: &DecodeContext<'_>, base_depth: u64) -> Result<(), CodecError> {
+    let limit = ctx.policy().limits.max_state_chain_depth;
+    if base_depth < limit {
+        return Ok(());
+    }
+    Err(ResourceLimit {
+        scope: LimitScope::Session,
+        dimension: ResourceDimension::RecursionDepth,
+        reason: ResourceFailure::BudgetExceeded,
+        limit,
+        used: base_depth,
+        additional: 1,
+        operation: "SolidWorks evaluation-chain depth",
+    }
+    .into())
 }
 
 /// The loss of a configuration that is not active and whose partition the

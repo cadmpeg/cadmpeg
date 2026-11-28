@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use super::{decode, Packed, NO_VERTEX};
+use cadmpeg_ir::unknown::part::Cause;
+
+use super::{breaks_rules, decode, Packed, NO_VERTEX};
 use crate::brep::convert::nurbs_only;
 
 fn cube() -> crate::brep::Brep {
@@ -114,7 +116,8 @@ fn a_face_with_one_faceuse_is_refused() {
     packed.faceuse_face.pop();
     packed.faceuse_same.pop();
     packed.shell_faceuse_count[1] -= 1;
-    assert!(decode(&packed).is_err());
+    let error = decode(&packed).expect_err("refused");
+    assert_eq!(error.cause, Cause::Unreadable, "{error}");
 }
 
 #[test]
@@ -123,7 +126,29 @@ fn a_face_between_two_solid_regions_is_refused() {
     packed.push(&cube(), true).expect("encode");
     packed.region_solid[0] = true;
     let error = decode(&packed).expect_err("refused");
-    assert!(error.contains("two solid regions"), "{error}");
+    assert!(error.reason.contains("two solid regions"), "{error}");
+    assert_eq!(error.cause, Cause::Undecoded, "{error}");
+}
+
+#[test]
+fn a_faceuse_that_names_no_face_is_unreadable() {
+    let mut packed = Packed::default();
+    packed.push(&cube(), true).expect("encode");
+    packed.faceuse_face[0] = 99;
+    let error = decode(&packed).expect_err("refused");
+    assert!(error.reason.contains("names no face"), "{error}");
+    assert_eq!(error.cause, Cause::Unreadable, "{error}");
+}
+
+#[test]
+fn a_nonpositive_weight_breaks_the_rules() {
+    let mut packed = Packed::default();
+    packed.push(&cube(), true).expect("encode");
+    let mut decoded = decode(&packed).expect("decode");
+    let brep = &mut decoded.breps[0];
+    assert!(!breaks_rules(brep));
+    brep.nurbs_surfaces[0].weights[0] = 0.0;
+    assert!(breaks_rules(brep));
 }
 
 #[test]
