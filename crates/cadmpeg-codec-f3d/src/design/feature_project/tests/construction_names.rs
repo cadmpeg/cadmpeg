@@ -60,6 +60,12 @@ fn an_unnamed_construction_feature_charges_its_composed_name() {
     ] {
         assert_eq!(project(scope(kind)), (Some(expected.to_owned()), 1), "{expected}");
     }
+    let mut localized = scope(DesignFeatureKind::WorkPlane);
+    localized.source_kind = Some("Plan de construction".to_owned());
+    assert_eq!(
+        project(localized),
+        (Some("Plan de construction1".to_owned()), 1)
+    );
 }
 
 #[test]
@@ -67,6 +73,12 @@ fn a_stored_construction_name_or_another_family_charges_no_composed_name() {
     let mut named = scope(DesignFeatureKind::WorkPlane);
     named.display_name = Some("Mid Plane".to_owned());
     assert_eq!(project(named), (Some("Mid Plane".to_owned()), 0));
+    let mut labelled = scope(DesignFeatureKind::WorkAxis);
+    labelled.label = Some(crate::records::identity::Located {
+        value: "Pivot".to_owned(),
+        offset: 0,
+    });
+    assert_eq!(project(labelled), (Some("Pivot".to_owned()), 0));
     assert_eq!(
         project(scope(DesignFeatureKind::Extrude)),
         (Some("Extrude1".to_owned()), 0)
