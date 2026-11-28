@@ -200,6 +200,14 @@ fn a_source_row_of_a_table_document_with_no_rows_is_written_as_stated() {
             "{table_id}: {:#?}",
             report.losses
         );
+        assert!(
+            report
+                .losses
+                .iter()
+                .all(|loss| !loss.message.contains("active table and row")),
+            "{table_id}: {:#?}",
+            report.losses
+        );
         let written = &f3d_native(round_trip.ir()).design_configurations[0];
         let active = written
             .active_row()

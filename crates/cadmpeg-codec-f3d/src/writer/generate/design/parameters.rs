@@ -38,10 +38,13 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::expression;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
+use crate::records::configuration::DesignConfigurationKind;
 use crate::records::identity::{Located, RecordedValue};
 use crate::records::parameters::{
-    DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
+    DesignParameter as NativeParameter, DesignParameterDiscriminator, DesignParameterDraft,
+    DesignParameterSource,
 };
+use crate::writer::generate::configuration_table::{DestinationParameter, DestinationParameters};
 use crate::writer::generate::presentation::GeneratedDesignRegistry;
 use crate::writer::generate::records::{
     encode_document_parameters, ParameterRecords, UserParameter,
@@ -215,11 +218,34 @@ type ValueEdits = BTreeMap<String, (String, f64)>;
 pub(in crate::writer::generate) struct NativeParameters {
     /// The records in their user form, encoded.
     records: ParameterRecords,
+    edits: ValueEdits,
     /// The losses of the user form.
     losses: Vec<LossNote>,
 }
 
 impl NativeParameters {
+    pub(in crate::writer::generate) fn destinations<'a>(
+        &'a self,
+        native: &'a F3dNative,
+    ) -> DestinationParameters<'a> {
+        native
+            .design_parameters
+            .iter()
+            .map(|record| {
+                let (expression, evaluated) = written_value(record, &self.edits);
+                (
+                    crate::ids::neutral_parameter_id(record),
+                    DestinationParameter {
+                        index: record.record_index,
+                        name: record.name(),
+                        expression,
+                        evaluated,
+                    },
+                )
+            })
+            .collect()
+    }
+
     pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {
         self.losses
     }
@@ -541,44 +567,92 @@ pub(in crate::writer::generate) fn plan(
     }
 }
 
-/// The native records when the neutral parameters equal their projection up
-/// to expression and value edits. Otherwise the root scope's parameters
-/// and losses for the neutral parameters the plan cannot restate.
+/// The native records when they cover the configured parameters and the
+/// neutral parameters match their projection up to expression and value edits.
+/// Otherwise write the root scope's parameters.
 pub(in crate::writer::generate) fn native_or_neutral(
     target: &CadIr,
     native: &F3dNative,
     neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
     projected: &[cadmpeg_ir::features::parameters::DesignParameter],
 ) -> Result<ParameterSource, CodecError> {
-    if let Some(edits) = value_edits(neutral, projected, native) {
-        let (form, losses) = user_form(native, &edits)?;
-        let records = encode_document_parameters(&form, NATIVE_PARAMETER_COLLECTION)?;
-        return Ok(ParameterSource::Native(NativeParameters {
-            records,
-            losses,
-        }));
-    }
-    let mut plan = super::root_scope(target).map_or_else(
-        || ParameterPlan {
-            written: Vec::new(),
-            claimed: Vec::new(),
-            owned: Vec::new(),
-            driven: Vec::new(),
-            losses: Vec::new(),
-        },
-        |scope| plan(target, &scope.definition),
-    );
+    let root = super::root_scope(target);
+    let mut parameter_plan = if let Some(edits) = value_edits(neutral, projected, native) {
+        if let Some(configured) = root
+            .filter(|_| {
+                native
+                    .design_configurations
+                    .iter()
+                    .any(|document| document.kind() == DesignConfigurationKind::Table)
+            })
+            .and_then(|root| configured_parameter_plan(target, &root.definition, projected))
+        {
+            configured
+        } else {
+            let (form, losses) = user_form(native, &edits)?;
+            let records = encode_document_parameters(&form, NATIVE_PARAMETER_COLLECTION)?;
+            return Ok(ParameterSource::Native(NativeParameters {
+                records,
+                edits,
+                losses,
+            }));
+        }
+    } else {
+        root.map_or_else(
+            || ParameterPlan {
+                written: Vec::new(),
+                claimed: Vec::new(),
+                owned: Vec::new(),
+                driven: Vec::new(),
+                losses: Vec::new(),
+            },
+            |scope| plan(target, &scope.definition),
+        )
+    };
     let restated = super::restated_parameters(target);
-    plan.losses.extend(named_loss(
+    parameter_plan.losses.extend(named_loss(
         F3dLossCode::WriterParameterOmitted,
         "parameter",
-        "the neutral parameters differ from the native Design records and no design parameter restates them",
+        "the root scope states no design parameter that restates them",
         neutral
             .iter()
             .map(|row| row.id.to_string())
             .filter(|id| !restated.contains(id.as_str())),
     ));
-    Ok(ParameterSource::Neutral(plan))
+    Ok(ParameterSource::Neutral(parameter_plan))
+}
+
+/// The neutral plan when it supplies a configured parameter with no native
+/// placement.
+fn configured_parameter_plan(
+    target: &CadIr,
+    scope: &ProductDefinitionId,
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
+) -> Option<ParameterPlan> {
+    let configured = target
+        .design
+        .configurations
+        .iter()
+        .filter(|row| row.scope == *scope)
+        .flat_map(|row| row.overrides.parameters.keys())
+        .collect::<BTreeSet<_>>();
+    if configured.is_empty() {
+        return None;
+    }
+    let native = projected
+        .iter()
+        .map(|parameter| &parameter.id)
+        .collect::<BTreeSet<_>>();
+    if configured.is_subset(&native) {
+        return None;
+    }
+    let plan = plan(target, scope);
+    plan.written
+        .iter()
+        .any(|parameter| {
+            configured.contains(&parameter.source) && !native.contains(&parameter.source)
+        })
+        .then_some(plan)
 }
 
 /// The expression and the value in database units of each native record
@@ -712,10 +786,7 @@ fn user_form<'a>(
                 shared
             }
         };
-        let (expression, evaluated) = edits.get(&record.id).map_or_else(
-            || (record.expression(), record.evaluated_value().get()),
-            |(expression, evaluated)| (expression.as_str(), *evaluated),
-        );
+        let (expression, evaluated) = written_value(record, edits);
         written.push(UserParameter {
             record,
             family_discriminator,
@@ -742,6 +813,13 @@ fn user_form<'a>(
     Ok((written, losses))
 }
 
+fn written_value<'a>(record: &'a NativeParameter, edits: &'a ValueEdits) -> (&'a str, f64) {
+    edits.get(&record.id).map_or_else(
+        || (record.expression(), record.evaluated_value().get()),
+        |(expression, evaluated)| (expression.as_str(), *evaluated),
+    )
+}
+
 /// The parameter records of `source`, encoded. It takes the encoded native
 /// records out of `source`.
 pub(in crate::writer::generate) fn encode(
@@ -762,11 +840,21 @@ impl ParameterPlan {
     pub(in crate::writer::generate) fn destinations(
         &self,
         indices: &[u32],
-    ) -> super::super::configuration_table::DestinationParameters<'_> {
+    ) -> DestinationParameters<'_> {
         self.written
             .iter()
             .zip(indices)
-            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .map(|(parameter, &index)| {
+                (
+                    parameter.source.clone(),
+                    DestinationParameter {
+                        index,
+                        name: &parameter.name,
+                        expression: &parameter.expression,
+                        evaluated: parameter.evaluated,
+                    },
+                )
+            })
             .collect()
     }
 

@@ -30,7 +30,7 @@
 //! `Sketch` items, then no design ([`dropped_records`]).
 
 mod base_feature;
-mod expression;
+pub(super) mod expression;
 mod extrude;
 pub(super) mod frames;
 pub(super) mod history;
