@@ -11,7 +11,9 @@ use crate::native::{
     PropertyRecord, ValueRecord,
 };
 
+// resource-cap: MAX_OBJECTS = 2
 const MAX_OBJECTS: usize = 1_000_000;
+// resource-cap: MAX_PROPERTY_VALUE_XML_BYTES = 2
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
 /// Persistence vocabulary follows the numeric schema value, independently of

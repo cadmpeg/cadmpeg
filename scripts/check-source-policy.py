@@ -188,9 +188,8 @@ def item_end(code: str, start: int) -> int | None:
 
 
 @cached_analysis
-def production_source(source: str) -> tuple[str, int]:
-    """Mask non-code and test-only items; return code and production line count."""
-    code = mask_rust_non_code(source)
+def test_only_spans(code: str) -> list[tuple[int, int]]:
+    """Locate test-only items in masked Rust source."""
     spans: list[tuple[int, int]] = []
     cursor = 0
     while match := OUTER_ATTRIBUTE.search(code, cursor):
@@ -212,6 +211,14 @@ def production_source(source: str) -> tuple[str, int]:
         if end is not None:
             spans.append((start, end))
             cursor = end
+    return spans
+
+
+@cached_analysis
+def production_source(source: str) -> tuple[str, int]:
+    """Mask non-code and test-only items; return code and production line count."""
+    code = mask_rust_non_code(source)
+    spans = test_only_spans(code)
     if not spans:
         return code, len(code.splitlines())
     line_starts = [0, *(match.end() for match in re.finditer("\n", code))]

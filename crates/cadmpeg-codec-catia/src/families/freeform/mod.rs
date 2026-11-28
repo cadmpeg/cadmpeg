@@ -56,6 +56,7 @@ use crate::math::distance;
 
 const EPS_TORUS_FRAME: f64 = 1.0e-12;
 const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
+// resource-cap: MAX_PATCH_RECORD_VISITS_PER_RECORD = 4
 const MAX_PATCH_RECORD_VISITS_PER_RECORD: usize = 64;
 
 #[derive(Clone)]

@@ -11,9 +11,13 @@ use crate::bytes::is_guid_hyphenated;
 use crate::bytes::utf16::Utf16View;
 use crate::layout::manifest_lineage_suffix as lineage_suffix;
 
+// resource-cap: MAX_MANIFEST_STRING_UNITS = 2
 pub(crate) const MAX_MANIFEST_STRING_UNITS: usize = 4 * 1024;
+// resource-cap: MAX_REGISTRY_ENTRIES = 2
 const MAX_REGISTRY_ENTRIES: usize = 64;
+// resource-cap: MAX_ASSET_FOLDERS = 2
 const MAX_ASSET_FOLDERS: usize = 64;
+// resource-cap: MAX_TOP_LEVEL_MANIFEST_BYTES = 2
 const MAX_TOP_LEVEL_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
 /// The top-level manifest version whose layout this codec declares. Every

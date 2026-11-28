@@ -24,6 +24,7 @@ const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 /// Interpolating `n` samples solves an `(n + 2) x (n + 2)` system whose
 /// entries each evaluate a basis function, and the elimination is cubic in
 /// `n`, so the work is bounded before any matrix is built.
+// resource-cap: MAX_INTERPOLATION_MATRIX_ENTRIES = 4
 const MAX_INTERPOLATION_MATRIX_ENTRIES: usize = 1 << 20;
 
 /// Entries of `solves` dense systems that each interpolate `sample_count`

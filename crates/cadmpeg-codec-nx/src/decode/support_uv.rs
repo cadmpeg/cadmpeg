@@ -49,6 +49,7 @@ use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum serialized support-UV lane length admitted by one model record.
+// resource-cap: MAX_SUPPORT_UV_SAMPLES = 2
 pub(super) const MAX_SUPPORT_UV_SAMPLES: usize = 1_024;
 
 /// Minimum support-UV consistency checks admitted for one model.
@@ -59,6 +60,7 @@ const MIN_SUPPORT_UV_COMPLETION_SAMPLES: usize = 1_024;
 const SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART: usize = 8;
 
 /// Hard ceiling on the support-UV consistency checks of one model.
+// resource-cap: MAX_SUPPORT_UV_COMPLETION_SAMPLES = 4
 const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
 
 /// Geometry work that each sample adds to the budget of one support-UV lane
@@ -70,6 +72,7 @@ const MIN_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 131_072;
 
 /// Maximum geometry work of one support-UV lane attempt. Completion applies it
 /// as the ceiling of its [`LaneGeometryWork`].
+// resource-cap: MAX_SUPPORT_UV_LANE_GEOMETRY_WORK = 4
 pub(super) const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
 
 pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {

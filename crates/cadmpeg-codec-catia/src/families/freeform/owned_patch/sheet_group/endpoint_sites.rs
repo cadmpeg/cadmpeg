@@ -9,6 +9,7 @@ use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 use super::super::{curve_point, Patch, GAP_MM};
 use super::ANCHOR_AGREEMENT_MM;
 
+// resource-cap: MAX_ENDPOINT_GAP_MM = N
 const MAX_ENDPOINT_GAP_MM: f64 = 0.005;
 const SAME_STATION_MM: f64 = 1.0e-6;
 
