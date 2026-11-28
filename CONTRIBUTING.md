@@ -113,17 +113,16 @@ Run the preflight from the branch's worktree before you open or update a pull re
 
 ```sh
 python3 scripts/preflight.py          # static checks against the upstream branch
-python3 scripts/preflight.py --full   # also the Cargo checks for the crates the change reaches
+python3 scripts/preflight.py --full   # also run dependent golden tests
 python3 scripts/preflight.py --list   # what each check looks for
 ```
 
 The preflight finds the remote that points at `cadmpeg/cadmpeg`, or `origin`. It fetches that remote's default branch and checks the working tree against the merge base.
 
-Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are an `IR_VERSION` change with stale fixtures, an open-item ID that upstream already uses, and a branch that conflicts with upstream. A `WARN` needs your judgement.
+Each check prints `PASS`, `FAIL`, `WARN`, or `SKIP`, with the fix. Any `FAIL` exits 1. A `FAIL` is something review or CI rejects. Examples are an open-item ID that upstream already uses and a branch that conflicts with upstream. A `WARN` needs your judgement.
 
 Without `--full`, nothing compiles. `--run-layout` regenerates changed layout tables; a layout page or `layout.rs` that changed without its table fails unless regeneration reproduces it byte for byte. `--rev REV` checks a commit instead of the working tree.
 
-The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
 The `static checks` job runs `python3 scripts/preflight_open_items.py` on the PR merged into its base, and on main. It fails when an ID occurs more than once in an open-items document. Two pull requests that take one ID both pass and merge, and the main run then reports the duplicate.
 
@@ -138,7 +137,7 @@ The checks cover recurring review points, not all of them. A check is a `scripts
 The Python scripts under `scripts/` run on Windows with these steps:
 
 - Run them with `py -3` (for example `py -3 scripts/preflight.py`) or the full path of a real Python. A bare `python3` can resolve to the Microsoft Store stub, which prints "Python was not found" and fails. `scripts/preflight.py` starts its child checks with the interpreter that runs it.
-- Install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`. The `open-prs` check needs it.
+- Install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`.
 - Set a git identity before a rebase: `git config user.name "NAME"` and `git config user.email "EMAIL"`.
 - Run the scripts from Git Bash, or from a shell where `git` and `cargo` are on `PATH`.
 - Set `git config --global core.autocrlf false` before you clone. Or clone with `git clone -c core.autocrlf=false <url>`, which sets it in the new repository before checkout. CRLF line endings change the bytes of fixtures and generated files, and the checks that compare them byte for byte then fail.
