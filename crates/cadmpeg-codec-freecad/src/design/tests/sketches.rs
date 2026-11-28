@@ -1269,21 +1269,23 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":reference-root-point"))
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":4"))
     ));
-    let repeated_parameters = result
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter
-                .properties
-                .get("source_name")
-                .is_some_and(|name| name == "Repeated")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(repeated_parameters.len(), 2);
-    assert_eq!(repeated_parameters[0].name, "Constraint14");
-    assert_eq!(repeated_parameters[1].name, "Constraint15");
+    let repeated = |key: &str| {
+        result
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                parameter
+                    .properties
+                    .get(key)
+                    .is_some_and(|name| name == "Repeated")
+            })
+            .map(|parameter| parameter.name.as_str())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(repeated("source_name"), ["Constraint14"]);
+    assert_eq!(repeated("shadowed_name"), ["Constraint15"]);
     assert!(matches!(
         constraint(16).definition.kind(),
         cadmpeg_ir::sketches::SketchConstraintDefinitionInput::AngleToAxis {
@@ -1354,13 +1356,11 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ..
         }
     ));
-    assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        result.report().losses[0].code,
-        crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous
-            .note("")
-            .code
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|note| !note.code.to_string().starts_with("fcstd/sketch.")));
 }
 
 #[test]
@@ -1634,4 +1634,31 @@ fn external_geometry_extension_refindex_is_authoritative_and_mirrors_must_agree(
             !valid
         );
     }
+}
+
+#[test]
+fn sketches_attached_to_each_other_keep_their_native_definitions() {
+    // The decoder keeps each object of a dependency cycle as its native
+    // definition, so neither is a sketch record whose picks could close the
+    // cycle; the validator's Warning for a cycle of picks is the design
+    // layer's own (§5.3).
+    let sketch_on = |support: &str| {
+        format!(
+            r#"<Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="{support}" sub=""/></LinkSubList></Property><Property name="MapMode" type="App::PropertyEnumeration"><Integer value="5"/></Property><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>"#
+        )
+    };
+    let document = format!(
+        "<Document SchemaVersion=\"4\" FileVersion=\"1\">\n<Objects Count=\"2\">\n <Object type=\"Sketcher::SketchObject\" name=\"First\" id=\"1\"/>\n <Object type=\"Sketcher::SketchObject\" name=\"Second\" id=\"2\"/>\n</Objects>\n<ObjectData Count=\"2\">\n <Object name=\"First\"><Properties Count=\"3\">{}</Properties></Object>\n <Object name=\"Second\"><Properties Count=\"3\">{}</Properties></Object>\n</ObjectData></Document>",
+        sketch_on("Second"),
+        sketch_on("First"),
+    );
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_valid_document(decoded.ir());
+    let ir = decoded.ir();
+    assert!(ir.design.sketches.is_empty(), "{:?}", ir.design.sketches);
 }

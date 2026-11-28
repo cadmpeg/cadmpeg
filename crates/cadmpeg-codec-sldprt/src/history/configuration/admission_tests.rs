@@ -278,6 +278,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     ir.model
         .configurations
         .push(design_configuration("design", 0, Some(0), None));
+    ir.model.parameters = super::project_parameters(&ctx, &histories)?;
     super::project_configuration_design_states(
         &ctx,
         &mut ir,
@@ -1051,6 +1052,7 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     base.model
         .configurations
         .push(design_configuration("second", 1, Some(1), None));
+    base.model.parameters = super::project_parameters(&ctx, &histories)?;
     let sources = super::ConfigurationSources {
         histories: &histories,
         lanes: &lanes,
@@ -1059,14 +1061,14 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     };
 
     let mut uncapped = base.clone();
-    let unprojected = super::project_configuration_design_states_within(
+    let projection = super::project_configuration_design_states_within(
         &ctx,
         &mut uncapped,
         sources,
         None,
         super::CONFIGURATION_PROJECTION_WORK,
     )?;
-    assert_eq!(unprojected, 0);
+    assert_eq!(projection.unprojected, 0);
     assert!(uncapped
         .model
         .configurations
@@ -1076,14 +1078,14 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
 
     let one_pass = super::configuration_history_units(&histories).unwrap();
     let mut capped = base.clone();
-    let unprojected = super::project_configuration_design_states_within(
+    let projection = super::project_configuration_design_states_within(
         &ctx,
         &mut capped,
         sources,
         None,
         one_pass,
     )?;
-    assert_eq!(unprojected, 1);
+    assert_eq!(projection.unprojected, 1);
     assert_eq!(
         capped.model.configurations[0],
         uncapped.model.configurations[0]
@@ -1091,7 +1093,7 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
     assert!(capped.model.configurations[1].feature_states.is_empty());
     assert!(capped.model.configurations[1].parameter_values.is_empty());
     let loss = super::configuration_projection_capped_loss(
-        unprojected,
+        projection.unprojected,
         super::CONFIGURATION_PROJECTION_WORK,
     );
     assert_eq!(

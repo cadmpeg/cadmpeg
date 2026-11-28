@@ -2031,6 +2031,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#AdditiveBox"
           },
+          "position": 11,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {

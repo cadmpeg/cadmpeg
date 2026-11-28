@@ -23,8 +23,8 @@ pub(super) struct Encoded<T> {
 
 /// Run `encode` on `ir`, and on each failure leave out the bodies the failure
 /// names. A failure that names no body's record first leaves out the geometry
-/// no body owns, then every body. A resource or I/O failure, and a failure
-/// with nothing left to leave out, is returned. `state` names the
+/// no body owns, then every body. A resource failure, and a failure with
+/// nothing left to leave out, is returned. `state` names the
 /// configuration whose stored state `ir` is, which the note names; `None` is
 /// the current geometry, whose reduction to no face is also noted.
 pub(super) fn encode_without_unwritable_bodies<T>(
@@ -59,7 +59,7 @@ pub(super) fn encode_without_unwritable_bodies<T>(
                     losses,
                 });
             }
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => error,
         };
         let reason = error.to_string();
