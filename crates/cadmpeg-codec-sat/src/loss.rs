@@ -22,6 +22,7 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("sat") {
     Err(_) => panic!("reserved codec namespace"),
 };
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one SAT/ASM transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -69,31 +70,9 @@ pub(crate) enum SatLossCode {
     /// A later text stream has an unreadable or different native record layout.
     SourceStreamLayoutUnprojected,
 }
+}
 
 impl SatLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [SatLossCode] = &[
-        Self::GeometryFramedWithoutCarriers,
-        Self::GeometryProceduralSurfaceUntyped,
-        Self::GeometryUseCurveIntervalInvalid,
-        Self::GeometrySupportChartUnresolved,
-        Self::VertexToleranceUnresolved,
-        Self::EdgeToleranceUnresolved,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::TopologyWireOwnerUnprojected,
-        Self::SourceRecordNameUnresolved,
-        Self::SourceRecordExtensionsUnprojected,
-        Self::HeaderToleranceUnresolved,
-        Self::HeaderMetadataNoncanonical,
-        Self::HeaderLengthUnitUnresolved,
-        Self::FramingTerminatorMissing,
-        Self::FramingRecordsUnread,
-        Self::SourceDialectUnverified,
-        Self::SourceConcatenatedStreamsRecovered,
-        Self::SourceStreamLayoutUnprojected,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
