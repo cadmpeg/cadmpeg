@@ -909,10 +909,11 @@ pub(crate) fn component_insert_reference<'a>(
                 source.stream == stream
                     && source.carrier_record_index == u64::from(construction.carrier_record_index)
             })
-            && reference
-                .transform
-                .map(crate::records::xref::XrefPlacementTransform::rows)
-                == Some((*construction.transform()).into())
+            && (construction.carrier_moved()
+                || reference
+                    .transform
+                    .map(crate::records::xref::XrefPlacementTransform::rows)
+                    == Some((*construction.transform()).into()))
     });
     let reference = matches.next()?;
     matches.next().is_none().then_some(reference)
@@ -1301,7 +1302,10 @@ where
     constructions
         .into_iter()
         .filter(|(construction_stream, construction)| {
-            *construction_stream == stream && construction.neutron_role == role
+            // a carrier that moved after the insertion keeps its own current matrix
+            *construction_stream == stream
+                && construction.neutron_role == role
+                && !construction.carrier_moved()
         })
         .map(|(_, construction)| {
             (

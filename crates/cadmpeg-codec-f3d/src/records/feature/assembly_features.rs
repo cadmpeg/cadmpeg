@@ -115,6 +115,19 @@ pub(crate) struct DesignComponentInsertMatrix {
 }
 
 impl DesignComponentInsertConstruction {
+    /// Whether the occurrence moved after the insertion: the scope keeps its
+    /// insertion matrix while the attributed carrier it names keeps another,
+    /// current one (a joint or move placed the occurrence later). The carrier
+    /// then holds the occurrence's pose and the scope matrix is history.
+    #[must_use]
+    pub(crate) fn carrier_moved(&self) -> bool {
+        self.occurrence_key.is_some()
+            && self
+                .placement
+                .as_ref()
+                .is_some_and(|matrix| matrix.carrier_offset.is_none())
+    }
+
     #[must_use]
     pub(crate) fn transform(&self) -> &SketchPlacementMatrix {
         self.placement

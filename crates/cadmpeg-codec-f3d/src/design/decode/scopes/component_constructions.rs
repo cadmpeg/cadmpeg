@@ -264,10 +264,34 @@ pub(super) fn exact_component_insert_construction(
                         Some(at) => Some(rigid_transform_at(bytes, at)?),
                         None => None,
                     };
-                    if carrier_transform != transform_at.map(|_| transform) {
+                    if carrier_transform == transform_at.map(|_| transform) {
+                        placements.push((
+                            carrier.role,
+                            carrier.role_offset,
+                            carrier.transform_offset,
+                        ));
+                    } else if frame_length == 400
+                        && carrier_transform.is_some()
+                        && transform_at.is_some_and(|at| {
+                            // The carrier also stores the insertion matrix ahead of
+                            // its own: the scope's matrix is where the occurrence was
+                            // inserted, the carrier's is where it stands now.
+                            bytes.get(at..at + 128).is_some_and(|insertion| {
+                                carrier.transform_offset.is_some_and(|tail| {
+                                    bytes.get(carrier_at..tail).is_some_and(|leading| {
+                                        leading.windows(128).any(|window| window == insertion)
+                                    })
+                                })
+                            })
+                        })
+                    {
+                        // The relation names this carrier and the scope both ways; the
+                        // carrier keeps a different matrix: the occurrence moved after
+                        // its insertion, and the carrier's matrix is the current one.
+                        placements.push((carrier.role, carrier.role_offset, None));
+                    } else {
                         return None;
                     }
-                    placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
                     occurrence_key = Some(carrier.occurrence_key);
                 }
             }

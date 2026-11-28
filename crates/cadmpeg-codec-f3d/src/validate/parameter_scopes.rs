@@ -1087,9 +1087,10 @@ pub(super) fn validate_parameter_scopes(
                             .byte_offset()
                             .checked_add(if frame_length == 400 { 50 } else { 54 })
                             .is_some_and(|expected_offset| matrix.scope.offset == expected_offset)
-                            && matrix
+                            && (matrix
                                 .carrier_offset
                                 .is_some_and(|offset| offset < construction.neutron_role_offset)
+                                || construction.carrier_moved())
                     }
                     (frame_length, paired, Some(matrix)) => {
                         let scope_delta = match (frame_length, paired) {
