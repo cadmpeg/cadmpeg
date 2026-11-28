@@ -61,8 +61,8 @@ fn planar_sheet_round_trips_object_attributes() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -108,8 +108,8 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -252,8 +252,8 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -328,8 +328,8 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -411,8 +411,8 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -505,7 +505,11 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
     use crate::writer::{model::WritableModel, planar_solid_orientation};
     let ir = planar_tetrahedron();
     for (scale, translation) in [(1.0, 0.0), (1.0, 1e8), (1e200, 0.0), (1e-200, 0.0)] {
-        let mut model = WritableModel::try_new(&ir).unwrap();
+        let mut model = WritableModel::try_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &ir,
+        )
+        .unwrap();
         // The sign owner consumes the oriented vertex rings; other writer fields
         // do not enter this calculation.
         for vertex in &mut model.vertices {

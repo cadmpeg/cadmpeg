@@ -180,7 +180,7 @@ pub(super) fn project(
             }
         }
     }
-    for token in &container.rse.unpaired_metadata {
+    for (token, _) in &container.rse.unpaired_metadata {
         admit_native_items(ctx, 1)?;
         projection.unpaired_segments.push(UnpairedSegmentRecord {
             id: format!("inventor:rse:unpaired-metadata#{}", token.as_str()),
@@ -188,7 +188,7 @@ pub(super) fn project(
             missing_member: UnpairedMember::Bulk,
         });
     }
-    for token in &container.rse.unpaired_bulk {
+    for (token, _) in &container.rse.unpaired_bulk {
         admit_native_items(ctx, 1)?;
         projection.unpaired_segments.push(UnpairedSegmentRecord {
             id: format!("inventor:rse:unpaired-bulk#{}", token.as_str()),

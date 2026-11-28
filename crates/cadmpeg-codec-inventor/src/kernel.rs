@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor kernel-carrier selection and envelope framing.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScratchContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
+use cadmpeg_asm::brep::given_up::WithheldRecord;
+use cadmpeg_asm::brep::{decode_with_header, inspect_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::BinaryHeader;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
@@ -57,6 +59,16 @@ pub(crate) struct ActiveCarrier<'a> {
     pub(crate) history_reference: u32,
 }
 
+impl ActiveCarrier<'_> {
+    /// The offset in the expanded bulk stream of the carrier byte at
+    /// `within`.
+    pub(crate) fn stream_offset(&self, within: usize) -> Result<u64, CodecError> {
+        self.carrier_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(within))
+            .ok_or_else(|| CodecError::malformed("Inventor kernel-carrier offset overflows"))
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
@@ -66,7 +78,7 @@ pub(crate) enum ActiveCarrierState<'a> {
     /// the record `record_ordinal` of the segment `segment_token`, whose
     /// `payload` starts at `payload_offset` in the expanded bulk stream.
     Unreadable {
-        segment_token: String,
+        segment_token: cadmpeg_ir::ids::IdentityKey,
         record_ordinal: u32,
         payload_offset: u64,
         payload: View<'a>,
@@ -74,9 +86,28 @@ pub(crate) enum ActiveCarrierState<'a> {
     },
 }
 
+/// Why a kernel carrier does not decode: the cause of its give-up, and the
+/// error. A carrier whose record stream does not frame breaks the kernel
+/// format; a framed stream that the ACIS decode does not read is a form the
+/// decoder does not decode.
+#[derive(Debug)]
+pub(crate) struct CarrierFailure {
+    pub(crate) cause: Cause,
+    pub(crate) error: CodecError,
+}
+
+impl From<CarrierFailure> for CodecError {
+    fn from(failure: CarrierFailure) -> Self {
+        failure.error
+    }
+}
+
 pub(crate) struct DecodedKernelCarrier {
     pub(crate) header: BinaryHeader,
     pub(crate) brep: AsmBrep,
+    /// Each record the decode withheld, with its offset in the expanded bulk
+    /// stream.
+    pub(crate) withheld: Vec<(u64, WithheldRecord)>,
     /// Framed records other than the `asmheader` record.
     pub(crate) model_records: usize,
 }
@@ -99,7 +130,69 @@ pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
     header: &BinaryHeader,
-) -> Result<DecodedKernelCarrier, CodecError> {
+) -> Result<DecodedKernelCarrier, CarrierFailure> {
+    let unreadable = |error: CodecError| CarrierFailure {
+        cause: Cause::Unreadable,
+        error,
+    };
+    let records = frame_kernel_records(ctx, carrier, header).map_err(unreadable)?;
+    let mut brep = decode_with_header(
+        ctx,
+        &records,
+        carrier.bytes.window(),
+        Some(&header.metadata),
+        &carrier_stream(carrier),
+        cadmpeg_asm::asm_format!("inventor"),
+        DecodePurpose::Model,
+    )
+    .map_err(|error| CarrierFailure {
+        cause: Cause::Undecoded,
+        error,
+    })?;
+    let withheld = std::mem::take(&mut brep.withheld)
+        .into_iter()
+        .map(|record| Ok((carrier.stream_offset(record.offset)?, record)))
+        .collect::<Result<Vec<_>, CodecError>>()
+        .map_err(unreadable)?;
+    Ok(DecodedKernelCarrier {
+        header: header.clone(),
+        brep,
+        withheld,
+        model_records: records
+            .iter()
+            .filter(|record| record.head() != "asmheader")
+            .count(),
+    })
+}
+
+/// The graph of a carrier that the caller reads and drops.
+pub(crate) fn inspect_kernel_carrier(
+    scratch: &ScratchContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+    header: &BinaryHeader,
+) -> Result<AsmBrep, CodecError> {
+    let records = frame_kernel_records(scratch, carrier, header)?;
+    inspect_with_header(
+        scratch,
+        &records,
+        Some(&header.metadata),
+        &carrier_stream(carrier),
+        cadmpeg_asm::asm_format!("inventor"),
+    )
+}
+
+fn carrier_stream(carrier: &ActiveCarrier<'_>) -> String {
+    format!(
+        "RSeStorage/B{}:record:{}",
+        carrier.segment_token, carrier.record_ordinal
+    )
+}
+
+fn frame_kernel_records(
+    ctx: &DecodeContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+    header: &BinaryHeader,
+) -> Result<Vec<sab::Record>, CodecError> {
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
@@ -122,7 +215,7 @@ pub(crate) fn decode_kernel_carrier(
         }
     };
     let width = header.width;
-    let records = match solved_limit {
+    match solved_limit {
         Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
         None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
     }
@@ -133,27 +226,6 @@ pub(crate) fn decode_kernel_carrier(
                 carrier.family.label()
             ))
         })
-    })?;
-    let stream = format!(
-        "RSeStorage/B{}:record:{}",
-        carrier.segment_token, carrier.record_ordinal
-    );
-    let brep = decode_with_header(
-        ctx,
-        &records,
-        bytes,
-        Some(&header.metadata),
-        &stream,
-        cadmpeg_asm::asm_format!("inventor"),
-        DecodePurpose::Model,
-    )?;
-    Ok(DecodedKernelCarrier {
-        header: header.clone(),
-        brep,
-        model_records: records
-            .iter()
-            .filter(|record| record.head() != "asmheader")
-            .count(),
     })
 }
 
@@ -208,7 +280,7 @@ pub(crate) fn select_active_carrier<'a>(
     ) {
         Ok(carrier) => ActiveCarrierState::Selected(carrier),
         Err(error) => ActiveCarrierState::Unreadable {
-            segment_token: segment.pair.token.as_str().to_owned(),
+            segment_token: segment.pair.token.key().clone(),
             record_ordinal: record.ordinal,
             payload_offset: record.payload_offset,
             payload: record.payload,
@@ -309,7 +381,8 @@ pub(crate) fn parse_carrier<'a>(
         header_value,
         schema,
         carrier_offset: record_payload_offset
-            + cadmpeg_core::decode::u64_from_index(carrier_header::LEN),
+            .checked_add(cadmpeg_core::decode::u64_from_index(carrier_header::LEN))
+            .ok_or_else(|| CodecError::malformed("Inventor kernel-carrier offset overflows"))?,
         bytes: carrier,
         header,
         selected_key,
@@ -381,7 +454,12 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("carrier fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let inventory = RseInventory::build(
+            &setup_ctx,
+            &snapshot,
+            &mut crate::container::streams::Streams::default(),
+        )
+        .expect("RSe fixture");
         assert!(matches!(
             select_active_carrier(&inventory.segments, &DocumentKind::Part),
             ActiveCarrierState::Selected(_)
@@ -396,7 +474,7 @@ mod tests {
             .header
             .as_ref()
             .map_err(|detail| CodecError::Malformed(detail.clone()))?;
-        decode_kernel_carrier(ctx, carrier, header)
+        Ok(decode_kernel_carrier(ctx, carrier, header)?)
     }
 
     #[test]
@@ -429,6 +507,11 @@ mod tests {
             assert_eq!(carrier.bytes.window(), b"ASM BinaryFile4 synthetic");
             assert_eq!(carrier.record_ordinal, 7);
             assert_eq!(carrier.carrier_offset, 114);
+            let overflow =
+                parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, u64::MAX, 18)
+                    .expect_err("the absolute carrier offset overflows");
+            assert!(matches!(overflow, CodecError::Malformed(detail)
+                if detail == "Inventor kernel-carrier offset overflows"));
         });
         let mut malformed = bytes;
         *malformed.last_mut().expect("footer byte") = 0;

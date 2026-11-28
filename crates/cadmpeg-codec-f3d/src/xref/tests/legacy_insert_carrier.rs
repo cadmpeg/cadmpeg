@@ -13,7 +13,9 @@ fn legacy_typed_insert_carriers_bind_by_record_and_equal_placement() {
     for (transform, expected) in [(None, identity), (Some(matrix), matrix)] {
         let mut bytes = vec![0xee; 5];
         let carrier_at = bytes.len();
-        bytes.extend(super::legacy_occurrence_record(role, 10, transform));
+        bytes.extend(crate::test_support::legacy_occurrence_record(
+            role, 10, transform,
+        ));
         let relation_at = bytes.len();
         let (decoded, role_offset, transform_offset) =
             super::super::legacy_typed_component_insert_carrier(

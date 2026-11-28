@@ -55,8 +55,9 @@ fn a_quarantined_record_stub_is_written_as_an_omitted_native_record() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .unwrap();
     assert!(matches!(

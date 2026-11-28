@@ -23,6 +23,19 @@ fn missing_and_legacy_counts_retain_the_actual_population_and_report_losses() {
     }
 }
 
+/// `TransientCount` is optional: a container that omits it beside
+/// `_Property` records states no count and records no loss.
+#[test]
+fn an_absent_transient_count_records_no_loss() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="Note" type="App::PropertyString"><String value="note"/></Property><_Property name="Temporary" type="App::PropertyString"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        super::parse(document.as_bytes(), "4", ctx)
+    })
+    .expect("a container without TransientCount");
+    assert_eq!(graph.properties.len(), 2);
+    assert!(graph.losses.is_empty(), "{:?}", graph.losses);
+}
+
 #[test]
 fn redundant_counts_do_not_own_xml_population() {
     for declared in ["0", "99", "bad", "999999999999999999999999999999"] {

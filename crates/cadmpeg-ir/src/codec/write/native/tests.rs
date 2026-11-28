@@ -17,10 +17,16 @@ impl EncoderBackend for NativeEncoder {
     const FORMAT: FormatId = FormatId::new("test");
     const NAME: &'static str = "test";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &cadmpeg_core::decode::DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         Ok(ExportBody::synthesized(
             Vec::new(),
             input.ir,
@@ -62,7 +68,7 @@ fn document() -> CadIr {
 fn omissions(native: NativeDispositions) -> Vec<LossNote> {
     let ir = document();
     let plan = NativeEncoder(native)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Inherit))
         .unwrap();
     plan.report()
         .losses

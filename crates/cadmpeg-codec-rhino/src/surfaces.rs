@@ -435,10 +435,19 @@ fn read_revolution(
             "unsupported revolution-surface version",
         ));
     }
-    let from = crate::wire::scaled_point(point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
+    let from = crate::wire::scaled_point(point(reader)?.0.get(), scale).map_err(|unscaled| {
+        unscaled.charge(error(
+            reader.position(),
+            "scaled revolution axis is invalid",
+        ))
+    })?;
     let to = crate::wire::scaled_point(point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(
+                reader.position(),
+                "scaled revolution axis is invalid",
+            ))
+        })?
         .get();
     let angular_interval =
         increasing_interval(interval(reader)?.0, reader.position(), "revolution angle")?;
@@ -532,13 +541,19 @@ fn read_sum(
     let native = native_vector(reader)?;
     let basepoint = Vector3::new(
         crate::wire::scaled_coordinate(native.0[0], scale)
-            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
+            .map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled sum basepoint is invalid"))
+            })?
             .get(),
         crate::wire::scaled_coordinate(native.0[1], scale)
-            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
+            .map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled sum basepoint is invalid"))
+            })?
             .get(),
         crate::wire::scaled_coordinate(native.0[2], scale)
-            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
+            .map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled sum basepoint is invalid"))
+            })?
             .get(),
     );
     bbox(reader)?;
@@ -1051,8 +1066,9 @@ fn read_plane_surface_with_parameterization(
     };
     let geometry = TypedSurface::Plane {
         plane: cadmpeg_ir::geometry::analytic::PlaneSurface::new(
-            crate::wire::scaled_point(native_plane.origin.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+            crate::wire::scaled_point(native_plane.origin.get(), scale).map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled plane origin is invalid"))
+            })?,
             frame,
         ),
         parameterization: PlaneParameterization {

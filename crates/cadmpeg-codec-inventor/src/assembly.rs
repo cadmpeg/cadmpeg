@@ -7,11 +7,13 @@ use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{Identity, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, ProductDefinition, Storage,
 };
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
@@ -158,6 +160,40 @@ impl UnresolvedCause {
     }
 }
 
+/// Why the projection drops an occurrence whose id no other record builds.
+/// A repeated occurrence id drops nothing: the first record builds the id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DropCause {
+    ExternalReference,
+    OccurrenceRecord,
+    InvalidTransform,
+    Placement,
+}
+
+impl DropCause {
+    /// The count that the dropped occurrence is part of.
+    pub(crate) const fn unresolved(self) -> UnresolvedCause {
+        match self {
+            Self::ExternalReference => UnresolvedCause::ExternalReference,
+            Self::OccurrenceRecord => UnresolvedCause::OccurrenceRecord,
+            Self::InvalidTransform => UnresolvedCause::InvalidTransform,
+            Self::Placement => UnresolvedCause::Placement,
+        }
+    }
+
+    /// The cause of the give-up of the occurrence: a placement that is not
+    /// affine breaks the format, and a missing or ambiguous join is one the
+    /// decoder does not resolve.
+    pub(crate) const fn give_up_cause(self) -> cadmpeg_ir::unknown::part::Cause {
+        match self {
+            Self::InvalidTransform => cadmpeg_ir::unknown::part::Cause::Unreadable,
+            Self::ExternalReference | Self::OccurrenceRecord | Self::Placement => {
+                cadmpeg_ir::unknown::part::Cause::Undecoded
+            }
+        }
+    }
+}
+
 /// The design-view and occurrence state records that qualify an occurrence.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct OccurrenceStates<'a> {
@@ -179,7 +215,7 @@ pub(crate) struct AssemblyProjection {
     /// The ids of the occurrences the projection drops, each with the
     /// first cause that drops it. An id that another `UFRx` record builds
     /// is not dropped.
-    pub(crate) unbuilt_placements: Vec<(String, UnresolvedCause)>,
+    pub(crate) unbuilt_placements: Vec<(String, DropCause)>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -244,7 +280,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
             )?;
-            unbuilt_placements.push((source.occurrence_id, UnresolvedCause::ExternalReference));
+            unbuilt_placements.push((source.occurrence_id, DropCause::ExternalReference));
             continue;
         };
         let Some(occurrence_record) = occurrence_records
@@ -255,7 +291,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
             )?;
-            unbuilt_placements.push((source.occurrence_id, UnresolvedCause::OccurrenceRecord));
+            unbuilt_placements.push((source.occurrence_id, DropCause::OccurrenceRecord));
             continue;
         };
         if emitted_ids.contains(&source.occurrence_id) {
@@ -293,7 +329,7 @@ pub(crate) fn project_occurrences(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
                     )?;
-                    unbuilt_placements.push((occurrence_id, UnresolvedCause::InvalidTransform));
+                    unbuilt_placements.push((occurrence_id, DropCause::InvalidTransform));
                     continue;
                 };
                 (transform, invisible.then_some(false))
@@ -301,7 +337,7 @@ pub(crate) fn project_occurrences(
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
                 count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement)?;
-                unbuilt_placements.push((occurrence_id, UnresolvedCause::Placement));
+                unbuilt_placements.push((occurrence_id, DropCause::Placement));
                 continue;
             }
         };
@@ -378,6 +414,45 @@ pub(crate) fn project_occurrences(
         unresolved_placements,
         unbuilt_placements,
     })
+}
+
+/// The charge of each occurrence that `unbuilt` names. An occurrence that has
+/// no placement because each of its placement records was given up goes with
+/// the give-up of the first of them: `rejected` holds the occurrence id and
+/// the stub of each given-up placement record, in record order. Every other
+/// occurrence is given up itself.
+pub(crate) fn unbuilt_losses(
+    unbuilt: &[(String, DropCause)],
+    rejected: &[(u32, Identity)],
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut held = HashMap::new();
+    for (occurrence_id, stub) in rejected {
+        let id = OccurrenceId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
+            *occurrence_id,
+        );
+        held.entry(id.as_str().to_owned()).or_insert(stub);
+    }
+    unbuilt
+        .iter()
+        .map(|(record, cause)| {
+            let record = Identity::new(record)?;
+            Ok(match held.get(record.as_str()) {
+                Some(stub) if *cause == DropCause::Placement => {
+                    dropped_with(record, (*stub).clone())
+                }
+                _ => GivenUpRecord::new(
+                    record,
+                    cause.give_up_cause(),
+                    format_args!(
+                        "an assembly occurrence placement is not transferred: {}",
+                        cause.unresolved().description()
+                    ),
+                )
+                .loss(),
+            })
+        })
+        .collect()
 }
 
 /// Resolves a one-based same-segment record reference to a record ordinal.
@@ -994,9 +1069,58 @@ mod tests {
             projection.unbuilt_placements,
             [(
                 "inventor:assembly:instance#8".to_owned(),
-                super::UnresolvedCause::ExternalReference
+                super::DropCause::ExternalReference
             )]
         );
+    }
+
+    #[test]
+    fn an_occurrence_whose_placements_were_all_given_up_goes_with_the_first() {
+        let stub = |name: &str| cadmpeg_ir::ids::Identity::new(name).expect("stub id");
+        let losses = super::unbuilt_losses(
+            &[
+                (
+                    "inventor:assembly:instance#7".to_owned(),
+                    super::DropCause::Placement,
+                ),
+                (
+                    "inventor:assembly:instance#8".to_owned(),
+                    super::DropCause::Placement,
+                ),
+                (
+                    "inventor:assembly:instance#9".to_owned(),
+                    super::DropCause::OccurrenceRecord,
+                ),
+            ],
+            &[
+                (7, stub("inventor:source:part#first")),
+                (7, stub("inventor:source:part#second")),
+                (9, stub("inventor:source:part#third")),
+            ],
+        )
+        .expect("losses");
+        let [seven, eight, nine] = losses.as_slice() else {
+            panic!("one loss per occurrence: {losses:#?}");
+        };
+        assert_eq!(
+            cadmpeg_ir::unknown::part::needs(seven)
+                .map(|(record, needs)| (record.as_str(), needs.as_str())),
+            Some(("inventor:assembly:instance#7", "inventor:source:part#first"))
+        );
+        for (loss, id) in [
+            (eight, "inventor:assembly:instance#8"),
+            (nine, "inventor:assembly:instance#9"),
+        ] {
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
+            );
+            assert!(
+                loss.message.starts_with(&format!("record {id} given up: ")),
+                "{}",
+                loss.message
+            );
+        }
     }
 
     #[test]

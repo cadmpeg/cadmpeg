@@ -22,7 +22,7 @@ use crate::records::{Feature, FeatureSource};
 
 /// The class of the native base body, whose stored geometry is the feature's
 /// definition.
-const BASE_BODY_CLASS: &str = "moBaseBody_c";
+pub(super) const BASE_BODY_CLASS: &str = "moBaseBody_c";
 
 /// The operation of `feature`, a node of `history` that is a feature.
 ///

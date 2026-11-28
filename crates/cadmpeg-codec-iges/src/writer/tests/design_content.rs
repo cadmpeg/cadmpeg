@@ -76,8 +76,9 @@ fn a_solid_with_design_content_is_written_and_the_content_reported() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the solid is writable");
     let mut bytes = Vec::new();
@@ -138,8 +139,9 @@ fn a_colour_definition_is_written_with_its_source_colour_number() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the loop is written");
     for (color, _) in &colors {
@@ -197,8 +199,9 @@ fn a_given_up_part_stub_is_not_charged() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the stub does not refuse the write");
     assert!(

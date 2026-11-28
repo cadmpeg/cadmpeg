@@ -18,6 +18,8 @@ mod references;
 mod scope;
 mod walk;
 
+use std::rc::Rc;
+
 use crate::report::check::Ruled;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -33,30 +35,34 @@ use crate::report::{
 };
 use records::ProcessRecords;
 
-/// Check the design layer of `ir`, then its process layer against part
-/// 10's process rules. The process picks resolve through the design pass's
-/// index and matchers, so the process records are walked before those are
-/// built and outlive them.
+#[cfg(test)]
 pub(super) fn check_design_and_process(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let design;
+    check_design_and_process_with(ctx, Rc::new(DesignRecords::new(ir)), ids, findings)
+}
+
+pub(super) fn check_design_and_process_with(
+    ctx: &DecodeContext<'_>,
+    design: Rc<DesignRecords<'_>>,
+    ids: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let ir = design.ir;
     let records;
     let walked;
     let process = if is_empty(ir) {
         None
     } else {
-        design = DesignRecords::new(ir);
-        records = ProcessRecords::new(&design);
+        records = ProcessRecords::new(Rc::clone(&design));
         walked = walk::walk_records(&records);
         Some((&records, walked.as_slice()))
     };
-    let states = States::new(ir);
-    let matchers = Matchers::new(&states);
-    let index = super::design::check_design(ctx, ir, ids, &matchers, findings)?;
+    let matchers = Matchers::owned(States::new(ir));
+    let index = super::design::check_design(ctx, design, ids, &matchers, findings)?;
     let Some((records, walked)) = process else {
         return Ok(());
     };

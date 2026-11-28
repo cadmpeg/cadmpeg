@@ -212,6 +212,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A saved part whose formula has an `and` or `or` with a left operand that decides the result and a right operand that fails at the saved inputs, for example a division by an input whose saved value is zero: compare the formula's stored result with the decided value. A stored result equal to the decided value confirms the reading of `catia.md` §7.3.
 
+### DI-34. Ordered and plain geometrical sets
+
+**Question.** Which stored field tells an ordered geometrical set from a geometrical set?
+
+**Known.** `catia.md` §7.3.2 defines the compact `GSMTool` record and its `_FtrList` member list. Its compact prefix has lead `00` and flags `08`, and its second field selects the catalog entry `Open_body`. A `GSMTool` payload stores one `_FtrList` segment or stores no segment. A `HybridBody` record that `MainTool` selects is the main body, and a `HybridBody` record whose `_FtrList` lists a solid feature is a body. Another `HybridBody` record has the same prefix form and second entry. The design layer states each `GSMTool` record and each other `HybridBody` record as an unordered geometrical set holding its members, and names it in the loss `design.set-kind-unread`.
+
+**Need.** Two saves of one part that differ in one control: a geometrical set saved as an ordered geometrical set, then saved as a plain geometrical set. Compare the compact prefix, the second-tag entry, and the payload segments of the two `GSMTool` records.
+
+### DI-35. Principal plane of each `_ReferencePlanes` entry
+
+**Question.** Which entry of the part root's `_ReferencePlanes` list is the xy plane, which the yz plane, and which the zx plane?
+
+**Known.** `catia.md` §7.3.2 defines the root's `_ReferencePlanes` segment: a list of three entities whose records have compact class `GSMPlane`, the same three records as the first three members of the root's `_FtrList`. The design objects of these records carry declaration classes that take field names as values, and none of them names a principal plane. The design layer states each of the three records as a datum feature whose construction is unread.
+
+**Need.** One saved part whose three principal planes each carry a sketch with a stored, resolved placement: a sketch on the xy plane, one on the yz plane, and one on the zx plane. Compare each sketch's support entity with the `_ReferencePlanes` list index, and the sketch normal with the plane each index selects.
+
+### DI-36. Field of a `UdfFeature` record that selects its `Assemble`
+
+**Question.** Which field of a `UdfFeature` record selects the `Assemble` record that combines the instance's body into the body that lists the instance?
+
+**Known.** A body lists a `UdfFeature` record whose payload uses wide fields and field-of values, including `UdfShapeIn` (`catia.md` §7.3.2). The same part has an `Assemble` record outside the body and set member lists. Its `_FtrList` gives its result record followed by its tool body. CADIR v11 §6 `TemplateInstance` holds the template body's features and an `Assemble` that unions that body into the body before the instance. The decoder states the `UdfFeature` as `Unresolved { TemplateInstance }` and places the tool body at the scope root, with `design.sets-unlisted` naming the `Assemble` that selects it.
+
+**Need.** Two saves of one part that differ in one control: a part with one user feature instance in its main body, then the same part with a second instance of the same template. Compare the segments of each `UdfFeature` payload with the entity token of each `Assemble` record whose tool is that instance's body.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-02. Rolling-ball scalar-jet semantics and tail control
