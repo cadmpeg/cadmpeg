@@ -1879,6 +1879,94 @@ fn switching_the_active_configuration_exchanges_each_extent() {
 }
 
 #[test]
+fn switching_configurations_exchanges_instance_body_entries() {
+    use crate::design::selection::{OccurrencePath, PathStep, StepRef};
+    use crate::products::{InstanceBodies, Occurrence, ProductDefinition, Storage};
+
+    let mut document = configured();
+    document
+        .design
+        .evaluations
+        .retain(|evaluation| evaluation.id != id("evaluation", 6));
+    let occurrence_id: OccurrenceId = id("occurrence", 1);
+    let prototype: ProductDefinitionId = id("product-definition", 2);
+    let path = OccurrencePath(vec![PathStep {
+        occurrence: StepRef::Occurrence(occurrence_id.clone()),
+        configuration: None,
+    }]);
+    document.model.occurrences.push(Occurrence::new(
+        occurrence_id.clone(),
+        prototype.clone(),
+        None,
+    ));
+    document.model.product_definitions[0]
+        .occurrences
+        .push(occurrence_id);
+    document.model.product_definitions[0].bodies.clear();
+    document.design.scopes[0].unproduced.insert(id("body", 9));
+    document.model.product_definitions[0]
+        .instance_bodies
+        .push(InstanceBodies {
+            occurrence: path.clone(),
+            bodies: vec![id("body", 1), id("body", 9)],
+        });
+    document
+        .model
+        .product_definitions
+        .push(ProductDefinition::new(prototype, Storage::Embedded));
+    document
+        .design
+        .evaluations
+        .iter_mut()
+        .find(|evaluation| evaluation.id == id("evaluation", 5))
+        .unwrap()
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .instance_bodies
+        .insert(path.clone(), Some(vec![id("body", 2)]));
+
+    document
+        .edit(&crate::report::strictness::Strictness::default())
+        .unwrap()
+        .set_active_configuration(&definition(), &configuration(2))
+        .unwrap();
+    assert_eq!(
+        document.model.product_definitions[0].instance_bodies[0].bodies,
+        vec![id::<BodyId>("body", 9), id::<BodyId>("body", 2)]
+    );
+    let outgoing = document
+        .design
+        .evaluations
+        .iter()
+        .find(|evaluation| {
+            evaluation.configuration == Some(configuration(1))
+                && evaluation.of == Evaluated::State(after(3))
+        })
+        .unwrap();
+    assert_eq!(
+        outgoing
+            .content
+            .as_ref()
+            .unwrap()
+            .delta
+            .instance_bodies
+            .get(&path),
+        Some(&Some(vec![id::<BodyId>("body", 1)]))
+    );
+    document
+        .edit(&crate::report::strictness::Strictness::default())
+        .unwrap()
+        .set_active_configuration(&definition(), &configuration(1))
+        .unwrap();
+    assert_eq!(
+        document.model.product_definitions[0].instance_bodies[0].bodies,
+        vec![id::<BodyId>("body", 9), id::<BodyId>("body", 1)]
+    );
+}
+
+#[test]
 fn switching_exchanges_every_current_state_of_the_scope() {
     let mut document = configured();
     document

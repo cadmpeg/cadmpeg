@@ -289,6 +289,12 @@ impl CadIr {
             definition.bodies.retain(|body| {
                 !(outgoing_bodies.contains(body) && leaving.contains(body.as_str()))
             });
+            for entry in &mut definition.instance_bodies {
+                entry.bodies.retain(|body| !leaving.contains(body.as_str()));
+            }
+            definition
+                .instance_bodies
+                .retain(|entry| !entry.bodies.is_empty());
         }
         Ok(())
     }
@@ -331,7 +337,12 @@ impl CadIr {
                         .collect(),
                     owners,
                     members: std::collections::BTreeMap::new(),
-                    instance_bodies: std::collections::BTreeMap::new(),
+                    instance_bodies: exchange
+                        .outgoing
+                        .instance_bodies
+                        .iter()
+                        .map(|(path, bodies)| (path.clone(), Some(bodies.clone())))
+                        .collect(),
                     poses: current
                         .poses
                         .iter()
@@ -384,7 +395,11 @@ impl CadIr {
         let mut names = self.design.names.entries().clone();
         names.extend(state.names);
         self.design.names = names.into();
+        let instance_bodies: BTreeSet<&BodyId> = state.instance_bodies.values().flatten().collect();
         for body in &bodies {
+            if instance_bodies.contains(body) {
+                continue;
+            }
             let owner = state.owners.get(body).unwrap_or(scope);
             if let Some(definition) = self
                 .model
@@ -394,6 +409,46 @@ impl CadIr {
             {
                 if !definition.bodies.contains(body) {
                     definition.bodies.push(body.clone());
+                }
+            }
+        }
+        for (path, incoming_bodies) in state.instance_bodies {
+            let owner = path
+                .0
+                .first()
+                .and_then(|step| match &step.occurrence {
+                    crate::design::selection::StepRef::Occurrence(id) => {
+                        state.members.get(id).cloned().or_else(|| {
+                            crate::products::owner(&self.model.product_definitions, id)
+                                .map(|owner| owner.id.clone())
+                        })
+                    }
+                    crate::design::selection::StepRef::Native(_) => None,
+                })
+                .unwrap_or_else(|| scope.clone());
+            if let Some(definition) = self
+                .model
+                .product_definitions
+                .iter_mut()
+                .find(|definition| definition.id == owner)
+            {
+                if let Some(entry) = definition
+                    .instance_bodies
+                    .iter_mut()
+                    .find(|entry| entry.occurrence == path)
+                {
+                    for body in incoming_bodies {
+                        if !entry.bodies.contains(&body) {
+                            entry.bodies.push(body);
+                        }
+                    }
+                } else {
+                    definition
+                        .instance_bodies
+                        .push(crate::products::InstanceBodies {
+                            occurrence: path,
+                            bodies: incoming_bodies,
+                        });
                 }
             }
         }
