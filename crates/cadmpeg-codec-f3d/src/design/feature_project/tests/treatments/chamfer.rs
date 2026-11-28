@@ -614,6 +614,8 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
                 let sets = payload.sets.as_mut().unwrap();
                 sets.corner_type = corner;
                 sets.sets[0].tangent_chain = tangent;
+                sets.sets[1].tangent_chain = tangent;
+                sets.sets[2].tangent_chain = tangent;
                 if compact {
                     sets.sets[0].frame_length = COMPACT_SET_FRAME_LENGTH;
                 }
@@ -631,7 +633,7 @@ fn mixed_chamfer_set_flags_and_corners_keep_metadata_and_specific_losses() {
                 serde_json::from_str(&projected.features[0].source_properties["chamfer:sets"])
                     .unwrap();
             assert_eq!(retained.corner_type, corner);
-            assert_eq!(retained.sets[0].tangent_chain, tangent);
+            assert!(retained.sets.iter().all(|set| set.tangent_chain == tangent));
         }
     }
 }

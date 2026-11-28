@@ -1812,13 +1812,13 @@ Bounded-face Chamfer members are tracked in DR-481.
 
 **Question.** Does the flag byte of the compact equal-distance chamfer set form encode tangent chain, and does the entry run of a compact set count its edges after tangent propagation? What do the zero byte that ends each entry, the fixed `u8 1`, the entry-run marker forms, and the auxiliary record encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values, and the tangent-chain byte, the entries, and the edge-group members of the equal-distance, two-distance, and distance-angle forms. The compact equal-distance form stores its flag byte at offset 21 of its 82-byte frame, with the value `0` or `1`. The decoder stores the flag of every set form as the set's `tangent_chain`, the marker as the list's `form`, the auxiliary record index as the set's `auxiliary_record_index`, and the entries per set as the set's `entry_count`.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Chamfer` scope names its chamfer sets in a prefix" gives their positions and admitted values, and the tangent-chain byte, the entries, and the edge-group members of the equal-distance, two-distance, and distance-angle forms. The compact equal-distance form stores its flag byte at offset 21 of its 82-byte frame, with the value `0` or `1`. When the selected edges of a set of any form have no tangent neighbour, its entries count the selected edges. The decoder stores the flag of every set form as the set's `tangent_chain`, the marker as the list's `form`, the auxiliary record index as the set's `auxiliary_record_index`, and the entries per set as the set's `entry_count`.
 
 **Need.** Saves of compact equal-distance chamfers on one edge with tangent neighbours, with tangent chain on and off, with the flag byte, the entries, and the edge-group members of each compared.
 
 **Conflict.** None.
 
-**Note.** Projection through explicit set references retains the flags and corner type in feature properties. A compact set with flag `1` reports `feature.chamfer-tangent-chain-assumed`; a miter or blend corner reports `feature.chamfer-corner-treatment-unresolved`.
+**Note.** Projection through explicit set references retains the flags and corner type in feature properties. A compact set with flag `1` reports `feature.chamfer-tangent-chain-assumed` on each projection path; a miter or blend corner reports `feature.chamfer-corner-treatment-unresolved`.
 
 ### DR-467. Face that a Hole's `bounded_face` operands name
 
