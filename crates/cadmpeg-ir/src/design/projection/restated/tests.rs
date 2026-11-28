@@ -746,6 +746,41 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
 }
 
 #[test]
+fn an_absent_flag_compares_as_false() {
+    let mut ir = sketch_fixture();
+    let line = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == LINE)
+        .unwrap();
+    line.construction = None;
+    let model = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap();
+    model.construction = false;
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+
+    ir.model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap()
+        .read_construction(false);
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+    ir.model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap()
+        .read_construction(true);
+    assert_eq!(cuts(&ir)[LINE], fields(["construction"]));
+}
+
+#[test]
 fn a_container_carries_the_model_owner_when_written() {
     use crate::design::container::{Container, UnorderedKind};
     use crate::design::ids::ContainerId;

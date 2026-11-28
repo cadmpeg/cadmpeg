@@ -70,7 +70,7 @@ fn feature_named<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::design::featu
         .unwrap()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
+pub(crate) fn assert_no_design_findings(ir: &CadIr) {
     let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     let design = report
         .findings
@@ -790,7 +790,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -1027,6 +1027,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -1185,6 +1186,7 @@ fn typed_timeline<'a>(
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -1584,6 +1586,7 @@ fn members_follow_the_features_they_depend_on() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -1815,6 +1818,7 @@ mod datum;
 mod dimension_curves;
 mod parameters;
 mod pattern;
+pub(crate) mod restated;
 mod revolve;
 mod rollback;
-mod state_zero;
+pub(crate) mod state_zero;

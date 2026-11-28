@@ -27,7 +27,7 @@ mod sketch;
 pub(crate) mod states;
 mod swept;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod tree;
 mod typed;
 mod units;
@@ -171,6 +171,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -213,8 +214,8 @@ pub(crate) fn project(
     };
     let (mut parameters, mut notes, mut bare) = entries.parameters(&definition, &readings);
     let entered = parameters.len();
-    let sketches = typed.sketches;
-    parameters.extend(sketches.driven);
+    let mut sketches = typed.sketches;
+    parameters.append(&mut sketches.driven);
     readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
     if !readings.confirmed.is_empty() {
         let driven = parameters.split_off(entered);
@@ -334,6 +335,7 @@ pub(crate) fn project(
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
+    sketches.restate_coincidences(&mut ir.model);
     ir.design.sketches.extend(sketches.records);
     ir.design.sketch_entities.extend(sketches.entities);
     ir.design.sketch_constraints.extend(sketches.constraints);
