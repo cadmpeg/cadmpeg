@@ -262,7 +262,10 @@ fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_fai
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == RhinoLossCode::ContainerInstanceDefinitionDegraded.kind())
+            .filter(|loss| {
+                cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                    && loss.message.contains("instance-definition record")
+            })
             .collect();
         assert_eq!(
             degraded.len(),
@@ -357,10 +360,18 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                 .losses
                 .iter()
                 .filter(|loss| {
-                    loss.code == RhinoLossCode::ContainerInstanceDefinitionDegraded.kind()
+                    if container_only {
+                        loss.code == RhinoLossCode::ContainerInstanceDefinitionDegraded.kind()
+                    } else {
+                        cadmpeg_ir::unknown::part::gives_up(&loss.code)
+                    }
                 })
                 .collect();
-            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses.len(),
+                1,
+                "container_only={container_only}: {losses:?}"
+            );
             assert!(losses[0].message.contains("definition UUID is nil"));
             assert_eq!(losses[0].provenance.as_ref().unwrap().offset, offset);
             assert!(!decoded

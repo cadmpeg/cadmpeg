@@ -9,6 +9,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use cadmpeg_asm::brep::annotations::AnnotationRecord;
+use cadmpeg_asm::brep::inspect_with_source;
+use cadmpeg_asm::brep::transfer::{transfer_inspection, InspectionGeometry};
 use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -18,15 +21,16 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
-use cadmpeg_ir::ids::HistoryBodyId;
+use cadmpeg_ir::ids::{BodyId, HistoryBodyId};
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
+use cadmpeg_ir::UnknownRecord;
 
 use super::history_states::{
     Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
-use super::history_views::{decode_scratch, Scratch};
+use super::history_views::{with_state_table, Decoded};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
@@ -78,16 +82,28 @@ pub(crate) struct Outcome {
     pub(crate) unlinked: usize,
 }
 
+/// The decoded geometry of a state and the source records it references.
+#[derive(Debug, Default)]
+pub(crate) struct StateRecords {
+    pub(crate) geometry: Topology,
+    /// Original body slots of the nests admitted from this state.
+    pub(crate) body_slots: BTreeMap<HistoryBodyId, BodyId>,
+    pub(crate) unknowns: Vec<UnknownRecord>,
+    pub(crate) provenance: Vec<AnnotationRecord>,
+}
+
 /// Nests of a part and their links.
 #[derive(Debug, Default)]
 pub(crate) struct Built {
     /// Nests, sorted by identity.
     pub(crate) bodies: Vec<HistoryBody>,
+    /// The states of admitted nests, by oldest-first ordinal.
+    pub(crate) states: BTreeMap<u32, StateRecords>,
     /// Identity of the nest of each feature record, by record index.
     pub(crate) links: HashMap<usize, HistoryBodyId>,
     /// The nest that each request whose body was given up would have, and
     /// why the body was given up.
-    pub(crate) unbuilt: Vec<(HistoryBodyId, Unbuilt)>,
+    pub(crate) unbuilt: Vec<(HistoryBodyId, Unbuilt, String)>,
     /// Counts.
     pub(crate) outcome: Outcome,
 }
@@ -99,17 +115,30 @@ pub(crate) enum Unbuilt {
     Undecoded,
     /// A carrier of the body has no solved form.
     Unsolved,
+    /// The state has more than one body with the key.
+    Ambiguous,
     /// The body is not a closed manifold solid.
     NotClosed(Open),
     /// The feature of the body is not a projected feature.
     Unlinked,
-    /// The request passed the nest or work cap.
+    /// The request reached the nest cap, a work cap, or a decode resource limit.
     Bounded,
+    /// A decode or admission limit refused this body.
+    ResourceBounded(cadmpeg_core::decode::ResourceLimit),
 }
 
 impl Built {
-    fn give_up(&mut self, want: &Want, why: Unbuilt) -> Result<(), CodecError> {
-        self.unbuilt.push((nest_id(want.index)?, why));
+    fn give_up(
+        &mut self,
+        want: &Want,
+        why: Unbuilt,
+        records: &[FeatureHistoryState],
+    ) -> Result<(), CodecError> {
+        self.unbuilt.push((
+            nest_id(want.index)?,
+            why,
+            records[want.record].feature.clone(),
+        ));
         Ok(())
     }
 }
@@ -187,10 +216,14 @@ fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
 }
 
 /// Gives up the requests of `wants` past the nest cap.
-fn bound(mut wants: Vec<Want>, built: &mut Built) -> Result<Vec<Want>, CodecError> {
+fn bound(
+    mut wants: Vec<Want>,
+    built: &mut Built,
+    records: &[FeatureHistoryState],
+) -> Result<Vec<Want>, CodecError> {
     for want in wants.split_off(wants.len().min(MAX_HISTORY_BODIES)) {
         built.outcome.bounded += 1;
-        built.give_up(&want, Unbuilt::Bounded)?;
+        built.give_up(&want, Unbuilt::Bounded, records)?;
     }
     Ok(wants)
 }
@@ -206,11 +239,11 @@ pub(crate) fn build(
 ) -> Result<Built, CodecError> {
     let mut built = Built::default();
     let requested = wants(records, &mut built.outcome);
-    let mut wants = bound(requested, &mut built)?;
+    let mut wants = bound(requested, &mut built, records)?;
     let Ok(header) = carrier.header.as_ref() else {
         built.outcome.undecoded += wants.len();
         for want in &wants {
-            built.give_up(want, Unbuilt::Undecoded)?;
+            built.give_up(want, Unbuilt::Undecoded, records)?;
         }
         return Ok(built);
     };
@@ -227,20 +260,24 @@ pub(crate) fn build(
     let Some(archive) = closed.archive() else {
         built.outcome.undecoded += wants.len();
         for want in &wants {
-            built.give_up(want, Unbuilt::Undecoded)?;
+            built.give_up(want, Unbuilt::Undecoded, records)?;
         }
         return Ok(built);
     };
-    let bytes = carrier.bytes.window();
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     let mut by_ordinal = BTreeMap::<u32, Vec<usize>>::new();
     for (index, want) in wants.iter().enumerate() {
         by_ordinal.entry(want.ordinal).or_default().push(index);
     }
-    let mut extracted = BTreeMap::<usize, Extract>::new();
-    let mut failure = None;
-    let mut bounded = HashSet::<usize>::new();
+    let features = model_features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, &feature.id)))
+        .collect::<HashMap<_, _>>();
     let mut visited = 0_usize;
+    let mut failure = None;
+    let mut handled = [false; MAX_HISTORY_BODIES];
+    let bytes = carrier.bytes.window();
+    let stream = carrier.record_stream();
     walk_entity_versions(views, *active_count, archived_ids, |slot, versions| {
         let visit = visited;
         visited += 1;
@@ -256,104 +293,180 @@ pub(crate) fn build(
         if failure.is_some() {
             return;
         }
-        let state_id = views[slot].state_id;
-        for &index in indices {
-            wants[index].state_id = state_id;
-        }
-        if !work.charge_by(work_units(versions.len())) {
-            bounded.extend(indices.iter().copied());
-            return;
-        }
-        let Scratch {
-            body_keys: keys,
-            model: scratch,
-        } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
-            Ok(Some(scratch)) => scratch,
-            Ok(None) => return,
-            Err(error) => {
-                failure = Some(error);
-                return;
+        let mut visit = || -> Result<(), CodecError> {
+            for &index in indices {
+                wants[index].state_id = views[slot].state_id;
             }
-        };
-        for &index in indices {
-            let key = u64::try_from(wants[index].key).ok();
-            let body = keys
-                .iter()
-                .find(|(_, candidate)| Some(*candidate) == key)
-                .map(|(body, _)| body.as_str());
-            let result = match body {
-                Some(body) => extract(ctx, &scratch.geometry, body),
-                None => Ok(Extract::Absent),
+            let refused = |why| indices.iter().map(|_| Err(why)).collect::<Vec<_>>();
+            let (state, candidates) = if work.charge_by(work_units(versions.len())) {
+                match with_state_table(ctx, archive, versions, |state_ctx, table| {
+                    let mut brep = inspect_with_source(
+                        state_ctx,
+                        table,
+                        bytes,
+                        Some(&header.metadata),
+                        &stream,
+                        cadmpeg_asm::asm_format!("inventor"),
+                    )?;
+                    let unknowns = std::mem::take(&mut brep.unknowns);
+                    let ids: HashSet<_> =
+                        unknowns.iter().map(|record| record.id().as_str()).collect();
+                    let provenance = std::mem::take(&mut brep.annotation_records)
+                        .into_iter()
+                        .filter(|record| ids.contains(record.id.as_str()))
+                        .collect();
+                    let state = transfer_inspection(state_ctx, brep)?;
+                    let candidates = indices
+                        .iter()
+                        .map(|&index| {
+                            let want = &wants[index];
+                            let feature = features.get(records[want.record].feature.as_str());
+                            match state_ctx.scratch(bytes.len(), |scratch| {
+                                candidate(scratch, &state, want, feature.copied())
+                            }) {
+                                Ok(Ok(result)) => Ok(result),
+                                Ok(Err(limit)) => Ok(Err(Unbuilt::ResourceBounded(limit))),
+                                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+                                Err(_) => Ok(Err(Unbuilt::Undecoded)),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()?;
+                    let state = StateRecords {
+                        geometry: state.geometry,
+                        body_slots: BTreeMap::new(),
+                        unknowns,
+                        provenance,
+                    };
+                    Ok((state, candidates))
+                })? {
+                    Decoded::Scratch((state, candidates)) => (Some(state), candidates),
+                    Decoded::Failed => (None, refused(Unbuilt::Undecoded)),
+                    Decoded::Bounded(limit) => (None, refused(Unbuilt::ResourceBounded(limit))),
+                }
+            } else {
+                (None, refused(Unbuilt::Bounded))
             };
-            match result {
-                Ok(result) => {
-                    extracted.insert(index, result);
+            let mut body_slots = BTreeMap::new();
+            for (&index, candidate) in indices.iter().zip(candidates) {
+                let want = &wants[index];
+                handled[index] = true;
+                let why = match candidate {
+                    Ok(Some((body, slot))) => {
+                        if let Err(limit) = admit_nest(ctx, &body) {
+                            Unbuilt::ResourceBounded(limit)
+                        } else {
+                            body_slots.insert(body.id.clone(), slot);
+                            built.links.insert(want.record, body.id.clone());
+                            built.bodies.push(body);
+                            built.outcome.built += 1;
+                            continue;
+                        }
+                    }
+                    Ok(None) => {
+                        built.outcome.undecoded += 1;
+                        continue;
+                    }
+                    Err(why) => why,
+                };
+                match why {
+                    Unbuilt::Bounded | Unbuilt::ResourceBounded(_) => built.outcome.bounded += 1,
+                    Unbuilt::Undecoded | Unbuilt::Unsolved | Unbuilt::Ambiguous => {
+                        built.outcome.undecoded += 1;
+                    }
+                    Unbuilt::NotClosed(open) => built.outcome.open[open.slot()] += 1,
+                    Unbuilt::Unlinked => built.outcome.unlinked += 1,
                 }
-                Err(error @ CodecError::ResourceLimit(_)) => {
-                    failure = Some(error);
-                    return;
-                }
-                Err(_) => {}
+                built.give_up(want, why, records)?;
             }
-        }
+            if let Some(mut state) = state.filter(|_| !body_slots.is_empty()) {
+                state.body_slots = body_slots;
+                built.states.insert(ordinal, state);
+            }
+            Ok(())
+        };
+        failure = visit().err();
     });
     if let Some(error) = failure {
         return Err(error);
     }
-    let features = model_features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, &feature.id)))
-        .collect::<HashMap<_, _>>();
     for (index, want) in wants.iter().enumerate() {
-        if bounded.contains(&index) {
-            built.outcome.bounded += 1;
-            built.give_up(want, Unbuilt::Bounded)?;
-            continue;
-        }
-        match extracted.remove(&index) {
-            Some(Extract::Absent) => built.outcome.undecoded += 1,
-            None => {
-                built.outcome.undecoded += 1;
-                built.give_up(want, Unbuilt::Undecoded)?;
-            }
-            Some(Extract::Unsolved) => {
-                built.outcome.undecoded += 1;
-                built.give_up(want, Unbuilt::Unsolved)?;
-            }
-            Some(Extract::NotClosed(open)) => {
-                built.outcome.open[open.slot()] += 1;
-                built.give_up(want, Unbuilt::NotClosed(open))?;
-            }
-            Some(Extract::Nest(topology)) => {
-                let record = &records[want.record];
-                let Some(feature) = features
-                    .get(record.feature.as_str())
-                    .map(|id| (*id).clone())
-                else {
-                    // A history body names the feature it comes from.
-                    built.outcome.unlinked += 1;
-                    built.give_up(want, Unbuilt::Unlinked)?;
-                    continue;
-                };
-                let body = nest(ctx, want, feature, *topology)?;
-                ctx.charge_entities(
-                    cadmpeg_core::decode::u64_from_index(body.topology.record_count()),
-                    "admit history body records",
-                )?;
-                built.links.insert(want.record, body.id.clone());
-                built.bodies.push(body);
-                built.outcome.built += 1;
-            }
+        if !handled[index] {
+            built.outcome.undecoded += 1;
+            built.give_up(want, Unbuilt::Undecoded, records)?;
         }
     }
+    built.unbuilt.sort_by(|left, right| left.0.cmp(&right.0));
     built.bodies.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(built)
+}
+
+type Candidate = Result<Option<(HistoryBody, BodyId)>, Unbuilt>;
+
+fn candidate(
+    ctx: &DecodeContext<'_>,
+    state: &InspectionGeometry,
+    want: &Want,
+    feature: Option<&FeatureId>,
+) -> Result<Candidate, CodecError> {
+    let Ok(key) = u64::try_from(want.key) else {
+        return Ok(Ok(None));
+    };
+    let mut slots = state
+        .body_keys
+        .iter()
+        .filter(|body| body.asm_body_key == Some(key));
+    let Some(body) = slots.next() else {
+        return Ok(Ok(None));
+    };
+    if slots.next().is_some() {
+        return Ok(Err(Unbuilt::Ambiguous));
+    }
+    Ok(match extract(ctx, &state.geometry, body.body.as_str())? {
+        Extract::Absent => Ok(None),
+        Extract::Unsolved => Err(Unbuilt::Unsolved),
+        Extract::NotClosed(open) => Err(Unbuilt::NotClosed(open)),
+        Extract::Nest(topology) => {
+            let Some(feature) = feature else {
+                return Ok(Err(Unbuilt::Unlinked));
+            };
+            let slot = topology.body.id.clone();
+            Ok(Some((nest(ctx, want, feature.clone(), *topology)?, slot)))
+        }
+    })
+}
+
+fn admit_nest(
+    ctx: &DecodeContext<'_>,
+    body: &HistoryBody,
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+    ctx.admit_optional(
+        cadmpeg_core::decode::u64_from_index(body.topology.name_bytes()),
+        cadmpeg_core::decode::u64_from_index(body.topology.record_count()),
+        "keep Inventor history body records and names",
+    )
 }
 
 /// The identity of the nest of request `ordinal`.
 fn nest_id(ordinal: usize) -> Result<HistoryBodyId, CodecError> {
     HistoryBodyId::mint(format!("inventor:{NEST_SCOPE}:nest#h{ordinal:04}"))
         .map_err(|error| CodecError::malformed(format_args!("{error}")))
+}
+
+/// The slot in the ASM state from which this nest's body ID was composed.
+pub(crate) fn original_body_slot(body: &HistoryBody) -> Option<BodyId> {
+    let request = body
+        .id
+        .as_str()
+        .strip_prefix("inventor:history-body:nest#")?;
+    let key = body
+        .topology
+        .body
+        .id
+        .as_str()
+        .strip_prefix("inventor:history-body:entity#")?
+        .strip_prefix(request)?
+        .strip_prefix('-')?;
+    BodyId::mint(format!("inventor:brep:entity#{key}")).ok()
 }
 
 /// The nest in the history-body scope, with the feature link of its role.

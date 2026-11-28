@@ -107,6 +107,8 @@ fn the_patch_reads_the_archive_in_the_write_session() {
             &ctx,
             &edited,
             &source,
+            None,
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut Vec::new(),
         )
@@ -116,6 +118,9 @@ fn the_patch_reads_the_archive_in_the_write_session() {
     };
     assert_eq!(limit.scope, LimitScope::Session);
     assert_eq!(limit.dimension, ResourceDimension::InputBytes);
-    assert_eq!(limit.operation, "F3D patch source archive");
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (length, length, length)
+    );
     patch(2 * length).expect("a session with room for the archive patches it");
 }

@@ -290,6 +290,7 @@ fn an_error_of_a_design_rule_writes_the_part_with_a_loss() {
         id: cadmpeg_ir::features::ParameterId::mint("other:design:parameter#unset").unwrap(),
         scope: cadmpeg_ir::ids::ProductDefinitionId::mint("other:model:definition#part").unwrap(),
         owner: None,
+        position: None,
         name: None,
         kind: cadmpeg_ir::design::units::ValueKind::Boolean,
         unit: None,

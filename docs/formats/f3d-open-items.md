@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1078. Island in the profile of an Intersect Extrude
+
+**Question.** Does the counted region selection of an Intersect Extrude ever name a face that encloses an island?
+
+**Known.** `f3d.md` states the faces of the profile of an Intersect from the planes parallel to the Sketch and the named curves. The boundary of a face that encloses an island lists only its outer ring, so the named curves of such a face do not show whether the island belongs to the profile. A kept face that encloses an island leaves the selection native; whether the island lies in the profile is not established.
+
+**Need.** An Intersect Extrude whose profile face encloses a closed curve, saved once with the island in the profile and once with the island excluded, with the counted member lists of each.
+
+**Conflict.** None.
+
+**Note.** The decoder leaves such a selection native.
+
 ### DR-1063. MetaStream type of the `DesignConfigurationRoot` record
 
 **Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?
@@ -29,6 +41,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** A save of a design that has a configuration table with two rows, saved once with each row active. Compare the Design `MetaStream` type rows and find the row whose entity list holds the index of the record with the key `DesignConfigurationRoot`.
 
 **Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` that `ROOT_TYPE` in `writer/generate/configuration_root.rs` holds, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names, or the configuration table document whose stated row it names.
+
+### DR-1069. Members of a configuration table, column, or test-row entry that a save adds
+
+**Question.** When a save adds the first table to a `DesignConfigurationTable` document whose payload is the empty object `{}`, which table id, `tableName`, `tableType`, document and table asset `id` and `revisionId`, `cachedRevIds` and `testRowData` does the document store? When a save adds a column to a table, which `testRowData` entry does it add, in which member order, and in which unit does a `ParameterDoubleValue` entry store `Value`? When the added column is the first `configuredProperty-1.0.0` column of its table, which `id` does its `object` store? When a save names another row active, which members of each `testRowData` entry change, and in which member order does the entry store them?
+
+**Known.** A table document holds an `asset` of type `configuration-1.0.0` with a `tableVersion` component, a `tables` array, `cachedRevIds` and `testRowData` (`f3d.md` §1.2). Each table holds an `asset` of type `configurationTable-1.1.0` whose attribute `pim:configuration:tableId` equals the `id` of its `tableDefinition` component, a `rows` array, and a `tableView` whose `columnOrder` and `rowOrder` list the column and row ids. A document that holds no table is stored as `{}`. A `DesignConfigurationRoot` record names a row by table id and row id. Each `testRowData` string is a JSON object with the members `DataType` and `ColumnUniqueID` and the value members of its data type. Its parameter and feature values are the values of the active row. A row cell of a parameter column stores its value in database units. A `configuredProperty-1.0.0` object stores `id`, `propertyKey`, `propertySet` and `type` `Property`.
+
+**Need.** A save of a design with no configuration, then the same design saved after the first configuration is added. Compare the table document of the two saves: the table id, the `tableName` and `tableType` of the `tableDefinition`, the asset ids and revision ids, `cachedRevIds`, and `testRowData`. Then add a length parameter column and a Part Number column to a table that has no property column, and save again. Compare the `testRowData` strings of the two new columns, byte for byte, and the `id` of the new `configuredProperty-1.0.0` object with the ids that the document and its Design stream store. Then make another row active, save again, and compare the `testRowData` strings of the last two saves byte for byte.
+
+**Note.** The writer creates the table with the `tableName` and `tableType` `Configurations`, a table id and asset ids it generates as version-8 UUIDs from the entry name, `tableVersion` `1`, empty `cachedRevIds` and `testRowData`, and charges `export:record.residual-unavailable` naming the table document. When the writer adds a column, it adds one `testRowData` entry with the value of the active row, members in key order and a `ParameterDoubleValue` `Value` in database units, and charges `export:record.residual-unavailable` naming the table document. A property column that the writer adds takes the `object` `id` of the first property column of its table; in a table with no property column, it takes a version-8 UUID that the writer generates from the entry name, and the writer charges `export:record.residual-unavailable` naming the property. The writer updates `testRowData` when the active row changes, a column takes another value in that row, or a parameter of the column takes another expression or value in the Design stream. The writer uses the active row to update the known members of each affected entry. It adds a missing entry when it adds the column, rewrites the Design parameter, or changes an entry for a table that already has an active row. It writes entry members in key order and charges `export:record.residual-unavailable` naming the table document. A stored entry whose column has no value in the active row keeps its members. The writer charges `export:value.unwritable` naming each column whose entry remains different from the active row or cannot be written.
 
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 
@@ -68,7 +90,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?
 
-**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. A Revolve can select one curve with `(1,2)` and a second curve with `(2,2)`; its directed arrangement boundary uses the first interval of the first curve and the second interval of the second curve. A Revolve can select a curve with `(2,3)`. The complete intersection partition of that curve has four pieces, and the stored last word is three. Its selected-member graph excludes one Sketch curve and has three pieces; the second piece equals the directed arrangement interval. A Revolve can repeat one curve with `(1,2)` and `(2,2)` in one exterior loop. A curve can carry `(3,3)` while its full selected-member curve graph has four pieces at the intersections with three other curves. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. A symmetric intersect Extrude can have counted members that each join uniquely to a Sketch curve while other Sketch curves with tail marker zero divide its boundary. The member-ring resolver accepts one atomic arrangement boundary with the complete named-curve ring and traversal directions. It also accepts a boundary whose fragments of one curve meet only at nodes of curves outside the ring, when each member is piece `k` of the `n` pieces into which the other curves of its member list cut its curve; this reading carries `feature.profile-piece-partition-assumed`. Stored members agree with the member-list partition in these cases: pieces are numbered along the curve's parameter direction for both traversal flags; the pieces of a full circle start at angle zero and continue counterclockwise; each of two overlapping lines has its own member, each is cut at the ends of the other, and the part of a line beyond a corner counts as a piece; arc pieces are numbered along the arc; curves outside the member list that end on, cross, or touch a member curve add no cut; the relation holds for curves added to the Sketch after the feature. The transition certificate accepts one-sided blind Cut, Join, and NewBody. The selection retains its native identity with `feature.profile-selection-native`.
+**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. A Revolve can select one curve with `(1,2)` and a second curve with `(2,2)`; its directed arrangement boundary uses the first interval of the first curve and the second interval of the second curve. A Revolve can select a curve with `(2,3)`. The complete intersection partition of that curve has four pieces, and the stored last word is three. Its selected-member graph excludes one Sketch curve and has three pieces; the second piece equals the directed arrangement interval. A Revolve can repeat one curve with `(1,2)` and `(2,2)` in one exterior loop. A curve can carry `(3,3)` while its full selected-member curve graph has four pieces at the intersections with three other curves. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. A symmetric intersect Extrude can have counted members that each join uniquely to a Sketch curve while other Sketch curves with tail marker zero divide its boundary. The member-ring resolver accepts one atomic arrangement boundary with the complete named-curve ring and traversal directions. It also accepts a boundary whose fragments of one curve meet only at nodes of curves outside the ring, when each member is piece `k` of the `n` pieces into which the other curves of its member list cut its curve; this reading carries `feature.profile-piece-partition-assumed`. Stored members agree with the member-list partition in these cases: pieces are numbered along the curve's parameter direction for both traversal flags; the pieces of a full circle start at angle zero and continue counterclockwise; each of two overlapping lines has its own member, each is cut at the ends of the other, and the part of a line beyond a corner counts as a piece; arc pieces are numbered along the arc; curves outside the member list that end on, cross, or touch a member curve add no cut; the relation holds for curves added to the Sketch after the feature. The transition certificate accepts one-sided blind Cut, Join, and NewBody, and Intersect over one-sided, two-sided, and symmetric blind extents and over an offset start. The selection retains its native identity with `feature.profile-selection-native`.
 
 **Need.** The join from each counted member to its native primary/related tracking graph, the partition domain and circle phase, the treatment of line extensions, clipped members and coincident curves, and the relation to feature-time sketch revisions. These rules must determine both incidence words and the selected interval in independent designs.
 
@@ -102,9 +124,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-1005. Live flags of duplicate scope envelopes
 
-**Question.** Same-index scope envelopes can differ only in their tail state bytes or in the suppression flags of their Thread companion tails, with no envelope bound to an ASM transition, or only in their tail state bytes and their no-result and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's tail state is live?
+**Question.** Same-index scope envelopes can differ only in their tail state bytes or in the suppression flags of their Thread companion or reciprocal Hole tails, with no envelope bound to an ASM transition, or only in their tail state bytes and their no-result and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's tail state is live?
 
-**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order, also over a unique primary record frame when only the state bytes or the Thread companion suppression flags differ. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
+**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order, also over a unique primary record frame when only the state bytes or the suppression flags of a Thread companion or reciprocal Hole tail differ. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the feature item tail flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
 
 **Need.** A field or an order rule that selects the live envelope. The state bytes decide whether the feature is suppressed and the rolled-back flag decides where the timeline marker stands, so the selection changes the evaluated design.
 
@@ -510,7 +532,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What do the typed compact parameter frames with other expression trailers or a null owner on a feature input encode?
 
-**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder reports these frames as `parameter.record-unparsed` and does not decode them.
+**Known.** `f3d.md` §3.1 "The typed compact parameter form is the compact parameter form" gives the owned and document forms. Some typed frames store the null owner reference with a feature-input or dimension `source_kind` (for example `HoleDepth` or `TaperAngle`) and the expression trailer `00 00 00 01 00`. Some owned frames store the expression trailer `00 01 00 00 00`. A null owner also occurs in the wide discriminator-`0` form with the document trailer and `source_kind` `Paramètre utilisateur`. The decoder gives up these frames as `parameter-frame` parts with `record.undecoded`.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown. A rule must bind the document trailer to a localized `User Parameter` source kind before such a frame forms a document parameter.
 
@@ -548,11 +570,11 @@ option `2`, and side extents `[1, 0]`.
 
 ### DR-115. Mesh container decode-failure taxonomy
 
-**Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?
+**Question.** Which container failures are malformed input and which are an unsupported container generation, and does the retained error identify the failing stage?
 
-**Known.** `f3d.md` §1.1.2 "When a document's mesh-body metadata" defines the omission: a mesh body whose metadata or referenced `.paramesh` container fails the container grammar transfers no tessellation and reports `mesh.container-undecoded` with the entry name and the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+**Known.** `f3d.md` §1.1.2 "When a referenced `.paramesh` container" defines the omission: a `.paramesh` container that fails the container grammar transfers no tessellation. The decoder gives up its entry as an `archive-entry` part, and the loss carries the decode error. B-rep evaluation then proceeds. A container that declares a version other than 2, or a stream whose descriptor is outside the version-2 descriptor grammar, gives up with `record.undecoded`: these are the generation stages. A failure at every other stage gives up with `record.unreadable`. The specification gives the container layout; the taxonomy of the other stages awaits definition.
 
-**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures this loss covers and whether the retained error text identifies the failing stage, before a reader can distinguish malformed input from an unsupported container generation.
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which of the other failures break the format and which are a later container generation, and whether the retained error text identifies the failing stage. Each stage found to be a generation stage gives up with `record.undecoded`.
 
 **Note.** A resource-limit failure returns an error through the error path.
 
@@ -1089,7 +1111,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
 
-**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)` in a Z-up document and `(1, 1, 1)` in a Y-up document, the up direction `(0, 0, 1)` or `(0, 1, 0)` respectively, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
 
 **Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
 
@@ -1173,6 +1195,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 **Need.** Allocate the profile group of a written `Extrude` as the groups of a `Revolve` are allocated: the record-timestamp table at `G + 1` and the item-tail companion at `G + 2`. Then state the relation in `f3d.md` §3.1 "**Profile group.**", and compare the records of each written `Extrude` before and after the change. The same comparison of the `Extrude` start record against stored `Extrude` start records would show whether its record-timestamp table and item-tail companion also belong at the next two records.
 
 ## 2. External references
+
+### DR-1077. Closing bytes of a legacy typed occurrence placement
+
+**Question.** Do the closing bytes `00 01 04 00 00 00 00 00 00 00 00 00` of a legacy typed occurrence placement name a local owner record, and is the record the legacy typed placement or the compact legacy external placement?
+
+**Known.** `f3d.md` §1.4 "A legacy typed occurrence placement uses" gives the typed envelope and its closing bytes `u8 0`, `u8 1`, `u8 4`, `u8[9] zero`. These bytes have the form of a zero byte and an eleven-byte untyped local reference to record `4`. `f3d.md` §1.4 "A compact legacy external placement uses" closes with a zero byte and an untyped local owner reference with a nonzero target. With root-component targets, the typed fields `u32 1`, `u8 0`, `u32 1` after the path discriminator have the form of the compact present-empty property block and a member ordinal of `1`. Both grammars then close the same record, at 403 bytes for identity and 531 bytes for a matrix. Record `4` of the Design stream can be a component naming space of type `904F885E-D859-4755-A7EF-6EBED8732FAD`.
+
+**Need.** A legacy typed placement whose Design stream holds a record of another type at index `4`, or a legacy placement whose closing reference has a target other than `4`.
+
+**Note.** The decoder reads a record that closes both grammars as the legacy typed placement, with no owner and no source occurrence key.
 
 ### DR-111. Component-path poses of nested occurrences
 
@@ -1348,7 +1380,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
 
-**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode is given up as an `archive-entry` part, and that give-up is the one report entry for every reference to the member. A member that cannot be scanned and whose entry the scan cannot give up reports `xref.member-undecoded` once, at scan time. The merge skips each reference to a given-up or unscannable member. Resource-limit failures return an error.
 
 **Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
 
@@ -1433,18 +1465,6 @@ The first closing reference run identifies a direct contained child by its local
 **Known.** `f3d.md` §3.1 "A compact counted selection envelope" defines the complete member run, repeated u32 ordinal, finite nonnegative f64 scalar, independent first tail reference, flag block, next-record reference, and owning-scope reference. The Form members are typed tracking records, as defined in §1.1.1. Counts alone do not identify cages.
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
-
-### DR-324. Cage order of a Form bound through body records
-
-**Question.** In which order does a Form scope that several Form body records name hold its cages?
-
-**Known.** `f3d.md` §1.1.1 "**Form body-record cage join.**" binds each cage to its owning Form scope through one Form body record. The scope's reference table holds a result-owner record and a Form selection group, and its selection members are tracking records. The decoder orders the cages by ascending body-record index and reports `feature.form-cage-order-assumed` for each such Form with two or more cages.
-
-**Need.** Controlled saves of one Form session that creates two bodies in one order and then changes the first body, to compare the body order of the session with the body-record index order.
-
-**Conflict.** None.
-
-**Note.** None.
 
 ### DR-645. Legacy sole-scope serializer membership and order
 
@@ -1572,11 +1592,11 @@ The first closing reference run identifies a direct contained child by its local
 
 ### TS-07. T-spline cage decode-failure taxonomy
 
-**Question.** Which cage program failures does `tspline.cage-undecoded` cover?
+**Question.** Which cage program failures are malformed cages, and which are unsupported program generations?
 
-**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface and reports `tspline.cage-undecoded` with the entry name and the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
+**Known.** `f3d.md` §1.1.1 "A `TSplines.BlobParts/*.tsm` entry is a UTF-8" defines the cage program. A cage entry that fails to parse transfers no surface. The decoder gives up the entry as an `archive-entry` part with `record.undecoded`, and the loss carries the error. Untyped records and unresolved radial pairs have their own losses and remain outside this item.
 
-**Need.** Cage entries that fail at each program stage must show which failures this loss covers, before a reader can distinguish malformed cages from unsupported program generations.
+**Need.** Cage entries that fail at each program stage must show which failures break the program grammar.
 
 **Note.** This item is minor: the B-rep stream retains the committed face geometry of an undecoded cage.
 
@@ -1922,7 +1942,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Conflict.** None.
 
-**Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
+**Note.** Give up the occurrence record with `record.undecoded` and keep the occurrence out of neutral product structure.
 
 ### DR-142. Thread construction option bytes
 
@@ -2277,6 +2297,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 **Conflict.** None.
 
 **Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
+
+### DR-1080. Two-sided distance Extrude with distances of opposite sign, with a draft or a wall thickness
+
+**Question.** Where does a two-sided distance Extrude with distances of opposite sign put its solid when a side has a draft, and when it has a wall thickness?
+
+**Known.** `f3d.md` §3.1 states that the two distances place the solid's ends at `AlongDistance` and at the negated `AgainstDistance` on the profile normal, with the solid between them. A controlled save confirms this for solid Extrudes with every sign pair (+20/−5, −20/+5, −20/−5 and +20/+5 mm give final bodies spanning 5…20, −20…−5, −20…5 and −5…20 mm), and two Extrudes of another design agree. The decoder reads distances of opposite sign as a one-sided Extrude from an offset profile plane at the nearer end. In the same save, an Extrude of −20/+5 mm with a 5° draft on side one spans −20…0 mm: the solid reaches the profile plane. Wall-thickness Extrudes of open chains of +20/−5 and −20/+5 mm span 5…20 and −20…−5 mm, but a wall-thickness Extrude of a closed profile of 50/−2 mm in another design records a body centre 25 mm above its profile plane. Recorded body centres are bounding-box centres in the controlled save, so that body spans 0…50 mm, not 2…50 mm; its parameter roles and extent form equal those of the open-chain Extrudes. The decoder keeps both forms native.
+
+**Need.** Saves of drafted Extrudes with distances of opposite sign, with the draft on either side and with several drafts, and wall-thickness Extrudes with distances of opposite sign of a closed profile and of an open chain, with each wall location.
+
+**Conflict.** None.
 
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
@@ -3378,7 +3408,7 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
 
-**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name joins the stored scope kind spelling, a space, and the feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
+**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name is the stored scope kind spelling directly followed by the stored feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
 
 **Need.** A design with a Sketch renamed in the timeline.
 
@@ -4253,7 +4283,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
-**Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+**Note.** The mesh graph requires a Scene node in that slot. The decoder gives up the `.paramesh` entries of such a design with `record.undecoded`.
 
 ### DR-1079. Document body of a keyless pattern copy
 

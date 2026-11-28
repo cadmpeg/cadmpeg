@@ -61,7 +61,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     for feature in &history {
         features.push(Feature {
             id: feature.id.clone(),
-            name: None,
+            name: feature.name.clone(),
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation: operation(feature)?,
@@ -77,7 +77,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     }
     let (container, current) = timeline(&features, bodies)?;
     let (arrangements, active_arrangements) = arrangements(ir, &definition)?;
-    parameters::project(ir, &definition);
+    parameters::project(ir, &definition)?;
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition,
@@ -111,6 +111,7 @@ pub(super) const RESTATEMENT: Restatement = Restatement {
 #[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
+        FeatureField::Name => &[ModelFeatureField::Name],
         FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
         FeatureField::Definition => &[
             ModelFeatureField::Definition,
@@ -118,10 +119,7 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
             ModelFeatureField::SourceTag,
         ],
         FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
-        FeatureField::Name
-        | FeatureField::Placement
-        | FeatureField::Component
-        | FeatureField::DrivenBy => &[],
+        FeatureField::Placement | FeatureField::Component | FeatureField::DrivenBy => &[],
     }
 }
 
@@ -168,7 +166,7 @@ fn is_history(feature: &LegacyFeature) -> bool {
 }
 
 /// One ordered timeline of the history in construction order. The decoder
-/// reads no current feature (part 11, entry B.96), so the rollback of a
+/// reads no current feature (part 11, entry B.95), so the rollback of a
 /// timeline with members is unstated and its one current state, at
 /// `After(Container(timeline))` (§5.3), holds every current body. A timeline
 /// with no member has no member to stand before: it is built through its end,

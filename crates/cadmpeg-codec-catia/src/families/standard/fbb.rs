@@ -850,6 +850,7 @@ pub(super) fn give_up_face_rows(
                 )
                 .contained_in(payload.clone())
                 .digest_only(),
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
                 CodecError::malformed(format_args!("{code}: {cause}")),
             )
         })
@@ -901,7 +902,7 @@ pub(super) fn standard_fbb_groups(
 
 /// Grammar of a population's edge tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum EdgeTableForm {
+pub(crate) enum EdgeTableForm {
     Standard,
     FbbOnly,
 }
@@ -910,11 +911,11 @@ pub(super) enum EdgeTableForm {
 /// endpoint solver. The edge and vertex counts are structural population
 /// keys; they are not body selection by themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FbbPopulationLayout {
+pub(crate) struct FbbPopulationLayout {
     pub(super) face_run: FbbFaceRun,
     pub(super) edge_count: usize,
     pub(super) vertex_count: usize,
-    pub(super) edge_table_form: EdgeTableForm,
+    pub(crate) edge_table_form: EdgeTableForm,
 }
 
 fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
@@ -965,7 +966,7 @@ pub(super) fn population_spine<'a>(
 
 /// Find every FBB face run with a complete local trim, edge-table, and vertex
 /// walk, without requiring endpoint incidence to be solved.
-pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
+pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
     let mut layouts = Vec::new();
     for range in crate::container::fbb_run_ranges(bytes) {
         let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {
@@ -1362,8 +1363,11 @@ fn parse_trim_chain_with_length_encoding(
 
     let prefix = bytes.get(..end)?;
     let mut predecessors = HashMap::<usize, Vec<usize>>::new();
-    for (start, marker) in prefix.windows(2).enumerate() {
-        if marker[0] != 0x01 || !TRIM_KINDS.contains(&marker[1]) {
+    for start in memchr::memchr_iter(0x01, prefix) {
+        let Some(&kind) = prefix.get(start + 1) else {
+            continue;
+        };
+        if !TRIM_KINDS.contains(&kind) {
             continue;
         }
         if let Some(layout) =
@@ -1376,6 +1380,7 @@ fn parse_trim_chain_with_length_encoding(
 
     let mut solutions = Vec::new();
     let mut reversed = Vec::<TrimRecord>::new();
+    let mut dead_states = HashSet::<(usize, usize)>::new();
 
     let mut frames = Vec::new();
     frames.push(Frame {
@@ -1383,6 +1388,7 @@ fn parse_trim_chain_with_length_encoding(
         remaining: record_count,
         next_predecessor: 0,
     });
+    let mut frame_had_solution = vec![false];
     while !frames.is_empty() && solutions.len() <= 1 {
         let frame = frames.len() - 1;
         if frames[frame].remaining == 0 {
@@ -1398,7 +1404,9 @@ fn parse_trim_chain_with_length_encoding(
             }
             records.reverse();
             solutions.push((chain_start, records));
+            frame_had_solution.fill(true);
             backtrack(&mut frames, &mut reversed);
+            frame_had_solution.pop();
             continue;
         }
         let predecessor = predecessors
@@ -1406,21 +1414,29 @@ fn parse_trim_chain_with_length_encoding(
             .and_then(|records| records.get(frames[frame].next_predecessor))
             .copied();
         let Some(start) = predecessor else {
+            let solved = frame_had_solution.pop().unwrap_or(false);
+            if !solved {
+                dead_states.insert((frames[frame].end, frames[frame].remaining));
+            }
             backtrack(&mut frames, &mut reversed);
             continue;
         };
         frames[frame].next_predecessor += 1;
+        let remaining = frames[frame].remaining - 1;
+        if dead_states.contains(&(start, remaining)) {
+            continue;
+        }
         let Some(record) = parse_trim_record_with_length_encoding(prefix, start, width, wide_u16be)
         else {
             continue;
         };
-        let remaining = frames[frame].remaining - 1;
         reversed.push(record);
         frames.push(Frame {
             end: start,
             remaining,
             next_predecessor: 0,
         });
+        frame_had_solution.push(false);
     }
     <[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
         .ok()

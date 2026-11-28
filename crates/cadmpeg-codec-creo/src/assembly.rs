@@ -30,10 +30,24 @@ pub(crate) struct MemberTable {
 pub(crate) struct MemberTableStop {
     pub(crate) offset: usize,
     pub(crate) reason: &'static str,
-    /// A row starts at `offset` that the grammar does not admit, rather than
-    /// the table closing with a row count other than the declared one.
-    pub(crate) row_unread: bool,
+    /// Why the row that starts at `offset` does not read, or `None` where
+    /// the table closes with a row count other than the declared one.
+    pub(crate) row: Option<RowFault>,
 }
+
+/// Why a component row does not read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowFault {
+    /// The bytes break the row grammar: a fixed token differs, a field runs
+    /// past the section, a repeat token opens a run, or a name is not UTF-8.
+    Broken,
+    /// The row holds a value form with no reading here: a frame-slot token
+    /// outside the slot table, a `tha_ref` that is not null, or a name that
+    /// is empty or holds a control character.
+    Unread,
+}
+
+use RowFault::{Broken, Unread};
 
 /// One component placed by the assembly.
 #[derive(Debug, Clone, PartialEq)]
@@ -116,18 +130,23 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
     }
     let mut row_start = view.position();
     let mut terminator = match schema_row(&mut view, element) {
-        Some((member, terminator)) => {
+        Ok((member, terminator)) => {
             table.members.push(Member {
                 offset: row_start,
                 ..member
             });
             terminator
         }
-        None => {
+        Err(fault) => {
             table.stop = Some(MemberTableStop {
                 offset: row_start,
-                reason: "the named first row does not match the component row grammar",
-                row_unread: true,
+                reason: match fault {
+                    Broken => "the named first row does not match the component row grammar",
+                    Unread => {
+                        "the named first row holds a value form the row grammar does not read"
+                    }
+                },
+                row: Some(fault),
             });
             return Some(table);
         }
@@ -135,18 +154,23 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
     while terminator == ROW_CONTINUES {
         row_start = view.position();
         match positional_row(&mut view) {
-            Some((member, next)) => {
+            Ok((member, next)) => {
                 table.members.push(Member {
                     offset: row_start,
                     ..member
                 });
                 terminator = next;
             }
-            None => {
+            Err(fault) => {
                 table.stop = Some(MemberTableStop {
                     offset: row_start,
-                    reason: "a positional row does not match the component row grammar",
-                    row_unread: true,
+                    reason: match fault {
+                        Broken => "a positional row does not match the component row grammar",
+                        Unread => {
+                            "a positional row holds a value form the row grammar does not read"
+                        }
+                    },
+                    row: Some(fault),
                 });
                 return Some(table);
             }
@@ -156,7 +180,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
         table.stop = Some(MemberTableStop {
             offset: view.position(),
             reason: "the table ends with a row count that differs from its declared count",
-            row_unread: false,
+            row: None,
         });
     }
     Some(table)
@@ -188,55 +212,83 @@ fn expect(view: &mut View<'_>, bytes: &[u8]) -> Option<()> {
     (view.take(bytes.len())? == bytes).then_some(())
 }
 
+/// [`expect`] inside a row, where a differing token breaks the grammar.
+fn token(view: &mut View<'_>, bytes: &[u8]) -> Result<(), RowFault> {
+    expect(view, bytes).ok_or(Broken)
+}
+
 fn compact(view: &mut View<'_>) -> Option<u32> {
     let (value, end) = crate::psb::complete_compact_int(view.window(), view.position())?;
     view.seek(end)?;
     Some(value)
 }
 
-fn name(view: &mut View<'_>) -> Option<String> {
-    let length = view.unread().iter().position(|&byte| byte == 0)?;
-    let bytes = view.take(length)?;
-    view.skip(1)?;
-    let text = std::str::from_utf8(bytes).ok()?;
-    (!text.is_empty() && !text.chars().any(char::is_control)).then(|| text.to_owned())
+/// A NUL-terminated UTF-8 model name. A name without its NUL in the section,
+/// or that is not UTF-8, breaks the grammar; an empty name or one with a
+/// control character has no reading here.
+fn name(view: &mut View<'_>) -> Result<String, RowFault> {
+    let length = view
+        .unread()
+        .iter()
+        .position(|&byte| byte == 0)
+        .ok_or(Broken)?;
+    let bytes = view.take(length).ok_or(Broken)?;
+    view.skip(1).ok_or(Broken)?;
+    let text = std::str::from_utf8(bytes).map_err(|_| Broken)?;
+    if text.is_empty() || text.chars().any(char::is_control) {
+        return Err(Unread);
+    }
+    Ok(text.to_owned())
 }
 
-fn terminator(view: &mut View<'_>) -> Option<u8> {
-    let byte = view.u8()?;
-    matches!(byte, ROW_CONTINUES | TABLE_ENDS).then_some(byte)
+fn terminator(view: &mut View<'_>) -> Result<u8, RowFault> {
+    let byte = view.u8().ok_or(Broken)?;
+    matches!(byte, ROW_CONTINUES | TABLE_ENDS)
+        .then_some(byte)
+        .ok_or(Broken)
 }
 
-fn named(view: &mut View<'_>, kind: u8, field: &[u8]) -> Option<()> {
-    expect(view, &[0xe0, kind])?;
-    expect(view, field)?;
-    expect(view, &[0])
+fn named(view: &mut View<'_>, kind: u8, field: &[u8]) -> Result<(), RowFault> {
+    token(view, &[0xe0, kind])?;
+    token(view, field)?;
+    token(view, &[0])
 }
 
-fn schema_row(view: &mut View<'_>, element: u32) -> Option<(Member, u8)> {
+/// The null `tha_ref`; any other value has no reading here.
+fn null_reference(view: &mut View<'_>) -> Result<(), RowFault> {
+    match view.u8() {
+        Some(NULL_REFERENCE) => Ok(()),
+        Some(_) => Err(Unread),
+        None => Err(Broken),
+    }
+}
+
+fn schema_row(view: &mut View<'_>, element: u32) -> Result<(Member, u8), RowFault> {
     named(view, 0x01, b"id")?;
-    let id = compact(view)?;
+    let id = compact(view).ok_or(Broken)?;
     named(view, 0x01, b"type")?;
-    let kind = MemberKind::from_byte(view.u8()?);
+    let kind = MemberKind::from_byte(view.u8().ok_or(Broken)?);
     named(view, 0x0a, b"name")?;
     let child = name(view)?;
     named(view, 0x0a, b"family_name")?;
     let family_name = name(view)?;
     named(view, 0x00, b"tha_ref")?;
-    expect(view, &[NULL_REFERENCE])?;
+    null_reference(view)?;
     let mut frame = [0.0; 12];
     for (field, slots) in [&b"e1"[..], b"e2", b"e3", b"origin"]
         .into_iter()
         .zip(frame.chunks_exact_mut(3))
     {
         named(view, 0x02, field)?;
-        expect(view, &[0xf8, 0x03])?;
+        token(view, &[0xf8, 0x03])?;
         frame_slots(view, slots)?;
     }
-    expect(view, &[0xf1, 0xf7])?;
-    (compact(view)? == element).then_some(())?;
+    token(view, &[0xf1, 0xf7])?;
+    if compact(view).ok_or(Broken)? != element {
+        return Err(Broken);
+    }
     let terminator = terminator(view)?;
-    Some((
+    Ok((
         Member {
             offset: 0,
             id,
@@ -249,16 +301,16 @@ fn schema_row(view: &mut View<'_>, element: u32) -> Option<(Member, u8)> {
     ))
 }
 
-fn positional_row(view: &mut View<'_>) -> Option<(Member, u8)> {
-    let id = compact(view)?;
-    let kind = MemberKind::from_byte(view.u8()?);
+fn positional_row(view: &mut View<'_>) -> Result<(Member, u8), RowFault> {
+    let id = compact(view).ok_or(Broken)?;
+    let kind = MemberKind::from_byte(view.u8().ok_or(Broken)?);
     let child = name(view)?;
     let family_name = name(view)?;
-    expect(view, &[NULL_REFERENCE])?;
+    null_reference(view)?;
     let mut frame = [0.0; 12];
     frame_slots(view, &mut frame)?;
     let terminator = terminator(view)?;
-    Some((
+    Ok((
         Member {
             offset: 0,
             id,
@@ -277,22 +329,44 @@ const NULL_REFERENCE: u8 = 0xe1;
 /// Fill `slots` from consecutive member-frame scalar tokens.
 ///
 /// `e4`, `e5`, and `e6` repeat the preceding slot of the same run one, two,
-/// or three times.
-fn frame_slots(view: &mut View<'_>, slots: &mut [f64]) -> Option<()> {
+/// or three times. A token of a form the slot table does not state has no
+/// reading here; a stated token that runs past the section, decodes to a
+/// non-finite value, or repeats at the start of a run breaks the grammar.
+fn frame_slots(view: &mut View<'_>, slots: &mut [f64]) -> Result<(), RowFault> {
     let mut filled = 0;
     while filled < slots.len() {
-        let head = view.u8()?;
+        let head = view.u8().ok_or(Broken)?;
         if let 0xe4..=0xe6 = head {
-            let previous = *slots.get(filled.checked_sub(1)?)?;
-            let end = filled.checked_add(usize::from(head - 0xe3))?;
-            slots.get_mut(filled..end)?.fill(previous);
+            let previous = *slots
+                .get(filled.checked_sub(1).ok_or(Broken)?)
+                .ok_or(Broken)?;
+            let end = filled.checked_add(usize::from(head - 0xe3)).ok_or(Broken)?;
+            slots.get_mut(filled..end).ok_or(Broken)?.fill(previous);
             filled = end;
             continue;
         }
-        *slots.get_mut(filled)? = frame_scalar(head, view)?;
+        if !stated_slot(head, view.unread()) {
+            return Err(Unread);
+        }
+        *slots.get_mut(filled).ok_or(Broken)? = frame_scalar(head, view).ok_or(Broken)?;
         filled += 1;
     }
-    Some(())
+    Ok(())
+}
+
+/// Whether the slot table states the token that `head` opens and `rest`
+/// continues. A token cut short by the end of `rest` counts as stated.
+fn stated_slot(head: u8, rest: &[u8]) -> bool {
+    match head {
+        0x00..=0x02 => rest
+            .first()
+            .is_none_or(|selector| constant_bits(*selector).is_some()),
+        0x19..=0x4a => (head - if head < 0x32 { 0x19 } else { 0x32 }) % 5 != 3,
+        0xa4 => false,
+        0xee => rest.get(2).is_none_or(|byte| *byte == 0xff),
+        0x04 | 0x0f | 0x10 | 0x18 | 0x4b..=0xdf | 0xea | 0xec | 0xed => true,
+        _ => false,
+    }
 }
 
 /// The largest double below one.

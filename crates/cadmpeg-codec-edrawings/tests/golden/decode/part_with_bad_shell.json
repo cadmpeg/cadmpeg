@@ -1170,18 +1170,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "model.shell-invalid",
-            "kind": "geometry_not_transferred",
-            "namespace": "edrawings"
-          }
-        },
-        "message": "1 shells were left out of their bodies: object 10 of single: strip index lies outside the shell",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "geometry.reconstructed-from-mesh",
             "kind": "topology_gauge_substituted",
             "namespace": "edrawings"

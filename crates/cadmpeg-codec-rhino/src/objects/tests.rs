@@ -148,7 +148,7 @@ fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
     .expect_err("the cutoff selects the tagged V5 reader");
     assert!(matches!(
         error,
-        crate::chunks::FramingError::Structural { .. }
+        crate::chunks::FramingError::Unsupported { .. }
     ));
 }
 

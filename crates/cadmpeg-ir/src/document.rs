@@ -47,6 +47,7 @@ use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
+use crate::up_axis::UpAxis;
 use cadmpeg_core::text::NonBlankString;
 
 pub(crate) mod census;
@@ -1350,9 +1351,7 @@ macro_rules! declare_document_arenas {
                         home: stringify!($home),
                         field: stringify!($field),
                     };
-                    for entity in &self.$home.$field {
-                        references.add(&arena, entity.record_identity(), entity);
-                    }
+                    crate::give_up::add_references!($home, references, &arena, &self.$home.$field);
                 })*
                 if references.native_links == crate::give_up::NativeLinks::Read {
                     self.native.add_holders(&mut references);
@@ -1379,7 +1378,7 @@ macro_rules! declare_document_arenas {
                     let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
                         .iter()
                         .filter_map(|entity| {
-                            crate::give_up::Holder::named(native_links, arena, id, entity, |text| {
+                            crate::give_up::named_holder!($home, native_links, arena, id, entity, |text| {
                                 gone.get(text).map(String::as_str)
                             })
                         })
@@ -2091,6 +2090,17 @@ impl Model {
     pub fn omitted_arenas_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         let sorted = self.sorted_omitted();
         cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| sorted.serialize(adapter))
+    }
+
+    /// Take the baseline of the arenas the wire omits that `decoded` holds,
+    /// where both models hold them: a model rebuilt from a decode that
+    /// records no digest then compares its edits as `decoded` does.
+    pub fn adopt_omitted_arenas_baseline(&mut self, decoded: &Model) {
+        if let (OmittedArenas::Held { baseline }, OmittedArenas::Held { baseline: stated }) =
+            (&mut self.omitted, &decoded.omitted)
+        {
+            baseline.clone_from(stated);
+        }
     }
 
     /// Record `digest` as the baseline of the arenas the wire omits.
@@ -2865,6 +2875,8 @@ pub struct CadIr {
     pub source: Option<SourceMeta>,
     /// Document-wide tolerances.
     pub tolerances: Tolerances,
+    /// The axis that points up in the source document, when the source states one.
+    pub up_axis: Option<UpAxis>,
     /// The current geometry.
     pub geometry: Topology,
     /// Product structure, presentation, physics, assets, drawings, PMI, and
@@ -2939,6 +2951,8 @@ struct CadIrWriteWire<'a> {
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    up_axis: Option<UpAxis>,
     #[serde(serialize_with = "Topology::serialize_direct")]
     geometry: &'a Topology,
     #[serde(serialize_with = "Model::serialize_direct")]
@@ -3028,6 +3042,8 @@ struct CadIrReadWire {
     #[serde(rename = "units")]
     _units: CanonicalUnitsWire,
     tolerances: Tolerances,
+    #[serde(default, deserialize_with = "deserialize_up_axis")]
+    up_axis: Option<UpAxis>,
     #[serde(deserialize_with = "Topology::deserialize_direct")]
     geometry: Topology,
     #[serde(deserialize_with = "Model::deserialize_direct")]
@@ -3069,6 +3085,7 @@ impl CadIr {
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
+            up_axis: self.up_axis,
             geometry: &self.geometry,
             model: &self.model,
             design: if self.design.is_finalized() {
@@ -3108,6 +3125,7 @@ impl CadIr {
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
+            up_axis: self.up_axis,
             geometry: &self.geometry,
             model: &self.model,
             design: if self.design.is_finalized() {
@@ -3220,6 +3238,7 @@ impl From<CadIrReadWire> for CadIr {
             scope: wire.scope,
             source: wire.source,
             tolerances: wire.tolerances,
+            up_axis: wire.up_axis,
             geometry: wire.geometry,
             model: wire.model,
             design: wire.design,
@@ -3417,6 +3436,7 @@ impl CadIr {
             scope: ContentScope::full(),
             source: None,
             tolerances: Tolerances::default(),
+            up_axis: None,
             geometry: Topology::default(),
             model: Model::default(),
             design: Design::default(),
@@ -3815,6 +3835,7 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "ir_version");
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
+cadmpeg_core::named_optional_field!(deserialize_up_axis, UpAxis, "up_axis");
 
 mod identity_rewrite;
 

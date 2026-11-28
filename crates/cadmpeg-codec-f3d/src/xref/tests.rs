@@ -18,6 +18,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::{Cursor, Write};
 
+use crate::test_support::legacy_occurrence_record;
+
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
@@ -128,7 +130,7 @@ fn malformed_redirections_are_reported_by_complete_and_container_routes() {
             .report()
             .losses
             .iter()
-            .find(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+            .find(|loss| crate::test_support::xref_table_given_up(loss))
             .expect("malformed Redirections loss");
         assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
         assert!(loss.message.contains("properties"), "{loss:?}");
@@ -167,7 +169,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
                 &DecodeOptions { depth, ..DecodeOptions::default() },
             ).expect("property refusal preserves the source document"));
             let losses = decoded.report().losses.iter()
-                .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                .filter(|loss| crate::test_support::xref_table_given_up(loss))
                 .collect::<Vec<_>>();
             assert_eq!(losses.len(), usize::from(!valid), "{label}, container_only={container_only}: {losses:?}");
             for loss in losses {
@@ -874,63 +876,6 @@ fn grouped_identity_carriers_decode_as_identity_placements() {
     );
 }
 
-fn legacy_occurrence_reference(target: u64, identity: u64) -> Vec<u8> {
-    let mut bytes = vec![1];
-    bytes.extend_from_slice(&target.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&identity.to_le_bytes());
-    bytes.push(0);
-    bytes.extend_from_slice(&36_u32.to_le_bytes());
-    bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-    bytes.push(0);
-    bytes
-}
-
-/// One legacy typed placement envelope.
-fn legacy_occurrence_record(
-    role: &str,
-    entity_id: u64,
-    transform: Option<[[f64; 4]; 4]>,
-) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(b"380");
-    bytes.extend_from_slice(&entity_id.to_le_bytes());
-    bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.extend(legacy_occurrence_reference(3, 0x0102_0304_0506_0708));
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.push(0);
-    bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.extend(
-        crate::bytes::lp_utf16_bytes("11111111-2222-3333-4444-555555555555")
-            .expect("fixture UTF-16 code-unit count fits u32"),
-    );
-    bytes.extend(
-        crate::bytes::lp_utf16_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
-            .expect("fixture UTF-16 code-unit count fits u32"),
-    );
-    bytes.push(0);
-    bytes.extend(legacy_occurrence_reference(3, 0x0102_0304_0506_0708));
-    match transform {
-        Some(transform) => {
-            bytes.push(0);
-            for value in transform.into_iter().flatten() {
-                bytes.extend_from_slice(&value.to_le_bytes());
-            }
-        }
-        None => bytes.push(1),
-    }
-    bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(
-        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
-    );
-    bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    bytes
-}
-
 #[test]
 fn legacy_typed_placements_decode_identity_and_matrix_forms() {
     let matrix = [
@@ -953,6 +898,75 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
         super::occurrence_transforms(&placements, role),
         vec![None, Some(matrix)]
     );
+}
+
+/// `frame` with each legacy target typed as the referenced design's root
+/// component.
+fn root_component_targets(frame: Vec<u8>) -> Vec<u8> {
+    let placeholder = b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let root = b"E03784ED-5E19-4E14-B9F2-3B07017018CD";
+    let mut out = Vec::with_capacity(frame.len());
+    let mut at = 0;
+    while at < frame.len() {
+        if frame[at..].starts_with(placeholder) {
+            out.extend_from_slice(root);
+            at += placeholder.len();
+        } else {
+            out.push(frame[at]);
+            at += 1;
+        }
+    }
+    out
+}
+
+#[test]
+fn legacy_typed_placement_source_keeps_its_frame_and_source_occurrence_identity() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let matrix = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let other = [
+        [1.0, 0.0, 0.0, 5.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for transform in [None, Some(matrix)] {
+        let frame = root_component_targets(legacy_occurrence_record(role, 10, transform));
+        assert!(super::compact_legacy_placement_details(&frame).is_some());
+        assert!(super::legacy_external_placement_details(&frame).is_none());
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(document_with_placement(role, frame.clone())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = f3d_native(decoded.ir());
+        let reference = &native.xref_references[0];
+        let source = reference.placement_source.as_ref().unwrap();
+        let mut expected_frame = frame;
+        expected_frame[4..7].copy_from_slice(b"256");
+        assert_eq!(source.frame_bytes, expected_frame);
+        assert_eq!(source.carrier_record_index, 10);
+        assert_eq!(
+            super::legacy_source_occurrence_identity(&source.frame_bytes),
+            Some(0x0102_0304_0506_0708)
+        );
+        assert!(super::placement_source_matches(reference).unwrap());
+        let mut renamed = reference.clone();
+        renamed.neutron_role = "aaaabbbb-cccc-dddd-eeee-ffff00002222"
+            .to_owned()
+            .try_into()
+            .unwrap();
+        assert!(!super::placement_source_matches(&renamed).unwrap());
+        let mut moved = reference.clone();
+        moved.transform =
+            Some(crate::records::xref::XrefPlacementTransform::try_from(other).unwrap());
+        assert!(!super::placement_source_matches(&moved).unwrap());
+    }
 }
 
 #[test]

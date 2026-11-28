@@ -7,6 +7,8 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use crate::schema::{attribute, index, integers, reals, token, vectors3, Issues};
 use crate::stage::{Prim, Stage};
 
@@ -89,12 +91,20 @@ struct Corner {
     face_vertices: [usize; 3],
 }
 
-/// Reads `prim` as a mesh, or returns `None` when it has no points or
-/// faces.
-pub(crate) fn read(stage: &Stage<'_>, prim: &Prim<'_>, issues: &mut Issues) -> Option<MeshData> {
-    let points = vectors3(prim, "points", issues)?;
-    let counts = integers(prim, "faceVertexCounts", issues)?;
-    let indices = integers(prim, "faceVertexIndices", issues)?;
+/// Reads `prim` as a mesh, or returns why it has no points or faces: it is
+/// unreadable where a value is malformed or a face does not index three
+/// points, and undecoded where it states no points or faces.
+pub(crate) fn read(
+    stage: &Stage<'_>,
+    prim: &Prim<'_>,
+    issues: &mut Issues,
+) -> Result<MeshData, Cause> {
+    let since = issues.malformed.len();
+    let points = vectors3(prim, "points", issues).ok_or_else(|| issues.cause_since(since))?;
+    let counts =
+        integers(prim, "faceVertexCounts", issues).ok_or_else(|| issues.cause_since(since))?;
+    let indices =
+        integers(prim, "faceVertexIndices", issues).ok_or_else(|| issues.cause_since(since))?;
     let holes: BTreeSet<usize> = integers(prim, "holeIndices", issues)
         .unwrap_or_default()
         .into_iter()
@@ -161,7 +171,11 @@ pub(crate) fn read(stage: &Stage<'_>, prim: &Prim<'_>, issues: &mut Issues) -> O
         }
     }
     if points.is_empty() || triangles.is_empty() {
-        return None;
+        return Err(if rejected_faces > 0 {
+            Cause::Unreadable
+        } else {
+            Cause::Undecoded
+        });
     }
     let (normals, dropped_normals) = normals(prim, &points, &counts, &corners, issues);
     let (subsets, dropped_subsets) = subsets(stage, prim, &face_triangles, issues);
@@ -197,7 +211,7 @@ pub(crate) fn read(stage: &Stage<'_>, prim: &Prim<'_>, issues: &mut Issues) -> O
             None => dropped_texture_coordinates.push(short),
         }
     }
-    Some(MeshData {
+    Ok(MeshData {
         points,
         triangles,
         normals,

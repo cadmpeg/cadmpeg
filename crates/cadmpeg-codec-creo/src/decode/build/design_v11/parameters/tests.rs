@@ -386,3 +386,36 @@ fn a_model_whose_parameters_hold_every_dependency_has_no_note() {
         .expect("projection");
     assert!(losses.is_empty(), "{losses:?}");
 }
+
+/// A section dimension takes its row in its definition's dimension table,
+/// and the dimensions of an owner fed by two tables state no position.
+#[test]
+fn a_section_dimension_is_placed_by_its_table_row() {
+    let dimension = |key: &str, table: &str, row: &str| {
+        let parameter = parameter(key, &format!("d{key}"), "1", Some(length(1.0)));
+        with_property(
+            with_property(parameter, "definition_id", table),
+            "source_ordinal",
+            row,
+        )
+    };
+    let positions = |parameters: Vec<LegacyParameter>| {
+        let mut ir = CadIr::empty();
+        ir.model.parameters = parameters;
+        crate::decode::with_service_context(|ctx| project(ctx, &mut ir, &scope(), &mut Vec::new()))
+            .expect("projection");
+        ir.design
+            .parameters
+            .iter()
+            .map(|parameter| parameter.position)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        positions(vec![dimension("1", "t", "1"), dimension("2", "t", "0")]),
+        [Some(1), Some(0)]
+    );
+    assert_eq!(
+        positions(vec![dimension("1", "t", "1"), dimension("2", "u", "0")]),
+        [None, None]
+    );
+}

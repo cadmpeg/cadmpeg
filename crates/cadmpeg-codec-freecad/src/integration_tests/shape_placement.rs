@@ -51,6 +51,13 @@ fn shape(object: &str) -> String {
 }
 
 fn decode(objects: &[(&str, &str, Vec<String>)], payloads: &[(String, String)]) -> CadIr {
+    decode_result(objects, payloads).ir().clone()
+}
+
+fn decode_result(
+    objects: &[(&str, &str, Vec<String>)],
+    payloads: &[(String, String)],
+) -> cadmpeg_ir::DecodeResult {
     let mut declarations = String::new();
     let mut data = String::new();
     for (name, kind, properties) in objects {
@@ -80,8 +87,6 @@ fn decode(objects: &[(&str, &str, Vec<String>)], payloads: &[(String, String)]) 
             &DecodeOptions::default(),
         )
         .expect("placed shape archive")
-        .ir()
-        .clone()
 }
 
 /// Every world position of each payload's vertex: the placement of each
@@ -457,4 +462,89 @@ fn only_the_shape_property_is_a_definition_body() {
         .iter()
         .flat_map(|definition| &definition.bodies)
         .all(|body| !body.as_str().contains("AddSubShape")));
+}
+
+#[test]
+fn an_unreadable_part_placement_keeps_the_assembly() {
+    let origin = Frame {
+        position: [0.0, 0.0, 0.0],
+        quarter_turn: false,
+    };
+    let second = Frame {
+        position: [0.0, 4.0, 0.0],
+        quarter_turn: false,
+    };
+    let unreadable = r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#;
+    let result = decode_result(
+        &[
+            (
+                "Assembly",
+                "App::Part",
+                vec![group("Group", &["First", "Second"])],
+            ),
+            (
+                "First",
+                "App::Part",
+                vec![group("Group", &["FirstShape"]), unreadable.to_owned()],
+            ),
+            (
+                "Second",
+                "App::Part",
+                vec![
+                    group("Group", &["SecondShape"]),
+                    second.property("Placement"),
+                ],
+            ),
+            (
+                "FirstShape",
+                "Part::Feature",
+                vec![shape("FirstShape"), origin.property("Placement")],
+            ),
+            (
+                "SecondShape",
+                "Part::Feature",
+                vec![shape("SecondShape"), origin.property("Placement")],
+            ),
+        ],
+        &[
+            (
+                "FirstShape.Shape.brp".to_owned(),
+                located_vertex(&origin, [1.0, 0.0, 0.0]),
+            ),
+            (
+                "SecondShape.Shape.brp".to_owned(),
+                located_vertex(&origin, [2.0, 0.0, 0.0]),
+            ),
+        ],
+    );
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    let transform = |suffix: &str| {
+        ir.model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.as_str().ends_with(suffix))
+            .unwrap_or_else(|| panic!("{suffix}: {:?}", ir.model.occurrences))
+            .transform
+    };
+    assert_eq!(transform("#First:container"), None);
+    assert!(transform("#FirstShape:container").is_some());
+    let rows = transform("#Second:container")
+        .expect("the readable part keeps its placement")
+        .affine_rows();
+    assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [0.0, 4.0, 0.0]);
+    assert_world(
+        &world_vertices(ir),
+        "SecondShape.Shape.brp",
+        &[[2.0, 4.0, 0.0]],
+    );
+    let head = "record fcstd:native:property#First:Placement given up";
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(head)
+        }),
+        "{:?}",
+        result.report().losses
+    );
 }

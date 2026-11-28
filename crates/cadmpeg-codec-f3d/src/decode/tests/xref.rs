@@ -3,6 +3,8 @@
 
 use super::super::report_xref_placement_overrides;
 use crate::loss::F3dLossCode;
+use cadmpeg_ir::codec::Codec as _;
+use std::io::Write as _;
 
 fn placement_table() -> crate::xref::XrefTable {
     crate::xref::XrefTable {
@@ -78,5 +80,52 @@ fn assembly_property_note_preserves_role_and_data_text() {
     assert_eq!(
         super::super::XrefPropertyNote(&table.references[0]).to_string(),
         "neutronRole role-guid, neutronData data-guid"
+    );
+}
+
+/// A failed table without `RedirectionsStream.dat` or a manifest reference
+/// extension fails in `ComponentReferenceData.json`, whose entry is given up.
+#[test]
+fn an_invalid_component_reference_table_without_redirections_gives_up_its_own_entry() {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("Properties.dat", stored).unwrap();
+    let properties = r#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
+    zip.write_all(&u32::try_from(properties.len()).unwrap().to_le_bytes())
+        .unwrap();
+    zip.write_all(properties.as_bytes()).unwrap();
+    zip.start_file("ComponentReferenceData.json", stored)
+        .unwrap();
+    zip.write_all(b"[]").unwrap();
+    let document = zip.finish().unwrap().into_inner();
+    let decoded = crate::F3dCodec
+        .decode(
+            &mut std::io::Cursor::new(document),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("an invalid reference table remains a reported decode");
+    let losses = &decoded.report().losses;
+    let given_up = losses
+        .iter()
+        .filter(|loss| crate::test_support::xref_table_given_up(loss))
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{losses:?}");
+    assert_eq!(
+        given_up[0].code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        given_up[0].message.starts_with(&format!(
+            "part {} \"ComponentReferenceData.json\" ",
+            crate::container::ENTRY_PART
+        )),
+        "{losses:?}"
+    );
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.message.contains("RedirectionsStream.dat")),
+        "{losses:?}"
     );
 }

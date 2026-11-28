@@ -66,7 +66,7 @@ pub use coverage::{
     ProcessArenaDispositions,
 };
 pub use native::{NativeDisposition, NativeDispositions};
-pub use scene::{SceneOptions, UpAxis};
+pub use scene::SceneOptions;
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// Implementation surface for one output format.
@@ -105,9 +105,11 @@ pub trait EncoderBackend {
     const TARGET: Self::Target;
 
     /// Plans a write from the request resolved by [`Encoder::plan`], in the
-    /// encode's session `ctx`, which holds the caller's limits. The
-    /// cumulative ceilings hold per session: a decode session that the
-    /// writer opens of its own starts its totals at zero.
+    /// encode's session `ctx`, which holds the caller's limits. One encode
+    /// is one session: each read of the retained source charges `ctx`, so
+    /// the cumulative ceilings bound the whole write. A decode that reads a
+    /// written output back runs in a session of its own under the caller's
+    /// limits: the output is not input of the encode.
     fn plan_resolved(
         &self,
         ctx: &DecodeContext<'_>,
@@ -115,15 +117,8 @@ pub trait EncoderBackend {
         target: <Self::Target as TargetDomain>::Resolved<'_>,
     ) -> Result<ExportBody, CodecError>;
 
-    /// The document [`Encoder::plan`] writes in place of `input`'s: one read
-    /// from CADIR JSON with the arenas the wire omits restored, for a writer
-    /// that reads them ([`saved::restore_history`]). `None` writes `input`'s
-    /// document; `notes` takes why a restore that was attempted left it, and
-    /// `losses` the edits a restored document leaves out.
-    ///
-    /// # Errors
-    ///
-    /// The refusal of the write.
+    /// Restores the arenas that CADIR omits before planning an output. The
+    /// restored document supplies the report's arena and native coverage.
     fn restore(
         &self,
         _ctx: &DecodeContext<'_>,
@@ -133,6 +128,25 @@ pub trait EncoderBackend {
         _losses: &mut Vec<LossNote>,
     ) -> Result<Option<CadIr>, CodecError> {
         Ok(None)
+    }
+
+    /// Plans the output and optionally returns the restored document used to
+    /// determine report coverage.
+    fn plan_prepared(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        target: <Self::Target as TargetDomain>::Resolved<'_>,
+    ) -> Result<(ExportBody, Option<CadIr>), CodecError> {
+        let (mut notes, mut losses) = (Vec::new(), Vec::new());
+        let restored = self.restore(ctx, input, &target, &mut notes, &mut losses)?;
+        let effective = restored
+            .as_ref()
+            .map_or(input, |ir| EncodeInput { ir, ..input });
+        let mut body = self.plan_resolved(ctx, effective, target)?;
+        body.notes.append(&mut notes);
+        body.losses.append(&mut losses);
+        Ok((body, restored))
     }
 }
 
@@ -211,19 +225,24 @@ impl<E: EncoderBackend> Encoder for E {
             limits: input.limits,
         };
         let session = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-        let (report, coverage, outputs, payloads, annotations) = if let [_] = outputs.as_slice() {
-            let (report, coverage, bytes, annotations) = plan_output(self, &session, unchecked)?;
-            let census = report.census.clone();
-            (
-                report,
-                coverage,
-                outputs,
-                vec![(bytes, census)],
-                annotations,
-            )
+        let planned = if let [_] = outputs.as_slice() {
+            plan_output(self, &session, unchecked).map(|(report, coverage, bytes, annotations)| {
+                let census = report.census.clone();
+                (
+                    report,
+                    coverage,
+                    outputs,
+                    vec![(bytes, census)],
+                    annotations,
+                )
+            })
         } else {
-            plan_encode_set(self, &session, unchecked, outputs)?
+            plan_encode_set(self, &session, unchecked, outputs)
         };
+        if let Some(limit) = session.resource_refusal() {
+            return Err(EncodeError::from_backend(CodecError::ResourceLimit(limit)));
+        }
+        let (report, coverage, outputs, payloads, annotations) = planned?;
         let (payloads, censuses) = payloads.into_iter().unzip();
         let mut plan = ExportPlan {
             report,
@@ -259,17 +278,13 @@ fn plan_output<E: EncoderBackend>(
     let target = E::TARGET
         .resolve(input.ir, input.target, E::FORMAT)
         .map_err(EncodeError::from_backend)?;
-    let (mut restore_notes, mut restore_losses) = (Vec::new(), Vec::new());
-    let restored = encoder
-        .restore(ctx, input, &target, &mut restore_notes, &mut restore_losses)
+    let (body, restored) = encoder
+        .plan_prepared(ctx, input, target.clone())
         .map_err(EncodeError::from_backend)?;
     let input = match &restored {
         Some(ir) => EncodeInput { ir, ..input },
         None => input,
     };
-    let body = encoder
-        .plan_resolved(ctx, input, target.clone())
-        .map_err(EncodeError::from_backend)?;
     let ExportBody {
         bytes,
         census,
@@ -297,8 +312,6 @@ fn plan_output<E: EncoderBackend>(
         .iter()
         .any(|loss| loss.code.local_code() == target::SOURCE_DIALECT_DISPLACED);
     losses.extend(body_losses);
-    notes.extend(restore_notes);
-    losses.extend(restore_losses);
     losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
     losses.extend(native.omission_losses(input.ir, E::NAME));
     losses.extend(placed_definition_loss(
@@ -1541,7 +1554,7 @@ fn within_the_bounds(
 
 /// The CADIR empty file of `ir` (§3.4): no records, with the document-level
 /// fields of `ir`, its `fragment` flag, `repro` metadata, scope, source
-/// metadata and tolerances. Its `repro` has no root, manifest row or
+/// metadata, tolerances and up axis. Its `repro` has no root, manifest row or
 /// incomplete reason, since the file holds no record they describe.
 fn without_records(ir: &CadIr) -> CadIr {
     let mut empty = CadIr::empty();
@@ -1554,6 +1567,7 @@ fn without_records(ir: &CadIr) -> CadIr {
     }
     empty.source.clone_from(&ir.source);
     empty.tolerances = ir.tolerances;
+    empty.up_axis = ir.up_axis;
     empty.set_scope(ir.scope());
     empty
 }

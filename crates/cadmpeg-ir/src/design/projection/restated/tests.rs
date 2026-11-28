@@ -61,10 +61,24 @@ fn cuts(ir: &CadIr) -> BTreeMap<String, BTreeSet<String>> {
         )
         .chain(
             ir.model
+                .configurations
+                .iter()
+                .map(|configuration| configuration.id.as_str()),
+        )
+        .chain(
+            ir.model
                 .sketch_constraints
                 .iter()
                 .map(|constraint| constraint.id.as_str()),
         )
+        .chain(ir.design.features.iter().map(|feature| feature.id.as_str()))
+        .chain(
+            ir.design
+                .containers
+                .iter()
+                .map(|container| container.id().as_str()),
+        )
+        .chain(ir.design.spreadsheets.iter().map(|sheet| sheet.id.as_str()))
         .collect::<HashSet<_>>();
     same_id_cuts(ir, &written)
         .into_iter()
@@ -253,6 +267,32 @@ fn a_projected_entity_names_what_it_does_not_state() {
     );
 }
 
+/// A design entity states the center record of the model entity only where
+/// the design point of that record is its center.
+#[test]
+fn a_projected_entity_states_its_center_record_through_its_center_point() {
+    let mut ir = sketch_fixture();
+    let line = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap();
+    line.center_ref = Some("test:native#end".to_owned());
+    assert_eq!(cuts(&ir)[LINE], fields(["center_ref"]));
+    let end_point = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == END)
+        .unwrap();
+    end_point.roles.push(EntityRole {
+        of: entity_id(LINE),
+        role: DefiningRole::Center,
+    });
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+}
+
 /// A design sketch on another frame names its placement.
 #[test]
 fn a_projected_sketch_on_another_frame_names_its_placement() {
@@ -426,6 +466,7 @@ fn design_parameter(key: &str, name: &str) -> DesignParameter {
         id: parameter_id(key),
         scope: ProductDefinitionId::mint(SCOPE).unwrap(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,
@@ -448,9 +489,9 @@ fn parameter_ir(models: Vec<ModelParameter>, designs: Vec<DesignParameter>) -> C
     ir
 }
 
-/// Only a spreadsheet orders design parameters: two parameters of one owner
-/// that no sheet lists name their ordinals, whichever order their ids take,
-/// and a parameter with no other of its owner keeps its ordinal.
+/// Two parameters of one owner that state no position and that no sheet
+/// lists name their ordinals, whichever order their ids take, and a
+/// parameter with no other of its owner keeps its ordinal.
 #[test]
 fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
     let designs = || {
@@ -476,6 +517,124 @@ fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
         designs(),
     ));
     assert_eq!(lone[parameter_id("sketch:7").as_str()], fields([]));
+}
+
+/// Parameters of one owner whose positions follow their ordinals keep the
+/// ordinals; those whose positions do not, or of which one states none, name
+/// them.
+#[test]
+fn a_parameter_ordinal_follows_the_positions_of_its_owner() {
+    let models = || {
+        vec![
+            model_parameter("sketch:7", 0),
+            model_parameter("sketch:10", 1),
+        ]
+    };
+    let placed = |first: Option<u32>, second: Option<u32>| {
+        let mut designs = vec![
+            design_parameter("sketch:7", "sketch:7"),
+            design_parameter("sketch:10", "sketch:10"),
+        ];
+        designs[0].position = first;
+        designs[1].position = second;
+        cuts(&parameter_ir(models(), designs))
+    };
+    let ordered = placed(Some(4), Some(9));
+    assert_eq!(ordered[parameter_id("sketch:7").as_str()], fields([]));
+    assert_eq!(ordered[parameter_id("sketch:10").as_str()], fields([]));
+    let reversed = placed(Some(1), Some(0));
+    assert_eq!(
+        reversed[parameter_id("sketch:7").as_str()],
+        fields(["ordinal"])
+    );
+    assert_eq!(
+        reversed[parameter_id("sketch:10").as_str()],
+        fields(["ordinal"])
+    );
+    let partial = placed(Some(0), None);
+    assert_eq!(
+        partial[parameter_id("sketch:7").as_str()],
+        fields(["ordinal"])
+    );
+}
+
+#[test]
+fn a_parameter_ordinal_requires_positions_in_one_design_list() {
+    let mut first = design_parameter("width", "width");
+    let mut second = design_parameter("height", "height");
+    first.position = Some(0);
+    second.position = Some(1);
+    let models = vec![model_parameter("width", 0), model_parameter("height", 1)];
+    let mut ir = parameter_ir(models, vec![first, second]);
+
+    ir.design.parameters[1].scope = ProductDefinitionId::mint(COMPONENT).unwrap();
+    let split_scope = cuts(&ir);
+    for key in ["width", "height"] {
+        assert!(split_scope[parameter_id(key).as_str()].contains("ordinal"));
+    }
+
+    ir.design.parameters[1].scope = ProductDefinitionId::mint(SCOPE).unwrap();
+    ir.design.parameters[1].owner = Some(ParameterOwner::Feature(
+        FeatureId::mint("test:design:feature#sketch").unwrap(),
+    ));
+    let split_owner = cuts(&ir);
+    for key in ["width", "height"] {
+        assert!(split_owner[parameter_id(key).as_str()].contains("ordinal"));
+    }
+
+    ir.design.parameters[1].owner = None;
+    ir.design.parameters[1].position = Some(0);
+    ir.model.parameters[0].ordinal = 1;
+    ir.model.parameters[1].ordinal = 0;
+    let duplicate_position = cuts(&ir);
+    for key in ["width", "height"] {
+        assert_eq!(
+            duplicate_position[parameter_id(key).as_str()],
+            fields(["ordinal"])
+        );
+    }
+}
+
+#[test]
+fn a_configuration_position_carries_the_same_model_ordinal() {
+    use crate::design::configuration::{DesignConfiguration, Overrides};
+    use crate::features::parameters::DesignConfiguration as ModelConfiguration;
+    use crate::features::ConfigurationId;
+
+    let id = ConfigurationId::mint("test:design:configuration#variant").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(ModelConfiguration {
+        id: id.clone(),
+        ordinal: 4,
+        active: true,
+        source_index: None,
+        name: Some("Variant".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    ir.design.configurations.push(DesignConfiguration {
+        id: id.clone(),
+        scope: ProductDefinitionId::mint(SCOPE).unwrap(),
+        name: "Variant".to_owned(),
+        position: Some(4),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    assert_eq!(cuts(&ir)[id.as_str()], fields(["active"]));
+
+    for position in [Some(0), None] {
+        ir.design.configurations[0].position = position;
+        assert_eq!(cuts(&ir)[id.as_str()], fields(["active", "ordinal"]));
+    }
 }
 
 /// A design parameter named by the stored name the model keeps in
@@ -534,6 +693,8 @@ fn a_parameter_definition_is_carried_by_its_owner_feature_component() {
     let mut ir = parameter_ir(vec![model], vec![design]);
     ir.design.features.push(feature(Some(COMPONENT)));
     assert_eq!(cuts(&ir)[&id], fields([]));
+    let written = HashSet::from([id.as_str()]);
+    assert!(same_id_cuts(&ir, &written)[id.as_str()].contains("product_definition"));
     ir.design.features[0] = feature(None);
     assert_eq!(cuts(&ir)[&id], fields(["product_definition"]));
 }
@@ -566,18 +727,240 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
         address: CellAddress::new(row, col).unwrap(),
         parameter: parameter_id(key),
     };
-    listed.design.spreadsheets.push(
+    let sheet = |id, cells| {
         crate::design::spreadsheet::Spreadsheet::new(
-            SpreadsheetId::mint("test:design:spreadsheet#sheet").unwrap(),
-            vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+            SpreadsheetId::mint(id).unwrap(),
+            cells,
             Vec::new(),
             Vec::new(),
             Vec::new(),
             None,
         )
-        .unwrap(),
+        .unwrap()
+    };
+    listed.design.spreadsheets.push(sheet(
+        "test:design:spreadsheet#a",
+        vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+    ));
+    let written = listed
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect();
+    assert!(
+        same_id_cuts(&listed, &written)[parameter_id("sheet:cell:B1").as_str()].contains("ordinal")
     );
-    let listed = cuts(&listed);
-    assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
-    assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
+    let together = cuts(&listed);
+    assert_eq!(together[parameter_id("sheet:cell:B1").as_str()], fields([]));
+    assert_eq!(together[parameter_id("sheet:cell:A2").as_str()], fields([]));
+
+    listed.design.spreadsheets = vec![
+        sheet(
+            "test:design:spreadsheet#a",
+            vec![cell(1, 2, "sheet:cell:B1")],
+        ),
+        sheet(
+            "test:design:spreadsheet#b",
+            vec![cell(2, 1, "sheet:cell:A2")],
+        ),
+    ];
+    let split = cuts(&listed);
+    for key in ["sheet:cell:B1", "sheet:cell:A2"] {
+        assert_eq!(split[parameter_id(key).as_str()], fields(["ordinal"]));
+    }
+}
+
+#[test]
+fn an_absent_flag_compares_as_false() {
+    let mut ir = sketch_fixture();
+    let line = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == LINE)
+        .unwrap();
+    line.construction = None;
+    let model = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap();
+    model.construction = false;
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+
+    ir.model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap()
+        .read_construction(false);
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+    ir.model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap()
+        .read_construction(true);
+    assert_eq!(cuts(&ir)[LINE], fields(["construction"]));
+}
+
+#[test]
+fn a_container_carries_the_model_owner_when_written() {
+    use crate::design::container::{Container, UnorderedKind};
+    use crate::design::ids::ContainerId;
+
+    let owner = FeatureId::mint("test:model:feature#node").unwrap();
+    let container = ContainerId::mint("test:design:container#group").unwrap();
+    let mut model = model_parameter("width", 0);
+    model.owner = Some(owner.clone());
+    let mut design = design_parameter("width", "width");
+    design.owner = Some(ParameterOwner::Container(container.clone()));
+    let mut ir = parameter_ir(vec![model], vec![design]);
+    ir.model.restated.record(
+        owner.as_str(),
+        super::Restater::Record(container.as_str().to_owned()),
+        [],
+    );
+    ir.design.containers.push(Container::Unordered {
+        id: container,
+        kind: UnorderedKind::Group,
+        members: BTreeSet::new(),
+    });
+    let id = parameter_id("width");
+    assert_eq!(cuts(&ir)[id.as_str()], fields([]));
+    assert!(same_id_cuts(&ir, &HashSet::from([id.as_str()]))[id.as_str()].contains("owner"));
+}
+
+/// A model feature `key` of the operation `operation`.
+fn model_feature(
+    key: &str,
+    operation: crate::features::FeatureOperation,
+) -> crate::features::Feature {
+    crate::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("test:design:feature#{key}")).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            crate::features::FeatureDefinition::Operation(operation),
+        ),
+        native_ref: None,
+    }
+}
+
+/// A design parameter with no owner is a user parameter of its scope
+/// (§5.12): it carries a model owner that is an equations node no design
+/// record states, and names an owner that is another feature.
+#[test]
+fn a_user_parameter_carries_its_equations_table_owner() {
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    let cut = |operation| {
+        let table = model_feature("table", operation);
+        let mut model = model_parameter("width", 0);
+        model.owner = Some(table.id.clone());
+        let mut ir = parameter_ir(vec![model], vec![design_parameter("width", "width")]);
+        ir.model.features.push(table);
+        cuts(&ir)[parameter_id("width").as_str()].clone()
+    };
+    assert_eq!(
+        cut(crate::features::FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            children: TreeChildren::default(),
+        }),
+        fields([])
+    );
+    assert_eq!(
+        cut(crate::features::FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::FeatureFolder,
+            children: TreeChildren::default(),
+        }),
+        fields(["owner"])
+    );
+}
+
+/// A design parameter with no cache carries the model value its neutral
+/// definition evaluates to, through the parameters it references that have
+/// none either, and names another value.
+#[test]
+fn an_uncached_parameter_carries_the_value_its_definition_evaluates_to() {
+    use crate::design::dimension::{ParameterRef, RefTarget};
+    use crate::design::expr::{parse, Expression, Neutral};
+    let neutral = |text: &str, refs: &[&str]| {
+        let refs = refs
+            .iter()
+            .map(|key| ParameterRef {
+                target: RefTarget::Parameter(parameter_id(key)),
+                through: None,
+            })
+            .collect::<Vec<_>>();
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(
+            parse(text, &refs, &[]).unwrap(),
+        )))
+    };
+    let charged_value = |depth: &str, write_width: bool| {
+        let mut width = design_parameter("width", "width");
+        width.definition = neutral("1[cm]", &[]);
+        width.value = None;
+        let mut design = design_parameter("depth", "depth");
+        design.definition = neutral(depth, &["width"]);
+        design.value = None;
+        let ir = parameter_ir(vec![model_parameter("depth", 0)], vec![design, width]);
+        let depth = parameter_id("depth");
+        let width = parameter_id("width");
+        let mut written = HashSet::from([depth.as_str()]);
+        if write_width {
+            written.insert(width.as_str());
+        }
+        same_id_cuts(&ir, &written)[depth.as_str()].contains("value")
+    };
+    assert!(!charged_value("$0 + 2[mm]", true));
+    assert!(charged_value("$0 + 3[mm]", true));
+    assert!(charged_value("$0 + 2[mm]", false));
+}
+
+/// A parameter that a radial dimension binds states no display where the
+/// dimension measures the model display (D7): it carries that display, and
+/// names one the dimension does not measure.
+#[test]
+fn a_parameter_carries_the_display_its_radial_dimension_measures() {
+    use crate::design::ops::sketch::RadialMeasure;
+    use crate::features::parameters::DimensionDisplay as ModelDisplay;
+    let charged_display = |measure, write_constraint| {
+        let mut model = model_parameter("diameter", 0);
+        model.display = Some(ModelDisplay::Diameter);
+        let mut ir = parameter_ir(vec![model], vec![design_parameter("diameter", "diameter")]);
+        ir.design
+            .sketch_constraints
+            .push(SketchConstraint::<Planar> {
+                id: SketchConstraintId::mint(CONSTRAINT).unwrap(),
+                sketch: sketch_id(),
+                relation: SketchRelation::Radial {
+                    of: entity_id(LINE),
+                    measure,
+                    value: Dimension::Parameter(parameter_id("diameter")),
+                },
+                name: None,
+                active: None,
+                native_options: NativeOptions::new(),
+                source_settings: NativeOptions::new(),
+                native_ref: None,
+            });
+        let parameter = parameter_id("diameter");
+        let mut written = HashSet::from([parameter.as_str()]);
+        if write_constraint {
+            written.insert(CONSTRAINT);
+        }
+        same_id_cuts(&ir, &written)[parameter.as_str()].contains("display")
+    };
+    assert!(!charged_display(RadialMeasure::Diameter, true));
+    assert!(charged_display(RadialMeasure::Radius, true));
+    assert!(charged_display(RadialMeasure::Diameter, false));
 }
