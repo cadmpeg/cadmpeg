@@ -497,18 +497,34 @@ fn malformed_trims_leave_the_natural_boundary_and_a_loss() {
     }
 }
 
+/// A surface with a point that is not finite has no reading, and is
+/// undecoded; a surface whose knots decrease breaks §14, and is unreadable.
 #[test]
 fn a_surface_that_is_not_finite_and_ordered_is_rejected() {
-    for surface in [
-        PLANE.replace("(10, 0, 0)", "(nan, 0, 0)"),
-        PLANE.replace("uKnots = [0, 0, 1, 1]", "uKnots = [0, 1, 0, 1]"),
+    use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
+
+    for (surface, cause) in [
+        (
+            PLANE.replace("(10, 0, 0)", "(nan, 0, 0)"),
+            record_undecoded_kind(),
+        ),
+        (
+            PLANE.replace("uKnots = [0, 0, 1, 1]", "uKnots = [0, 1, 0, 1]"),
+            record_unreadable_kind(),
+        ),
     ] {
         let result = decode(&layer(&surface));
         assert!(result.ir().geometry.faces.is_empty(), "{surface}");
-        assert!(
-            has_loss(&result, UsdLossCode::NurbsPatchRejected),
-            "{surface}"
-        );
+        let given_up = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+            .collect::<Vec<_>>();
+        let [loss] = given_up.as_slice() else {
+            panic!("one give-up for {surface}: {given_up:#?}");
+        };
+        assert_eq!(loss.code, cause, "{surface}");
     }
 }
 

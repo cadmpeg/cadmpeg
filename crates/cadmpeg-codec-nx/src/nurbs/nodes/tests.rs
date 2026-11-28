@@ -96,6 +96,76 @@ fn curve_stream_with(extra: &[u8]) -> Vec<u8> {
     bytes
 }
 
+/// A `B_CURVE` stream whose descriptor states `degree` over two poles, with
+/// the multiplicities `mults` and the knots `knots`.
+fn curve_stream_of(degree: u16, mults: [u16; 2], knots: [f64; 2]) -> Vec<u8> {
+    let mut nurbs = degree.to_be_bytes().to_vec();
+    nurbs.extend(2u32.to_be_bytes());
+    nurbs.extend(3u16.to_be_bytes());
+    nurbs.extend(2u32.to_be_bytes());
+    nurbs.extend([2, 0, 0, 0, 0]);
+    nurbs.extend(pointers(&[13, 14, 15]));
+    let mut data = vec![0];
+    data.extend(pointers(&[1]));
+    let multiplicities = mults
+        .iter()
+        .flat_map(|value| value.to_be_bytes())
+        .collect::<Vec<_>>();
+    let mut bytes = header();
+    bytes.extend(carrier(134, 10, 11, 12));
+    bytes.extend(fixed(136, 11, &nurbs));
+    bytes.extend(fixed(135, 12, &data));
+    bytes.extend(counted(127, 2, 14, &multiplicities));
+    bytes.extend(counted(128, 2, 15, &reals(&knots)));
+    bytes.extend(counted(
+        45,
+        6,
+        13,
+        &reals(&[0.0, 0.0, 0.0, 0.001, 0.002, 0.003]),
+    ));
+    bytes.extend(END);
+    bytes
+}
+
+/// The cause of the one refusal of the terminated curve stream `bytes`.
+fn terminated_refusal(bytes: &[u8]) -> (cadmpeg_ir::unknown::part::Cause, String) {
+    with_decode_context(|_ctx| {
+        let graph = Graph::parse_source(bytes).unwrap();
+        let parsed = super::super::parse_with_graph(bytes, &graph);
+        assert!(parsed.curves.is_empty());
+        let [refusal] = parsed.refusals.as_slice() else {
+            panic!("one refusal, got {:?}", parsed.refusals);
+        };
+        refusal.give_up(0)
+    })
+}
+
+/// Terminated lanes that break a stated rule (`siemens_nx.md` §6.2) are
+/// unreadable; lanes the IR carrier refuses for another reason are undecoded.
+#[test]
+fn terminated_carrier_refusals_are_unreadable_only_where_a_stated_rule_breaks() {
+    use cadmpeg_ir::unknown::part::Cause;
+    with_decode_context(|_ctx| {
+        let valid = curve_stream_of(1, [2, 2], [0.0, 1.0]);
+        let graph = Graph::parse_source(&valid).unwrap();
+        let parsed = super::super::parse_with_graph(&valid, &graph);
+        assert_eq!(parsed.curves.len(), 1);
+        assert!(parsed.refusals.is_empty());
+    });
+    let (cause, why) = terminated_refusal(&curve_stream_of(1, [2, 1], [0.0, 1.0]));
+    assert_eq!(cause, Cause::Unreadable, "{why}");
+    assert!(why.contains("contradicts its fields"), "{why}");
+    let (cause, why) = terminated_refusal(&curve_stream_of(2, [2, 3], [0.0, 1.0]));
+    assert_eq!(cause, Cause::Unreadable, "{why}");
+    assert!(
+        why.contains("degree that is not less than its pole count"),
+        "{why}"
+    );
+    let (cause, why) = terminated_refusal(&curve_stream_of(1, [2, 2], [1.0, 0.0]));
+    assert_eq!(cause, Cause::Undecoded, "{why}");
+    assert!(why.contains("states no carrier"), "{why}");
+}
+
 #[test]
 fn terminated_control_points_join_by_reference() {
     with_decode_context(|_ctx| {

@@ -12,6 +12,12 @@ use std::io::Cursor;
 /// LZW code, followed by a readable compressed section. Returns the bytes,
 /// the damaged section's offset, and its bytes.
 fn damaged_compressed_part(name: &str) -> (Vec<u8>, usize, Vec<u8>) {
+    compressed_part(name, 5)
+}
+
+/// [`damaged_compressed_part`] with the first section's TOC row declaring
+/// `expanded` expanded bytes.
+fn compressed_part(name: &str, expanded: usize) -> (Vec<u8>, usize, Vec<u8>) {
     let mut bytes = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
     let header_base = bytes.len();
     bytes.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 2 81 17").as_bytes());
@@ -24,7 +30,7 @@ fn damaged_compressed_part(name: &str) -> (Vec<u8>, usize, Vec<u8>) {
     let first_offset = 3 * 81;
     let second_offset = first_offset + damaged.len();
     for row in [
-        format!("{name} {first_offset:x} {:x} 5", damaged.len()),
+        format!("{name} {first_offset:x} {:x} {expanded:x}", damaged.len()),
         format!("SolidPersistTable {second_offset:x} {:x} 3", readable.len()),
     ] {
         bytes.extend_from_slice(format!("{row:<80}\n").as_bytes());
@@ -49,14 +55,11 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("independent section is decoded");
         let decoded = EditableDecodeResult::from(decoded);
-        let losses = decoded
+        assert!(!decoded
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.to_string() == "creo/container.compressed-section-unexpanded")
-            .collect::<Vec<_>>();
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("undefined code"));
+            .any(|loss| loss.code.to_string() == "creo/container.compressed-section-unexpanded"));
         let section = format!("creo:compressed:section#{section_offset}");
         let charges = decoded
             .report()
@@ -66,6 +69,7 @@ fn compressed_section_recovery_reports_loss_and_retains_the_bounded_source() {
             .collect::<Vec<_>>();
         assert_eq!(charges.len(), 1, "{charges:#?}");
         let message = &charges[0].message;
+        assert!(message.contains("undefined code"), "{message}");
         assert!(
             message.starts_with(&format!(
                 "part compressed-section stream=\"\" offset={section_offset} length={} record=creo:source:part#",
@@ -131,6 +135,42 @@ fn a_pinned_decode_refuses_an_unexpanded_compressed_section() {
         )),
         "{}",
         rejection.loss().message
+    );
+}
+
+/// A section that declares an expansion past the section ceiling is a valid
+/// section the decoder does not expand: one `record.undecoded` gives it up,
+/// and a pinned decode admits it.
+#[test]
+fn a_section_past_the_expansion_ceiling_is_given_up_as_undecoded() {
+    let (bytes, section_offset, _) = compressed_part("VisibGeom", 256 * 1024 * 1024 + 1);
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect("a pinned decode admits a section past the expansion ceiling");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_eq!(
+        charges[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        charges[0].message.starts_with(&format!(
+            "part compressed-section stream=\"\" offset={section_offset} "
+        )),
+        "{}",
+        charges[0].message
+    );
+    assert!(
+        charges[0].message.contains("256 MiB section ceiling"),
+        "{}",
+        charges[0].message
     );
 }
 

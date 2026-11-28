@@ -224,6 +224,33 @@ impl std::fmt::Display for TransmitError {
 
 impl std::error::Error for TransmitError {}
 
+/// Why the state at a wanted mark was not written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateError {
+    /// A step toward the mark was refused. The replay stops: no earlier
+    /// state follows.
+    Replay(ReplayError),
+    /// The state at the mark does not write as a partition transmit. Earlier
+    /// states follow.
+    Transmit {
+        /// Identifier of the mark.
+        mark: u32,
+        /// Why the state does not write.
+        error: TransmitError,
+    },
+}
+
+impl std::fmt::Display for StateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Replay(error) => write!(formatter, "{error}"),
+            Self::Transmit { mark, error } => write!(formatter, "state at mark {mark}: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for StateError {}
+
 /// The content of one delta.
 #[derive(Debug, Clone, Default)]
 struct Content<'r> {
@@ -520,6 +547,72 @@ impl<'r> MainLine<'r> {
                 declarations,
             },
         })
+    }
+}
+
+impl<'r> MainLine<'r> {
+    /// The partition transmit of the state at each main-line mark whose
+    /// identifier `wanted` holds, from the current mark back. The replay ends
+    /// at the earliest wanted mark.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplayError`] where [`MainLine::replay`] does.
+    pub fn states<'a>(
+        &'a self,
+        partition: &'r PrimaryRecords<'_>,
+        wanted: BTreeSet<u32>,
+    ) -> Result<States<'a, 'r>, ReplayError> {
+        Ok(States {
+            replay: self.replay(partition)?,
+            wanted,
+            stepped: false,
+            done: false,
+        })
+    }
+}
+
+/// The states at the wanted marks of one main line, from the current mark
+/// back: each mark with its partition transmit. After a refused step the
+/// iterator ends.
+#[derive(Debug, Clone)]
+pub struct States<'a, 'r> {
+    replay: Replay<'a, 'r>,
+    wanted: BTreeSet<u32>,
+    stepped: bool,
+    done: bool,
+}
+
+impl Iterator for States<'_, '_> {
+    type Item = Result<(PmarkState, Vec<u8>), StateError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.done && !self.wanted.is_empty() {
+            if self.stepped {
+                match self.replay.step() {
+                    Ok(Some(_)) => {}
+                    Ok(None) => self.done = true,
+                    Err(error) => {
+                        self.done = true;
+                        return Some(Err(StateError::Replay(error)));
+                    }
+                }
+            }
+            self.stepped = true;
+            let mark = self.replay.mark();
+            if !self.done && self.wanted.remove(&mark.identifier()) {
+                return Some(
+                    self.replay
+                        .transmit()
+                        .map(|bytes| (mark, bytes))
+                        .map_err(|error| StateError::Transmit {
+                            mark: mark.identifier(),
+                            error,
+                        }),
+                );
+            }
+        }
+        None
     }
 }
 

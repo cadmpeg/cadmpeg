@@ -286,3 +286,48 @@ fn external_section_links_do_not_alias_local_sketches_or_features() {
         ]
     );
 }
+
+#[test]
+fn a_malformed_non_sketch_profile_frame_gives_up_the_frame_and_keeps_the_pocket() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Part2DObjectPython" name="Profile"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property></Properties></Object>
+ <Object name="Pocket"><Properties Count="3"><Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = crate::FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("a pocket whose profile frame is malformed");
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with("record fcstd:native:property#Profile:Placement given up")
+        })
+        .count();
+    assert_eq!(given_up, 1, "{:?}", result.report().losses);
+    let pocket = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pocket"))
+        .expect("pocket feature");
+    // A Pocket cuts against the profile normal.
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Extrude { direction, .. },
+    ) = pocket.evaluation.definition()
+    else {
+        panic!("{:?}", pocket.evaluation.definition())
+    };
+    assert_eq!(
+        *direction,
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+    );
+    crate::test_support::test_archive::assert_valid_document(result.ir());
+}

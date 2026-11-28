@@ -274,6 +274,19 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_entities(count, operation)
     }
 
+    /// Admits the bytes and records of one optional output together.
+    ///
+    /// If either limit refuses, neither counter advances and the session
+    /// remains usable. A refusal already in force is returned unchanged.
+    pub fn admit_optional(
+        &self,
+        bytes: u64,
+        entities: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.budget.admit_optional(bytes, entities, operation)
+    }
+
     /// Charges entities newly present since `admitted`, then advances `admitted`.
     ///
     /// Codecs call this at admission boundaries so `max_entities` refuses further

@@ -32,6 +32,7 @@ pub mod program;
 pub mod projection;
 pub mod read;
 pub mod refs;
+pub mod regions;
 pub mod scope;
 pub mod selection;
 pub mod spreadsheet;
