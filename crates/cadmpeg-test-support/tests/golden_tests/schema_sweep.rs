@@ -18,11 +18,79 @@ use serde_json::Value;
 use super::{collect_documents, golden_files, hand_written_documents, states_native_elision};
 
 #[test]
+fn sidecar_class_sets_have_unique_members_in_schema() {
+    let schema: Value = serde_json::from_str(cadmpeg_ir::DECODE_SIDECAR_JSON_SCHEMA)
+        .expect("the sidecar schema is JSON");
+    for path in [
+        "/$defs/RetainedSourceRecord/properties/untyped/uniqueItems",
+        "/$defs/SourceFidelity/properties/unrepresented/uniqueItems",
+    ] {
+        assert_eq!(schema.pointer(path), Some(&Value::Bool(true)), "{path}");
+    }
+}
+
+#[test]
+fn every_sidecar_schema_position_has_one_spelling() {
+    use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
+    use cadmpeg_ir::hash::digest::Sha256Digest;
+    use cadmpeg_ir::ids::UnknownId;
+    use cadmpeg_ir::report::decode::DecodeReport;
+    use cadmpeg_ir::{DecodeSidecar, RetainedSourceRecord, SourceFidelity};
+
+    let digest = Sha256Digest::digest(b"schema sweep");
+    let report = DecodeReport::of_cadir_read(Vec::new(), DecodeDepth::Full);
+    let mut fidelity = SourceFidelity::new(digest.clone());
+    fidelity
+        .insert_retained_record(
+            UnknownId::mint("synthetic:source:record#one").expect("record identity"),
+            RetainedSourceRecord::whole("source", vec![1])
+                .with_untyped([ArenaClass::Model, ArenaClass::Design]),
+        )
+        .expect("distinct record identity");
+    let sidecar = DecodeSidecar::bind_sha256(digest, report, fidelity);
+    let document =
+        cadmpeg_ir::hash::finite_json::to_json_value(&sidecar).expect("the sidecar serializes");
+    let schema: Value = serde_json::from_str(cadmpeg_ir::DECODE_SIDECAR_JSON_SCHEMA)
+        .expect("the sidecar schema is JSON");
+    let read = |text: &str| {
+        let value = DecodeSidecar::from_json(text)
+            .map_err(|error| <serde_json::Error as serde::de::Error>::custom(error.to_string()))?;
+        cadmpeg_ir::hash::finite_json::to_json_value(&value)
+    };
+    let mut classified = document.clone();
+    classified["report"]["identity"] = json!({
+        "kind": "classified",
+        "dialects": {
+            "primary": {"dialect": "step:ap214", "declared": {"version": "1"},
+                        "instance": "part", "admission": {"kind": "admitted"}},
+            "extra": [],
+        },
+    });
+    classified["fidelity"]["annotations"]["exactness"] = json!({
+        "synthetic:source:record#one": {"kind": "fields", "fields": {"name": "derived"}},
+    });
+    read(&classified.to_string()).expect("the classified sidecar reads");
+    let report = cadmpeg_test_support::schema_sweep::sweep(
+        &schema,
+        &[document.clone(), classified],
+        &document,
+        &read,
+    );
+    assert!(report.unreached.is_empty(), "{:?}", report.unreached);
+    assert!(report.unprobed.is_empty(), "{:?}", report.unprobed);
+    assert!(report.accepting.is_empty(), "{:?}", report.accepting);
+}
+
+#[test]
 fn every_schema_position_has_one_spelling() {
     let schema: Value =
         serde_json::from_str(cadmpeg_ir::CADIR_JSON_SCHEMA).expect("the schema is JSON");
-    let report = cadmpeg_test_support::schema_sweep::sweep(&schema, &documents())
+    let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())
         .expect("the empty document serializes");
+    let read = |text: &str| {
+        cadmpeg_ir::hash::finite_json::to_json_value(&serde_json::from_str::<CadIr>(text)?)
+    };
+    let report = cadmpeg_test_support::schema_sweep::sweep(&schema, &documents(), &empty, &read);
     println!(
         "reached {} of {} definitions and probed {} struct positions, {} data-free \
          enums, {} sets and pair-maps, and {} ordered member lists; {} targets from \
@@ -68,10 +136,10 @@ fn every_schema_position_has_one_spelling() {
     );
 }
 
-/// Second spellings the readers admit until errata item Q rules CADIR
-/// reading (RULINGS-P P7-D5, gap 20261119-ERR1-C-I6-3): `main` read the
-/// dimension modifiers as a list in any order.
+/// The reader preserves the established modifier-list admission, including
+/// any order and repeated members; the writer emits a sorted set.
 const INTERIM_SECOND_SPELLINGS: &[&str] = &[
+    "#/$defs/PmiDefinition/oneOf/4/properties/modifiers: duplicate member is accepted",
     "#/$defs/PmiDefinition/oneOf/4/properties/modifiers: two members out of order are read and written back sorted",
 ];
 
@@ -286,6 +354,21 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             ),
         ),
         (
+            "preset feed roles",
+            process_document(
+                "presets",
+                vec![json!({
+                    "id": "test:sweep:preset#0",
+                    "tool": "test:sweep:tool#0",
+                    "nc": {},
+                    "technology": {"feeds": [
+                        [{"kind": "cutting"}, {"kind": "per_time", "value": {"kind": "literal", "value": 16.6}}],
+                        [{"kind": "plunge"}, {"kind": "per_tooth", "value": {"kind": "literal", "value": 0.05}}],
+                    ]},
+                })],
+            ),
+        ),
+        (
             "neutral process parameter expression",
             process_document(
                 "parameters",
@@ -338,7 +421,10 @@ fn operation_limits() -> Vec<Value> {
             "heights": heights,
             "radii": radii,
             "axial": axial,
-            "technology": {"feeds": []},
+            "technology": {"feeds": [
+                [{"kind": "cutting"}, {"kind": "per_time", "value": {"kind": "literal", "value": 16.6}}],
+                [{"kind": "plunge"}, {"kind": "per_tooth", "value": {"kind": "literal", "value": 0.05}}],
+            ]},
             "configuration_states": {},
         })
     };
