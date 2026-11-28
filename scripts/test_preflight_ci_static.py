@@ -55,6 +55,7 @@ class CommandSelection(unittest.TestCase):
         self.assertNotIn("python3 scripts/check-source-policy.py", selected)
         self.assertNotIn("python3 scripts/check-resource-caps.py", selected)
         self.assertNotIn("python3 scripts/census-panic-calls.py --check", selected)
+        self.assertNotIn("python3 scripts/check-source-policy.py --authoring-paths-only", selected)
         self.assertIn("python3 scripts/preflight_open_items.py", selected)
         self.assertIn("cargo fmt --all --check", selected)
 
