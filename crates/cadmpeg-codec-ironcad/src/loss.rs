@@ -11,6 +11,7 @@ cadmpeg_ir::loss_codes! {
 pub(crate) enum IronCadLossCode {
     ContainerNoncanonical,
     FrameUnreadable,
+    FrameTrailingBytes,
     RecordHeaderUnrecognized,
     KernelUnrecognized,
     KernelPrologueUnreadable,
@@ -41,6 +42,7 @@ impl IronCadLossCode {
                 LossTaxonomy::NoncanonicalSourceSyntax,
             ),
             Self::FrameUnreadable => ("frame.unreadable", LossTaxonomy::MissingGeometryStream),
+            Self::FrameTrailingBytes => ("frame.trailing-bytes", LossTaxonomy::DecodeDiagnostic),
             Self::RecordHeaderUnrecognized => {
                 ("record.header-unrecognized", LossTaxonomy::DecodeDiagnostic)
             }

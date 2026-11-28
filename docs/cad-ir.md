@@ -4,6 +4,8 @@
 
 `CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"11"`, whose wire form [`cadir-v11.md`](cadir-v11.md) states. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
+Reproduction bundles are described in [repro-bundles.md](repro-bundles.md).
+
 ## Document layering
 
 A product document has three semantic layers:
@@ -22,7 +24,7 @@ CadIr
 └── native
 ```
 
-`geometry`, `model`, `design`, and `process` are format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+`geometry`, `model`, `design`, and `process` are format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Removing a native arena requires an `IR_VERSION` bump.
 
 `scope` is required. It records the content classes the document holds, as the object `{ "model": bool, "design": bool, "process": bool }`. A decode at depth `container`, `geometry`, `design`, or `full` records `{}`, `{model}`, `{model, design}`, or all three classes; a class the request names and the decode does not deliver is absent from the scope and charges `decode/depth.not-delivered`. A scope with `design` holds `model`, and a scope with `process` holds `design`. Each neutral arena is classed as model, design, or process. The design arenas are every arena of `design` and, in this version, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, `spreadsheets`, and `history_bodies` in `model`. The process arenas are every arena of `process`. A document holds no record in an arena whose class its scope excludes. Readers and writers keep the scope as stated, and validation reports each breach of these rules as an Error finding. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
 

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod motion_link;
+pub(crate) mod operand_keys;
 
 use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
@@ -419,7 +421,7 @@ impl RigidGroupLayout {
                     ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE,
                     ordinary::REFERENCE_COUNT,
                 )
-            } else if !alternate && tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
+            } else if tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
                 (
                     typed::SCOPE_TAIL,
                     typed::LOCATOR_COUNT,
@@ -967,6 +969,23 @@ pub(crate) fn legacy_as_built_421_generation(
 pub(crate) struct AssemblyJointProjection {
     pub(crate) joints: Vec<AssemblyJoint>,
     pub(crate) losses: Vec<LossNote>,
+    /// The losses of the values that the joint features of the design layer
+    /// state: an enabled rest position, and a motion that no assembly joint
+    /// kind states.
+    design_stated: Vec<LossNote>,
+}
+
+impl AssemblyJointProjection {
+    /// The losses of a decode to `depth`. From the design depth, the design
+    /// layer states each joint as its joint feature (§6.7), or charges the
+    /// feature it does not project.
+    pub(crate) fn take_losses(&mut self, depth: DecodeDepth) -> Vec<LossNote> {
+        let mut losses = std::mem::take(&mut self.losses);
+        if depth < DecodeDepth::Design {
+            losses.append(&mut self.design_stated);
+        }
+        losses
+    }
 }
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
@@ -1025,6 +1044,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut partial_alignments = 0_usize;
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
+    let mut unread_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
     let mut root_contexts = 0_usize;
     let mut unprojected_members = 0_usize;
@@ -1109,13 +1129,14 @@ pub(crate) fn project_assembly_joints_with_paths(
                 // A scope with an additional-owner run (versions 4 and 5) whose
                 // joint record has no decoded motion projects with the fixed
                 // fallback; say so even when it has no additional owners.
-                let undecoded = undecoded.or_else(|| {
-                    (motion.is_none()
-                        && scope.assembly_alignment().is_some_and(|alignment| {
-                            alignment.additional_owner_run.is_some()
-                        }))
-                    .then(|| "the joint record's motion is not decoded".to_owned())
-                });
+                if undecoded.is_none()
+                    && motion.is_none()
+                    && scope
+                        .assembly_alignment()
+                        .is_some_and(|alignment| alignment.additional_owner_run.is_some())
+                {
+                    unread_motion_count += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -1158,6 +1179,7 @@ pub(crate) fn project_assembly_joints_with_paths(
         }
     }
     let mut losses = Vec::new();
+    let mut design_stated = Vec::new();
     if assumed_extended_typed_tails != 0 {
         losses.push(F3dLossCode::AssemblyExtendedTypedTailAssumed.note(format!(
             "{assumed_extended_typed_tails} Design assembly relation(s) assume the extra tail reference uses the common 51-byte typed spelling with the same role as its plain spelling; its target and location remain native."
@@ -1188,8 +1210,13 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     if undecoded_motion_count != 0 {
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
-        losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
+        design_stated.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if unread_motion_count != 0 {
+        losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
+            "{unread_motion_count} Design assembly joint(s) were projected as fixed: the joint record's motion is not decoded."
         )));
     }
     if native_angular_limits != 0 {
@@ -1203,7 +1230,7 @@ pub(crate) fn project_assembly_joints_with_paths(
         )));
     }
     if resting_joints != 0 {
-        losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
+        design_stated.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
             "{resting_joints} projected Design assembly joint(s) enable a rest position; the neutral joint does not carry it, which is retained natively."
         )));
     }
@@ -1224,7 +1251,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     if unprojected_members != 0 {
         losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
-            "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
+            "{unprojected_members} rigid group member(s) have native locators and no legacy assembly joint record: their operands or connector frames cannot form a legacy pair."
         )));
     }
     let (linked, unbound_links) = motion_link::project(scopes, motions, paths, &mut joints);
@@ -1247,22 +1274,63 @@ pub(crate) fn project_assembly_joints_with_paths(
     AssemblyJointProjection {
         joints: joints.into_values().collect(),
         losses,
+        design_stated,
     }
 }
 
-/// The decoded motion of an `Assemble` scope's joint: the joint record's
-/// index is one less than the scope's.
-fn scope_joint_motion<'a>(
+/// The angular and the linear limits of a scope's two limit owners: an
+/// angular limit in radians, a linear limit converted from centimetres to
+/// millimetres.
+fn scope_limits(
+    limits: Option<&crate::records::feature::assembly::DesignAssemblyLimits>,
+) -> Result<(Option<JointLimits>, Option<JointLimits>), CodecError> {
+    let Some(limits) = limits else {
+        return Ok((None, None));
+    };
+    let scale = match limits.kind {
+        DesignAssemblyLimitKind::Angular => 1.0,
+        DesignAssemblyLimitKind::Linear => 10.0,
+    };
+    let projected = JointLimits::new(
+        Some(limits.minimum() * scale),
+        Some(limits.maximum() * scale),
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed("joint limits minimum/maximum must be finite and ordered".into())
+    })?;
+    Ok(match limits.kind {
+        DesignAssemblyLimitKind::Angular => (Some(projected), None),
+        DesignAssemblyLimitKind::Linear => (None, Some(projected)),
+    })
+}
+
+/// The decoded motion of an `Assemble` scope's joint: the one motion of
+/// [`scope_joint_motions`].
+pub(crate) fn scope_joint_motion<'a>(
     scope: &DesignParameterScope,
     stream: &str,
     motions: &'a [crate::records::feature::joint_motion::DesignJointMotion],
 ) -> Option<&'a crate::records::feature::joint_motion::DesignJointMotion> {
-    let mut matching = motions.iter().filter(|motion| {
-        native_stream(&motion.id) == Some(stream)
-            && motion.joint_record_index.checked_add(1) == Some(scope.record_index)
-    });
-    let motion = matching.next()?;
-    matching.next().is_none().then_some(motion)
+    match scope_joint_motions(scope, stream, motions).as_slice() {
+        [motion] => Some(motion),
+        _ => None,
+    }
+}
+
+/// The decoded motions that bind to an `Assemble` scope's joint: the joint
+/// record's index is one less than the scope's.
+pub(crate) fn scope_joint_motions<'a>(
+    scope: &DesignParameterScope,
+    stream: &str,
+    motions: &'a [crate::records::feature::joint_motion::DesignJointMotion],
+) -> Vec<&'a crate::records::feature::joint_motion::DesignJointMotion> {
+    motions
+        .iter()
+        .filter(|motion| {
+            native_stream(&motion.id) == Some(stream)
+                && motion.joint_record_index.checked_add(1) == Some(scope.record_index)
+        })
+        .collect()
 }
 
 /// The kind a motion's freedoms and limit lanes select, or the reason they
@@ -1279,7 +1347,7 @@ enum JointMotionKind {
     Slider { limits: Option<JointLimits> },
 }
 
-fn zero_lane_rotation_limits(
+pub(crate) fn zero_lane_rotation_limits(
     motion: &crate::records::feature::joint_motion::DesignJointMotion,
 ) -> bool {
     matches!(motion.freedoms.as_slice(), [freedom] if matches!(freedom.value, 1 | 2))
@@ -1464,21 +1532,7 @@ fn project_assembly_joint(
         _ if rigid_as_built_scope(scope) => return Err(unresolved_rigid_group()),
         _ => return Ok(None),
     };
-    let (angular_limits, linear_limits) = match limits {
-        Some(limits) => {
-            let projected = JointLimits::new(Some(limits.minimum()), Some(limits.maximum()))
-                .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "joint limits minimum/maximum must be finite and ordered".into(),
-                    )
-                })?;
-            match limits.kind {
-                DesignAssemblyLimitKind::Angular => (Some(projected), None),
-                DesignAssemblyLimitKind::Linear => (None, Some(projected)),
-            }
-        }
-        None => (None, None),
-    };
+    let (angular_limits, linear_limits) = scope_limits(limits)?;
     if compact_as_built
         && operands
             .iter()
@@ -1911,6 +1965,42 @@ mod tests {
 
     mod placement_owner_run;
 
+    /// A linear limit owner stores centimetres and an angular one radians
+    /// (f3d.md, the 421-byte `As-built` generation map).
+    #[test]
+    fn scope_limits_state_linear_limits_in_millimetres() {
+        let limits = |kind| {
+            crate::records::feature::assembly::DesignAssemblyLimits::try_from(
+                crate::records::feature::assembly::DesignAssemblyLimitsWire {
+                    kind,
+                    minimum: -0.25,
+                    maximum: 1.5,
+                    owner_record_indices: [1, 2],
+                    value_offsets: [0, 0],
+                },
+            )
+            .unwrap()
+        };
+        let range = |limits: Option<cadmpeg_ir::products::JointLimits>| match limits {
+            Some(cadmpeg_ir::products::JointLimits::Range(range)) => {
+                (range.minimum().get(), range.maximum().get())
+            }
+            other => panic!("a range: {other:?}"),
+        };
+        let (angular, linear) = super::scope_limits(Some(&limits(
+            crate::records::feature::assembly::DesignAssemblyLimitKind::Linear,
+        )))
+        .unwrap();
+        assert!(angular.is_none());
+        assert_eq!(range(linear), (-2.5, 15.0));
+        let (angular, linear) = super::scope_limits(Some(&limits(
+            crate::records::feature::assembly::DesignAssemblyLimitKind::Angular,
+        )))
+        .unwrap();
+        assert!(linear.is_none());
+        assert_eq!(range(angular), (-0.25, 1.5));
+    }
+
     #[test]
     fn null_wide_locator_admission_is_specific_to_assemble() {
         let guid = "2E3AC990-483D-4A55-8662-C064B976A957";
@@ -1942,7 +2032,7 @@ mod tests {
         }
     }
 
-    use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_core::decode::{u64_from_index, DecodeDepth};
 
     use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
@@ -2784,7 +2874,7 @@ mod tests {
             loss.code,
             crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
         );
-        assert_eq!(loss.message, "2 rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects.");
+        assert_eq!(loss.message, "2 rigid group member(s) have native locators and no legacy assembly joint record: their operands or connector frames cannot form a legacy pair.");
         let occurrences = instances(&table.references[..1]);
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
@@ -3013,25 +3103,31 @@ mod tests {
                 },
             );
         // The joint record is 9; its Assemble scope is 10.
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-            DesignFeatureKind::Assemble,
-            10,
-        );
-        scope
-            .try_edit(|draft| {
-                draft.payload = DesignScopePayload::Assemble(Some(
-                    DesignAssemblyAlignment::try_new(
-                        0.0,
-                        [0.0; 3],
-                        Vec::new(),
-                        Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
-                    )
-                    .unwrap(),
-                ));
-            })
-            .unwrap();
-        scopes.push(scope);
+        let assemble = |angle| {
+            let mut scope = DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+                DesignFeatureKind::Assemble,
+                10,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.payload = DesignScopePayload::Assemble(Some(
+                        DesignAssemblyAlignment::try_new(
+                            angle,
+                            [0.0; 3],
+                            Vec::new(),
+                            Some(DesignAssemblyAlignmentForm::qualified(
+                                frames.clone(),
+                                qualifiers.clone(),
+                            )),
+                        )
+                        .unwrap(),
+                    ));
+                })
+                .unwrap();
+            scope
+        };
+        scopes.push(assemble(0.0));
         let motion = |codes: &[u32], flags: [u8; 2]| DesignJointMotion {
             id: "f3d:Design/BulkStream.dat:design-joint-motion#900".into(),
             joint_record_index: 9,
@@ -3139,10 +3235,10 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
         );
 
-        // An enabled rest position is retained natively with a loss; a rest
-        // value without the flag is not reported.
+        // Below the design depth, where no joint feature states it, an enabled
+        // rest is charged; a rest value without the flag is not reported.
         let resting = |flag: u8| {
-            let mut resting = motion(&[8], [1, 1]);
+            let mut resting = motion(&[1], [1, 1]);
             if let Some(lanes) = resting.limits.as_mut() {
                 lanes.rest = Some(crate::records::feature::joint_motion::DesignJointRest {
                     flag,
@@ -3151,23 +3247,28 @@ mod tests {
             }
             project(&[resting])
         };
-        let rested = resting(1);
-        assert_eq!(kind(&rested)["kind"], "slider");
-        assert_eq!(
-            rested
-                .losses
-                .iter()
-                .map(|loss| loss.code.clone())
-                .collect::<Vec<_>>(),
-            [
-                crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind(),
-                crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind(),
-            ]
-        );
-        assert_eq!(
-            crate::test_support::loss_codes(&resting(0).losses),
-            [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
-        );
+        let activation = crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind();
+        let at = |mut projection: super::AssemblyJointProjection, depth| {
+            let mut codes = crate::test_support::loss_codes(&projection.take_losses(depth));
+            codes.retain(|code| *code != activation);
+            codes
+        };
+        let rest = crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind();
+        assert_eq!(kind(&resting(1))["kind"], "revolute");
+        assert_eq!(at(resting(1), DecodeDepth::Geometry), [rest]);
+        assert!(at(resting(1), DecodeDepth::Design).is_empty());
+        assert!(at(resting(0), DecodeDepth::Geometry).is_empty());
+
+        // An angled slider is a fixed assembly joint and a slider joint feature.
+        let mut angled = scopes.clone();
+        angled[2] = assemble(0.25);
+        let inserts = crate::design::components::ComponentInserts::default();
+        let angled =
+            || super::project_assembly_joints(&angled, &[], &inserts, &[motion(&[8], [0, 0])]);
+        let undecoded = crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind();
+        assert_eq!(kind(&angled())["kind"], "fixed");
+        assert_eq!(at(angled(), DecodeDepth::Geometry), [undecoded]);
+        assert!(at(angled(), DecodeDepth::Design).is_empty());
 
         // A rigid group is fixed: one whose joint record states a freedom is
         // left unprojected.
@@ -3239,17 +3340,13 @@ mod tests {
             motion(&[2], [1, 0]),
             motion(&[8], [0, 1]),
         ] {
-            let projection = project(&[undecoded]);
+            let mut projection = project(&[undecoded]);
             assert_eq!(kind(&projection)["kind"], "fixed");
             assert_eq!(
-                projection
-                    .losses
-                    .iter()
-                    .map(|loss| loss.code.clone())
-                    .collect::<Vec<_>>(),
+                crate::test_support::loss_codes(&projection.take_losses(DecodeDepth::Geometry)),
                 [
-                    crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind(),
                     crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind(),
+                    crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind(),
                 ]
             );
         }
