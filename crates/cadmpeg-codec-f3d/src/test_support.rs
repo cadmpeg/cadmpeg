@@ -244,6 +244,65 @@ pub(crate) fn local_reference(target: u64) -> Vec<u8> {
     bytes
 }
 
+/// One legacy target reference to `target` with source occurrence identity
+/// `identity`.
+pub(crate) fn legacy_occurrence_reference(target: u64, identity: u64) -> Vec<u8> {
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&target.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&identity.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    bytes.push(0);
+    bytes
+}
+
+/// One legacy typed placement envelope.
+pub(crate) fn legacy_occurrence_record(
+    role: &str,
+    entity_id: u64,
+    transform: Option<[[f64; 4]; 4]>,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"380");
+    bytes.extend_from_slice(&entity_id.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(legacy_occurrence_reference(3, 0x0102_0304_0506_0708));
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes("11111111-2222-3333-4444-555555555555")
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
+    bytes.push(0);
+    bytes.extend(legacy_occurrence_reference(3, 0x0102_0304_0506_0708));
+    match transform {
+        Some(transform) => {
+            bytes.push(0);
+            for value in transform.into_iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        None => bytes.push(1),
+    }
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
+    bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
 pub(crate) fn legacy_attributed_external_placement(
     role: &str,
     attributes: bool,
@@ -431,3 +490,60 @@ pub(crate) fn loss_codes(
 pub(crate) mod move_face;
 
 pub(crate) mod typed_reference_scopes;
+
+/// The one `record.unreadable` loss of `losses` whose message starts with
+/// `head`, after checking that it names a stub of the F3D `unknowns` arena of
+/// `ir` and that its dropped list is `dropped`.
+pub(crate) fn charged_part<'a>(
+    ir: &CadIr,
+    losses: &'a [cadmpeg_ir::report::loss::LossNote],
+    head: &str,
+    dropped: &str,
+) -> &'a cadmpeg_ir::report::loss::LossNote {
+    let charges = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(head)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{head}: {losses:#?}");
+    let charge = charges[0];
+    assert!(
+        charge.message.contains(&format!("; dropped=[{dropped}]")),
+        "{}",
+        charge.message
+    );
+    let stubs = ir.native_unknowns("f3d").expect("the F3D unknowns arena");
+    assert!(
+        stubs
+            .iter()
+            .any(|stub| charge.message.contains(&format!("record={}:", stub.id))),
+        "the charge names no stub: {}",
+        charge.message
+    );
+    charge
+}
+
+/// Asserts that a pinned decode of `bytes` refuses through a
+/// `record.unreadable` loss whose message starts with `head`.
+pub(crate) fn assert_pinned_refusal(bytes: Vec<u8>, head: &str) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = F3dCodec
+        .decode(&mut std::io::Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up record");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(head),
+        "{}",
+        rejection.loss().message
+    );
+}

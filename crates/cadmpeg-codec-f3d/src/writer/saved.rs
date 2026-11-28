@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The design arenas of a Fusion document read from CADIR JSON, restored
 //! from the decode of its retained archive and the edits its `design`
-//! records state.
-
-use std::io::Cursor;
+//! records state. The rows of the configuration tables are the ones the
+//! retained archive projects; the writer writes the configurations of the
+//! `design` records into them.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
-use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
+use crate::ids;
 use crate::loss::F3dLossCode;
-use crate::{ids, F3dCodec};
 
 /// `input`'s document with the arenas the CADIR wire omits restored from
 /// its retained archive, where it was read from CADIR JSON and `target` does
@@ -37,14 +37,7 @@ pub(crate) fn restore(
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let restored = F3dCodec
-        .decode(
-            &mut Cursor::new(image),
-            &DecodeOptions {
-                policy: *ctx.policy(),
-                ..DecodeOptions::default()
-            },
-        )
+    let restored = super::decode_retained_source(image, *ctx.policy())
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
@@ -52,13 +45,16 @@ pub(crate) fn restore(
             )),
         })
         .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText))
-        .and_then(|mut restored| {
-            reproject(ctx, &mut restored.ir)?;
-            Ok(restored)
+        .and_then(|restored| {
+            let rows = reproject(ctx, &restored.ir)?;
+            Ok((restored, rows))
         });
     match restored {
-        Ok(restored) if restored.unwritten.is_empty() => Ok(Some(restored.ir)),
-        Ok(restored) => {
+        Ok((mut restored, rows)) if restored.unwritten.is_empty() => {
+            restored.ir.model.configurations = rows;
+            Ok(Some(restored.ir))
+        }
+        Ok((restored, _)) => {
             let reason = format!(
                 "the document was read from CADIR, and its history arenas cannot state these \
                  design edits: {}",
@@ -75,13 +71,13 @@ pub(crate) fn restore(
     }
 }
 
-/// Replaces the configurations `ir` took from the archive's decode with the
-/// ones the decoder states for the configuration tables `ir` was read with.
+/// The rows of the configuration tables `ir` was read with, as the decoder
+/// states them.
 fn reproject(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<(), CodecError> {
-    ir.model.configurations = match f3d_native(ctx, ir)? {
+    ir: &CadIr,
+) -> Result<Vec<DesignConfiguration>, CodecError> {
+    Ok(match f3d_native(ctx, ir)? {
         Some(native) => {
             decoded_configurations(
                 &native.design_configurations,
@@ -90,8 +86,7 @@ fn reproject(
             .configurations
         }
         None => Vec::new(),
-    };
-    Ok(())
+    })
 }
 
 /// Records and charges why the history arenas were not restored.
@@ -123,6 +118,10 @@ impl HistoryText for FusionText {
 
     fn reference(&self, target: &DesignParameter, _model: &Model) -> Option<String> {
         Some(target.name.clone())
+    }
+
+    fn restates_configurations(&self) -> bool {
+        true
     }
 }
 

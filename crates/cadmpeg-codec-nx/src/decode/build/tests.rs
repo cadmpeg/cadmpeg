@@ -337,6 +337,94 @@ fn plain_images_beside_partitions_suppress_terminal_lineage_preselection() {
     );
 }
 
+const TEST_PROLOGUE: &[u8] =
+    b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00";
+
+fn decode_partition(stream: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let file = crate::test_support::test_prt::prt_with_partition(stream);
+    crate::NxCodec
+        .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+        .expect("a permissive decode reports its give-ups")
+}
+
+/// The `record.unreadable` that gives up the record at `pos` of stream 0.
+fn record_charge(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    pos: usize,
+    length: usize,
+) -> &cadmpeg_ir::report::loss::LossNote {
+    losses
+        .iter()
+        .find(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                && loss
+                    .message
+                    .contains(&format!("\" offset={pos} length={length} record="))
+        })
+        .unwrap_or_else(|| panic!("the record at {pos} is given up: {losses:#?}"))
+}
+
+fn node_span(stream: &[u8], kind: crate::framing::node_kind::NodeKind, xmt: u32) -> (usize, usize) {
+    let graph = crate::topology::Graph::parse(stream);
+    let node = graph.get(kind, xmt).expect("fixture node");
+    (node.pos(), node.end() - node.pos())
+}
+
+#[test]
+fn a_refused_carrier_of_a_stream_that_admits_no_carrier_is_given_up() {
+    let root_half = std::f64::consts::FRAC_1_SQRT_2;
+    let mut stream = TEST_PROLOGUE.to_vec();
+    stream.extend(cone_record(2, -root_half, root_half));
+    let (pos, length) = node_span(&stream, crate::framing::node_kind::NodeKind::Cone, 2);
+
+    let result = decode_partition(&stream);
+    assert!(result.ir().geometry.surfaces.is_empty());
+    let losses = &result.report().losses;
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::NxLossCode::GeometryNotTransferred.kind()));
+    assert!(losses.iter().any(
+        |loss| loss.code == crate::loss::NxLossCode::CarrierConeHalfAngleSignUnresolved.kind()
+    ));
+    record_charge(losses, pos, length);
+}
+
+#[test]
+fn a_face_on_a_refused_surface_stays_on_an_unknown_carrier() {
+    use crate::framing::node_kind::NodeKind;
+    let root_half = std::f64::consts::FRAC_1_SQRT_2;
+    let mut stream = crate::test_support::test_streams::topology_partition_stream();
+    let (face, _) = node_span(&stream, NodeKind::Face, 4);
+    crate::test_support::test_bytes::put_ref(&mut stream, face + 26, 13);
+    stream.extend(cone_record(13, -root_half, root_half));
+    let (pos, length) = node_span(&stream, NodeKind::Cone, 13);
+
+    let result = decode_partition(&stream);
+    let model = &result.ir().geometry;
+    let face = model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "nx:s0:face#4")
+        .expect("the face stays");
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("the face's carrier");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }
+        )
+    ));
+    let charge = record_charge(&result.report().losses, pos, length);
+    assert!(!charge.message.contains("nx:s0:face#4"), "{charge:#?}");
+}
+
 #[test]
 fn a_body_that_terminal_lineage_prunes_does_not_set_the_part_tolerance() {
     let body = |stream: u32| BodyId::mint(format!("nx:s{stream}:body#2")).expect("identity");

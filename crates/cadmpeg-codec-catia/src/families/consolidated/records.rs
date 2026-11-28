@@ -11,7 +11,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 #[cfg(test)]
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
@@ -437,6 +438,109 @@ pub(crate) struct ResolvedConsolidatedEdgeBlock {
     pub(crate) endpoint_loci: Option<[Point3; 2]>,
 }
 
+struct PointGrid3 {
+    cell_size: f64,
+    cells: HashMap<(i64, i64, i64), Vec<(Point3, usize)>>,
+    overflow: Vec<(Point3, usize)>,
+}
+
+impl PointGrid3 {
+    fn new(cell_size: f64) -> Self {
+        Self {
+            cell_size,
+            cells: HashMap::new(),
+            overflow: Vec::new(),
+        }
+    }
+
+    fn cell_coords(&self, point: Point3) -> Option<(i64, i64, i64)> {
+        let inv = 1.0 / self.cell_size;
+        let scaled = [point.x * inv, point.y * inv, point.z * inv];
+        if scaled.iter().any(|v| !v.is_finite() || v.abs() > 1.0e15) {
+            return None;
+        }
+        let cx = cadmpeg_core::convert::truncate_f64_to_i64(scaled[0].floor())?;
+        let cy = cadmpeg_core::convert::truncate_f64_to_i64(scaled[1].floor())?;
+        let cz = cadmpeg_core::convert::truncate_f64_to_i64(scaled[2].floor())?;
+        Some((cx, cy, cz))
+    }
+
+    fn insert(&mut self, point: Point3, index: usize) {
+        if let Some(key) = self.cell_coords(point) {
+            self.cells.entry(key).or_default().push((point, index));
+        } else {
+            self.overflow.push((point, index));
+        }
+    }
+
+    fn any_within_strict(&self, point: Point3, radius: f64) -> bool {
+        if self
+            .overflow
+            .iter()
+            .any(|&(candidate, _)| distance_below(point, candidate, radius))
+        {
+            return true;
+        }
+        let Some((cx, cy, cz)) = self.cell_coords(point) else {
+            return self
+                .cells
+                .values()
+                .flatten()
+                .any(|&(candidate, _)| distance_below(point, candidate, radius));
+        };
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if let Some(bucket) = self.cells.get(&(cx + dx, cy + dy, cz + dz)) {
+                        if bucket
+                            .iter()
+                            .any(|&(candidate, _)| distance_below(point, candidate, radius))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn visit_within_inclusive(
+        &self,
+        point: Point3,
+        radius: f64,
+        mut visit: impl FnMut(usize) -> Result<bool, CodecError>,
+    ) -> Result<(), CodecError> {
+        for &(candidate, index) in &self.overflow {
+            if distance_at_most(point, candidate, radius) && !visit(index)? {
+                return Ok(());
+            }
+        }
+        let Some((cx, cy, cz)) = self.cell_coords(point) else {
+            for &(candidate, index) in self.cells.values().flatten() {
+                if distance_at_most(point, candidate, radius) && !visit(index)? {
+                    return Ok(());
+                }
+            }
+            return Ok(());
+        };
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if let Some(bucket) = self.cells.get(&(cx + dx, cy + dy, cz + dz)) {
+                        for &(candidate, index) in bucket {
+                            if distance_at_most(point, candidate, radius) && !visit(index)? {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 struct ConsolidatedCarriers<'a> {
     cylinders: &'a [B2Cylinder],
     circles: &'a [B2Circle],
@@ -445,6 +549,99 @@ struct ConsolidatedCarriers<'a> {
     tori: &'a [B2Torus],
     planes: &'a [B2PlaneCarrier],
     nurbs_surfaces: &'a [FreeformSurface],
+    cylinder_by_pos: HashMap<usize, usize>,
+    cone_by_pos: HashMap<usize, usize>,
+    sphere_by_pos: HashMap<usize, usize>,
+    torus_by_pos: HashMap<usize, usize>,
+    plane_by_pos: HashMap<usize, usize>,
+    nurbs_by_pos: HashMap<usize, usize>,
+    circles_by_record_id: HashMap<u32, Vec<usize>>,
+    cylinders_by_operand: HashMap<u32, Vec<usize>>,
+    plane_geometries: Vec<Option<SurfaceGeometry>>,
+    sphere_geometries: Vec<SurfaceGeometry>,
+    torus_geometries: Vec<SurfaceGeometry>,
+}
+
+impl<'a> ConsolidatedCarriers<'a> {
+    fn new(
+        cylinders: &'a [B2Cylinder],
+        circles: &'a [B2Circle],
+        cones: &'a [B2Cone],
+        spheres: &'a [B2Sphere],
+        tori: &'a [B2Torus],
+        planes: &'a [B2PlaneCarrier],
+        nurbs_surfaces: &'a [FreeformSurface],
+    ) -> Self {
+        let cylinder_by_pos = cylinders
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| (value.pos, idx))
+            .collect();
+        let cone_by_pos = cones
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| (value.pos, idx))
+            .collect();
+        let sphere_by_pos = spheres
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| (value.pos, idx))
+            .collect();
+        let torus_by_pos = tori
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| (value.pos, idx))
+            .collect();
+        let plane_by_pos = planes
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| (value.pos, idx))
+            .collect();
+        let nurbs_by_pos = nurbs_surfaces
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| (value.pos, idx))
+            .collect();
+        let mut circles_by_record_id = HashMap::<u32, Vec<usize>>::new();
+        for (idx, circle) in circles.iter().enumerate() {
+            circles_by_record_id
+                .entry(circle.record_id)
+                .or_default()
+                .push(idx);
+        }
+        let mut cylinders_by_operand = HashMap::<u32, Vec<usize>>::new();
+        for (idx, value) in cylinders.iter().enumerate() {
+            if let Some(operand) = value.header.compact_operand() {
+                cylinders_by_operand
+                    .entry(operand.value())
+                    .or_default()
+                    .push(idx);
+            }
+        }
+        let plane_geometries = planes.iter().map(b2_plane_geometry).collect();
+        let sphere_geometries = spheres.iter().map(b2_sphere_geometry).collect();
+        let torus_geometries = tori.iter().map(b2_torus_geometry).collect();
+        Self {
+            cylinders,
+            circles,
+            cones,
+            spheres,
+            tori,
+            planes,
+            nurbs_surfaces,
+            cylinder_by_pos,
+            cone_by_pos,
+            sphere_by_pos,
+            torus_by_pos,
+            plane_by_pos,
+            nurbs_by_pos,
+            circles_by_record_id,
+            cylinders_by_operand,
+            plane_geometries,
+            sphere_geometries,
+            torus_geometries,
+        }
+    }
 }
 
 /// Group ordered pairs of same-family class-`0x20` pcurves followed by one
@@ -1507,15 +1704,19 @@ pub(crate) fn resolve_selected_consolidated_edge_blocks(
     let spheres = (b2_spheres_from_records(data, records)).collect::<Vec<_>>();
     let tori = (b2_tori_from_records(data, records)).collect::<Vec<_>>();
     let planes = b2_plane_carriers_from_records(data, records);
-    let carriers = ConsolidatedCarriers {
-        cylinders: &standalone,
-        circles: &circles,
-        cones: &cones,
-        spheres: &spheres,
-        tori: &tori,
-        planes: &planes,
-        nurbs_surfaces: &surfaces,
-    };
+    let mut point_grid = PointGrid3::new(2e-3);
+    for (index, point) in points.iter().enumerate() {
+        point_grid.insert(point.get(), index);
+    }
+    let carriers = ConsolidatedCarriers::new(
+        &standalone,
+        &circles,
+        &cones,
+        &spheres,
+        &tori,
+        &planes,
+        &surfaces,
+    );
     let mut resolved = Vec::new();
     for block in consolidated_edge_blocks_from_records(data, records)
         .into_iter()
@@ -1523,7 +1724,8 @@ pub(crate) fn resolve_selected_consolidated_edge_blocks(
     {
         let mut supports = [None, None];
         for side in [0, 1] {
-            supports[side] = resolve_side_support(ctx, &block.pcurves[side], &points, &carriers)?;
+            supports[side] =
+                resolve_side_support(ctx, &block.pcurves[side], &point_grid, &carriers)?;
         }
         for anchor_side in [0, 1] {
             let partner = 1 - anchor_side;
@@ -1555,6 +1757,9 @@ pub(crate) fn resolve_selected_consolidated_edge_blocks(
                         pos: surface.pos,
                         offset,
                     });
+                    if winners.len() > 1 {
+                        break;
+                    }
                 }
             }
             if let [winner] = winners.as_slice() {
@@ -1583,56 +1788,64 @@ pub(crate) fn resolve_selected_consolidated_edge_blocks(
 fn resolve_side_support(
     ctx: &DecodeContext<'_>,
     pcurve: &ConsolidatedPcurve,
-    points: &[FinitePoint3],
+    point_grid: &PointGrid3,
     carriers: &ConsolidatedCarriers<'_>,
 ) -> Result<Option<ConsolidatedSupportBinding>, CodecError> {
-    let circles = carriers
-        .circles
-        .iter()
-        .filter(|circle| circle.record_id == pcurve.support_id);
-    let identified_cylinders = carriers.cylinders.iter().filter(|value| {
-        value
-            .header
-            .compact_operand()
-            .is_some_and(|operand| operand.value() == pcurve.support_id)
-    });
-    let identity_count = circles.clone().count() + identified_cylinders.clone().count();
+    let circle_indices = carriers
+        .circles_by_record_id
+        .get(&pcurve.support_id)
+        .map_or(&[][..], Vec::as_slice);
+    let cylinder_indices = carriers
+        .cylinders_by_operand
+        .get(&pcurve.support_id)
+        .map_or(&[][..], Vec::as_slice);
+    let identity_count = circle_indices.len() + cylinder_indices.len();
     if identity_count > 1 {
         return Ok(None);
     }
-    if let Some(circle) = circles.clone().next() {
+    if let &[idx] = circle_indices {
+        let circle = &carriers.circles[idx];
         return Ok(pcurve_matches_circle(pcurve, circle)
             .then_some(ConsolidatedSupportBinding::Circle { pos: circle.pos }));
     }
-    if let Some(value) = identified_cylinders.clone().next() {
-        return Ok(
-            pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(value, uv)))?
-                .then_some(ConsolidatedSupportBinding::Cylinder { pos: value.pos }),
-        );
+    if let &[idx] = cylinder_indices {
+        let value = &carriers.cylinders[idx];
+        return Ok(pcurve_endpoints_match(pcurve, point_grid, |uv| {
+            Ok(b2_cylinder_point(value, uv))
+        })?
+        .then_some(ConsolidatedSupportBinding::Cylinder { pos: value.pos }));
     }
     let mut winners = Vec::new();
     for cylinder in carriers.cylinders {
-        if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(cylinder, uv)))? {
+        if pcurve_endpoints_match(pcurve, point_grid, |uv| Ok(b2_cylinder_point(cylinder, uv)))? {
             winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
+            if winners.len() > 1 {
+                return Ok(None);
+            }
         }
     }
     for circle in carriers.circles {
         if pcurve_matches_circle(pcurve, circle) {
             winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+            if winners.len() > 1 {
+                return Ok(None);
+            }
         }
     }
     for cone in carriers.cones {
-        if pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cone_point(cone, uv)))? {
+        if pcurve_endpoints_match(pcurve, point_grid, |uv| Ok(b2_cone_point(cone, uv)))? {
             winners.push(ConsolidatedSupportBinding::Cone { pos: cone.pos });
+            if winners.len() > 1 {
+                return Ok(None);
+            }
         }
     }
-    for sphere in carriers.spheres {
-        let geometry = b2_sphere_geometry(sphere);
+    for (sphere, geometry) in carriers.spheres.iter().zip(&carriers.sphere_geometries) {
         let radius = sphere.radius.get();
-        if pcurve_endpoints_match(pcurve, points, |[u, v]| {
+        if pcurve_endpoints_match(pcurve, point_grid, |[u, v]| {
             match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
-                &geometry,
+                geometry,
                 u / radius,
                 v / radius,
             ))? {
@@ -1641,24 +1854,35 @@ fn resolve_side_support(
             }
         })? {
             winners.push(ConsolidatedSupportBinding::Sphere { pos: sphere.pos });
+            if winners.len() > 1 {
+                return Ok(None);
+            }
         }
     }
-    for torus in carriers.tori {
-        if pcurve_endpoints_match(pcurve, points, |uv| b2_torus_point(ctx, torus, uv))? {
+    for (torus, geometry) in carriers.tori.iter().zip(&carriers.torus_geometries) {
+        if pcurve_endpoints_match(pcurve, point_grid, |uv| {
+            b2_torus_point(ctx, torus, geometry, uv)
+        })? {
             winners.push(ConsolidatedSupportBinding::Torus { pos: torus.pos });
+            if winners.len() > 1 {
+                return Ok(None);
+            }
         }
     }
-    for plane in carriers.planes {
-        if let Some(geometry) = b2_plane_geometry(plane) {
-            if pcurve_endpoints_match(pcurve, points, |[u, v]| {
+    for (plane, geometry) in carriers.planes.iter().zip(&carriers.plane_geometries) {
+        if let Some(geometry) = geometry {
+            if pcurve_endpoints_match(pcurve, point_grid, |[u, v]| {
                 match cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                    cadmpeg_ir::eval::decode::surface_point(ctx, geometry, u, v),
                 )? {
                     Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 }
             })? {
                 winners.push(ConsolidatedSupportBinding::Plane { pos: plane.pos });
+                if winners.len() > 1 {
+                    return Ok(None);
+                }
             }
         }
     }
@@ -1680,7 +1904,7 @@ fn unique_agreeing_nurbs_pair(
     carriers: &ConsolidatedCarriers<'_>,
 ) -> Result<Option<[ConsolidatedSupportBinding; 2]>, CodecError> {
     let [first_pcurve, second_pcurve] = &block.pcurves;
-    if first_pcurve.sites.len() != second_pcurve.sites.len() {
+    if first_pcurve.sites.len() != second_pcurve.sites.len() || surfaces.is_empty() {
         return Ok(None);
     }
     let bindings = surfaces
@@ -1690,27 +1914,36 @@ fn unique_agreeing_nurbs_pair(
             offset: FiniteReal::ZERO,
         })
         .collect::<Vec<_>>();
-    let mut starts = [Vec::new(), Vec::new()];
+    let mut starts = [
+        Vec::with_capacity(bindings.len()),
+        Vec::with_capacity(bindings.len()),
+    ];
     for (side, pcurve) in block.pcurves.iter().enumerate() {
-        for binding in &bindings {
-            let start = support_points_at(ctx, binding, &pcurve.sites[..1], carriers)?
-                .and_then(|points| points.first().copied());
+        let [u, v] = pcurve.sites[0].point.get();
+        for surface in surfaces {
+            let start = match cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(ctx, &surface.geometry, u, v),
+            )? {
+                Ok(point) => Some(point.get()),
+                Err(failure) => failure.non_finite()?,
+            };
             starts[side].push(start);
+        }
+    }
+    let mut second_grid = PointGrid3::new(2e-3);
+    for (second, second_start) in starts[1].iter().enumerate() {
+        if let Some(point) = second_start {
+            second_grid.insert(*point, second);
         }
     }
     let mut lifts = [vec![None; bindings.len()], vec![None; bindings.len()]];
     let mut winner = None;
+    let mut ambiguous = false;
     for (first, first_start) in starts[0].iter().enumerate() {
         let Some(first_start) = first_start else {
             continue;
         };
-        for (second, second_start) in starts[1].iter().enumerate() {
-            let Some(second_start) = second_start else {
-                continue;
-            };
-            if !distance_at_most(*first_start, *second_start, 2e-3) {
-                continue;
-            }
+        second_grid.visit_within_inclusive(*first_start, 2e-3, |second| {
             for (side, index, pcurve) in [(0, first, first_pcurve), (1, second, second_pcurve)] {
                 if lifts[side][index].is_none() {
                     lifts[side][index] =
@@ -1720,15 +1953,20 @@ fn unique_agreeing_nurbs_pair(
             let (Some(Some(first_points)), Some(Some(second_points))) =
                 (&lifts[0][first], &lifts[1][second])
             else {
-                continue;
+                return Ok(true);
             };
             if !point_sequences_agree(first_points, second_points) {
-                continue;
+                return Ok(true);
             }
             if winner.is_some() {
-                return Ok(None);
+                ambiguous = true;
+                return Ok(false);
             }
             winner = Some([bindings[first], bindings[second]]);
+            Ok(true)
+        })?;
+        if ambiguous {
+            return Ok(None);
         }
     }
     Ok(winner)
@@ -1777,105 +2015,7 @@ fn support_points(
     pcurve: &ConsolidatedPcurve,
     carriers: &ConsolidatedCarriers<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    let points = match binding {
-        ConsolidatedSupportBinding::Cylinder { pos } => {
-            let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            (pcurve
-                .sites
-                .iter()
-                .map(|site| b2_cylinder_point(carrier, site.point.get())))
-            .collect::<Option<Vec<_>>>()
-        }
-        ConsolidatedSupportBinding::Cone { pos } => {
-            let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            (pcurve
-                .sites
-                .iter()
-                .map(|site| b2_cone_point(carrier, site.point.get())))
-            .collect::<Option<Vec<_>>>()
-        }
-        ConsolidatedSupportBinding::Sphere { pos } => {
-            let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            (pcurve.sites.iter().map(|site| {
-                let [u, v] = site.point.get();
-                let radius = carrier.radius.get();
-                match cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::surface_point(
-                        ctx,
-                        &b2_sphere_geometry(carrier),
-                        u / radius,
-                        v / radius,
-                    ),
-                )? {
-                    Ok(point) => Ok(Some(point.get())),
-                    Err(failure) => failure.non_finite(),
-                }
-            }))
-            .collect::<Result<Option<Vec<_>>, _>>()?
-        }
-        ConsolidatedSupportBinding::Torus { pos } => {
-            let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            (pcurve
-                .sites
-                .iter()
-                .map(|site| b2_torus_point(ctx, carrier, site.point.get())))
-            .collect::<Result<Option<Vec<_>>, _>>()?
-        }
-        ConsolidatedSupportBinding::Plane { pos } => {
-            let Some(carrier) = carriers.planes.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            let Some(geometry) = b2_plane_geometry(carrier) else {
-                return Ok(None);
-            };
-            (pcurve.sites.iter().map(|site| {
-                let [u, v] = site.point.get();
-                match cadmpeg_ir::eval::decode::outer_refusal(
-                    cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
-                )? {
-                    Ok(point) => Ok(Some(point.get())),
-                    Err(failure) => failure.non_finite(),
-                }
-            }))
-            .collect::<Result<Option<Vec<_>>, _>>()?
-        }
-        ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let Some(surface) = carriers
-                .nurbs_surfaces
-                .iter()
-                .find(|surface| surface.pos == *pos)
-                .map(|surface| &surface.geometry)
-            else {
-                return Ok(None);
-            };
-            (pcurve.sites.iter().map(|site| {
-                let [u, v] = site.point.get();
-                let partials = match nurbs_surface_partials(ctx, surface, u, v) {
-                    Ok(partials) => partials,
-                    Err(failure) => return failure.non_finite(),
-                };
-                let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
-                    return Ok(None);
-                };
-                Ok(Some(Point3::new(
-                    partials.point.x + offset.get() * normal.x,
-                    partials.point.y + offset.get() * normal.y,
-                    partials.point.z + offset.get() * normal.z,
-                )))
-            }))
-            .collect::<Result<Option<Vec<_>>, _>>()?
-        }
-        ConsolidatedSupportBinding::Circle { .. } => None,
-    };
-    Ok(points)
+    support_points_at(ctx, binding, &pcurve.sites, carriers)
 }
 
 /// The points of `binding` at `sites`, in site order.
@@ -1887,27 +2027,31 @@ fn support_points_at(
 ) -> Result<Option<Vec<Point3>>, CodecError> {
     let points = match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {
-            let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
+            let Some(&idx) = carriers.cylinder_by_pos.get(pos) else {
                 return Ok(None);
             };
+            let carrier = &carriers.cylinders[idx];
             sites
                 .iter()
                 .map(|site| b2_cylinder_point(carrier, site.point.get()))
                 .collect::<Option<Vec<_>>>()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
-            let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
+            let Some(&idx) = carriers.cone_by_pos.get(pos) else {
                 return Ok(None);
             };
+            let carrier = &carriers.cones[idx];
             sites
                 .iter()
                 .map(|site| b2_cone_point(carrier, site.point.get()))
                 .collect::<Option<Vec<_>>>()
         }
         ConsolidatedSupportBinding::Sphere { pos } => {
-            let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
+            let Some(&idx) = carriers.sphere_by_pos.get(pos) else {
                 return Ok(None);
             };
+            let carrier = &carriers.spheres[idx];
+            let geometry = &carriers.sphere_geometries[idx];
             sites
                 .iter()
                 .map(|site| {
@@ -1916,7 +2060,7 @@ fn support_points_at(
                     match cadmpeg_ir::eval::decode::outer_refusal(
                         cadmpeg_ir::eval::decode::surface_point(
                             ctx,
-                            &b2_sphere_geometry(carrier),
+                            geometry,
                             u / radius,
                             v / radius,
                         ),
@@ -1928,19 +2072,21 @@ fn support_points_at(
                 .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::Torus { pos } => {
-            let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
+            let Some(&idx) = carriers.torus_by_pos.get(pos) else {
                 return Ok(None);
             };
+            let carrier = &carriers.tori[idx];
+            let geometry = &carriers.torus_geometries[idx];
             sites
                 .iter()
-                .map(|site| b2_torus_point(ctx, carrier, site.point.get()))
+                .map(|site| b2_torus_point(ctx, carrier, geometry, site.point.get()))
                 .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::Plane { pos } => {
-            let Some(carrier) = carriers.planes.iter().find(|value| value.pos == *pos) else {
+            let Some(&idx) = carriers.plane_by_pos.get(pos) else {
                 return Ok(None);
             };
-            let Some(geometry) = b2_plane_geometry(carrier) else {
+            let Some(geometry) = carriers.plane_geometries[idx].as_ref() else {
                 return Ok(None);
             };
             sites
@@ -1948,7 +2094,7 @@ fn support_points_at(
                 .map(|site| {
                     let [u, v] = site.point.get();
                     match cadmpeg_ir::eval::decode::outer_refusal(
-                        cadmpeg_ir::eval::decode::surface_point(ctx, &geometry, u, v),
+                        cadmpeg_ir::eval::decode::surface_point(ctx, geometry, u, v),
                     )? {
                         Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
@@ -1957,14 +2103,10 @@ fn support_points_at(
                 .collect::<Result<Option<Vec<_>>, _>>()?
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let Some(surface) = carriers
-                .nurbs_surfaces
-                .iter()
-                .find(|surface| surface.pos == *pos)
-                .map(|surface| &surface.geometry)
-            else {
+            let Some(&idx) = carriers.nurbs_by_pos.get(pos) else {
                 return Ok(None);
             };
+            let surface = &carriers.nurbs_surfaces[idx].geometry;
             sites
                 .iter()
                 .map(|site| {
@@ -1995,11 +2137,12 @@ fn support_points_at(
 fn b2_torus_point(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     torus: &B2Torus,
+    geometry: &SurfaceGeometry,
     [u, v]: [f64; 2],
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
         ctx,
-        &b2_torus_geometry(torus),
+        geometry,
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
     ))? {
@@ -2097,7 +2240,7 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
 
 fn pcurve_endpoints_match(
     pcurve: &ConsolidatedPcurve,
-    vertices: &[FinitePoint3],
+    point_grid: &PointGrid3,
     evaluate: impl Fn([f64; 2]) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let (Some(first), Some(last)) = (
@@ -2107,11 +2250,7 @@ fn pcurve_endpoints_match(
         return Ok(false);
     };
     for uv in [first, last] {
-        let matches = evaluate(uv)?.is_some_and(|point| {
-            vertices
-                .iter()
-                .any(|vertex| distance_below(point, vertex.get(), 2e-3))
-        });
+        let matches = evaluate(uv)?.is_some_and(|point| point_grid.any_within_strict(point, 2e-3));
         if !matches {
             return Ok(false);
         }
@@ -2376,15 +2515,7 @@ mod tests {
             },
         };
         let planes = [plane];
-        let carriers = super::ConsolidatedCarriers {
-            cylinders: &[],
-            circles: &[],
-            cones: &[],
-            spheres: &[],
-            tori: &[],
-            planes: &planes,
-            nurbs_surfaces: &[],
-        };
+        let carriers = super::ConsolidatedCarriers::new(&[], &[], &[], &[], &[], &planes, &[]);
         let binding = || Some(super::ConsolidatedSupportBinding::Plane { pos: 7 });
         assert_eq!(
             crate::test_support::with_service_context(|ctx| super::resolved_support_loci(
@@ -2425,16 +2556,7 @@ mod tests {
             &cylinder_records,
         )
         .collect();
-        let carriers = super::ConsolidatedCarriers {
-            cylinders: &cylinders,
-
-            circles: &[],
-            cones: &[],
-            spheres: &[],
-            tori: &[],
-            planes: &[],
-            nurbs_surfaces: &[],
-        };
+        let carriers = super::ConsolidatedCarriers::new(&cylinders, &[], &[], &[], &[], &[], &[]);
         let cylinder = &cylinders[0];
         let points: Vec<_> = pcurve
             .sites
@@ -2445,8 +2567,12 @@ mod tests {
                 cadmpeg_ir::features::geometry::FinitePoint3::new(point).expect("finite point")
             })
             .collect();
+        let mut point_grid = super::PointGrid3::new(2e-3);
+        for (index, point) in points.iter().enumerate() {
+            point_grid.insert(point.get(), index);
+        }
         let binding = crate::test_support::with_service_context(|ctx| {
-            super::resolve_side_support(ctx, pcurve, &points, &carriers)
+            super::resolve_side_support(ctx, pcurve, &point_grid, &carriers)
         })
         .expect("resolve the side support")
         .expect("unique cylinder");
@@ -2540,16 +2666,8 @@ mod tests {
             )
             .expect("decode the test surfaces");
             assert_eq!(carriers_found.len(), surfaces.len());
-            let carriers = super::ConsolidatedCarriers {
-                cylinders: &[],
-
-                circles: &[],
-                cones: &[],
-                spheres: &[],
-                tori: &[],
-                planes: &[],
-                nurbs_surfaces: &carriers_found,
-            };
+            let carriers =
+                super::ConsolidatedCarriers::new(&[], &[], &[], &[], &[], &[], &carriers_found);
             let blocks = super::consolidated_edge_blocks_from_records(&bytes, &records);
             assert_eq!(blocks.len(), 1);
             let (found, expected) = crate::test_support::with_service_context(|ctx| {
