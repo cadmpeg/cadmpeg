@@ -829,10 +829,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                 }
                 Some(DesignFeatureFamily::Thread) => {
-                    let resolved = scope.thread_construction().and_then(|construction| {
+                    let resolved = scope.thread_construction().map(|construction| {
                         projection_losses.push(thread_detail::loss(&scope.id, construction));
-                        thread_nominal_diameter(&scope.id, construction, &mut projection_losses)
-                            .map(|size| (construction, size))
+                        (construction, thread_nominal_diameter(&scope.id, construction, &mut projection_losses))
                     });
                     if resolved.is_none() {
                         projection_losses.push(
@@ -928,7 +927,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     face,
                                     standard: Some(construction.profile.clone()),
                                     designation: Some(construction.designation.clone()),
-                                    diameter: Some(nominal_size),
+                                    diameter: nominal_size,
                                     pitch: cadmpeg_ir::scalar::PositiveLength::new(
                                         construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
                                     ),
@@ -2731,10 +2730,25 @@ fn thread_nominal_diameter(
     construction: &crate::records::feature::thread::DesignThreadConstruction,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    if !construction.angle.is_sixty() {
+        losses.push(crate::loss::F3dLossCode::ThreadAngleNative.note(format!(
+            "Thread {scope_id} retains its {}-degree profile angle in its native construction.",
+            construction.angle.degrees()
+        )));
+    }
     let size = if let Some(inches) = construction.nominal_size.numbered_inches() {
         cadmpeg_ir::scalar::PositiveLength::new(inches * 25.4)?
-    } else if construction.nominal_size.is_decimal() {
+    } else if construction.nominal_size.is_decimal()
+        && construction.profile.as_str() == "ISO Metric profile"
+    {
         cadmpeg_ir::scalar::PositiveLength::new(construction.nominal_size.value()?)?
+    } else if construction.nominal_size.is_decimal() {
+        losses.push(
+            crate::loss::F3dLossCode::ThreadNominalUnitUnresolved.note(format!(
+                "Thread {scope_id} retains its nominal size with an unresolved profile unit."
+            )),
+        );
+        return None;
     } else {
         let size = cadmpeg_ir::scalar::PositiveLength::new(
             construction.diameters.major() * DESIGN_LENGTH_TO_MILLIMETRE,
@@ -2747,12 +2761,6 @@ fn thread_nominal_diameter(
         );
         size
     };
-    if !construction.angle.is_sixty() {
-        losses.push(crate::loss::F3dLossCode::ThreadAngleNative.note(format!(
-            "Thread {scope_id} retains its {}-degree profile angle in its native construction.",
-            construction.angle.degrees()
-        )));
-    }
     Some(size)
 }
 

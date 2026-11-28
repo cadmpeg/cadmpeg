@@ -176,3 +176,39 @@ fn an_unpaired_thread_item_is_found_by_its_scope_record_item() {
     features[0] = feature(&legacy, OperationFamily::Sketch);
     assert!(thread_target(features.iter_mut(), &legacy, None).is_some());
 }
+
+#[test]
+fn inch_table_physical_scalars_and_tpi_use_design_centimetres() {
+    let construction: DesignThreadConstruction = json::from_value(cadmpeg_core::json!({
+        "form": "standard", "designation_offset": 0,
+        "designation": "1/2-28 UNEF", "nominal_size_text": "1/2", "nominal_size": 0.5,
+        "profile": "ANSI Unified Screw Threads", "major_diameter": 1.27,
+        "minor_diameter": 1.1, "pitch_diameter": 1.2, "pitch": 2.54 / 28.0,
+        "modeled": false, "face_group_record_indices": [10]
+    }))
+    .unwrap();
+    let projected = spec(&construction, None);
+    const EPS_MM: f64 = 1e-9;
+    for (actual, expected) in [
+        (projected.major_diameter, 12.7),
+        (projected.minor_diameter, 11.0),
+        (projected.pitch_diameter, 12.0),
+        (projected.pitch, 25.4 / 28.0),
+    ] {
+        let Some(Dimension::Literal(actual)) = actual else {
+            panic!("physical length")
+        };
+        assert!((actual.get() - expected).abs() < EPS_MM);
+    }
+}
+
+#[test]
+fn metric_pitch_stays_in_millimetres() {
+    let mut construction = construction();
+    construction.designation = NonBlankString::new("M6x1").unwrap();
+    construction.pitch = cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap();
+    assert_eq!(
+        spec(&construction, None).pitch,
+        PositiveLength::new(1.0).map(Dimension::Literal)
+    );
+}

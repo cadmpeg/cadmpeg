@@ -15,7 +15,7 @@ fn construction(nominal_size: &str, angle: f64) -> DesignThreadConstruction {
         designation_offset: 0,
         designation: cadmpeg_core::text::NonBlankString::new("G1/8").unwrap(),
         nominal_size: DesignThreadNominalSize::try_from(nominal_size.to_owned()).unwrap(),
-        profile: cadmpeg_core::text::NonBlankString::new("BSP").unwrap(),
+        profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
         diameters: DesignThreadDiameters::new(0.9728, 0.8566, 0.9147).unwrap(),
         pitch: cadmpeg_ir::scalar::PositiveReal::new(0.0907).unwrap(),
         modeled: false,
@@ -64,5 +64,49 @@ fn numbered_inch_size_projects_its_nominal_diameter_in_millimetres() {
     let size = thread_nominal_diameter("scope", &construction("0.216(#12)", 60.0), &mut losses)
         .expect("numbered thread diameter");
     assert!((size.get() - 5.4864).abs() < EPS_DIAMETER_MM);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn half_inch_fraction_uses_the_physical_major_diameter() {
+    let mut construction = construction("1/2", 60.0);
+    construction.designation = cadmpeg_core::text::NonBlankString::new("1/2-28 UNEF").unwrap();
+    construction.profile =
+        cadmpeg_core::text::NonBlankString::new("ANSI Unified Screw Threads").unwrap();
+    construction.diameters = DesignThreadDiameters::new(1.27, 1.1, 1.2).unwrap();
+    let mut losses = Vec::new();
+    let size = thread_nominal_diameter("scope", &construction, &mut losses).unwrap();
+    assert!((size.get() - 12.7).abs() < EPS_DIAMETER_MM);
+    assert_eq!(
+        codes(&losses),
+        [crate::loss::F3dLossCode::ThreadFractionalSizeDiameterAssumed.kind()]
+    );
+}
+
+#[test]
+fn decimal_size_with_unproven_profile_unit_stays_unresolved() {
+    for profile in ["ANSI Unified Screw Threads", "unassigned profile"] {
+        let mut construction = construction("0.5", 60.0);
+        construction.profile = cadmpeg_core::text::NonBlankString::new(profile).unwrap();
+        let mut losses = Vec::new();
+        assert!(thread_nominal_diameter("scope", &construction, &mut losses).is_none());
+        assert_eq!(
+            codes(&losses),
+            [crate::loss::F3dLossCode::ThreadNominalUnitUnresolved.kind()]
+        );
+    }
+}
+
+#[test]
+fn metric_nominal_size_stays_in_millimetres() {
+    let mut construction = construction("6", 60.0);
+    construction.designation = cadmpeg_core::text::NonBlankString::new("M6x1").unwrap();
+    let mut losses = Vec::new();
+    assert_eq!(
+        thread_nominal_diameter("scope", &construction, &mut losses)
+            .unwrap()
+            .get(),
+        6.0
+    );
     assert!(losses.is_empty());
 }

@@ -4294,3 +4294,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A save whose copy body stores key `-1`, with a Fusion readback of its body list. The forms above do not give that key, so the save needs another construction of the copy, for example a Mirror edited after a later feature or a design saved by an earlier Fusion version. Compare the body record keys, the body-map pairs, and the Body container entities with the bodies that the Fusion browser lists.
 
 **Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").
+
+### DR-1096. Unit of decimal Thread nominal-size text
+
+**Question.** Which profile field or table unit selects the length unit of a plain decimal nominal-size text outside `ISO Metric profile`?
+
+**Known.** A Thread construction stores three LP-UTF16 fields: designation, nominal-size text, and profile name. A positive decimal nominal-size text has a numeric value. A numbered size `D(#N)` gives an inch diameter. A fractional size uses the profile unit. The following construction block stores major diameter, minor diameter, axial pitch, and pitch diameter in centimetres. The construction carries the profile name as text.
+
+**Need.** Save equal-diameter threads with decimal inch and metric table entries. Change the thread table unit while keeping the diameter fixed. Compare the nominal-size text, profile name, construction scalars, and any table reference or unit field.
+
+**Note.** Identifier allocation through `dr-next` failed because its remote lookup was unavailable.
