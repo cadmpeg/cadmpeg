@@ -278,19 +278,42 @@ fn a_component_path_carrier_states_the_pose_of_a_compact_placement() {
     assert_eq!(unstated.len(), 1);
 }
 
+fn component_targets(mut bytes: Vec<u8>) -> Vec<u8> {
+    let placeholder = b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let offsets: Vec<_> = bytes
+        .windows(placeholder.len())
+        .enumerate()
+        .filter_map(|(offset, value)| (value == placeholder).then_some(offset))
+        .collect();
+    assert_eq!(offsets.len(), 2);
+    for offset in offsets {
+        bytes[offset..offset + placeholder.len()].copy_from_slice(
+            crate::records::feature::occurrence_transfer::COMPONENT_TYPE.as_bytes(),
+        );
+    }
+    bytes
+}
+
 #[test]
 fn a_wide_legacy_record_keeps_the_wide_reading_and_a_compact_one_binds_its_owner() {
-    let wide = super::legacy_occurrence_record(ROLE, 10, Some(MATRIX));
-    assert!(!super::super::compact_legacy_placement(&wide));
-    let wide = super::super::occurrence_placement(&wide, None)
+    let wide_bytes = component_targets(super::legacy_occurrence_record(ROLE, 10, Some(MATRIX)));
+    assert!(!super::super::compact_legacy_placement(&wide_bytes));
+    assert!(super::super::legacy_occurrence_placement(&wide_bytes).is_some());
+    assert!(super::super::compact_legacy_placement_details(&wide_bytes).is_some());
+    let wide = super::super::occurrence_placement(&wide_bytes, None)
         .unwrap()
         .expect("wide placement");
     assert!(wide.owner.is_none());
     assert!(wide.frame_bytes.is_empty());
-    let compact = compact_record(11, 1, Some(MATRIX));
-    assert!(super::super::compact_legacy_placement(&compact));
-    let compact = super::super::occurrence_placement(&compact, None)
+    assert_eq!(wide.transform, Some(MATRIX));
+    assert_eq!(wide.link_names, [ROLE]);
+    let compact_bytes = component_targets(compact_record(11, 1, Some(MATRIX)));
+    assert!(super::super::compact_legacy_placement(&compact_bytes));
+    let compact = super::super::occurrence_placement(&compact_bytes, None)
         .unwrap()
         .expect("compact placement");
-    assert!(compact.owner.is_some());
+    assert_eq!(compact.owner.expect("local owner").target, 4);
+    assert_eq!(compact.frame_bytes, compact_bytes);
+    assert_eq!(compact.transform, Some(MATRIX));
+    assert_eq!(compact.link_names, [ROLE]);
 }

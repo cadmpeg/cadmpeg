@@ -1655,7 +1655,7 @@ fn occurrence_placement(
     // when it also closes as the compact member sequence: the compact reading
     // would add an owner whose component-path pose then replaces the scope
     // transform. Only the compact envelope proper takes the compact reading.
-    if !(legacy_occurrence_placement(body).is_some() && !compact_legacy_placement(body)) {
+    if legacy_occurrence_placement(body).is_none() || compact_legacy_placement(body) {
         if let Some(details) = compact_legacy_placement_details(body) {
             return Ok(Some(legacy_external_placement(body, details)));
         }
