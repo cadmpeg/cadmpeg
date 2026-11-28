@@ -27,7 +27,7 @@ fn solved_frame(
     });
     let placement = matches.next()?;
     let supported_version = match construction {
-        Some(_) => matches!(placement.type_version, 4 | 6 | 8 | 9),
+        Some(_) => matches!(placement.type_version, 4 | 6 | 8 | 9 | 16),
         None => matches!(placement.type_version, 8 | 9 | 16),
     };
     if matches.next().is_some()
