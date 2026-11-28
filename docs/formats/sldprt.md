@@ -2723,7 +2723,7 @@ The loss `geometry.carrier-approximated` counts intersection chart curves, fitte
 A vertex loop decodes to a vertex boundary on its vertex-use. A framed FACE record with no decoded loop gives up with `record.undecoded` (§1.5). A vertex loop whose vertex-use does not resolve and a loop whose FIN is ambiguous each give up with the same code. Their FACE keeps its other loops in the partial form.
 The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. One loss note gives the count for each kind.
 A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut` when the cut has no separate loop give-up.
-A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with none of its faces stated is kept in that form with no face, so no SHELL, REGION or BODY is dropped for a child it lost: the REGION lists the SHELL, and the BODY keeps the kind it stores. A SHELL whose stated faces fall into pieces that share no edge, as where a lost face joined them, is stated as one shell per piece. A REGION with more than one shell, where one SHELL holds no stated face or is stated as several pieces, leaves its shells unclassified, since no stored field says which bounds the outside. This holds for a REGION that the decode states and that gains such a SHELL from the typed ownership nodes.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with all its faces withheld stays in its REGION as a partial shell. A SHELL whose stated faces fall into pieces that share no edge is stated as one shell per piece. A retained shell keeps its role when the stored face chains establish it. Unresolved shell roles keep the REGION shell-chain order. Where the region holds both proven and unresolved roles, `topology.shell-role-unstated` records the proven roles.
 Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body and one region, with one shell per piece of faces that share edges (`topology.body-hierarchy-derived`). A derived region of more than one shell leaves its shells unclassified, since no node says which bounds the outside. The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where merged streams or sites derive bodies whose kinds come from different sources, one note names each source. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
@@ -3229,14 +3229,7 @@ region and body links must agree with the REGION closure. A shell with a
 non-null-like body reference must name that same BODY; a null-like shell body
 reference is valid for a void-region shell.
 
-The first REGION of a solid BODY is the infinite void. Each FACE names its
-solid shell in the back-side links and its void shell in the front-side
-links. Reciprocal face chains pair the shells on the two sides of each
-boundary. In a complete tree of these boundaries rooted at the infinite
-void, the shell toward the root encloses the other shells of its solid
-region. The REGION shell chain records membership. When the reciprocal
-chains leave the enclosing boundary unresolved, the decode states the
-region's shells unclassified.
+The first REGION of a BODY is the infinite void. A manifold solid boundary FACE names its solid shell in the back-side links and its void shell in the front-side links. Reciprocal face chains pair the shells on the two sides of each boundary. If the FACE has a null front-shell cell, a unique complete front chain supplies its owner when the corresponding back chain names the same faces. A boundary paired to the infinite void is the exterior of its solid REGION. In a tree rooted at the infinite void, the shell toward the root bounds the exterior and the shells toward finite void regions bound cavities. The same rule applies to a general BODY with a complete manifold region graph.
 
 The BODY `body_type` byte is the body kind: `1` solid, `2` wire, `3` sheet,
 and `6` general. The kind is not inferred from an ATTRIBUTE list, a chain
