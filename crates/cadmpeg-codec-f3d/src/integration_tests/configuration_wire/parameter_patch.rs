@@ -56,6 +56,42 @@ fn unwritten_parameter<'a>(losses: &'a [LossNote], id: &ParameterId) -> Vec<&'a 
 }
 
 #[test]
+fn a_nested_design_parameter_edit_survives_synthesis() {
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let archive =
+        crate::test_support::assembly_test::f3z_archive("root.f3d", &[("root.f3d", SOURCE)]);
+    let decoded = decode(&archive);
+    let (id, _) = length(decoded.ir());
+    let mut ir = saved(decoded.ir());
+    let parameter = ir
+        .design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == id)
+        .unwrap();
+    let name = parameter.name.clone();
+    let value = length_override(15.5);
+    parameter.definition = ParameterDefinition::Expression(value.expression.unwrap());
+    parameter.value = value.value;
+
+    let (_, bytes) = crate::test_support::configuration_table::written_on(
+        &ir,
+        Some(decoded.source_fidelity()),
+        &["synthesized"],
+    );
+    let read = decode(&bytes);
+    let parameter = read
+        .ir()
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == name)
+        .expect("the recovered parameter");
+    assert_eq!(own(read.ir(), &parameter.id), ("15.5 mm".to_owned(), 15.5));
+}
+
+#[test]
 fn the_patch_writes_owned_parameter_expression_and_cache_independently() {
     use cadmpeg_ir::design::parameter::ParameterDefinition;
 

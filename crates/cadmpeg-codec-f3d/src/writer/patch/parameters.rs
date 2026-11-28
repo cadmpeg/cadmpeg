@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::value_unwritable;
-use cadmpeg_ir::codec::DecodeFailure;
+use cadmpeg_ir::codec::{DecodeFailure, DecodeResult};
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignParameter as Legacy, ParameterValue as LegacyValue};
@@ -59,12 +59,12 @@ impl Parameters {
     pub(super) fn plan(
         ctx: &DecodeContext<'_>,
         archive: &[u8],
-        baseline: &CadIr,
+        baseline: &DecodeResult,
         target: &CadIr,
         native: Option<&F3dNative>,
         active: BTreeMap<ParameterId, (String, Option<LegacyValue>)>,
     ) -> Result<Self, CodecError> {
-        let mut changes = changes(baseline, target);
+        let mut changes = changes(baseline.ir(), target);
         for (id, (expression, cache)) in active {
             let change = changes.entry(id).or_default();
             if change.definition.is_none() && change.value.is_none() {
@@ -73,11 +73,21 @@ impl Parameters {
                 change.dependencies = None;
             }
         }
+        if !changes.is_empty()
+            && baseline.report().dialects().is_some_and(|layers| {
+                crate::dialect::REPLAY_ROWS.contains(layers.primary().dialect())
+            })
+        {
+            return Err(CodecError::NotImplemented(
+                "a Fusion archive with nested Design documents requires synthesis to write parameter edits"
+                    .into(),
+            ));
+        }
         let mut plan = Self {
             changes,
             bulk: BTreeMap::new(),
             meta: BTreeMap::new(),
-            own: baseline.model.parameters.clone(),
+            own: baseline.ir().model.parameters.clone(),
             written: BTreeSet::new(),
         };
         let Some(native) = native.filter(|_| !plan.changes.is_empty()) else {

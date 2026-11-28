@@ -123,7 +123,7 @@ pub(crate) fn write_semantic(
     let parameter_edits = parameters::Parameters::plan(
         ctx,
         source_image,
-        baseline.ir(),
+        &baseline,
         parameter_target,
         baseline_native.as_ref(),
         active_edits,
