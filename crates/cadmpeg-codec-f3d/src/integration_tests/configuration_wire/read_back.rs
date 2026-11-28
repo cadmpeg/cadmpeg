@@ -318,6 +318,37 @@ fn generator_rebinds_a_resolved_column_and_uses_the_written_parameter_name() {
 }
 
 #[test]
+fn generator_uses_the_rebased_native_parameter_in_the_configuration_table() {
+    let mut ir = seed(false);
+    let width = authored_width(&mut ir, false);
+    wire::named_mut(&mut ir, "A")
+        .overrides
+        .parameters
+        .insert(width.clone(), wire::length_override(9.0));
+    let mut read = ir.clone();
+    read.model.drop_omitted_arenas();
+
+    for input in [&ir, &read] {
+        let (back, losses) = write_and_decode(input, None);
+        let native = f3d_native(&back);
+        let parameter = &native.design_parameters[0];
+        assert_eq!(parameter.record_index, 700);
+        assert_eq!(parameter.expression(), "9 mm");
+        assert_eq!(wire::parameter_cell(&back, ENTRY, "a", &width).0, "9 mm");
+        assert_eq!(wire::parameter_cell(&back, ENTRY, "b", &width).0, "7 mm");
+        let test_width = wire::test_row(&back, ENTRY, "W");
+        assert_eq!(test_width["Expression"], "9 mm");
+        assert_eq!(test_width["Value"], 0.9);
+        assert!(
+            losses.iter().all(|loss| !loss
+                .message
+                .contains("with a different name, own expression or value")),
+            "{losses:#?}"
+        );
+    }
+}
+
+#[test]
 fn generator_reads_the_moved_rows_unresolved_feature_value() {
     for computed in [false, true] {
         let mut ir = seed(computed);

@@ -590,10 +590,13 @@ fn edited_design_parameters_replace_the_native_records() {
     });
     ir.design.parameters[0].definition = neutral(number(70.0, Some(UnitSymbol::Mm)));
     ir.design.parameters[0].value = Some(ParameterValue::Number(crate::test_support::real(70.0)));
+    let record = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0";
+    // The design parameter restates the native record.
+    ir.design.parameters[0].id = crate::ids::neutral_parameter_id_of(record, 700);
     f3d_native_mut(&mut ir).design_parameters.push(
         crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
-                id: "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0".into(),
+                id: record.into(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                     .expect("class tag"),
