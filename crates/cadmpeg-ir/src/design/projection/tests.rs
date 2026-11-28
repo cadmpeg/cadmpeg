@@ -4,7 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
-use super::fields::{FeatureField, ModelFeatureField, ModelParameterField, ParameterField};
+use super::fields::{
+    ArrangementField, FeatureField, ModelConfigurationField, ModelFeatureField,
+    ModelParameterField, ParameterField,
+};
 use super::project_layer;
 use super::restated::Restater;
 use crate::design::scope::DesignScope;
@@ -144,8 +147,40 @@ fn restated_document() -> CadIr {
         pmi: None,
         native_ref: None,
     });
+    ir.design
+        .arrangements
+        .push(crate::design::configuration::Arrangement {
+            id: crate::design::ids::ArrangementId::mint(OPEN).unwrap(),
+            scope: ir.design.scopes[0].definition.clone(),
+            name: cadmpeg_core::nonblank_literal!("Open"),
+            kind: crate::design::configuration::ArrangementKind::Positional,
+            configuration: None,
+            overrides: crate::design::configuration::Overrides::default(),
+            appearances: Vec::new(),
+            moves: Vec::new(),
+            nested: Vec::new(),
+            native_ref: None,
+        });
+    ir.model
+        .configurations
+        .push(crate::features::parameters::DesignConfiguration {
+            id: crate::features::ConfigurationId::mint(OPEN).unwrap(),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: Some("Open".to_owned()),
+            material: None,
+            properties: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
     ir
 }
+
+const OPEN: &str = "test:design:arrangement#open";
 
 const FILLET: &str = "test:design:feature#fillet";
 
@@ -469,9 +504,25 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     }
 }
 
+fn arrangement_inputs(field: ArrangementField) -> &'static [ModelConfigurationField] {
+    match field {
+        ArrangementField::Name => &[ModelConfigurationField::Name],
+        ArrangementField::NativeRef => &[ModelConfigurationField::NativeRef],
+        ArrangementField::Scope
+        | ArrangementField::Kind
+        | ArrangementField::Configuration
+        | ArrangementField::Overrides
+        | ArrangementField::Appearances
+        | ArrangementField::Moves
+        | ArrangementField::Nested => &[],
+    }
+}
+
 const RESTATEMENT: super::Restatement = super::Restatement {
     feature: feature_inputs,
     parameter: parameter_inputs,
+    arrangement: arrangement_inputs,
+    active_arrangements: &[ModelConfigurationField::Active],
 };
 const WIDTH: &str = "test:design:parameter#width";
 
@@ -688,6 +739,8 @@ fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
     let restatement = super::Restatement {
         feature: without_definition,
         parameter: parameter_inputs,
+        arrangement: arrangement_inputs,
+        active_arrangements: &[],
     };
     let [fillet] = <[_; 1]>::try_from(restated_with(
         restatement,
@@ -710,6 +763,62 @@ fn a_mark_under_a_shared_name_folds_into_the_design_field_of_that_name() {
     assert_eq!(fillet, (ByteExact, fields(&[("definition", Inferred)])));
 }
 
+/// An arrangement that takes the id of a model configuration restates it: a
+/// configuration mark moves to the arrangement field built from it, and a
+/// mark no arrangement field restates leaves. The arrangement states no
+/// native record, so the `native_ref` mark leaves too.
+#[test]
+fn an_arrangement_takes_the_marks_of_the_configuration_it_restates() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let [open] = <[_; 1]>::try_from(restated(
+        &[],
+        &[
+            (OPEN, "name", Inferred),
+            (OPEN, "ordinal", Derived),
+            (OPEN, "active", Derived),
+            (OPEN, "source_index", Derived),
+            (OPEN, "native_ref", Derived),
+        ],
+        &[OPEN],
+    ))
+    .unwrap();
+    assert_eq!(open, (ByteExact, fields(&[("name", Inferred)])));
+}
+
+/// A scope's `active_arrangements` is built from the `active` field of each
+/// configuration its arrangements restate. Its mark is stated at the scope's
+/// key, the id of its definition, where that key claims more, and with a
+/// restatement that reads no configuration field there is none.
+#[test]
+fn a_scope_takes_the_active_marks_of_the_configurations_its_arrangements_restate() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let scope = restated_document().design.scopes[0]
+        .definition
+        .as_str()
+        .to_owned();
+    let active = [(OPEN, "active", Derived)];
+    let [stated, covered, unmarked] = [
+        restated(&[], &active, &[&scope]),
+        restated(&[(&scope, Inferred)], &active, &[&scope]),
+        restated(&[], &[(OPEN, "name", Derived)], &[&scope]),
+    ]
+    .map(|marks| <[_; 1]>::try_from(marks).unwrap()[0].clone());
+    assert_eq!(
+        stated,
+        (ByteExact, fields(&[("active_arrangements", Derived)]))
+    );
+    assert_eq!(covered, (Inferred, Vec::new()));
+    assert_eq!(unmarked, (ByteExact, Vec::new()));
+    let unread = super::Restatement {
+        active_arrangements: &[],
+        ..RESTATEMENT
+    };
+    assert_eq!(
+        restated_with(unread, &[], &active, &[&scope]),
+        [(ByteExact, Vec::new())]
+    );
+}
+
 /// A mark under a shared name that the codec builds from no model field of
 /// that name may describe the model field, so the design field claims no
 /// more than its entity: a derived `definition` on an inferred fillet leaves,
@@ -726,6 +835,8 @@ fn an_unlisted_shared_name_mark_claims_no_more_than_its_entity() {
     let restatement = super::Restatement {
         feature: without_definition,
         parameter: parameter_inputs,
+        arrangement: arrangement_inputs,
+        active_arrangements: &[],
     };
     for (mark, expected) in [
         (Derived, vec![]),
