@@ -127,8 +127,6 @@ pub(crate) fn root_document(documents: &[DesignConfiguration], table_id: &str) -
     candidates.is_empty().then_some(index)
 }
 
-/// Native and neutral records that configured objects name by indexed-record
-/// index.
 #[derive(Default)]
 pub(crate) struct ConfigurationBindings {
     pub(crate) parameters: BTreeMap<u32, cadmpeg_ir::features::ParameterId>,
@@ -136,6 +134,8 @@ pub(crate) struct ConfigurationBindings {
     pub(crate) features: BTreeMap<u32, cadmpeg_ir::features::FeatureId>,
 }
 
+/// Native and neutral records that configured objects name by indexed-record
+/// index.
 pub(crate) struct ConfigurationTargets<'a> {
     pub(crate) parameters: &'a [crate::records::parameters::DesignParameter],
     pub(crate) owners: &'a [crate::records::parameters::DesignParameterOwner],
