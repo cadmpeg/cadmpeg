@@ -2068,6 +2068,7 @@ mod tests {
                 "design.feature-unresolved",
                 "design.datum-unresolved",
                 "design.folder-dropped",
+                "design.state-name-native",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.parameter-reference-as-text",
