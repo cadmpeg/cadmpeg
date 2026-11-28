@@ -1071,7 +1071,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &body_selection_inputs,
         );
     losses.extend(selection_losses);
-    let (tool_losses, replaced_tools) = crate::history::combine_history_tools::bind(
+    let (tool_losses, replaced_tools, tool_results) = crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
@@ -1093,13 +1093,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
-    losses.extend(
-        crate::history::combine_history_tools::align_with_result_states(
-            &mut model.features,
-            &model.feature_result_topologies,
-            replaced_tools,
-        ),
-    );
+    losses.extend(crate::history::combine_history_tools::apply_result_states(
+        &mut model.features,
+        &mut model.feature_result_topologies,
+        (tool_results, replaced_tools),
+    ));
     for (producer, state_id, slots) in omitted_copies {
         if crate::history::feature_outputs::combine_consumes_generated_bodies(
             &model.features,
@@ -1506,9 +1504,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     ));
     design.history_body_consumers.tails = crate::history::body_history_tail::collect(
         &model.features,
-        &design.design_parameter_scopes,
         &design.asm_histories,
-        &scope_histories,
+        &bound_outputs.placements,
         geometry.primary_brep,
     );
     if matches!(geometry.path, DesignPath::Geometry) {
