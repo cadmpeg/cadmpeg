@@ -81,3 +81,64 @@ fn a_later_timeline_reports_only_built_state_changing_features() {
         assert!(!loss.message.contains(feature.as_str()), "{loss:?}");
     }
 }
+
+fn ordered(name: &str, features: &[&str]) -> Container {
+    Container::Ordered {
+        id: cadmpeg_ir::design::ids::ContainerId::mint(format!("f3d:design:timeline#{name}"))
+            .unwrap(),
+        kind: OrderedKind::Timeline,
+        members: features
+            .iter()
+            .map(|feature| {
+                Member::Feature(FeatureId::mint(format!("test:design:feature#{feature}")).unwrap())
+            })
+            .collect(),
+        folders: Vec::new(),
+        rollback: Some(Rollback::End),
+        placement: None,
+    }
+}
+
+#[test]
+fn a_scope_whose_states_the_walk_does_not_reach_charges_a_loss() {
+    let definition = ProductDefinitionId::mint("test:design:definition#scope").unwrap();
+    let ir = cadmpeg_ir::CadIr::empty();
+    let codes = |prefix: &str, bodiless: bool, containers: &[Container]| {
+        let mut losses = Vec::new();
+        super::super::unread_scope(&ir, &definition, prefix, bodiless, containers, &mut losses);
+        losses
+    };
+    let [hosted] = codes("Hosted/", false, &[ordered("0", &["a"])])
+        .try_into()
+        .unwrap();
+    assert_eq!(
+        hosted.code,
+        crate::loss::F3dLossCode::HistoryStatesUnread.kind()
+    );
+    assert!(
+        hosted.message.contains("a document other than the root"),
+        "{}",
+        hosted.message
+    );
+    let [bodiless] = codes("", true, &[ordered("0", &["a"])]).try_into().unwrap();
+    assert!(
+        bodiless.message.contains("no current body"),
+        "{}",
+        bodiless.message
+    );
+    let [later] = codes("", false, &[ordered("0", &["a"]), ordered("1", &["b"])])
+        .try_into()
+        .unwrap();
+    assert_eq!(
+        later.code,
+        crate::loss::F3dLossCode::HistoryStateUnread.kind()
+    );
+    assert!(
+        later.message.contains("test:design:feature#b")
+            && !later.message.contains("test:design:feature#a"),
+        "{}",
+        later.message
+    );
+    assert!(codes("", false, &[ordered("0", &["a"])]).is_empty());
+    assert!(codes("", true, &[ordered("0", &[])]).is_empty());
+}
