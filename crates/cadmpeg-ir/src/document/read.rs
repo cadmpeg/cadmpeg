@@ -34,10 +34,9 @@ use crate::design::evaluation::Cycles;
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::report::loss::LossNote;
 use crate::report::strictness::Strictness;
-use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
 use crate::units::{CanonicalUnitsWire, Tolerances};
-use crate::unknown::part::{record_unreadable_kind, DecodeParts, GivenUpPart, Part};
+use crate::unknown::part::{gives_up, Cause, DecodeParts, GivenUpPart, Part};
 
 /// The refusals one record's repairs may take before the record is given up.
 const MAX_REPAIRS: usize = 64;
@@ -54,6 +53,7 @@ const ROOT_MEMBERS: &[&str] = &[
     "source",
     "units",
     "tolerances",
+    "up_axis",
     "geometry",
     "model",
     "design",
@@ -298,15 +298,16 @@ impl Reader<'_, '_> {
         }
     }
 
-    /// Gives up the text `span` frames as one part, and returns the loss the
-    /// part charges. The part retains the canonical JSON of the text where
-    /// it holds one that keeps each of its values, and the text as stated
-    /// otherwise.
+    /// Gives up the text `span` frames as one part for `cause`, and returns
+    /// the loss the part charges. The part retains the canonical JSON of the
+    /// text where it holds one that keeps each of its values, and the text
+    /// as stated otherwise.
     fn give_up_part(
         &mut self,
         span: Span,
         path: &str,
         classes: &[ArenaClass],
+        cause: Cause,
         error: impl fmt::Display,
     ) -> Option<GivenUp> {
         let end = span.end.min(self.bytes.len());
@@ -332,7 +333,10 @@ impl Reader<'_, '_> {
             classes.iter().copied(),
         )
         .named(path);
-        match self.ctx.give_up_part(part, CodecError::malformed(error)) {
+        match self
+            .ctx
+            .give_up_part(part, cause, CodecError::malformed(error))
+        {
             Ok(given) => {
                 let loss = given.loss();
                 self.parts.push(given);
@@ -346,8 +350,7 @@ impl Reader<'_, '_> {
                 None
             }
             Err(other) => Some(GivenUp {
-                loss: LossNote::new(record_unreadable_kind(), format!("{path}: {other}"))
-                    .with_severity(Severity::Error),
+                loss: cause.note(format!("{path}: {other}")),
                 part: None,
             }),
         }
@@ -390,8 +393,7 @@ impl Reader<'_, '_> {
     /// since `from` that gives up a record.
     fn lost(&mut self, id: String, from: usize) {
         let gives_up = |entry: &LossNote| {
-            entry.code == record_unreadable_kind()
-                || entry.code == ReadLossCode::RecordRepeated.kind()
+            gives_up(&entry.code) || entry.code == ReadLossCode::RecordRepeated.kind()
         };
         if let Some(entry) = (from..self.report.len())
             .rev()
@@ -416,7 +418,7 @@ impl Reader<'_, '_> {
             self.ctx,
             document,
             &ids,
-            crate::give_up::Naming::Text,
+            crate::give_up::References::default(),
             &mut released,
         );
         self.removed = Removed::of_records(
@@ -437,17 +439,10 @@ impl Reader<'_, '_> {
             Ok(()) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),
             Err(other) => {
-                self.report.push(
-                    LossNote::new(
-                        record_unreadable_kind(),
-                        format!(
-                            "the records that need the given-up records [{}] are not released: \
-                             {other}",
-                            ids.join(", ")
-                        ),
-                    )
-                    .with_severity(Severity::Error),
-                );
+                self.report.push(Cause::Unreadable.note(format!(
+                    "the records that need the given-up records [{}] are not released: {other}",
+                    ids.join(", ")
+                )));
                 return Ok(());
             }
         }
@@ -479,20 +474,22 @@ impl Reader<'_, '_> {
         Ok(())
     }
 
-    /// Gives up `span` and charges `record.unreadable`.
+    /// Gives up `span` for `cause` and charges its loss.
     fn give_up(
         &mut self,
         span: Span,
         path: &str,
         classes: &[ArenaClass],
+        cause: Cause,
         error: impl fmt::Display,
     ) {
-        if let Some(given) = self.give_up_part(span, path, classes, error) {
+        if let Some(given) = self.give_up_part(span, path, classes, cause, error) {
             self.charge(given);
         }
     }
 
-    /// Runs `read` in a repair session under the ceilings of the read.
+    /// Runs `read` in a repair session under the ceilings of the read, and
+    /// tells whether it refused an expression past the bound of §2.5.
     fn attempt<T>(
         &self,
         read: impl FnOnce() -> Result<T, serde_json::Error>,
@@ -500,10 +497,13 @@ impl Reader<'_, '_> {
         Result<T, serde_json::Error>,
         Vec<Repaired>,
         Option<ResourceLimit>,
+        bool,
     ) {
+        crate::bounds::take_expression_refused();
         let ((result, repairs), ceiling) =
             crate::design::read::with_limits(&self.limits, || read_session::run(read));
-        (result, repairs, ceiling)
+        let past = result.is_err() && crate::bounds::take_expression_refused();
+        (result, repairs, ceiling, past)
     }
 
     fn repaired(&mut self, path: &str, repairs: Vec<Repaired>) {
@@ -549,7 +549,13 @@ impl Reader<'_, '_> {
             return false;
         }
         if !span.closed {
-            self.give_up(span, path, classes, "the text stops being JSON inside it");
+            self.give_up(
+                span,
+                path,
+                classes,
+                Cause::Unreadable,
+                "the text stops being JSON inside it",
+            );
             return false;
         }
         let depth = enclosing + span.depth;
@@ -558,14 +564,21 @@ impl Reader<'_, '_> {
                 span,
                 path,
                 classes,
+                Cause::Undecoded,
                 format_args!("it nests to depth {depth}, past the bound of {MAX_DOCUMENT_DEPTH}"),
             );
             return false;
         }
         if let Ok(text) = std::str::from_utf8(&self.bytes[span.start..span.end]) {
-            let (outcome, repairs, ceiling) = self.attempt(|| read(Source::Text(text)));
+            let (outcome, repairs, ceiling, _) = self.attempt(|| read(Source::Text(text)));
             if let Some(limit) = ceiling {
-                self.give_up(span, path, classes, CodecError::ResourceLimit(limit));
+                self.give_up(
+                    span,
+                    path,
+                    classes,
+                    Cause::Undecoded,
+                    CodecError::ResourceLimit(limit),
+                );
                 return false;
             }
             if outcome.is_ok() {
@@ -589,7 +602,7 @@ impl Reader<'_, '_> {
         let mut value = match text::value(self.bytes, span, &mut found) {
             Ok(value) => value,
             Err(error) => {
-                self.give_up(span, path, classes, error);
+                self.give_up(span, path, classes, Cause::Unreadable, error);
                 return false;
             }
         };
@@ -616,7 +629,7 @@ impl Reader<'_, '_> {
         }
         let mut ignored = false;
         for _ in 0..MAX_REPAIRS {
-            let (outcome, repairs, ceiling) = self.attempt(|| read(Source::Value(&value)));
+            let (outcome, repairs, ceiling, past) = self.attempt(|| read(Source::Value(&value)));
             let error = match outcome {
                 Ok(()) => {
                     self.report.append(&mut notes);
@@ -633,6 +646,7 @@ impl Reader<'_, '_> {
                             copy,
                             &format!("{path}.{key}"),
                             classes,
+                            Cause::Unreadable,
                             "a restated key",
                         );
                     }
@@ -642,7 +656,13 @@ impl Reader<'_, '_> {
             };
             if let Some(limit) = ceiling {
                 self.report.append(&mut notes);
-                self.give_up(span, path, classes, CodecError::ResourceLimit(limit));
+                self.give_up(
+                    span,
+                    path,
+                    classes,
+                    Cause::Undecoded,
+                    CodecError::ResourceLimit(limit),
+                );
                 return false;
             }
             let message = error.to_string();
@@ -711,7 +731,12 @@ impl Reader<'_, '_> {
             };
             if !repaired {
                 self.report.append(&mut notes);
-                let given = self.give_up_part(span, path, classes, &message);
+                let cause = if past {
+                    Cause::Undecoded
+                } else {
+                    Cause::Unreadable
+                };
+                let given = self.give_up_part(span, path, classes, cause, &message);
                 if let Some(given) = given {
                     if repeated || message.contains("stated twice with different values") {
                         self.note(
@@ -730,6 +755,7 @@ impl Reader<'_, '_> {
             span,
             path,
             classes,
+            Cause::Undecoded,
             "its refusals take more repairs than the reader makes",
         );
         false
@@ -745,7 +771,7 @@ impl Reader<'_, '_> {
                 Value::Object(serde_json::Map::new()),
             ] {
                 repair::insert(value, &site, name, filler);
-                let (outcome, _, _) = self.attempt(|| read(Source::Value(value)));
+                let (outcome, _, _, _) = self.attempt(|| read(Source::Value(value)));
                 let message = outcome.err().map(|error| error.to_string());
                 let progressed = message.as_deref().is_none_or(|message| {
                     !(message.contains(&missing)
@@ -807,6 +833,7 @@ impl<'r, 'a> Reader<'r, 'a> {
         let fragment = self.required(&mut root, "fragment", false);
         let scope = self.required(&mut root, "scope", ContentScope::full());
         let tolerances = self.required(&mut root, "tolerances", Tolerances::default());
+        let up_axis = self.optional::<crate::up_axis::UpAxis>(&mut root, "up_axis");
         let repro = self.optional::<Box<crate::repro::BundleMetadata>>(&mut root, "repro");
         let source = self.optional::<super::SourceMeta>(&mut root, "source");
         let geometry = {
@@ -836,7 +863,13 @@ impl<'r, 'a> Reader<'r, 'a> {
                 closed: false,
                 depth: 0,
             };
-            self.give_up(span, "the text after the last record read", &[], &stop);
+            self.give_up(
+                span,
+                "the text after the last record read",
+                &[],
+                Cause::Unreadable,
+                &stop,
+            );
         }
         let mut document = CadIr {
             fragment,
@@ -844,6 +877,7 @@ impl<'r, 'a> Reader<'r, 'a> {
             scope,
             source,
             tolerances,
+            up_axis,
             geometry,
             model,
             design,
@@ -871,10 +905,9 @@ impl<'r, 'a> Reader<'r, 'a> {
                             ..limit
                         }));
                     }
-                    other => self.report.push(LossNote::new(
-                        record_unreadable_kind(),
-                        format!("a given-up part keeps no stub: {other}"),
-                    )),
+                    other => self.report.push(
+                        Cause::Unreadable.note(format!("a given-up part keeps no stub: {other}")),
+                    ),
                 }
             }
         }
@@ -899,10 +932,9 @@ impl<'r, 'a> Reader<'r, 'a> {
                 return value;
             }
         } else if !root.repeated.iter().any(|repeated| repeated == name) {
-            self.report.push(LossNote::new(
-                record_unreadable_kind(),
-                format!("the root: the required member `{name}` is missing; its default is stated"),
-            ));
+            self.report.push(Cause::Unreadable.note(format!(
+                "the root: the required member `{name}` is missing; its default is stated"
+            )));
         }
         default
     }
@@ -991,13 +1023,10 @@ impl<'r, 'a> Reader<'r, 'a> {
             return;
         }
         if holder.ignored {
-            self.report.push(LossNote::new(
-                record_unreadable_kind(),
-                format!(
-                    "{path}: the omitted collection `{name}` has no one reading: {path} holds a \
-                     member the reader does not know"
-                ),
-            ));
+            self.report.push(Cause::Unreadable.note(format!(
+                "{path}: the omitted collection `{name}` has no one reading: {path} holds a \
+                 member the reader does not know"
+            )));
         } else {
             self.note(
                 ReadLossCode::SpellingNormalized,
@@ -1018,6 +1047,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                     member.value,
                     &format!("{path}.{}", member.key),
                     &[],
+                    Cause::Unreadable,
                     format_args!(
                         "the key at offset {} holds an invalid UTF-8 sequence",
                         member.at
@@ -1048,6 +1078,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                             *span,
                             &format!("{path}.{key}"),
                             &[],
+                            Cause::Unreadable,
                             "a restated key",
                         );
                     }
@@ -1127,7 +1158,7 @@ impl<'r, 'a> Reader<'r, 'a> {
     ) -> Option<(Vec<Member>, bool)> {
         let mut scanner = Scanner::new(self.bytes, span.start);
         if !scanner.next_is(b'{') {
-            self.give_up(span, path, classes, "it holds no object");
+            self.give_up(span, path, classes, Cause::Unreadable, "it holds no object");
             return None;
         }
         let (members, stop) = scanner.members();
@@ -1148,7 +1179,7 @@ impl<'r, 'a> Reader<'r, 'a> {
     ) -> Vec<(T, Span)> {
         let mut scanner = Scanner::new(self.bytes, span.start);
         if !scanner.next_is(b'[') {
-            self.give_up(span, path, &[class], "it holds no array");
+            self.give_up(span, path, &[class], Cause::Unreadable, "it holds no array");
             return Vec::new();
         }
         let (elements, stop) = scanner.elements();
@@ -1243,6 +1274,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                     *span,
                     &format!("{path} {record_id}"),
                     &[class],
+                    Cause::Unreadable,
                     "a restated id",
                 );
             }
@@ -1274,6 +1306,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                     span,
                     &path,
                     &[ArenaClass::Model],
+                    Cause::Unreadable,
                     format_args!("{key:?} is no codec id"),
                 );
                 continue;
@@ -1288,6 +1321,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                         span,
                         &arena_path,
                         &[ArenaClass::Model],
+                        Cause::Unreadable,
                         "a blank arena name",
                     );
                     continue;
@@ -1377,13 +1411,14 @@ impl Home<'_, '_, '_> {
         let from = self.reader.report.len();
         match span {
             Some(span) => {
-                self.reader.give_up(span, &path, &[self.class], error);
+                self.reader
+                    .give_up(span, &path, &[self.class], Cause::Unreadable, error);
                 self.reader.lost(id.to_owned(), from);
             }
-            None => self.reader.report.push(LossNote::new(
-                record_unreadable_kind(),
-                format!("{path}: {error}"),
-            )),
+            None => self
+                .reader
+                .report
+                .push(Cause::Unreadable.note(format!("{path}: {error}"))),
         }
     }
 }

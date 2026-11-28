@@ -640,7 +640,7 @@
           "const": "feature_history_retained"
         },
         {
-          "description": "The part is an assembly; component geometry lives in external referenced\nfiles, not inline.",
+          "description": "Content of an assembly that lies in another file or layer and did not\ntransfer. On read: a component, member, placement, link, or layer that\na referenced file holds and the decode did not read or resolve (an\nexternal component file, a missing, undecoded, or cyclic archive\nmember, an unsolved placement or joint occurrence, an unresolved\ncomponent link, an uncomposed layer). On write: an output of an encode\nset that is not written, a link to another output that is not written,\nor a record that no output holds whole because it needs a record of\nanother output.",
           "type": "string",
           "const": "assembly_components_external"
         },

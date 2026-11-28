@@ -16,16 +16,27 @@ use crate::report::{
 };
 use crate::validate::cycles::cycles;
 
+#[cfg(test)]
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
+    let doc_records = std::cell::OnceCell::new();
+    check_drawings_with(ir, all_ids, &doc_records, findings);
+}
+
+pub(super) fn check_drawings_with<'ir>(
+    ir: &'ir CadIr,
+    all_ids: &dyn IdentitySet,
+    doc_records: &std::cell::OnceCell<DesignRecords<'ir>>,
+    findings: &mut Vec<Finding>,
+) {
     if ir.model.drawings.is_empty() {
         return;
     }
-    let records = DesignRecords::of(ir);
+    let records = doc_records.get_or_init(|| DesignRecords::of(ir));
     let named = ReferenceRecords::of(&ir.model);
     let cyclic = on_cycles(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid = all_ids.contains(&drawing.object)
+        let mut refs_valid = all_ids.contains(drawing.object.as_str())
             && drawing
                 .native_ref
                 .as_deref()
@@ -37,7 +48,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         }
         if refs_valid {
             for id in &drawing.assets {
-                if !all_ids.contains(id) {
+                if !all_ids.contains(id.as_str()) {
                     refs_valid = false;
                     break;
                 }
@@ -46,7 +57,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         if refs_valid {
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
-                    if !target.resolves(&records, &named, |id| all_ids.contains(id)) {
+                    if !target.resolves(records, &named, |id| all_ids.contains(id)) {
                         refs_valid = false;
                         break 'groups;
                     }
@@ -338,7 +349,7 @@ mod tests {
         for (order, (name, kind)) in kinds.iter().enumerate() {
             ir.model.drawings.push(crate::drawings::Drawing::new(
                 drawing_id(name),
-                "test:source:unknown#record".to_owned(),
+                crate::ids::Identity::new("test:source:unknown#record").unwrap(),
                 kind.clone(),
                 "Test".to_owned(),
                 u32::try_from(order).unwrap(),
@@ -487,7 +498,7 @@ mod tests {
             .semantic_annotations
             .push(crate::semantic_annotations::SemanticAnnotation::new(
                 annotation.clone(),
-                "test:source:unknown#record".to_owned(),
+                crate::ids::Identity::new("test:source:unknown#record").unwrap(),
                 crate::semantic_annotations::SemanticAnnotationKind::Text,
                 "Test".to_owned(),
                 0,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::features::parameters::DesignParameter;
@@ -62,16 +62,10 @@ pub(crate) fn feature_name_changes(
 pub(crate) fn native_parameters_match_source(
     digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: Option<&crate::native::SldprtNative>,
+    hash_ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-
     Ok(native
-        .map(|native| native_parameter_hash(&hash_ctx, &native.feature_histories))
+        .map(|native| native_parameter_hash(hash_ctx, &native.feature_histories))
         .transpose()?
         .zip(crate::codec_digests::baseline(
             digests,
@@ -136,17 +130,12 @@ pub(crate) fn prepare_features_for_write(
     native: &mut Option<crate::native::SldprtNative>,
     edits: &mut SourceEdits<'_>,
 ) -> Result<features::PreparedFeatures, CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
+    let hash_ctx = edits.ctx();
 
-    let neutral_hash = feature_hash(&hash_ctx, &ir.model)?;
+    let neutral_hash = feature_hash(hash_ctx, &ir.model)?;
     let native_hash = native
         .as_ref()
-        .map(|value| history_hash(&hash_ctx, &value.feature_histories))
+        .map(|value| history_hash(hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral =
         crate::codec_digests::baseline(digests, "sldprt_neutral_feature_local_sha256");
@@ -168,12 +157,12 @@ pub(crate) fn prepare_features_for_write(
         (true, true) => {
             let projected_model = native
                 .as_ref()
-                .map(project_feature_model_with_native_inputs)
+                .map(|native| project_feature_model_with_native_inputs(native, hash_ctx))
                 .transpose()?
                 .map(|projection| Ok::<_, CodecError>(projection.into_model()?.0))
                 .transpose()?
                 .unwrap_or_default();
-            if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
+            if feature_hash(hash_ctx, &projected_model)? == neutral_hash {
                 Ok(features::PreparedFeatures::default())
             } else {
                 Err(CodecError::Malformed(
@@ -222,7 +211,7 @@ fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
-    let expected = project_features_with_native_inputs(native)?
+    let expected = project_features_with_native_inputs(native, edits.ctx())?
         .into_iter()
         .filter_map(|feature| {
             (embedded.contains(&feature.id)
@@ -276,7 +265,7 @@ fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let projected = project_features_with_native_inputs(native)?;
+    let projected = project_features_with_native_inputs(native, edits.ctx())?;
     let expected_paths = projected
         .iter()
         .filter_map(|feature| {
@@ -373,24 +362,18 @@ fn validate_surface_sweep_profile_edits(
 
 pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
-    Ok(project_feature_model_with_native_inputs(native)?.features)
+    Ok(project_feature_model_with_native_inputs(native, ctx)?.features)
 }
 
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
+    ctx: &DecodeContext<'_>,
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
-        &ctx,
+        ctx,
         &mut histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
@@ -410,7 +393,7 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
+    project_compact_and_generated(ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,

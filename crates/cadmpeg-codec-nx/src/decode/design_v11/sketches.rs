@@ -173,7 +173,7 @@ fn definition(entity: &LegacyEntity) -> EntityDefinition<Planar> {
     planar_curve(&entity.geometry).map_or_else(
         || EntityDefinition::Defined {
             form: Box::new(EntityForm::Native(native_entity_kind(
-                "nx",
+                &cadmpeg_core::nonblank_literal!("nx"),
                 &entity.geometry,
             ))),
             solved: None,

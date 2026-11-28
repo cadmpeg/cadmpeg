@@ -43,6 +43,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         lane,
         &native.feature_histories,
         &renames,
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();

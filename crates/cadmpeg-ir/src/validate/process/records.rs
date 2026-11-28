@@ -5,6 +5,7 @@
 //! reported by the identity rules and does not stop the others.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use crate::design::ids::{ProcessGroupId, ProcessParameterId, SetupId};
 use crate::document::CadIr;
@@ -20,7 +21,7 @@ use crate::validate::design::records::DesignRecords;
 /// record resolves from (part 7, Scope).
 pub(super) struct ProcessRecords<'a> {
     pub(super) ir: &'a CadIr,
-    pub(super) design: &'a DesignRecords<'a>,
+    pub(super) design: Rc<DesignRecords<'a>>,
     pub(super) setups: BTreeMap<&'a str, &'a Setup>,
     pub(super) operations: BTreeMap<&'a str, &'a Operation>,
     pub(super) features: BTreeMap<&'a str, &'a MachiningFeature>,
@@ -130,7 +131,7 @@ pub(super) enum ProgramTarget<'a> {
 }
 
 impl<'a> ProcessRecords<'a> {
-    pub(super) fn new(design: &'a DesignRecords<'a>) -> Self {
+    pub(super) fn new(design: Rc<DesignRecords<'a>>) -> Self {
         let ir = design.ir;
         let process = &ir.process;
         let mut records = Self {

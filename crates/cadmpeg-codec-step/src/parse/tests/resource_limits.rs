@@ -7,9 +7,11 @@ use std::fmt::Write as _;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use crate::parse::{
-    AnchorResolver, ParseDiagnosticKind, ReferenceEntry, ReferenceName, ReferenceResolver,
-    ResolveError, Value, EXPANDED_PAYLOAD_BASE,
+    AnchorResolver, GiveUpCause, ReferenceEntry, ReferenceName, ReferenceResolver, ResolveError,
+    Value, EXPANDED_PAYLOAD_BASE,
 };
 use crate::test_support::{with_policy_context, with_service_context};
 
@@ -87,17 +89,24 @@ fn given_up_with(exchange: &crate::parse::Exchange, source: &str, text: &str) ->
     let [statement] = statements.as_slice() else {
         panic!("one given-up statement starts with {text}");
     };
-    statement.dropped.clone()
+    statement
+        .dropped
+        .iter()
+        .map(|record| record.name.clone())
+        .collect()
 }
 
-fn has_diagnostic(
-    diagnostics: &[crate::parse::ParseDiagnostic],
-    kind: ParseDiagnosticKind,
-    message: &str,
-) -> bool {
-    diagnostics
+/// The messages of the statements given up as undecoded at an expansion
+/// bound.
+fn bounded_messages(exchange: &crate::parse::Exchange) -> HashSet<&str> {
+    exchange
+        .given_up()
         .iter()
-        .any(|diagnostic| diagnostic.kind == kind && diagnostic.message == message)
+        .filter_map(|statement| match &statement.cause {
+            GiveUpCause::Content(Cause::Undecoded, message) => Some(message.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
@@ -604,12 +613,10 @@ fn reference_expansion_limit_omits_the_record_and_its_dependents() {
         "@10=<#a4>;",
         "#1=ITEM((@10,@10,@10,@10,@10,@10,@10,@10,@10,@10));#2=ITEM(@10);#3=ITEM(#1);",
     );
-    let (exchange, diagnostics) = parse_with_service(&source);
+    let (exchange, _) = parse_with_service(&source);
 
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        &format!("instance #1 omitted: {REFERENCE_BOUND}; exact source retained"),
+    assert!(bounded_messages(&exchange).contains(
+        format!("instance #1 omitted: {REFERENCE_BOUND}; exact source retained").as_str()
     ));
     assert_eq!(given_up_with(&exchange, &source, "#1=ITEM((@10,"), ["#3"]);
     assert!(exchange.records().contains_key(&2));
@@ -623,13 +630,10 @@ fn reference_to_a_bounded_anchor_omits_the_record() {
         "@10=<#a5>;",
         "#1=ITEM(@10);#2=ITEM(1);",
     );
-    let (exchange, diagnostics) = parse_with_service(&source);
+    let (exchange, _) = parse_with_service(&source);
 
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        &format!("anchor <a5> omitted: {ANCHOR_BOUND}; exact source retained"),
-    ));
+    assert!(bounded_messages(&exchange)
+        .contains(format!("anchor <a5> omitted: {ANCHOR_BOUND}; exact source retained").as_str()));
     assert_eq!(given_up_with(&exchange, &source, "<a5>="), ["#1"]);
     assert!(!exchange.records().contains_key(&1));
     assert!(exchange.records().contains_key(&2));
@@ -642,13 +646,10 @@ fn anchor_naming_a_bounded_instance_is_omitted_not_refused() {
         "",
         "#1=ITEM(<#a5>);#2=ITEM(1);",
     );
-    let (exchange, diagnostics) = parse_with_service(&source);
+    let (exchange, _) = parse_with_service(&source);
 
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        &format!("instance #1 omitted: {ANCHOR_BOUND}; exact source retained"),
-    ));
+    assert!(bounded_messages(&exchange)
+        .contains(format!("instance #1 omitted: {ANCHOR_BOUND}; exact source retained").as_str()));
     assert_eq!(given_up_with(&exchange, &source, "#1="), ["<b>"]);
     assert!(exchange
         .omitted_spans()
@@ -679,7 +680,7 @@ fn large_string_exchange(references: &str, occurrence: &str) -> (String, usize) 
 }
 
 fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occurrence: &str) {
-    let (exchange, diagnostics) = parse_with_service(source);
+    let (exchange, _) = parse_with_service(source);
     let kept = allowance / LARGE_STRING_OCTETS;
     assert_eq!(
         exchange.records().keys().copied().collect::<Vec<_>>(),
@@ -688,11 +689,7 @@ fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occur
     let bound = format!(
         "{expansion} expansion exceeds {allowance} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)"
     );
-    let bounded = diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.kind == ParseDiagnosticKind::ExpansionBounded)
-        .map(|diagnostic| diagnostic.message.as_str())
-        .collect::<HashSet<_>>();
+    let bounded = bounded_messages(&exchange);
     for id in kept + 1..=LARGE_STRING_RECORDS {
         assert!(
             bounded.contains(
@@ -751,7 +748,8 @@ fn unknown_record_gives_up_non_finite_real_at_lex_admission() {
         assert!(exchange.records().is_empty());
         assert!(exchange.given_up().iter().any(|statement| matches!(
             &statement.cause,
-            crate::parse::GiveUpCause::Syntax(message) if message.contains("finite binary64 range")
+            crate::parse::GiveUpCause::Unrepresentable(message)
+                if message.contains("finite binary64 range")
         )));
     });
 }

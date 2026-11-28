@@ -39,7 +39,6 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
@@ -51,10 +50,7 @@
 //! // Edit supported fields in `ir`.
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(
-//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Unnamed,
-//!     )?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)))?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -95,6 +91,7 @@ mod design;
 mod design_v11;
 mod dialect;
 mod f3z;
+mod scoped;
 pub use f3z::{
     observe_f3z_members, F3zDecodedMember, F3zMember, F3zMemberKind, F3zMemberObserver, F3zPhase,
     F3zSession,
@@ -152,20 +149,24 @@ enum PreservedWritePath {
 
 impl F3dCodec {
     /// Replay retained source bytes when the document is the one the decode
-    /// returned (§3.1, Rule B); otherwise patch. Returns which branch ran.
+    /// returned (§3.1, Rule B); otherwise patch, adding to `losses` what the
+    /// patch writes otherwise. Returns which branch ran.
     fn write_preserved_bytes(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &CadIr,
         fidelity: &cadmpeg_ir::SourceFidelity,
         data: &[u8],
+        restored: Option<&writer::RetainedArchive<'_>>,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
-    ) -> Result<PreservedWritePath, CodecError> {
-        if fidelity.edited(ir)? {
-            writer::patch::write_semantic(ir, data, writer, notes)?;
-            return Ok(PreservedWritePath::Patched);
+    ) -> Result<(PreservedWritePath, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+        let mut losses = Vec::new();
+        if fidelity.edited(ctx, ir)? {
+            writer::patch::write_semantic(ctx, ir, data, restored, writer, notes, &mut losses)?;
+            return Ok((PreservedWritePath::Patched, losses));
         }
         writer.write_all(data)?;
-        Ok(PreservedWritePath::VerbatimReplay)
+        Ok((PreservedWritePath::VerbatimReplay, losses))
     }
 }
 
@@ -245,26 +246,39 @@ impl EncoderBackend for F3dCodec {
     /// Patches the retained source, so it plans from the history and design
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog =
         Catalog::new(dialect::TARGETS, Some(0)).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target, None)
     }
 
-    fn restore(
+    fn plan_prepared(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
-        target: &ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes, losses)
+        target: ResolvedWrite<'_>,
+    ) -> Result<(ExportBody, Option<CadIr>), CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        ctx.with_arena(&arena, |ctx| {
+            let (mut notes, mut losses) = (Vec::new(), Vec::new());
+            let restored = writer::saved::restore(ctx, input, &target, &mut notes, &mut losses)?;
+            let (input, source) = match &restored {
+                Some((ir, source)) => (EncodeInput { ir, ..input }, Some(source)),
+                None => (input, None),
+            };
+            let mut body = writer::target::plan(ctx, input, &target, source)?;
+            body.notes.append(&mut notes);
+            body.losses.append(&mut losses);
+            Ok((body, restored.map(|(ir, _)| ir)))
+        })
     }
 }
 

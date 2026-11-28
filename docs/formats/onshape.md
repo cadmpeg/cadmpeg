@@ -30,7 +30,8 @@ which one is not `PARTSTUDIO` is not a Part Studio bundle. For assembly selectio
 `root_element` accepts an element-ID string or an object with a string `id`.
 Omission and `null` select the first `ASSEMBLY` element in source order.
 In an assembly bundle, an element ID declared more than once selects its first
-declaration.
+declaration. Each later declaration charges `assembly.record-repeated`
+(Warning).
 The ID consists of ASCII letters, digits, underscores and hyphens. A Part
 Studio ID forms the member prefix `partstudios/<id>`. An assembly ID forms
 `assemblies/<id>`. `external` entries store `documentId`, `elementId`, and
@@ -313,9 +314,10 @@ feature in source operand order. Feature ordinals give timeline order.
 A `shell` feature stores `entities`, the faces to remove, as deterministic
 IDs in the consuming rollback state, `thickness` as a quantity, and
 `oppositeDirection` as a Boolean. `isHollow` and `parts` select the hollow
-form, which has no removed faces. A `false` `oppositeDirection` places the
-wall inside the original boundary: the outer extents of the shelled body equal
-those of the input body, and the removed face leaves an opening.
+form, which has no removed faces. A `false` `oppositeDirection` grows the
+wall into the input body and keeps its original outer boundary. A `true` value
+grows the wall outward and keeps the original boundary as the inner boundary.
+A removed face leaves an opening in either direction.
 
 ## 5. Admission bounds
 
@@ -348,7 +350,7 @@ not parse, or a microversion that differs from the document microversion. The
 part keeps the stored bytes of the member. When the member is over a size bound,
 or the parse of its JSON stops at a resource bound, the part keeps only the
 digest of the stored bytes. Two directory records that name one stored span are
-one part with one `record.unreadable`. A later member with the name of an
+one part with one give-up. A later member with the name of an
 earlier member adds no record when its method and stored bytes are equal to
 those of the earlier member. The decoder gives up each other later member with
 a repeated name.
@@ -362,6 +364,35 @@ reads no feature history, topology table, or final geometry from the member.
 When the member is stored without compression, the part keeps only the digest
 of the stored bytes, because the asset holds the same bytes. When a part studio
 has no feature history and its `export.step` fails, the part studio fails.
+The give-up of a member is the one loss for the feature history, final
+geometry, or assembly definition that the member holds.
+
+The decoder also gives up a record of a JSON response, such as a feature with a
+repeated identity or an assembly record that breaks the response form, by the
+record identity, and a part studio that an assembly instance names and that
+does not decode. Each give-up has one cause (CADIR §3.3):
+
+| Record | Case | Cause |
+|---|---|---|
+| `archive-entry` | Invalid name, or a repeated name with another method or other stored bytes | `record.unreadable` |
+| `archive-entry` | Encryption or an unsupported method | `record.undecoded` |
+| `archive-entry` | Over a size bound or a part resource bound | `record.undecoded` |
+| `archive-entry` | Open stops at malformed or truncated stored data | `record.unreadable` |
+| `archive-entry` | Open fails for another reason | `record.undecoded` |
+| `archive-entry` | JSON that does not parse | `record.unreadable` |
+| `archive-entry` | JSON parse that stops at a resource bound | `record.undecoded` |
+| `archive-entry` | Microversion that differs from the document microversion | `record.unreadable` |
+| `archive-entry` | `features` absent or not an array | `record.unreadable` |
+| `archive-entry` | `features` longer than its bound | `record.undecoded` |
+| `archive-entry` | Topology rows over their bound | `record.undecoded` |
+| `archive-entry` | Nested `export.step` decode finds no STEP text, or stops at malformed or truncated text | `record.unreadable` |
+| `archive-entry` | Nested `export.step` decode fails for another reason | `record.undecoded` |
+| Response record | Fields that break the response form | `record.unreadable` |
+| Feature | The feature row that the decoder builds does not deserialize into its typed feature | `record.undecoded` |
+| Instanced part studio | Decode finds data of another format, or stops at malformed or truncated data | `record.unreadable` |
+| Instanced part studio | Decode fails for another reason | `record.undecoded` |
+
+No Onshape code carries a strict floor (CADIR §3.2).
 
 ## Assembly definitions
 
@@ -392,6 +423,9 @@ and `matedCS`, a connector frame. A direct part path gives the frame in the
 part coordinates. `matedCS` stores
 three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. The origin uses
 metres. The axes are the columns of the connector rotation matrix.
+The evaluated `matedCS` frames include the effect of the mate's
+`flipPrimaryAxis`, `flipSecondaryAxis`, and `secondaryAxisAlignment`
+settings, so the solved connector frames carry those settings.
 
 | `mateType` | Joint family |
 | --- | --- |
@@ -405,6 +439,20 @@ metres. The axes are the columns of the connector rotation matrix.
 The solved connector world frame is the occurrence transform multiplied by
 the connector frame. The sign of the dot product of the two world z axes
 gives aligned or opposed sense. A zero dot product leaves the sense unstated.
+
+CADIR decision: a decoder names each assembly record that it gives up by its
+source address, the definition member path and the JSON pointer of the record
+(`assemblies/<id>/definition.json#/rootAssembly/instances/1`). It gives up an
+instance without an `id`, an instance that it cannot map, and an instance
+whose `id` repeats at its level with different content. An instance whose
+`id` repeats with the same content drops nothing; the first instance stands.
+A mate whose connector path passes through a given-up instance drops with
+that instance; the give-up names the joint that the mate maps to. A mate
+whose `id` repeats at its level with different content is given up; the
+first joint stands. An `instances`, `features`, `occurrences`,
+`subAssemblies`, or `parts` field that holds no array is given up as one
+record. A field that holds more rows than the row limit is a bound, and the
+rows are not read.
 
 ### Part identity and final geometry
 
@@ -432,6 +480,7 @@ one definition.
 A `subAssemblies` or `parts` record whose reference equals an earlier record's
 defines nothing new. The later record is the same definition when its fields
 outside the reference fields equal the earlier record's; otherwise the later
-record is ignored and the earlier record defines the reference. A repeated
+record is ignored and the earlier record defines the reference, and the
+later record charges `assembly.record-repeated` (Warning). A repeated
 record does not change the count of parts in a Part Studio or the count of
 parts with one name.

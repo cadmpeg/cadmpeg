@@ -3,16 +3,19 @@ use std::collections::HashMap;
 
 use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_asm::kernel_header::RefWidth;
-use cadmpeg_core::decode::{work_units, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{work_units, DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::rc::Rc;
 
 use super::*;
 use crate::feature::history_states::{
-    frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
+    frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading, StateIndex,
 };
 use crate::kernel::{parse_carrier, ActiveCarrier};
-use crate::test_support::history_carrier::{carrier_bytes, framed_carrier};
+use crate::test_support::history_carrier::{
+    carrier_bytes, carrier_bytes_with_name, framed_carrier, put_plain, put_sphere_solid,
+    CURRENT_BODY_KEY, REF, SPHERE_BODY_KEY,
+};
 
 /// Source index that a naming tag first lists in the older state of the
 /// carrier, and in its head state.
@@ -26,7 +29,24 @@ const ALIAS: u32 = 7;
 fn with_chain<R>(
     check: impl FnOnce(&DecodeContext<'_>, &ActiveCarrier<'_>, &Closed<'_>) -> R,
 ) -> R {
-    let payload = framed_carrier(&carrier_bytes(RefWidth::Eight, false));
+    with_edited_index(|_| {}, check)
+}
+
+/// Runs `check` on the two-state carrier after `edit` changed its state
+/// index.
+fn with_edited_index<R>(
+    edit: impl FnOnce(&mut StateIndex),
+    check: impl FnOnce(&DecodeContext<'_>, &ActiveCarrier<'_>, &Closed<'_>) -> R,
+) -> R {
+    with_carrier(&carrier_bytes(RefWidth::Eight, false), edit, check)
+}
+
+fn with_carrier<R>(
+    bytes: &[u8],
+    edit: impl FnOnce(&mut StateIndex),
+    check: impl FnOnce(&DecodeContext<'_>, &ActiveCarrier<'_>, &Closed<'_>) -> R,
+) -> R {
+    let payload = framed_carrier(bytes);
     let arena = DecodeArena::new();
     let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
         .expect("carrier fits policy");
@@ -46,6 +66,7 @@ fn with_chain<R>(
         panic!("the chain reads");
     };
     index.first = HashMap::from([(OLDER, 0), (ALIAS, 0), (HEAD, 1)]);
+    edit(&mut index);
     let closed = Closed::new(*chain, index);
     check(&ctx, &carrier, &closed)
 }
@@ -81,28 +102,122 @@ fn model(outcome: Result<Rc<StateModel>, CodecError>) -> Rc<StateModel> {
     outcome.expect("view runs")
 }
 
-fn decoded(outcome: Result<Rc<StateModel>, CodecError>) -> CadIr {
+fn decoded(outcome: Result<Rc<StateModel>, CodecError>) -> Topology {
     match &*model(outcome) {
-        StateModel::Model(model) => (**model).clone(),
+        StateModel::Model(model) => model.geometry.clone(),
         StateModel::Unavailable => panic!("state unavailable"),
         StateModel::Failed => panic!("state failed"),
-        StateModel::Bounded => panic!("state bounded"),
+        StateModel::Bounded(limit) => panic!("state bounded: {limit}"),
     }
+}
+
+#[test]
+fn two_live_state_views_share_the_retained_allowance() {
+    let name = "n".repeat(1200);
+    let bytes = carrier_bytes_with_name(RefWidth::Eight, false, Some(&name));
+    with_carrier(
+        &bytes,
+        |_| {},
+        |_, carrier, closed| {
+            let views = StateViews::new(carrier, closed, 1 << 20);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 1800;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("document context");
+            let older = model(views.after(&ctx, OLDER));
+            let StateModel::Model(older_model) = &*older else {
+                panic!("one named state fits");
+            };
+            assert_eq!(
+                older_model.geometry.bodies[0].name.as_deref(),
+                Some(name.as_str())
+            );
+            assert_eq!(ctx.retained_bytes_available(), 600);
+
+            let newer = model(views.after(&ctx, HEAD));
+            let StateModel::Bounded(StateLimit::Resource(limit)) = &*newer else {
+                panic!("the second live state needs another name");
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            );
+            assert_eq!(limit.operation, "keep Inventor history state evidence");
+            assert_eq!(limit.additional, 1200);
+            assert!(ctx.resource_refusal().is_none());
+            assert!(Rc::ptr_eq(&newer, &model(views.after(&ctx, HEAD))));
+            assert_eq!(
+                older_model.geometry.bodies[0].name.as_deref(),
+                Some(name.as_str())
+            );
+        },
+    );
 }
 
 #[test]
 fn a_view_decodes_the_state_that_first_lists_the_source() {
     with_views(1 << 20, |ctx, views| {
         let older = decoded(views.after(ctx, OLDER));
-        assert_eq!(older.geometry.bodies.len(), 1);
-        assert_eq!(older.geometry.faces.len(), 1);
+        assert_eq!(older.bodies.len(), 1);
+        assert_eq!(older.faces.len(), 1);
         assert!(matches!(
-            &older.geometry.surfaces[0].geometry,
+            &older.surfaces[0].geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
         ));
         let head = decoded(views.after(ctx, HEAD));
-        assert_eq!(head.geometry.bodies.len(), 1);
-        assert_eq!(head.geometry.faces.len(), 1);
+        assert_eq!(head.bodies.len(), 1);
+        assert_eq!(head.faces.len(), 1);
+    });
+}
+
+#[test]
+fn a_passthrough_record_over_the_scratch_limit_leaves_room_for_the_document() {
+    with_chain(|_, carrier, _| {
+        let header = carrier.header.as_ref().expect("carrier header");
+        let mut bytes = Vec::new();
+        put_plain(&mut bytes, header.width, "asmheader", &[]);
+        put_sphere_solid(&mut bytes, header.width, 1, CURRENT_BODY_KEY, -1);
+        put_plain(&mut bytes, header.width, "face", &[(REF, -1); 1024]);
+        let limit = 8192;
+        let policy = DecodePolicy {
+            limits: ResourceLimits {
+                max_retained_bytes: limit,
+                ..ResourceLimits::default()
+            },
+        };
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input fits");
+        let records = cadmpeg_asm::sab::frame(&ctx, &bytes, 0, bytes.len(), header.width, None)
+            .expect("sphere and orphan face frame");
+        let face = records.last().expect("orphan face record");
+        assert_eq!(face.head(), "face");
+        assert_eq!(face.ref_at(5), None);
+        assert!(cadmpeg_core::decode::u64_from_index(face.len) > limit);
+        let archive: HashMap<_, _> = records
+            .into_iter()
+            .map(|record| {
+                (
+                    i64::try_from(record.index).expect("record index fits i64"),
+                    record,
+                )
+            })
+            .collect();
+        let versions = archive.keys().map(|&slot| (slot, slot)).collect();
+        let Decoded::Scratch(scratch) =
+            decode_scratch(&ctx, header, &archive, &versions, 0, |_, state| Ok(state))
+                .expect("an optional state leaves the document decoding")
+        else {
+            panic!("the sphere fits the scratch allowance");
+        };
+        assert_eq!(scratch.geometry.bodies.len(), 1);
+        assert_eq!(scratch.geometry.faces.len(), 1);
+        assert!(matches!(
+            &scratch.geometry.surfaces[0].geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+        ));
+        ctx.retain_bytes(limit, "kept document bytes")
+            .expect("kept output fits the full allowance");
     });
 }
 
@@ -128,7 +243,7 @@ fn a_view_over_its_work_cap_is_bounded() {
     with_views(0, |ctx, views| {
         assert!(matches!(
             &*model(views.after(ctx, OLDER)),
-            StateModel::Bounded
+            StateModel::Bounded(StateLimit::Work)
         ));
     });
     // The walk to the older state passes the head state and charges both.
@@ -137,7 +252,7 @@ fn a_view_over_its_work_cap_is_bounded() {
         let views = StateViews::new(carrier, closed, costs[1] - 1);
         assert!(matches!(
             &*model(views.after(ctx, OLDER)),
-            StateModel::Bounded
+            StateModel::Bounded(StateLimit::Work)
         ));
     });
 }
@@ -154,7 +269,7 @@ fn the_walk_stops_at_the_requested_state_and_views_share_one_budget() {
         ));
         assert!(matches!(
             &*model(views.after(ctx, OLDER)),
-            StateModel::Bounded
+            StateModel::Bounded(StateLimit::Work)
         ));
     });
 }
@@ -187,6 +302,81 @@ fn the_cache_holds_at_most_its_limit_of_models() {
         let first = decoded(views.after(ctx, OLDER));
         views.decoded.borrow_mut().clear();
         let second = decoded(views.after(ctx, OLDER));
-        assert_eq!(first.geometry.faces.len(), second.geometry.faces.len());
+        assert_eq!(first.faces.len(), second.faces.len());
+    });
+}
+
+#[test]
+fn a_state_introduces_a_key_that_it_holds_and_the_state_before_does_not() {
+    with_chain(|_, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // The head state holds the current body, and the older state does
+        // not.
+        assert!(views.introduces(HEAD, CURRENT_BODY_KEY));
+        // The older state is the oldest state and has no state before it.
+        assert!(!views.introduces(OLDER, SPHERE_BODY_KEY));
+        assert!(!views.introduces(ALIAS, SPHERE_BODY_KEY));
+        // The head state no longer holds the archived body.
+        assert!(!views.introduces(HEAD, SPHERE_BODY_KEY));
+        assert!(!views.introduces(HEAD, 99));
+    });
+}
+
+#[test]
+fn a_key_that_both_states_hold_is_not_introduced() {
+    with_edited_index(
+        |index| index.states[0].body_keys = vec![CURRENT_BODY_KEY, SPHERE_BODY_KEY],
+        |_, carrier, closed| {
+            let views = StateViews::new(carrier, closed, 1 << 20);
+            assert!(!views.introduces(HEAD, CURRENT_BODY_KEY));
+        },
+    );
+}
+
+#[test]
+fn a_source_without_a_first_state_introduces_nothing() {
+    with_chain(|_, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        assert!(!views.introduces(99, CURRENT_BODY_KEY));
+    });
+    with_edited_index(
+        |index| {
+            index.first.remove(&HEAD);
+        },
+        |_, carrier, closed| {
+            let views = StateViews::new(carrier, closed, 1 << 20);
+            assert!(!views.introduces(HEAD, CURRENT_BODY_KEY));
+        },
+    );
+}
+
+#[test]
+fn the_state_before_is_the_next_older_state() {
+    with_chain(|ctx, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // The head state lists HEAD first, so the state before it is the
+        // older state, which `after` of OLDER decodes.
+        let before = decoded(views.before(ctx, HEAD));
+        let older = decoded(views.after(ctx, OLDER));
+        assert_eq!(before.faces.len(), older.faces.len());
+        assert!(matches!(
+            &before.surfaces[0].geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+        ));
+    });
+}
+
+#[test]
+fn no_state_precedes_the_oldest_state_or_an_unlisted_source() {
+    with_chain(|ctx, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // OLDER and ALIAS first appear in the state at history position 0.
+        for source in [OLDER, ALIAS, 99] {
+            assert!(matches!(
+                &*model(views.before(ctx, source)),
+                StateModel::Unavailable
+            ));
+        }
+        assert!(!closed.archive_built());
     });
 }

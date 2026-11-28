@@ -95,9 +95,10 @@ pub(in crate::families) fn try_decode_e5(
     let Some(stream_range) = scan.e5_record_range.clone() else {
         return Ok(None);
     };
+    let origin = stream_range.start;
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
-    let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal)?;
+    let mut surfaces = crate::families::e5::records::e5_surfaces(stream, origin, refusal)?;
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream);
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
         macro_rules! admitted {
@@ -327,11 +328,25 @@ refusal,
         }
         let mut losses = Vec::new();
         if !topology_transferred {
-            losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
-            let face_records = topology
-                .iter()
-                .flat_map(|topology| topology.faces.iter().map(|face| face.record_id))
-                .collect::<std::collections::BTreeSet<_>>();
+            let (face_records, cause) = match topology.as_ref() {
+                Some(topology) => (
+                    topology
+                        .faces
+                        .iter()
+                        .map(|face| face.record_id)
+                        .collect::<std::collections::BTreeSet<_>>(),
+                    "the reference graph of the face did not close",
+                ),
+                None => (
+                    crate::families::e5::graph::face_record_ids(stream),
+                    "the reference graph of the E5 records did not parse",
+                ),
+            };
+            // Each face give-up states the unclosed graph; the note states it
+            // only where no face record is given up.
+            if face_records.is_empty() {
+                losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
+            }
             let code = CatiaLossCode::TopologyE5GraphUnclosed.kind();
             losses.extend(face_records.into_iter().map(|record_id| {
                 cadmpeg_ir::unknown::part::GivenUpRecord::new(
@@ -339,7 +354,8 @@ refusal,
                         &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
                         record_id,
                     ),
-                    format_args!("{code}: the reference graph of the face did not close"),
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    format_args!("{code}: {cause}"),
                 )
                 .loss()
             }));

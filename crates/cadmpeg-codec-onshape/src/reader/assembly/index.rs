@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source definition and placement indexes.
-use super::{key, optional_rows, text, Error, Report};
+use super::{key, optional_rows, split_rows, text, Error, Report, Rows};
 use crate::archive::Bundle;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -14,7 +15,8 @@ type StudioKey = (String, String);
 
 pub(super) struct Index<'a> {
     pub occurrences: BTreeMap<Vec<String>, &'a Value>,
-    pub subassemblies: BTreeMap<DefinitionKey, &'a Value>,
+    /// Each subassembly definition with its position in `subAssemblies`.
+    pub subassemblies: BTreeMap<DefinitionKey, (usize, &'a Value)>,
     pub parts: BTreeMap<ReferenceKey, &'a Value>,
     pub names: BTreeMap<(String, String, String), usize>,
     pub studios: BTreeMap<StudioKey, usize>,
@@ -49,7 +51,7 @@ impl<'a> Index<'a> {
                 .unwrap_or("")
                 .into(),
         };
-        for row in source_rows(manifest, "external", report) {
+        for row in source_rows(manifest, "external", None, report) {
             ctx.charge_entities(1, "Onshape external reference index")?;
             let studio = index.studio_key(row);
             let microversion = row
@@ -69,6 +71,7 @@ impl<'a> Index<'a> {
         for (position, row) in source_rows(
             definition.get("rootAssembly").unwrap_or(&Value::Null),
             "occurrences",
+            Some(format!("{definition_path}#/rootAssembly").as_str()),
             report,
         )
         .iter()
@@ -101,7 +104,7 @@ impl<'a> Index<'a> {
                         report.give_up_as(
                             &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                             &key(entry.key()),
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             "occurrence path repeats with a different placement; retained the first placement",
                         );
                     }
@@ -124,14 +127,22 @@ impl<'a> Index<'a> {
                 Err(reason) => report.give_up_as(
                     &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                     "occurrence",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
                     reason,
                 ),
             }
         }
-        for (position, sub) in source_rows(definition, "subAssemblies", report)
-            .iter()
-            .enumerate()
+        for (position, sub) in source_rows(
+            definition,
+            "subAssemblies",
+            Some(format!("{definition_path}#").as_str()),
+            report,
+        )
+        .iter()
+        .enumerate()
         {
             ctx.charge_entities(1, "Onshape subassembly index")?;
             if !sub
@@ -142,7 +153,10 @@ impl<'a> Index<'a> {
                 report.give_up_as(
                     &format!("{definition_path}#/subAssemblies/{position}"),
                     "subassembly",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
                     "subassembly element id has an invalid folder character",
                 );
                 continue;
@@ -157,10 +171,9 @@ impl<'a> Index<'a> {
             let definition_key = index.definition_key(sub);
             match index.subassemblies.entry(definition_key) {
                 Entry::Occupied(entry) => {
-                    if !same_content(entry.get(), sub) {
-                        report.give_up_as(
+                    if !same_content(entry.get().1, sub) {
+                        report.push_coded(
                             &format!("{definition_path}#/subAssemblies/{position}"),
-                            "subassembly",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
                                 "subassembly definition repeats with different content; retained the first record: {:?}",
@@ -170,20 +183,27 @@ impl<'a> Index<'a> {
                     }
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(sub);
+                    entry.insert((position, sub));
                 }
             }
         }
-        for (position, part) in source_rows(definition, "parts", report).iter().enumerate() {
+        for (position, part) in source_rows(
+            definition,
+            "parts",
+            Some(format!("{definition_path}#").as_str()),
+            report,
+        )
+        .iter()
+        .enumerate()
+        {
             ctx.charge_entities(1, "Onshape part identity index")?;
             let reference = index.reference(part);
             let studio = index.studio_key(part);
             match index.parts.entry(reference) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), part) {
-                        report.give_up_as(
+                        report.push_coded(
                             &format!("{definition_path}#/parts/{position}"),
-                            "part",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
                                 "part identity repeats with different content; retained the first record: {:?}",
@@ -206,7 +226,7 @@ impl<'a> Index<'a> {
                     .or_default() += 1;
             }
         }
-        for element in source_rows(manifest, "elements", report) {
+        for element in source_rows(manifest, "elements", None, report) {
             if element.get("type").and_then(Value::as_str) != Some("ASSEMBLY") {
                 continue;
             }
@@ -217,7 +237,7 @@ impl<'a> Index<'a> {
                 continue;
             }
             if let Ok(response) = bundle.json(&format!("assemblies/{eid}/features.json")) {
-                for feature in source_rows(response, "features", report) {
+                for feature in source_rows(response, "features", None, report) {
                     ctx.charge_entities(1, "Onshape native mate parameter index")?;
                     if let Some(native) = feature
                         .get("featureId")
@@ -336,9 +356,33 @@ fn nonempty<'a>(row: &'a Value, field: &str) -> Option<&'a str> {
 fn string(row: &Value, field: &str) -> String {
     row.get(field).and_then(Value::as_str).unwrap_or("").into()
 }
-fn source_rows<'a>(row: &'a Value, field: &str, report: &mut Report) -> &'a [Value] {
-    optional_rows(row, field).unwrap_or_else(|reason| {
-        report.push_coded(field, OnshapeLossCode::AssemblyRecordUnsupported, reason);
-        &[]
-    })
+/// The rows of `field` of `row`. Where `row` is a record of the definition
+/// at the source address `source` and `field` holds no array, the decode
+/// gives up the field's record. Where `field` holds the values of an index
+/// alone, or exceeds the row limit, a note states the loss.
+fn source_rows<'a>(
+    row: &'a Value,
+    field: &str,
+    source: Option<&str>,
+    report: &mut Report,
+) -> &'a [Value] {
+    match (split_rows(row, field), source) {
+        (Rows::Read(rows), _) => rows,
+        (Rows::Malformed(reason), Some(source)) => {
+            report.give_up_as(
+                &format!("{source}/{field}"),
+                field,
+                (
+                    Cause::Unreadable,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                ),
+                reason,
+            );
+            &[]
+        }
+        (Rows::Bounded(reason) | Rows::Malformed(reason), _) => {
+            report.push_coded(field, OnshapeLossCode::AssemblyRecordUnsupported, reason);
+            &[]
+        }
+    }
 }

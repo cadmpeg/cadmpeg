@@ -110,15 +110,65 @@ fn a_face_keeps_its_vertex_loop_beside_its_ring_loop_on_the_node_path() {
     let (payload, _) = two_loop_face(true);
     let brep = decode_stream(&payload);
     assert_vertex_loop_beside_ring(&brep, "#13");
-    assert_eq!(brep.stats.withheld_vertex_loop_faces, 0);
 }
 
 #[test]
-fn a_face_whose_vertex_loop_names_no_resolved_vertex_is_withheld() {
+fn a_face_whose_vertex_loop_names_no_resolved_vertex_keeps_its_ring_loop() {
     let (payload, _) = two_loop_face(false);
-    let brep = decode_stream(&payload);
-    assert!(brep.faces.is_empty());
-    assert_eq!(brep.stats.withheld_vertex_loop_faces, 1);
+    let mut brep = decode_stream(&payload);
+    drop(assert_loop_given_up(&mut brep, "#5", Some("#6"), "#11"));
+}
+
+/// The face `face` is kept with a partial loop list that states only the
+/// loop `kept`, and exactly one `record.unreadable` gives up the loop
+/// `lost`, which the decode leaves out. No face is given up.
+fn assert_loop_given_up(
+    brep: &mut super::Brep,
+    face: &str,
+    kept: Option<&str>,
+    lost: &str,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let found = brep
+        .faces
+        .iter()
+        .find(|candidate| candidate.id.as_str().ends_with(face))
+        .expect("the face is kept");
+    assert!(found.loops.is_partial());
+    let stated: Vec<_> = found
+        .loops
+        .stated()
+        .map(|id| id.as_str().to_owned())
+        .collect();
+    match kept {
+        Some(kept) => assert!(
+            matches!(&stated[..], [only] if only.ends_with(kept)),
+            "{stated:?}"
+        ),
+        None => assert!(stated.is_empty(), "{stated:?}"),
+    }
+    let lost_id = format!("sldprt:brep:loop{lost}");
+    assert!(brep.loops.iter().all(|lp| lp.id.as_str() != lost_id));
+    let losses = brep.take_losses().unwrap();
+    let charges: Vec<_> = losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+        .collect();
+    let head = format!("record {lost_id} ");
+    assert_eq!(
+        charges
+            .iter()
+            .filter(|loss| loss.message.starts_with(&head))
+            .count(),
+        1,
+        "{charges:?}"
+    );
+    assert!(
+        charges
+            .iter()
+            .all(|loss| !loss.message.starts_with("record sldprt:brep:face#")),
+        "{charges:?}"
+    );
+    losses
 }
 
 /// The triangle body whose FACE 10 holds ring LOOP 20 followed by vertex
@@ -172,7 +222,7 @@ fn a_face_keeps_its_vertex_loop_beside_its_ring_loop_on_the_scanner_path() {
 }
 
 #[test]
-fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_is_withheld() {
+fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_keeps_its_ring_loop() {
     let mut body = ring_and_vertex_loop_triangle();
     let mut conflicting = vec![0x00, 0x11];
     for reference in [33u16, 0, 21, 33, 33, 54, 1, 1, 0, 0] {
@@ -181,24 +231,8 @@ fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_is_withheld() {
     conflicting.push(b'?');
     body.extend(conflicting);
     let mut brep = decode_scanned(&body);
-    assert!(brep.faces.is_empty());
-    assert!(brep.loops.is_empty());
     assert_eq!(brep.stats.unresolved_topology_fins, 1);
-    assert_eq!(brep.stats.withheld_ambiguous_fin_faces, 1);
-    let losses = brep.take_losses().unwrap();
-    let [face] = losses
-        .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
-        .collect::<Vec<_>>()[..]
-    else {
-        panic!("one record.unreadable gives up the face: {losses:?}");
-    };
-    assert!(face.message.starts_with("record sldprt:brep:face#"));
-    assert!(face
-        .message
-        .contains("given up: sldprt/topology.ambiguous-fin-face-withheld: "));
-    assert!(face.message.contains("; dropped=[sldprt:brep:surf#"));
-    assert_dependents_reach(&losses, face, "sldprt:brep:loop#");
+    drop(assert_loop_given_up(&mut brep, "#10", Some("#20"), "#21"));
 }
 
 /// Each `record.dropped-with` note of `losses` needs, through other notes,
@@ -250,7 +284,7 @@ fn assert_dependents_reach(
 }
 
 #[test]
-fn a_face_with_a_vertex_loop_and_an_ambiguous_ring_fin_is_withheld() {
+fn a_face_with_a_vertex_loop_and_an_ambiguous_ring_fin_keeps_its_vertex_loop() {
     let mut body = ring_and_vertex_loop_triangle();
     body.extend(framed_topology_fin(
         31,
@@ -259,14 +293,18 @@ fn a_face_with_a_vertex_loop_and_an_ambiguous_ring_fin_is_withheld() {
         false,
         false,
     ));
-    let brep = decode_scanned(&body);
-    assert!(brep.faces.is_empty());
+    let mut brep = decode_scanned(&body);
     assert_eq!(brep.stats.unresolved_topology_fins, 1);
-    assert_eq!(brep.stats.withheld_ambiguous_fin_faces, 1);
+    let losses = assert_loop_given_up(&mut brep, "#10", Some("#21"), "#20");
+    let charge = losses
+        .iter()
+        .find(|loss| loss.message.starts_with("record sldprt:brep:loop#20 "))
+        .expect("the ring loop is given up");
+    assert_dependents_reach(&losses, charge, "sldprt:brep:coedge#");
 }
 
-/// FACE 30 on `OFFSET_SURF` 40 over PLANE 20, the carrier of FACE 5 whose
-/// vertex loop names no resolved vertex, with ring LOOP 31 (FIN 32 on EDGE
+/// FACE 30 on `OFFSET_SURF` 40 over PLANE 20, the carrier of FACE 5 that
+/// names no loop, with ring LOOP 31 (FIN 32 on EDGE
 /// 33, a CIRCLE 41 closed at VERTEX 34).
 #[test]
 fn a_retained_face_on_a_withheld_face_carrier_emits_a_hidden_support() {
@@ -277,6 +315,7 @@ fn a_retained_face_on_a_withheld_face_carrier_emits_a_hidden_support() {
         .find(|(kind, index, _)| (*kind, *index) == (14, 5))
         .expect("face 5");
     face.2[3] = P(30);
+    face.2[5] = P(1);
     #[rustfmt::skip]
     nodes.extend([
         (14, 30, vec![
@@ -301,7 +340,7 @@ fn a_retained_face_on_a_withheld_face_carrier_emits_a_hidden_support() {
     ]);
     let (payload, _) = sequence_of(&nodes);
     let brep = decode_stream(&payload);
-    assert_eq!(brep.stats.withheld_vertex_loop_faces, 1);
+    assert!(brep.faces.iter().all(|face| face.id != super::id_face(5)));
     assert_eq!(brep.faces.len(), 1);
     assert!(!brep
         .surfaces

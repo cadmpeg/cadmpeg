@@ -16,7 +16,7 @@ use super::*;
 use crate::feature::history_states::{StateRef, UnboundReason};
 use crate::kernel::parse_carrier;
 use crate::test_support::history_carrier::{
-    carrier_bytes, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
+    carrier_bytes, carrier_bytes_with_name, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
 };
 
 fn feature(native: &str) -> Feature {
@@ -103,11 +103,25 @@ fn requests_over_the_cap_are_counted_as_bounded() {
     let records = (0..=MAX_HISTORY_BODIES)
         .map(|index| record(BASE_TAG, &format!("base{index}"), Some(0), Some(7)))
         .collect::<Vec<_>>();
-    let mut outcome = Outcome::default();
-    let wants = wants(&records, &mut outcome);
+    let mut built = Built::default();
+    let requested = wants(&records, &mut built.outcome);
+    let wants = bound(requested, &mut built, &records).expect("bound");
     assert_eq!(wants.len(), MAX_HISTORY_BODIES);
-    assert_eq!(outcome.requested, MAX_HISTORY_BODIES + 1);
-    assert_eq!(outcome.bounded, 1);
+    assert_eq!(built.outcome.requested, MAX_HISTORY_BODIES + 1);
+    assert_eq!(built.outcome.bounded, 1);
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0008", Unbuilt::Bounded)]
+    );
+}
+
+/// The nests that `built` gives up, by identity.
+fn given_up(built: &Built) -> Vec<(&str, Unbuilt)> {
+    built
+        .unbuilt
+        .iter()
+        .map(|(id, why, _)| (id.as_str(), *why))
+        .collect()
 }
 
 // Extraction of one body from a decoded state.
@@ -212,7 +226,7 @@ fn a_procedural_carrier_without_a_cache_is_absent() {
             .expect("identity"),
         cache: None,
     };
-    assert!(matches!(extract_cube(&geometry), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Unsolved));
 }
 
 #[test]
@@ -220,7 +234,7 @@ fn a_carrier_of_unknown_shape_is_absent() {
     let mut geometry = cube();
     geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    assert!(matches!(extract_cube(&geometry), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Unsolved));
 }
 
 #[test]
@@ -241,6 +255,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
     };
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let want = Want {
+        index: 3,
         record: 0,
         ordinal: 2,
         state_id: 44,
@@ -248,7 +263,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
         role: Role::Split,
     };
     let consumer = feature("split");
-    let body = nest(&ctx, 3, &want, consumer.id.clone(), *topology).expect("nest");
+    let body = nest(&ctx, &want, consumer.id.clone(), *topology).expect("nest");
     assert_eq!(body.id.as_str(), "inventor:history-body:nest#h0003");
     assert_eq!(body.consumed_by.as_ref(), Some(&consumer.id));
     assert!(body.produced_by.is_none());
@@ -296,9 +311,18 @@ fn build_from(
     features: &[Feature],
 ) -> Built {
     let payload = framed_carrier(&carrier_bytes(width, dangling));
+    build_with_budget(&payload, &DecodePolicy::default(), records, features)
+}
+
+fn build_with_budget(
+    payload: &[u8],
+    policy: &DecodePolicy,
+    records: &[FeatureHistoryState],
+    features: &[Feature],
+) -> Built {
     let arena = DecodeArena::new();
-    let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
-        .expect("carrier fits policy");
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(payload, &arena, policy).expect("carrier fits policy");
     let carrier =
         parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 1, 0, 18).expect("carrier parses");
     let header = carrier.header.as_ref().expect("header parses");
@@ -318,7 +342,9 @@ fn build_from(
         *chain,
         crate::feature::history_states::StateIndex::default(),
     );
-    build(&ctx, &carrier, &closed, records, features).expect("build")
+    let built = build(&ctx, &carrier, &closed, records, features).expect("build");
+    assert!(ctx.resource_refusal().is_none());
+    built
 }
 
 fn split(key: i64) -> FeatureHistoryState {
@@ -348,6 +374,27 @@ fn the_state_before_a_split_gives_the_consumed_body() {
             panic!("one nest at {width:?}");
         };
         assert_eq!((body.state.ordinal, body.state.identifier), (0, 12));
+        // The decode keeps the whole state that holds the nest, with the
+        // nest's body under its state identity.
+        let ordinals: Vec<_> = built.states.keys().copied().collect();
+        assert_eq!(ordinals, [0], "{width:?}");
+        let state = &built.states[&0].geometry;
+        let key = body
+            .topology
+            .body
+            .id
+            .as_str()
+            .rsplit_once("#h0000-")
+            .expect("nest key")
+            .1;
+        assert!(
+            state
+                .bodies
+                .iter()
+                .any(|held| held.id.as_str().rsplit_once('#').map(|(_, k)| k) == Some(key)),
+            "{:?}",
+            state.bodies
+        );
         assert_eq!(
             body.consumed_by.as_ref().map(cadmpeg_ir::FeatureId::as_str),
             Some("inventor:model:feature#split")
@@ -377,6 +424,50 @@ fn the_state_before_a_split_gives_the_consumed_body() {
 }
 
 #[test]
+fn a_second_named_nest_gives_up_only_the_feature_that_cannot_keep_it() {
+    let name = "n".repeat(1200);
+    let payload = framed_carrier(&carrier_bytes_with_name(
+        RefWidth::Eight,
+        false,
+        Some(&name),
+    ));
+    let records = [
+        record(BASE_TAG, "base", Some(0), Some(CURRENT_BODY_KEY)),
+        split(SPHERE_BODY_KEY),
+    ];
+    let features = [feature("base"), feature("split")];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1800;
+    let built = build_with_budget(&payload, &policy, &records, &features);
+    assert_eq!(built.outcome.requested, 2);
+    assert_eq!(built.outcome.built, 1);
+    assert_eq!(built.outcome.bounded, 1);
+    assert_eq!(
+        built.bodies[0].topology.body.name.as_deref(),
+        Some(name.as_str())
+    );
+    let [(id, Unbuilt::ResourceBounded(limit), feature)] = built.unbuilt.as_slice() else {
+        panic!("one named nest gave up: {:?}", built.unbuilt);
+    };
+    assert!(id.as_str().ends_with("h0001"));
+    assert_eq!(feature, "split");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    let notes = super::super::history_states::losses(&super::super::history_states::Projection {
+        schema_assumed: 0,
+        records: records.to_vec(),
+        unread: None,
+        bodies: built,
+    });
+    assert!(notes
+        .iter()
+        .any(|note| note.message.contains("split history body")
+            && note.message.contains("RetainedBytes")));
+}
+
+#[test]
 fn a_body_key_that_the_older_state_lacks_gives_no_nest() {
     let built = build_from(
         RefWidth::Eight,
@@ -387,6 +478,7 @@ fn a_body_key_that_the_older_state_lacks_gives_no_nest() {
     assert!(built.bodies.is_empty());
     assert_eq!(built.outcome.requested, 1);
     assert_eq!(built.outcome.undecoded, 1);
+    assert!(built.unbuilt.is_empty(), "{:?}", built.unbuilt);
 }
 
 #[test]
@@ -399,6 +491,10 @@ fn a_state_with_a_reference_to_no_slot_gives_no_nest() {
     );
     assert!(built.bodies.is_empty());
     assert_eq!(built.outcome.undecoded, 1);
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0000", Unbuilt::Undecoded)]
+    );
 }
 
 #[test]
@@ -412,6 +508,10 @@ fn a_decoded_body_of_an_unprojected_feature_gives_no_nest() {
             unlinked: 1,
             ..Outcome::default()
         }
+    );
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0000", Unbuilt::Unlinked)]
     );
 }
 
@@ -432,6 +532,10 @@ fn a_base_reads_the_state_after_it() {
         Some("inventor:model:feature#base")
     );
     assert!(body.consumed_by.is_none());
+    let state = &built.states[&body.state.ordinal];
+    let slot = &state.body_slots[&body.id];
+    assert_eq!(state.geometry.bodies[0].id, *slot);
+    assert_eq!(original_body_slot(body).as_ref(), Some(slot));
 }
 
 #[test]
@@ -495,4 +599,55 @@ fn the_losses_name_each_count() {
         "{}",
         notes[1].message
     );
+}
+
+#[test]
+fn each_given_up_body_is_charged_by_its_nest() {
+    let nest = |index| nest_id(index).expect("nest id");
+    let notes = super::super::history_states::losses(&super::super::history_states::Projection {
+        schema_assumed: 0,
+        records: Vec::new(),
+        unread: None,
+        bodies: Built {
+            unbuilt: vec![
+                (nest(1), Unbuilt::NotClosed(Open::Edge), "split".to_string()),
+                (nest(9), Unbuilt::Bounded, "base".to_string()),
+            ],
+            outcome: Outcome {
+                requested: 10,
+                open: [0, 0, 1],
+                bounded: 1,
+                ..Outcome::default()
+            },
+            ..Built::default()
+        },
+    });
+    let charges = notes
+        .iter()
+        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+        .map(|note| note.message.as_str())
+        .collect::<Vec<_>>();
+    let [closed, bounded] = charges.as_slice() else {
+        panic!("one charge per given-up body: {notes:#?}");
+    };
+    for (message, nest, code) in [
+        (
+            closed,
+            "h0001",
+            crate::loss::InventorLossCode::FeatureHistoryBodyNotClosed,
+        ),
+        (
+            bounded,
+            "h0009",
+            crate::loss::InventorLossCode::FeatureHistoryBodyBounded,
+        ),
+    ] {
+        assert!(
+            message.starts_with(&format!(
+                "record inventor:history-body:nest#{nest} given up: {}: ",
+                code.kind()
+            )),
+            "{message}"
+        );
+    }
 }

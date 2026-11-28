@@ -24,6 +24,19 @@
               "kind": "end"
             }
           }
+        },
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Dimensions"
+              }
+            ]
+          }
         }
       ],
       "evaluations": [
@@ -1354,6 +1367,17 @@
       "features": [
         {
           "definition": {
+            "operation": {
+              "kind": "spreadsheet",
+              "value": "fcstd:design:spreadsheet#Dimensions"
+            }
+          },
+          "id": "fcstd:design:feature#Dimensions",
+          "name": "Dimensions",
+          "native_ref": "fcstd:native:object#Dimensions"
+        },
+        {
+          "definition": {
             "fuzzy_tolerance": {
               "kind": "automatic"
             },
@@ -1397,6 +1421,71 @@
               "value": {
                 "measures": [],
                 "refs": [],
+                "text": "\"width\""
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Dimensions:cell:A1",
+          "kind": {
+            "kind": "text"
+          },
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Dimensions:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Dimensions"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "width"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "30[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Dimensions:cell:B1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "w",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Dimensions:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Dimensions"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 30.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
                 "text": "10[mm]"
               }
             }
@@ -1418,6 +1507,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1454,6 +1544,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1465,17 +1556,18 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
+                "measures": [],
+                "refs": [
                   {
-                    "kind": "text",
-                    "value": "Dimensions.w"
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Dimensions:cell:B1"
+                    }
                   }
-                ]
+                ],
+                "text": "$0"
               }
             }
           },
@@ -1496,6 +1588,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1532,6 +1625,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1565,7 +1659,8 @@
           "definition": "fcstd:model:product_definition#document:root",
           "occurrences": {},
           "roots": [
-            "fcstd:design:container#Body"
+            "fcstd:design:container#Body",
+            "fcstd:design:container#document:group"
           ],
           "unproduced": []
         }
@@ -1577,7 +1672,25 @@
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": []
+      "spreadsheets": [
+        {
+          "cells": [
+            {
+              "address": "A1",
+              "parameter": "fcstd:design:parameter#Dimensions:cell:A1"
+            },
+            {
+              "address": "B1",
+              "parameter": "fcstd:design:parameter#Dimensions:cell:B1"
+            }
+          ],
+          "column_widths": [],
+          "id": "fcstd:design:spreadsheet#Dimensions",
+          "merged_ranges": [],
+          "native_ref": "fcstd:native:object#Dimensions",
+          "row_heights": []
+        }
+      ]
     },
     "fragment": false,
     "geometry": {

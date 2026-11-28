@@ -186,7 +186,7 @@ fn placement_metadata_boundaries_ignore_header_bytes_in_a_rigid_transform() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let bytes = super::legacy_occurrence_record(role, 10, Some(matrix));
+    let bytes = crate::test_support::legacy_occurrence_record(role, 10, Some(matrix));
     let meta = single_type_metadata(
         super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
         2,
@@ -205,7 +205,7 @@ fn placement_metadata_boundaries_ignore_header_bytes_in_a_rigid_transform() {
 #[test]
 fn nested_headers_do_not_create_additional_placement_records() {
     let role = "cccccccc-dddd-eeee-ffff-000000000000";
-    let mut bytes = super::legacy_occurrence_record(role, 10, None);
+    let mut bytes = crate::test_support::legacy_occurrence_record(role, 10, None);
     let boundary = bytes.len();
     bytes.extend_from_within(..);
     let mut meta = single_type_metadata(
@@ -234,8 +234,8 @@ fn nested_headers_do_not_create_additional_placement_records() {
 #[test]
 fn inconsistent_legacy_target_fields_retain_the_role_as_a_placement_failure() {
     let role = "cccccccc-dddd-eeee-ffff-000000000000";
-    let original = super::legacy_occurrence_record(role, 10, None);
-    let target = super::legacy_occurrence_reference(3, 0x0102_0304_0506_0708);
+    let original = crate::test_support::legacy_occurrence_record(role, 10, None);
+    let target = crate::test_support::legacy_occurrence_reference(3, 0x0102_0304_0506_0708);
     let positions: Vec<_> = original
         .windows(target.len())
         .enumerate()
@@ -353,8 +353,11 @@ fn assembly_root_without_brep_is_not_a_blocking_loss() {
         .notes
         .iter()
         .any(|note| note.contains("comp.f3d") && note.contains(XREF_ROLE)));
-    let native =
-        crate::native::F3dNative::load(decoded.ir().native.namespace("f3d").unwrap()).unwrap();
+    let native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        decoded.ir().native.namespace("f3d").unwrap(),
+    )
+    .unwrap();
     assert_eq!(native.xref_designs.len(), 2);
     assert_eq!(native.xref_references.len(), 1);
     assert_eq!(native.xref_references[0].relative_path.as_str(), "comp.f3d");

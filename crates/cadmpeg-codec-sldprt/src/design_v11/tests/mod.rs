@@ -70,7 +70,7 @@ fn feature_named<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::design::featu
         .unwrap()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
+pub(crate) fn assert_no_design_findings(ir: &CadIr) {
     let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     let design = report
         .findings
@@ -291,6 +291,165 @@ fn configurations_mark_the_active_one() {
             && material.material == MaterialRef::Named(cadmpeg_core::nonblank_literal!("Aluminum"))
     ));
     assert_no_design_findings(&ir);
+}
+
+/// A configuration takes its place in the history's configuration list.
+#[test]
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
+}
+
+/// A configuration is restated without its custom properties, and one other
+/// than the active one without the feature suppressions that differ from the
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
+#[test]
+fn a_configuration_is_restated_without_what_its_record_does_not_state() {
+    use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Model,
+    };
+    use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let id =
+        |key: &str| ConfigurationId::mint(format!("sldprt:model:configuration#{key}")).unwrap();
+    let boss = FeatureId::mint("sldprt:model:feature#boss").unwrap();
+    let state = |evaluation| ConfigurationFeatureState {
+        evaluation,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        definition: FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    };
+    let model = |key: &str, ordinal, evaluation, properties: &[(&str, &str)]| Model {
+        id: id(key),
+        ordinal,
+        active: ordinal == 0,
+        source_index: Some(ordinal),
+        name: Some(key.to_owned()),
+        material: None,
+        properties: properties
+            .iter()
+            .map(|(name, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new(*name).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(boss.clone(), state(evaluation))]),
+        native_ref: None,
+    };
+    let design = |key: &str| DesignConfiguration {
+        id: id(key),
+        scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
+        name: key.to_owned(),
+        position: None,
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: Some(key.to_owned()),
+    };
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        model(
+            "default",
+            0,
+            ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            &[],
+        ),
+        model(
+            "short",
+            1,
+            ConfigurationEvaluation::Suppressed {},
+            &[("PartNo", "2")],
+        ),
+    ];
+    let configurations = super::configurations::Configurations {
+        records: vec![design("default"), design("short")],
+        active: Some(id("default")),
+    };
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    let active = Restater::Record(id("default").as_str().to_owned());
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::from(["ordinal"]))
+    );
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    let by = Restater::Record(id("short").as_str().to_owned());
+    assert_eq!(
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec!["feature_states", "ordinal", "properties"])
+    );
+
+    let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
+    ir.model.configurations[1].properties.clear();
+    ir.model.configurations[1].feature_states = BTreeMap::from([(
+        boss.clone(),
+        ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other])
+                .unwrap(),
+            definition: FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane,
+            }),
+        },
+    )]);
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        boss.clone(),
+        state(ConfigurationEvaluation::Active {
+            outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        }),
+    )]);
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    assert_eq!(
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec![
+            "feature_states.definition",
+            "feature_states.dependencies",
+            "ordinal"
+        ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
+    );
 }
 
 #[test]
@@ -631,7 +790,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -665,8 +824,9 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -864,12 +1024,15 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
     let [sketch] = sketches.records.as_slice() else {
@@ -1003,6 +1166,54 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     assert_no_design_findings(&ir);
 }
 
+#[test]
+fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
+    use cadmpeg_ir::design::ops::sketch::{DefiningRole, EntityRole};
+
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    entities.as_array_mut().unwrap().push(
+        cadmpeg_core::json!({"id": "sldprt:model:sketch-entity#test:center",
+            "sketch": "sldprt:model:sketch#test", "construction": false,
+            "native_ref": "native:center", "endpoint_refs": [],
+            "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+    );
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let definition = ir.design.scopes[0].definition.clone();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
+            angular: ir.tolerances.angular.get(),
+        },
+    )
+    .expect("the session admits the evaluation");
+    let center = typed
+        .sketches
+        .entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(":center"))
+        .unwrap();
+    assert_eq!(
+        center.roles,
+        vec![EntityRole {
+            of: cadmpeg_ir::sketches::SketchEntityId::mint("sldprt:model:sketch-entity#test:hole")
+                .unwrap(),
+            role: DefiningRole::Center,
+        }]
+    );
+}
+
 /// The timeline of `ir`'s design, with its sketches and extrudes typed, and
 /// the parameter entries of its features.
 fn typed_timeline<'a>(
@@ -1022,12 +1233,15 @@ fn typed_timeline<'a>(
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, entries, typed)
 }
 
@@ -1489,7 +1703,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1505,12 +1719,15 @@ fn members_follow_the_features_they_depend_on() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
     assert!(
@@ -1521,10 +1738,34 @@ fn members_follow_the_features_they_depend_on() {
 }
 
 #[test]
+fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::test_support::native::sldprt_native(&ir);
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
+    let id = |name| {
+        timeline.features[member_position(&timeline, name)]
+            .id
+            .clone()
+    };
+    let active = [id("Boss"), id("Fillet1")];
+    let alternate = [id("Boss"), id("Odd"), id("Fillet1")];
+    let reversed = [id("Fillet1"), id("Odd")];
+    super::order::regeneration_order(
+        &mut timeline,
+        &ir.model,
+        [&active[..], &alternate[..], &reversed[..]],
+    );
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Odd"));
+    assert!(member_position(&timeline, "Odd") < member_position(&timeline, "Fillet1"));
+}
+
+#[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -1539,7 +1780,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model);
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1553,11 +1794,18 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
             last: 2,
         }]
     );
+    let group = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Group"))
+        .unwrap();
+    assert_eq!(timeline.folder_records, std::slice::from_ref(&group.id));
 
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty()).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()
@@ -1568,6 +1816,54 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
         ["Origin", "Boss", "Fillet1", "Odd", "Sketch1"]
     );
     assert!(timeline.folders.is_empty());
+}
+
+const NESTED_FOLDERS: &[u8] = br#"<Keywords Name="Bracket">
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Feature Name="Group" Type="FtrFolder" id="110">
+                <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                    <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+                </Extrusion>
+                <Feature Name="Inner" Type="FtrFolder" id="120">
+                    <Fillet Name="Fillet1" id="9"/>
+                </Feature>
+            </Feature>
+        </Keywords>"#;
+
+/// A folder's run holds the sketch its extrude absorbs and the members of
+/// the folder nested in it, so the `Folder` states the folder node's
+/// children: the timeline restates both folder nodes without `definition`.
+#[test]
+fn a_folder_states_its_nested_folder_and_absorbed_sketch_as_children() {
+    let ir = part_with_history(
+        NESTED_FOLDERS,
+        &[
+            ("moOriginProfileFeature_c", "Origin", 106),
+            ("moFtrFolder_c", "Group", 110),
+            ("moFtrFolder_c", "Inner", 120),
+        ],
+    );
+    let [Container::Ordered { id, folders, .. }] = ir.design.containers.as_slice() else {
+        panic!("one timeline: {:#?}", ir.design.containers);
+    };
+    assert_eq!(folders.len(), 2, "{folders:?}");
+    let timeline =
+        cadmpeg_ir::design::projection::restated::Restater::Record(id.as_str().to_owned());
+    for name in ["Group", "Inner"] {
+        let folder = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let cut = ir
+            .model
+            .restated()
+            .get(folder.id.as_str())
+            .and_then(|restating| restating.cut_by(|by| by == &timeline))
+            .unwrap_or_else(|| panic!("the timeline restates {name}"));
+        assert!(!cut.contains("definition"), "{name}: {cut:?}");
+    }
 }
 
 #[test]
@@ -1658,9 +1954,11 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 mod configuration_states;
 mod datum;
 mod dimension_curves;
-mod outside_history;
+pub(super) mod outside_history;
 mod parameters;
 mod pattern;
+pub(crate) mod restated;
 mod revolve;
 mod rollback;
-mod state_zero;
+mod sketch_kinds;
+pub(crate) mod state_zero;

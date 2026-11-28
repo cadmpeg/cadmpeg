@@ -646,8 +646,8 @@ name = "chunk10_continuity"
 offset = 90
 type = "bytes[9]"
 source = "derived"
-anchor = "+90 0x07 'tangent'|'unknown' continuity text"
-note = "Width derived from the `0x07` tag encoding (tag byte, one length byte, N text bytes) and the two stated seven-character literals."
+anchor = "+90 0x07 continuity token text"
+note = "Width derived from the `0x07` tag encoding (tag byte, one length byte, N text bytes) for the seven-character token the stated record size holds."
 
 [[record.gap]]
 offset = 0

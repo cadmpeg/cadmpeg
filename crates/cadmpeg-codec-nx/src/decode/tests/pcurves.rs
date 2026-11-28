@@ -39,7 +39,10 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_test_support::edit;
 use std::collections::{BTreeMap, BTreeSet};
 
-const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
+/// The closed intersection's plane side is transferred by bisection until each
+/// chord lies within this fit; at 1e-4 a circle of radius √3 needs 63 samples
+/// per coarse segment where 1e-8 needs 4,095.
+const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-4;
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
 const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;

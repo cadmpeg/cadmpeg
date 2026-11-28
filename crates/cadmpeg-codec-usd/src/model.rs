@@ -42,18 +42,19 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
-use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, GivenUpRecord};
+use cadmpeg_ir::up_axis::UpAxis;
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
 use crate::layers::Resource;
 use crate::loss::UsdLossCode;
-use crate::schema::curves::Curves;
+use crate::schema::curves::Batch;
 use crate::schema::mesh::{MeshData, Normals};
 use crate::schema::patch::PatchData;
 use crate::schema::shading::{Bound, SurfaceShader};
 use crate::schema::texture::SlotKind;
-use crate::schema::xform::{compose, invert, local_transform, Affine, IDENTITY};
+use crate::schema::xform::{compose, invert, local_transform, Affine, XformError, IDENTITY};
 use crate::schema::Issues;
 use crate::stage::{Prim, Stage};
 use crate::text::syntax::{Layer, MetaValue, Value};
@@ -85,7 +86,7 @@ pub(crate) struct Metrics {
     pub(crate) meters_per_unit: f64,
     /// Kilograms per scene mass unit (spec §16.1).
     pub(crate) kilograms_per_unit: f64,
-    pub(crate) up_axis: String,
+    pub(crate) up_axis: UpAxis,
     pub(crate) default_prim: Option<String>,
     /// `metersPerUnit` is authored and is not a positive finite number.
     pub(crate) malformed_units: bool,
@@ -130,9 +131,10 @@ pub(crate) fn metrics(layer: &Layer) -> Metrics {
         _ => None,
     };
     let (up_axis, malformed_up_axis) = match layer_value(layer, "upAxis") {
-        None => ("Y".to_owned(), false),
-        Some(Value::String(axis)) if axis == "Y" || axis == "Z" => (axis.clone(), false),
-        Some(_) => ("Y".to_owned(), true),
+        None => (UpAxis::Y, false),
+        Some(Value::String(axis)) if axis == "Y" => (UpAxis::Y, false),
+        Some(Value::String(axis)) if axis == "Z" => (UpAxis::Z, false),
+        Some(_) => (UpAxis::Y, true),
     };
     Metrics {
         scale: meters_per_unit * MILLIMETRES_PER_METRE,
@@ -189,24 +191,24 @@ struct Tallies {
     /// Properties of group prims that no reader carries, by name.
     unread_properties: BTreeMap<String, usize>,
     intrinsic: BTreeMap<String, usize>,
-    /// `BrepArray` prims whose arrays do not describe B-reps, with the reason.
-    rejected_breps: Vec<String>,
     /// Wire edges and point shells of `BrepArray` prims, by prim.
     brep_elements: BTreeMap<String, usize>,
     /// Geometry subsets of `BrepArray` prims, by prim.
     brep_subsets: BTreeMap<String, usize>,
     /// Faces of `BrepArray` prims stated partial, with the reason.
     unstated_boundaries: Vec<String>,
+    /// Transform-op stacks that break the op rules, with the reason.
     xform: Vec<String>,
+    /// Transform-op stacks with no affine map that the decoder transfers,
+    /// with the reason.
+    xform_unread: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
-    rejected_meshes: Vec<String>,
     dropped_subsets: usize,
     dropped_normals: usize,
     dropped_primvars: BTreeSet<String>,
     rejected_curves: usize,
-    rejected_patches: Vec<String>,
-    rejected_joints: Vec<String>,
+    unread_curves: usize,
     joint_properties: Vec<String>,
     /// `PhysX` properties that were not carried, by attribute path.
     solver_properties: Vec<String>,
@@ -228,11 +230,13 @@ struct Tallies {
     metadata: BTreeMap<String, usize>,
     api_schemas: BTreeMap<String, usize>,
     /// Records given up whole, each named by the id of the record that its
-    /// prim would define, with the code of their aggregate loss as the error.
+    /// prim would define.
     given_up: Vec<GivenUpRecord>,
     /// The `record.dropped-with` notes of the records dropped only because
     /// they need a given-up record.
     dependents: Vec<LossNote>,
+    /// The attribute paths of malformed values that a give-up names.
+    charged: BTreeSet<String>,
 }
 
 /// Layer metadata keys the model reads (spec §4.3).
@@ -520,9 +524,11 @@ impl Builder<'_, '_, '_, '_> {
         let local = match local_transform(prim, &mut self.issues) {
             Ok(local) => local,
             Err(error) => {
-                self.tallies
-                    .xform
-                    .push(format!("{}: {}", prim.path, error.0));
+                let (tally, reason) = match error {
+                    XformError::Malformed(reason) => (&mut self.tallies.xform, reason),
+                    XformError::Unread(reason) => (&mut self.tallies.xform_unread, reason),
+                };
+                tally.push(format!("{}: {reason}", prim.path));
                 crate::schema::xform::LocalTransform {
                     matrix: IDENTITY,
                     resets_stack: false,
@@ -534,7 +540,7 @@ impl Builder<'_, '_, '_, '_> {
                 Some(inverse) => compose(&inverse, &local.matrix),
                 None => {
                     self.tallies
-                        .xform
+                        .xform_unread
                         .push(format!("{}: the parent transform is singular", prim.path));
                     local.matrix
                 }
@@ -545,7 +551,7 @@ impl Builder<'_, '_, '_, '_> {
         let world = compose(parent_world, &placement);
         let transform = self.transform(&placement).unwrap_or_else(|| {
             self.tallies
-                .xform
+                .xform_unread
                 .push(format!("{}: the transform is not finite", prim.path));
             Transform::identity()
         });
@@ -664,6 +670,28 @@ impl Builder<'_, '_, '_, '_> {
         Transform::affine(rows)
     }
 
+    /// The text of a give-up whose record the reads begun at `since` were to
+    /// build: `error`, then the malformed values those reads recorded. The
+    /// give-up is the one report entry of each such value.
+    fn charge_malformed(&mut self, since: usize, error: impl std::fmt::Display) -> String {
+        let malformed = self.issues.malformed.get(since..).unwrap_or_default();
+        if malformed.is_empty() {
+            return error.to_string();
+        }
+        let text = format!(
+            "{error}; these values do not have their declared type: {}",
+            joined(
+                malformed
+                    .iter()
+                    .map(|(path, reason)| format!("{path} ({reason})"))
+            )
+        );
+        self.tallies
+            .charged
+            .extend(malformed.iter().map(|(path, _)| path.clone()));
+        text
+    }
+
     fn point(&self, [x, y, z]: [f64; 3]) -> Option<FinitePoint3> {
         FinitePoint3::new(Point3::new(x * self.scale, y * self.scale, z * self.scale))
     }
@@ -760,12 +788,14 @@ impl Builder<'_, '_, '_, '_> {
         Ok(match role {
             Role::Mesh => self.mesh(prim, key)?,
             Role::BasisCurves => {
+                let since = self.issues.malformed.len();
                 let curves = crate::schema::curves::basis_curves(prim, &mut self.issues);
-                self.curves(prim, key, curves)?
+                self.curves(prim, key, curves, since)?
             }
             Role::NurbsCurves => {
+                let since = self.issues.malformed.len();
                 let curves = crate::schema::curves::nurbs_curves(prim, &mut self.issues);
-                self.curves(prim, key, curves)?
+                self.curves(prim, key, curves, since)?
             }
             Role::NurbsPatch => self.patch(prim, key)?,
             Role::Intrinsic => match crate::schema::intrinsic::records(prim, &mut self.issues) {
@@ -859,12 +889,19 @@ impl Builder<'_, '_, '_, '_> {
         prim: &Prim<'_>,
         key: &str,
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
-        let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
-            if prim.external.is_empty() {
-                self.tallies.rejected_meshes.push(prim.path.clone());
-                self.give_up_mesh(prim, key, UsdLossCode::MeshRejected.kind(), &[]);
+        let since = self.issues.malformed.len();
+        let mesh = match crate::schema::mesh::read(self.stage, prim, &mut self.issues) {
+            Ok(mesh) => mesh,
+            Err(cause) => {
+                if prim.external.is_empty() {
+                    let error = self.charge_malformed(
+                        since,
+                        "the mesh states no points, or no face of three points",
+                    );
+                    self.give_up_mesh(prim, key, cause, error, &[]);
+                }
+                return Ok(None);
             }
-            return Ok(None);
         };
         let coordinate_values: usize = mesh
             .texture_coordinates
@@ -895,15 +932,7 @@ impl Builder<'_, '_, '_, '_> {
         let tessellation = match self.tessellation(key, &mesh) {
             Ok(tessellation) => tessellation,
             Err(reason) => {
-                self.tallies
-                    .rejected_meshes
-                    .push(format!("{}: {reason}", prim.path));
-                self.give_up_mesh(
-                    prim,
-                    key,
-                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
-                    &mesh.subsets,
-                );
+                self.give_up_mesh(prim, key, Cause::Undecoded, reason, &mesh.subsets);
                 return Ok(None);
             }
         };
@@ -918,7 +947,7 @@ impl Builder<'_, '_, '_, '_> {
                 visible: None,
             }));
         self.meshed.insert(key.to_owned());
-        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
+        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key));
         self.material(prim, key, target)?;
         for subset in &mesh.subsets {
             self.subset_material(&subset.path, key)?;
@@ -929,19 +958,20 @@ impl Builder<'_, '_, '_, '_> {
     }
 
     /// Gives up the tessellation that mesh `prim` would define for `key`,
-    /// for `error`, and drops with it each appearance binding that would
-    /// target it.
+    /// for `cause` with the text `error`, and drops with it each appearance
+    /// binding that would target it.
     fn give_up_mesh(
         &mut self,
         prim: &Prim<'_>,
         key: &str,
+        cause: Cause,
         error: impl std::fmt::Display,
         subsets: &[crate::schema::mesh::Subset],
     ) {
         let tessellation = crate::ids::tessellation(key);
         self.tallies
             .given_up
-            .push(GivenUpRecord::new(&tessellation, error));
+            .push(GivenUpRecord::new(&tessellation, cause, error));
         // The readers run again only to learn which bindings exist; their
         // issues were tallied on the first read.
         let mut issues = Issues::default();
@@ -1141,7 +1171,7 @@ impl Builder<'_, '_, '_, '_> {
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::subset_binding(key, path),
             target: AppearanceTarget::TriangleGroup {
-                tessellation: crate::ids::tessellation(key).to_string(),
+                tessellation: crate::ids::tessellation(key),
                 group: path.to_owned(),
             }
             .into(),
@@ -1251,19 +1281,30 @@ impl Builder<'_, '_, '_, '_> {
         &mut self,
         prim: &Prim<'_>,
         key: &str,
-        curves: Option<Curves>,
+        curves: Result<Batch, Cause>,
+        since: usize,
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
-        let Some(curves) = curves else {
-            self.tallies.rejected_curves += 1;
-            self.tallies.given_up.push(GivenUpRecord::new(
-                crate::ids::body(key),
-                UsdLossCode::CurvesRejected.kind(),
-            ));
-            return Ok(None);
+        let curves = match curves {
+            Ok(curves) => curves,
+            Err(cause) => {
+                let error = self
+                    .charge_malformed(since, "the curve batch states no points or vertex counts");
+                self.tallies
+                    .given_up
+                    .push(GivenUpRecord::new(crate::ids::body(key), cause, error));
+                return Ok(None);
+            }
         };
-        self.tallies.rejected_curves += curves.rejected;
+        let (mut broken, mut unread) = (curves.broken, curves.unread);
         let mut edges = Vec::new();
         for (ordinal, curve) in curves.curves.iter().enumerate() {
+            let mut reject = || {
+                if curve.breaks_rules() {
+                    broken += 1;
+                } else {
+                    unread += 1;
+                }
+            };
             let points: Option<Vec<Point3>> = curve
                 .points
                 .iter()
@@ -1277,14 +1318,14 @@ impl Builder<'_, '_, '_, '_> {
                     .map_err(|_| "the curve is not a valid NURBS curve")
             });
             let Ok(nurbs) = nurbs else {
-                self.tallies.rejected_curves += 1;
+                reject();
                 continue;
             };
             let Some(domain) = curve.range.or_else(|| {
                 cadmpeg_ir::eval::nurbs_curve_parameter_domain(&nurbs)
                     .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
             }) else {
-                self.tallies.rejected_curves += 1;
+                reject();
                 continue;
             };
             let ends = [
@@ -1296,14 +1337,14 @@ impl Builder<'_, '_, '_, '_> {
                 )?,
             ];
             let [Some(start), Some(end)] = ends else {
-                self.tallies.rejected_curves += 1;
+                reject();
                 continue;
             };
             let closed = start == end;
             let curve_id = crate::ids::curve(key, ordinal);
             let carrier = EdgeCarrier::new(Some(curve_id.clone()), Some(domain));
             let Ok(carrier) = carrier else {
-                self.tallies.rejected_curves += 1;
+                reject();
                 continue;
             };
             let parameter_range = curve
@@ -1355,14 +1396,21 @@ impl Builder<'_, '_, '_, '_> {
             self.admit("usd_curve")?;
         }
         if edges.is_empty() {
-            if !curves.curves.is_empty() || curves.rejected > 0 {
-                self.tallies.given_up.push(GivenUpRecord::new(
-                    crate::ids::body(key),
-                    UsdLossCode::CurvesRejected.kind(),
-                ));
+            if broken + unread > 0 {
+                let cause = if broken > 0 {
+                    Cause::Unreadable
+                } else {
+                    Cause::Undecoded
+                };
+                let error = self.charge_malformed(since, "no curve of the batch transfers");
+                self.tallies
+                    .given_up
+                    .push(GivenUpRecord::new(crate::ids::body(key), cause, error));
             }
             return Ok(None);
         }
+        self.tallies.rejected_curves += broken;
+        self.tallies.unread_curves += unread;
         let region = crate::ids::region(key);
         let shell = Shell::with_members(crate::ids::shell(key), region.clone(), edges, Vec::new());
         self.ir.geometry.shells.push(shell);
@@ -1382,20 +1430,35 @@ impl Builder<'_, '_, '_, '_> {
         prim: &Prim<'_>,
         key: &str,
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
-        let Some(patch) = crate::schema::patch::read(prim, &mut self.issues) else {
-            self.tallies.rejected_patches.push(prim.path.clone());
-            self.tallies.given_up.push(GivenUpRecord::new(
-                crate::ids::body(key),
-                UsdLossCode::NurbsPatchRejected.kind(),
-            ));
-            return Ok(None);
+        let since = self.issues.malformed.len();
+        let patch = match crate::schema::patch::read(prim, &mut self.issues) {
+            Ok(patch) => patch,
+            Err(cause) => {
+                let error = self.charge_malformed(
+                    since,
+                    "the NURBS patch states no counts, orders, knots, and points that agree",
+                );
+                self.tallies
+                    .given_up
+                    .push(GivenUpRecord::new(crate::ids::body(key), cause, error));
+                return Ok(None);
+            }
         };
         let Some(surface) = self.patch_surface(&patch) else {
-            self.tallies.rejected_patches.push(prim.path.clone());
-            self.tallies.given_up.push(GivenUpRecord::new(
-                crate::ids::body(key),
-                UsdLossCode::NurbsPatchRejected.kind(),
-            ));
+            let decreasing = |knots: &[f64]| knots.windows(2).any(|pair| pair[1] < pair[0]);
+            let cause = if decreasing(&patch.u_knots) || decreasing(&patch.v_knots) {
+                Cause::Unreadable
+            } else {
+                Cause::Undecoded
+            };
+            let error = self.charge_malformed(
+                since,
+                "the NURBS patch has a point that is not finite, or knots or weights that no \
+                 NURBS surface admits",
+            );
+            self.tallies
+                .given_up
+                .push(GivenUpRecord::new(crate::ids::body(key), cause, error));
             return Ok(None);
         };
         let reason = match crate::brep::patch::bounded(&patch) {
@@ -1699,9 +1762,18 @@ fn composition_losses(stage: &Stage<'_>) -> Vec<LossNote> {
     }
     if !tally.missing_targets.is_empty() {
         losses.push(UsdLossCode::CompositionTargetMissing.note(format!(
-            "internal arcs name {} paths that no prim specification holds: {}",
+            "references and payloads name {} paths that no prim specification of their \
+             layer stack holds: {}",
             tally.missing_targets.len(),
             joined(tally.missing_targets.iter().cloned())
+        )));
+    }
+    if !tally.unresolved_targets.is_empty() {
+        losses.push(UsdLossCode::CompositionTargetUnresolved.note(format!(
+            "arcs name {} paths that the read layer specifications do not hold, where an \
+             unread sublayer, variant, or ancestor arc can hold them: {}",
+            tally.unresolved_targets.len(),
+            joined(tally.unresolved_targets.iter().cloned())
         )));
     }
     if tally.unselected_variants > 0 {
@@ -1810,16 +1882,6 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         ),
     );
     push(
-        UsdLossCode::BrepRejected,
-        !tallies.rejected_breps.is_empty(),
-        format!(
-            "{} BrepArray prims or B-reps do not describe a neutral B-rep and were not \
-             transferred: {}",
-            tallies.rejected_breps.len(),
-            joined(tallies.rejected_breps.iter().cloned())
-        ),
-    );
-    push(
         UsdLossCode::BrepSubsetNotTransferred,
         !tallies.brep_subsets.is_empty(),
         format!(
@@ -1849,9 +1911,19 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         UsdLossCode::XformMalformed,
         !tallies.xform.is_empty(),
         format!(
-            "{} transform-op stacks do not resolve; each prim was placed at its parent: {}",
+            "{} transform-op stacks break the op rules; each prim was placed at its parent: {}",
             tallies.xform.len(),
             joined(tallies.xform.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::XformNotTransferred,
+        !tallies.xform_unread.is_empty(),
+        format!(
+            "{} transform-op stacks have no affine map that the decoder transfers; each prim \
+             was placed at its parent: {}",
+            tallies.xform_unread.len(),
+            joined(tallies.xform_unread.iter().cloned())
         ),
     );
     push(
@@ -1868,15 +1940,6 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         format!(
             "{} mesh faces below three vertices or indexing no point were not transferred",
             tallies.rejected_faces
-        ),
-    );
-    push(
-        UsdLossCode::MeshRejected,
-        !tallies.rejected_meshes.is_empty(),
-        format!(
-            "{} meshes were not transferred: {}",
-            tallies.rejected_meshes.len(),
-            joined(tallies.rejected_meshes.iter().cloned())
         ),
     );
     push(
@@ -1908,27 +1971,17 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         UsdLossCode::CurvesRejected,
         tallies.rejected_curves > 0,
         format!(
-            "{} curves do not satisfy their topology and were not transferred",
+            "{} curves break the curve rules and were not transferred",
             tallies.rejected_curves
         ),
     );
     push(
-        UsdLossCode::NurbsPatchRejected,
-        !tallies.rejected_patches.is_empty(),
+        UsdLossCode::CurvesNotTransferred,
+        tallies.unread_curves > 0,
         format!(
-            "{} NURBS patches do not satisfy their counts and were not transferred: {}",
-            tallies.rejected_patches.len(),
-            joined(tallies.rejected_patches.iter().cloned())
-        ),
-    );
-    push(
-        UsdLossCode::JointRejected,
-        !tallies.rejected_joints.is_empty(),
-        format!(
-            "{} joints name no body, or a body that is not a transferred prim, or have a \
-             malformed frame, and were not transferred: {}",
-            tallies.rejected_joints.len(),
-            joined(tallies.rejected_joints.iter().cloned())
+            "{} curves have a form with no NURBS reading in the decoder and were not \
+             transferred",
+            tallies.unread_curves
         ),
     );
     push(
@@ -2024,15 +2077,19 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             joined(tallies.unlocated_textures.iter().cloned())
         ),
     );
+    let malformed: BTreeSet<&(String, String)> = issues
+        .malformed
+        .iter()
+        .filter(|(path, _)| !tallies.charged.contains(path))
+        .collect();
     push(
         UsdLossCode::AttributeValueMalformed,
-        !issues.malformed.is_empty(),
+        !malformed.is_empty(),
         format!(
             "{} attribute values do not have their declared type: {}",
-            issues.malformed.len(),
+            malformed.len(),
             joined(
-                issues
-                    .malformed
+                malformed
                     .iter()
                     .map(|(path, reason)| format!("{path} ({reason})"))
             )

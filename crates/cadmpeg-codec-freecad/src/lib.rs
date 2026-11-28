@@ -261,7 +261,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    match attachment::transfer(&objects, &properties) {
+    match attachment::transfer(&objects, &properties, &mut Vec::new()) {
         Ok(expected) if attachments != expected => findings.push(finding(
             Check::NativeLinks,
             "FCStd attachment graph does not match the application property graph",
@@ -282,6 +282,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .or_default()
             .push(property);
     }
+    let parent_map = product::ParentMap::new(&product_nodes, &objects, &primitive_properties);
     for feature in &ir.model.features {
         let operation = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::Operation(operation)
@@ -296,7 +297,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         else {
             continue;
         };
-        match design::primitive_placement::resolve(object, &objects, &primitive_properties) {
+        match design::primitive_placement::resolve(object, &parent_map, &primitive_properties) {
             Ok(expected)
                 if expected == *placement
                     && (expected.is_some()
@@ -371,7 +372,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);
     }
-    let cyclic_products = product::product_cycle_nodes(&product_by_object)?;
+    let cyclic_products = product::product_cycle_nodes(&product_by_object);
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
@@ -968,6 +969,7 @@ impl CodecBackend for FcstdCodec {
                 ctx,
                 &mut graph.properties,
                 &scan.data,
+                &scan.unreadable_names,
                 &mut scan.losses,
             )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
@@ -992,9 +994,18 @@ impl CodecBackend for FcstdCodec {
                 &brep::carrier_census(ctx, &shape_payloads)?,
             )?;
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
-            namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
-            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
+            let mut product_layer = product::transfer(
+                ctx,
+                &graph.objects,
+                &graph.properties,
+                &scan.data,
+                &mut transfer_losses,
+            )?;
+            let deferred = std::mem::take(&mut product_layer.deferred);
+            let product_nodes = &product_layer.records;
+            namespace.set_arena(ctx, "product_nodes", product_nodes)?;
+            let joint_records =
+                joint::transfer(ctx, &graph.objects, &graph.properties, &mut transfer_losses)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
@@ -1030,7 +1041,8 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
             )?;
-            let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
+            let attachments =
+                attachment::transfer(&graph.objects, &graph.properties, &mut transfer_losses)?;
             namespace.set_arena(ctx, "attachments", &attachments)?;
             let mut curve_transfer =
                 brep::transfer_text_curves(ctx, &shape_payloads, &graph.properties)?;
@@ -1073,6 +1085,7 @@ impl CodecBackend for FcstdCodec {
                     design::DesignObjects {
                         objects: &graph.objects,
                         extensions: &graph.extensions,
+                        products: product_nodes,
                     },
                     &graph.properties,
                     &shape_payloads,
@@ -1106,7 +1119,7 @@ impl CodecBackend for FcstdCodec {
                 "admit FCStd entities",
             )?;
             let link_occurrences =
-                product::link_occurrence_count(&product_nodes, &graph.objects, &graph.properties)?;
+                product::link_occurrence_count(product_nodes, &graph.objects, &graph.properties)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count())
                     .checked_add(link_occurrences)
@@ -1114,15 +1127,38 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd link occurrences",
             )?;
-            let products = product::transfer_neutral(
+            let products = match product::transfer_neutral(
                 ctx,
-                &product_nodes,
-                &joint_records,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-                &ir.geometry.bodies,
-            )?;
+                &product::Sources {
+                    nodes: &product_layer,
+                    joints: &joint_records,
+                    objects: &graph.objects,
+                    properties: &graph.properties,
+                    payloads: &shape_payloads,
+                    bodies: &ir.geometry.bodies,
+                    tessellations: &ir.model.tessellations,
+                },
+                deferred,
+                &mut transfer_losses,
+            ) {
+                Ok(products) => products,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                // The bodies keep their own placements; the document root
+                // definition places nothing.
+                Err(error) => {
+                    let root = product::document_definition_id()?;
+                    transfer_losses.push(
+                        cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::try_from(root.as_str())
+                                .map_err(CodecError::malformed)?,
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
+                            format_args!("the product structure does not project: {error}"),
+                        )
+                        .loss(),
+                    );
+                    product::Products::default()
+                }
+            };
             product::localize_definition_bodies(
                 &products.definitions,
                 &products.occurrences,
@@ -1135,7 +1171,7 @@ impl CodecBackend for FcstdCodec {
                 &mut ir,
                 &products.parents,
                 &graph.properties,
-                &product_nodes,
+                product_nodes,
                 &mut transfer_losses,
                 &mut admitted_entities,
             )?;
@@ -1174,12 +1210,18 @@ impl CodecBackend for FcstdCodec {
             design::hide_intermediate_bodies(&mut ir, &intermediate);
             if ctx.depth() >= DecodeDepth::Design {
                 design::v11::project(
+                    ctx,
                     &mut ir,
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
+                    &design::v11::Assembly {
+                        nodes: &product_layer,
+                        joints: &joint_records,
+                        topology: &topology_occurrences,
+                    },
                     &mut transfer_losses,
-                );
+                )?;
             }
             design::v11::states::state(
                 ctx,
@@ -1363,16 +1405,18 @@ impl EncoderBackend for FcstdCodec {
     /// Writes the feature tree and patches retained sources, so it plans from
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog =
         Catalog::new(dialect::TARGETS, None).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

@@ -91,15 +91,15 @@ fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
         charge.contains("DIRECTION #1 is invalid or zero"),
         "{charge}"
     );
-    assert!(
-        charge.ends_with("; dropped=[step:data:instance#2]"),
-        "{charge}"
-    );
+    // The vector is a value of no record: it keeps its exact source as an
+    // opaque record, and the charge lists no record for it.
+    assert!(charge.ends_with("; dropped=[]"), "{charge}");
     let stub = charge[head.len()..]
         .split_once(": ")
         .map(|(stub, _)| stub.to_owned())
         .expect("the stub");
     let (_, _, fidelity) = decoded.into_parts();
+    assert!(fidelity.retained_record("step:data:vector#2").is_some());
     // The untyped instance keeps its exact source as an opaque record.
     assert_eq!(
         fidelity
@@ -120,15 +120,17 @@ fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#x 23>);ENDSEC;END-ISO-10303-21;"
     );
+    // The parser keeps the exact source of the dropped anchor as an omitted
+    // record, and the charge names that record.
+    let anchor = source.find("<y z>=#1;").expect("the dropped anchor");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("a permissive decode refuses no anchor name");
+    let dropped = format!("; dropped=[step:file:omitted#{anchor}]");
     assert!(
         decoded.report().losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss
-                    .message
-                    .ends_with("; dropped=[step:anchor:name#<y%20z>]")
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.ends_with(&dropped)
         }),
         "{:?}",
         decoded.report().losses
@@ -283,6 +285,45 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
             && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("1 byte(s) unclassified")
     }));
+}
+
+/// A record that holds literals only metadata admission reads stays a
+/// record. The accounting lexer, under metadata admission, reads each record
+/// token by token to its end, so the accounting walk reads past it.
+#[test]
+fn byte_accounting_reads_past_a_record_with_metadata_only_literals() {
+    let input = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.E999,\"5F\",0.);\n#2=UNKNOWN_ITEM(2);\nENDSEC;END-ISO-10303-21;\n";
+    let (exchange, _) = crate::test_support::with_service_context(input, crate::parse::parse_inner)
+        .expect("parse the exchange");
+    assert!(exchange.records().contains_key(&1));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("context");
+    for record in exchange.records().values() {
+        let mut lexer = crate::lex::Lexer::new(input, &ctx);
+        lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
+        lexer.seek(record.span.start);
+        let mut end = record.span.start;
+        while end < record.span.end {
+            end = lexer
+                .next_token()
+                .expect("the record lexes")
+                .expect("the record holds a token")
+                .span
+                .end;
+        }
+        assert_eq!(end, record.span.end);
+    }
+
+    let counts =
+        byte_accounting(input, &exchange, &HashSet::new(), &[], &ctx).expect("byte classes");
+
+    assert_eq!(counts.unclassified, 0);
+    assert_eq!(
+        counts.structural + counts.typed + counts.opaque,
+        input.len()
+    );
 }
 
 #[test]
@@ -1153,4 +1194,51 @@ fn an_opaque_entity_type_reports_its_type_offset_and_count() {
     let provenance = note.provenance.as_ref().expect("provenance");
     assert_eq!(provenance.tag.as_deref(), Some("UNKNOWN_ITEM"));
     assert_eq!(provenance.offset, u64::try_from(first).expect("offset"));
+}
+
+/// A record that drops with an instance that no give-up names, and that the
+/// decode holds as no record, gives up as its own with `record.undecoded`:
+/// the decode cannot tell why the instance holds no record.
+#[test]
+fn a_record_whose_need_holds_no_record_is_undecoded() {
+    use crate::ids::kind;
+    let input = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    crate::test_support::with_service_context(input, |input, ctx| {
+        let (exchange, _) = crate::parse::parse_inner(input, ctx).expect("parse the exchange");
+        exchange
+            .lost()
+            .drop_record_with(1, crate::ids::data(kind!("point"), 1_u64), 99);
+        let (parts, losses) =
+            super::give_up_instances(input, &exchange, &HashSet::<u64>::new(), &[], ctx)
+                .expect("settle the lost instances");
+        assert!(parts.is_empty());
+        let [loss] = losses.as_slice() else {
+            panic!("one loss names the dropped record: {losses:?}");
+        };
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
+        assert!(loss.message.contains("#99"), "{}", loss.message);
+    });
+}
+
+/// A header string whose escapes encode a control character is valid Part 21.
+/// The reader leaves the control out of the attribute and reports it with a
+/// code that has no strict floor.
+#[test]
+fn a_pinned_decode_admits_header_controls_that_escapes_encode() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('a\\X2\\000A\\X0\\b'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect("an omitted header control pins no strict floor");
+    let losses = &result.report().losses;
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::HeaderControlsOmitted.kind()));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::HeaderMetadataNoncanonical.kind()));
 }

@@ -18,7 +18,7 @@ use crate::wire::records::{
 const SCALAR_LANES: usize = 3;
 const WORD_BYTES: usize = std::mem::size_of::<u64>();
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum ScalarJet {
     Absent,

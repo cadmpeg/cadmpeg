@@ -1015,8 +1015,8 @@ fn writer_replay_of_degraded_decode_output_writes_the_empty_file() {
     let ir = cadmpeg_ir::document::CadIr::from_json(text).expect("fuzzer JSON parses");
     let plan = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(&ir, None)
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     )
     .expect("parsed document plans");
     let mut encoded = Vec::new();
@@ -1040,8 +1040,8 @@ fn writer_replay_of_degraded_decode_output_writes_the_empty_file() {
         );
     let replay = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(&decoded_ir, Some(&source_fidelity))
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     );
     let replay = replay.expect("degraded decode output plans");
     let losses = &replay.report().losses;

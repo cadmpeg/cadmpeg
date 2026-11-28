@@ -3,6 +3,7 @@
 
 mod scan;
 
+mod encode_sets;
 mod extrude_direction;
 mod mesh_bodies;
 mod native_skeleton;
@@ -338,8 +339,8 @@ fn plan(
         cadmpeg_ir::codec::write::EncodeInput::new(
             result.ir(),
             fidelity.then(|| result.source_fidelity()),
-        ),
-        request,
+        )
+        .with_target(request),
     )
 }
 
@@ -414,10 +415,10 @@ fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
     assert!(!read.model.omitted_arenas_held());
 
     let unedited = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &read,
+            Some(result.source_fidelity()),
+        ))
         .expect("an unedited read replays");
     assert!(matches!(
         unedited.report().write_path(),
@@ -430,10 +431,10 @@ fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
     let written = |ir: &cadmpeg_ir::CadIr| {
         let mut bytes = Vec::new();
         SldprtCodec
-            .plan(
-                cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(result.source_fidelity())),
-                cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
-            )
+            .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+                ir,
+                Some(result.source_fidelity()),
+            ))
             .and_then(|plan| plan.write_to(&mut bytes))
             .map(|_| bytes)
             .map_err(|error| error.to_string())
@@ -497,10 +498,7 @@ fn inherit_synthesizes_an_off_catalog_cadir_read_part_at_the_catalog_row() {
     let read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
     assert!(!read.model.omitted_arenas_held());
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&read, None),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(&read, None))
         .expect("the part is synthesized at the catalog row");
     assert_eq!(named_target(&plan), "sldprt:unknown");
     let charged: Vec<_> = plan
@@ -579,10 +577,10 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
 
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &edited,
+            Some(result.source_fidelity()),
+        ))
         .expect("an edited part still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),
@@ -611,6 +609,59 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     assert_eq!(classify(written), claimed);
+}
+
+/// A part holding an empty `__ZLB` stream: its wrapper states a zero
+/// uncompressed size and a zero member size.
+fn versioned_part_with_an_empty_wrapped_stream() -> Vec<u8> {
+    let mut bytes = sldprt_with_body_and_history(&triangle_body());
+    bytes.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    let mut empty = crate::layout::zlb_wrapper_header::MAGIC_VALUE.to_vec();
+    empty.extend_from_slice(&[0; 8]);
+    bytes.extend(make_block(0x43, "Contents/Empty__ZLB", &empty));
+    crate::test_support::container::native_envelope_fixture(&bytes)
+}
+
+#[test]
+fn an_empty_wrapped_stream_gives_up_nothing_and_an_edit_patches() {
+    let result = decode(versioned_part_with_an_empty_wrapped_stream());
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()),
+        "{:#?}",
+        result.report().losses
+    );
+    let mut edited = result.ir().clone();
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
+    let plan = SldprtCodec
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &edited,
+            Some(result.source_fidelity()),
+        ))
+        .expect("an edited part still preserves its dialect");
+    assert!(
+        matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "{:?}",
+        plan.report().write_path()
+    );
 }
 
 #[test]
@@ -650,10 +701,10 @@ fn digest_only_source_image_writes_retained_records_in_a_synthesized_envelope() 
         .data()
         .is_none());
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &ir,
+            Some(&fidelity),
+        ))
         .expect("the retained records keep the source's swSolidWorks envelope");
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()

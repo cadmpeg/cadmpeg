@@ -8,10 +8,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::decode::DecodeReport;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind, record_unreadable_kind, Cause};
 
 use crate::loss::StepLossCode;
-use crate::parse::{parse_inner, ParseDiagnosticKind, Value};
+use crate::parse::{parse_inner, GiveUpCause, ParseDiagnosticKind, Value};
 use crate::test_support::{with_policy_context, with_service_context};
 use crate::StepCodec;
 
@@ -59,8 +59,16 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
         assert_eq!(decoded.ir().geometry.points.len(), 2);
         let losses = given_up_losses(decoded.report());
         let [loss] = losses.as_slice() else {
-            panic!("one record.unreadable loss for {defective}");
+            panic!("one give-up for {defective}");
         };
+        // A real past the binary64 range is valid Part 21 text that the
+        // reader has no value for; every other defect breaks the grammar.
+        let cause = if defective.contains("1.E999") {
+            record_undecoded_kind()
+        } else {
+            record_unreadable_kind()
+        };
+        assert_eq!(loss.code, cause, "{defective}");
         assert!(loss.message.starts_with(&format!(
             "part data_record stream=\"\" offset={} length={} record=step:source:part#",
             statement.span.start,
@@ -96,11 +104,20 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
     }
 }
 
+/// The names (`#12`, `<name>`) of the records dropped with `statement`.
+fn dropped_names(statement: &crate::parse::GivenUpStatement) -> Vec<String> {
+    statement
+        .dropped
+        .iter()
+        .map(|record| record.name.clone())
+        .collect()
+}
+
 fn given_up_losses(report: &DecodeReport) -> Vec<&LossNote> {
     report
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| gives_up(&loss.code))
         .collect()
 }
 
@@ -133,24 +150,31 @@ fn a_given_up_statement_names_the_records_that_need_it() {
     };
     let given_up = source.find("#2=").expect("given-up statement");
     let unresolved = source.find("#5=").expect("record with a missing reference");
-    // Each dependent is named by the id of its DATA instance; the native record that
-    // keeps its source is held.
-    assert!(part_at(given_up, "#2=ITEM(%,3);")
-        .ends_with("; dropped=[step:data:instance#3, step:data:instance#4]; lost=[#6 entry #3]"));
+    // Each dependent is named by the id of the omitted record that keeps its
+    // source.
+    let mut dropped = [dependent, transitive].map(|offset| format!("step:file:omitted#{offset}"));
+    dropped.sort_unstable();
+    let given_up_part = part_at(given_up, "#2=ITEM(%,3);");
+    assert!(
+        given_up_part.ends_with(&format!(
+            "; dropped=[{}]; lost=[#6 entry #3]",
+            dropped.join(", ")
+        )),
+        "{given_up_part}"
+    );
     assert!(part_at(unresolved, "#5=ITEM(#9);").ends_with(
         ": malformed container: instance #5 omitted: unresolved instance reference #9; \
          exact source retained; dropped=[]"
     ));
-    let omissions = decoded
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == record_unreadable_kind()));
+    // Each give-up is the one entry for its record.
+    assert!(!decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == StepLossCode::ParseRecordOmitted.kind())
-        .collect::<Vec<_>>();
-    let [omission] = omissions.as_slice() else {
-        panic!("only the record with an unrelated missing reference is omitted");
-    };
-    assert!(omission.message.contains("instance #5"));
+        .any(|loss| loss.code == StepLossCode::ParseRecordOmitted.kind()));
     let (_, _, fidelity) = decoded.into_parts();
     for (offset, text) in [(dependent, "#3=ITEM(#2);"), (transitive, "#4=ITEM(#3);")] {
         assert_eq!(
@@ -184,7 +208,7 @@ fn a_set_loses_only_its_given_up_entries_and_a_positional_list_drops_its_record(
     let [statement] = parsed.given_up() else {
         panic!("one given-up statement");
     };
-    let mut dropped = statement.dropped.clone();
+    let mut dropped = dropped_names(statement);
     dropped.sort_unstable();
     // #5 lists #2 in an aggregate of unknown order, and #7 nests it below
     // the set's entries; both would shift the entries that follow it.
@@ -221,7 +245,9 @@ fn a_polyline_that_loses_a_point_is_dropped_and_named() {
     let (source, decoded, message) = decode_with_point_three_given_up(data);
     let polyline = source.find("#10=").expect("polyline");
     assert!(
-        message.ends_with("; dropped=[step:data:instance#10]; lost=[#11 entry #10]"),
+        message.ends_with(&format!(
+            "; dropped=[step:file:omitted#{polyline}]; lost=[#11 entry #10]"
+        )),
         "{message}"
     );
     assert!(source[polyline..].starts_with("#10=POLYLINE"));
@@ -235,10 +261,11 @@ fn a_b_spline_that_loses_a_pole_is_dropped_and_named() {
         "#10=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3,#4,#5),.UNSPECIFIED.,.F.,.F.,\
          (3,1,1,3),(0.,1.,2.,3.),.UNSPECIFIED.);",
     ] {
-        let (_, decoded, message) =
+        let (source, decoded, message) =
             decode_with_point_three_given_up(&format!("{curve}#11=GEOMETRIC_SET('',(#10));"));
+        let curve_at = source.find("#10=").expect("curve");
         assert!(
-            message.contains("; dropped=[step:data:instance#10]"),
+            message.contains(&format!("; dropped=[step:file:omitted#{curve_at}]")),
             "{message}"
         );
         assert!(message.ends_with("; lost=[#11 entry #10]"), "{message}");
@@ -309,7 +336,7 @@ fn a_face_that_loses_a_bound_and_a_solid_that_loses_a_void_are_dropped() {
     let [statement] = parsed.given_up() else {
         panic!("one given-up statement");
     };
-    let mut dropped = statement.dropped.clone();
+    let mut dropped = dropped_names(statement);
     dropped.sort_unstable();
     let names = (30..=36).map(|id| format!("#{id}")).collect::<Vec<_>>();
     assert_eq!(dropped, names);
@@ -344,8 +371,9 @@ fn a_statement_past_the_nesting_ceiling_is_given_up_alone() {
     assert_eq!(decoded.ir().geometry.points.len(), 1);
     let losses = given_up_losses(decoded.report());
     let [loss] = losses.as_slice() else {
-        panic!("one record.unreadable loss");
+        panic!("one give-up");
     };
+    assert_eq!(loss.code, record_undecoded_kind());
     assert!(loss.message.contains("scope Part"));
     assert!(loss.message.contains(&format!("length={}", nested.len())));
 }
@@ -374,15 +402,15 @@ fn dangling_references_remove_transitive_dependents_without_removing_cycles() {
         panic!("one given-up statement");
     };
     assert_eq!(&source[statement.span.clone()], "#1=ITEM(#90);");
-    assert_eq!(statement.dropped, ["#2", "#3"]);
+    assert!(matches!(
+        statement.cause,
+        GiveUpCause::Content(Cause::Unreadable, _)
+    ));
+    assert_eq!(dropped_names(statement), ["#2", "#3"]);
     assert_eq!(parsed.omitted_spans().len(), 2);
-    assert_eq!(
-        diagnostics
-            .iter()
-            .filter(|item| item.kind == ParseDiagnosticKind::RecordOmitted)
-            .count(),
-        1
-    );
+    assert!(!diagnostics
+        .iter()
+        .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
 }
 
 #[test]
@@ -396,13 +424,20 @@ fn a_repeated_instance_name_keeps_its_first_statement() {
     );
     assert_eq!(&source[parsed.records()[&1].span.clone()], "#1=ITEM();");
     assert!(parsed.omitted_spans().is_empty());
-    let repeated = diagnostics
+    assert!(!diagnostics
         .iter()
-        .filter(|item| {
-            item.kind == ParseDiagnosticKind::RecordOmitted
-                && item.message.contains("repeated instance name #1")
+        .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
+    let repeated = parsed
+        .given_up()
+        .iter()
+        .filter_map(|statement| match &statement.cause {
+            GiveUpCause::Content(Cause::Unreadable, message)
+                if message.contains("repeated instance name #1") =>
+            {
+                Some(message.clone())
+            }
+            _ => None,
         })
-        .map(|item| item.message.clone())
         .collect::<Vec<_>>();
     assert_eq!(repeated.len(), 2, "{repeated:?}");
     for (copy, message) in ["#1=OTHER();", "#1=THIRD();"].iter().zip(&repeated) {
@@ -449,7 +484,7 @@ fn a_defective_first_statement_gives_up_its_instance_name() {
         ("#1=ITEM(%,3);#1=ITEM();#1=OTHER();", 2),
     ] {
         let source = exchange(&format!("{definitions}#2=ITEM(#1);#3=ITEM();"));
-        let (parsed, diagnostics) =
+        let (parsed, _) =
             with_service_context(source.as_bytes(), parse_inner).expect("bounded definitions");
         assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [3]);
         let [statement, copies @ ..] = parsed.given_up() else {
@@ -457,16 +492,14 @@ fn a_defective_first_statement_gives_up_its_instance_name() {
         };
         // The user #2 needs the given-up first statement; each later copy
         // of #1 is read, not stated, and a part of its own.
-        assert_eq!(statement.dropped, ["#2"]);
+        assert_eq!(dropped_names(statement), ["#2"]);
         assert_eq!(copies.len(), later);
         assert_eq!(parsed.omitted_spans().len(), 1);
-        assert_eq!(
-            diagnostics
-                .iter()
-                .filter(|item| item.message.contains("repeated instance name #1"))
-                .count(),
-            later
-        );
+        assert!(copies.iter().all(|copy| matches!(
+            &copy.cause,
+            GiveUpCause::Content(Cause::Unreadable, message)
+                if message.contains("repeated instance name #1")
+        )));
     }
 }
 
@@ -601,6 +634,33 @@ fn strict_decode_rejects_the_reported_given_up_record() {
         matches!(error, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }
         if rejection.loss().code == record_unreadable_kind())
     );
+}
+
+/// A real past the binary64 range is valid Part 21 text that the reader has
+/// no value for: one `record.undecoded` give-up states its statement, and a
+/// pinned decode admits the document.
+#[test]
+fn a_pinned_decode_admits_a_real_past_the_binary64_range() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let decoded = crate::test_support::exchange::decode_inline_with_options(
+        "#1=CARTESIAN_POINT('',(1.E999,0.,0.));\n\
+         #2=CARTESIAN_POINT('',(1.,2.,3.));\n\
+         #3=GEOMETRIC_SET('',(#2));",
+        &options,
+    )
+    .expect("a pinned decode admits an undecoded statement");
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
+    let naming = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("finite binary64 range"))
+        .collect::<Vec<_>>();
+    let [loss] = naming.as_slice() else {
+        panic!("one entry states the statement: {naming:#?}");
+    };
+    assert_eq!(loss.code, record_undecoded_kind());
 }
 
 #[test]

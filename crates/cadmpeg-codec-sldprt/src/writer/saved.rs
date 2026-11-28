@@ -2,13 +2,10 @@
 //! The feature history of a part read from CADIR JSON, restored from the
 //! decode of its retained source and the edits its `design` records state.
 
-use std::io::Cursor;
-
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::{edit_dropped_note, EncodeInput};
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{ArenaName, CadIr, Model};
@@ -27,30 +24,36 @@ use crate::history::literals::{dimension_display, parse_parameter_literal};
 /// `losses` names each other edit by its path. Where the retained source
 /// cannot be restored from, the part is left as read and `notes` says why.
 pub(crate) fn restore(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
+    source: Option<&super::SourceInput<'_>>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
-    let Some(image) = saved_source(input, crate::SOURCE_IMAGE_ID, target.preserves_source())?
-    else {
+    let Some(source) = source else {
         return Ok(None);
     };
-    let restored = crate::SldprtCodec
-        .decode(&mut Cursor::new(image), &DecodeOptions::default())
-        .map_err(|failure| match failure {
-            DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format_args!(
-                "SLDPRT retained source cannot be decoded: {other}"
-            )),
-        })
+    if saved_source(
+        ctx,
+        input,
+        crate::SOURCE_IMAGE_ID,
+        target.preserves_source(),
+    )?
+    .is_none()
+    {
+        return Ok(None);
+    }
+    let restored = source
+        .baseline(ctx)
+        .and_then(|baseline| baseline.comparison(ctx))
         .and_then(|decoded| restore_history(input.ir, decoded.ir(), &SolidWorksText));
     match restored {
         Ok(restored) => {
             losses.extend(unwritten_losses(&restored.unwritten));
             Ok(Some(restored.ir))
         }
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             notes.push(format!(
                 "the history arenas of the document read from CADIR are not restored from its \

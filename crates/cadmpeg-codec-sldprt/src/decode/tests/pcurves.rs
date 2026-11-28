@@ -99,15 +99,11 @@ fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir().geometry.faces.len(), 0);
+    let faces = &decoded.ir().geometry.faces;
+    assert!(!faces.is_empty() && faces.iter().all(|face| face.loops.is_partial()));
     assert_eq!(
-        decoded
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.ring-edge-withheld")
-            .count(),
-        1
+        super::given_up(&decoded, &[crate::brep::graph::RING_EDGE_WITHHELD]),
+        2
     );
 }
 

@@ -86,6 +86,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
+            "name": "SKETCH",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
           },
           {
@@ -96,6 +97,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000001",
+            "name": "SKETCH",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001"
           },
           {
@@ -108,6 +110,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000002",
+            "name": "DATUM_CSYS",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002"
           },
           {
@@ -120,6 +123,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000003",
+            "name": "DATUM_PLANE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000003"
           },
           {
@@ -132,6 +136,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000004",
+            "name": "POINT",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000004"
           },
           {
@@ -144,6 +149,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000005",
+            "name": "DRAFT",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000005"
           },
           {
@@ -156,6 +162,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000006",
+            "name": "SKIN",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000006"
           },
           {
@@ -168,6 +175,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000007",
+            "name": "Geometry Instance",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000007"
           },
           {
@@ -180,6 +188,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000008",
+            "name": "Pattern Feature",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000008"
           },
           {
@@ -192,6 +201,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000009",
+            "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000009"
           },
           {
@@ -204,6 +214,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000010",
+            "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000010"
           },
           {
@@ -216,6 +227,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000011",
+            "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000011"
           },
           {
@@ -228,6 +240,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000012",
+            "name": "BLOCK",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000012"
           },
           {
@@ -240,6 +253,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000013",
+            "name": "CPROJ",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000013"
           },
           {
@@ -252,6 +266,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000014",
+            "name": "SIMPLE HOLE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000014"
           }
         ],

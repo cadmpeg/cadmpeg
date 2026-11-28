@@ -20,17 +20,23 @@ fn fields(result: &EditableDecodeResult, id: &str) -> (Exactness, Vec<(String, E
     (note.entity(), fields)
 }
 
-/// The expression's derived `ordinal` feeds no design field and leaves, and
-/// its `owner` counts only toward `definition`. The declared unit in
-/// `properties` feeds `kind`, `unit`, `definition` and `value`.
+/// The native expression reference supplies the source-table position.
+/// The declared unit feeds `kind`, `unit`, `definition` and `value`.
 #[test]
 fn a_restated_expression_names_the_fields_of_its_design_parameter() {
     let result = super::decode(prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
         segment_om_record_area_with_input_store_payload(),
     )]));
-    let derived = ["definition", "kind", "native_ref", "unit", "value"]
-        .map(|field| (field.to_owned(), Exactness::Derived));
+    let derived = [
+        "definition",
+        "kind",
+        "native_ref",
+        "position",
+        "unit",
+        "value",
+    ]
+    .map(|field| (field.to_owned(), Exactness::Derived));
     assert_eq!(
         fields(&result, "nx:om-entry-0:parameter#399"),
         (Exactness::ByteExact, derived.to_vec())
@@ -56,8 +62,15 @@ fn a_part_with_geometry_restates_the_marks_of_its_design_records() {
         );
     }
     let expressions = super::decode(prt_with_indexed_om_section());
-    let derived = ["definition", "kind", "native_ref", "unit", "value"]
-        .map(|field| (field.to_owned(), Exactness::Derived));
+    let derived = [
+        "definition",
+        "kind",
+        "native_ref",
+        "position",
+        "unit",
+        "value",
+    ]
+    .map(|field| (field.to_owned(), Exactness::Derived));
     assert_eq!(
         fields(&expressions, "nx:om-entry-0:parameter#173"),
         (Exactness::ByteExact, derived.to_vec())

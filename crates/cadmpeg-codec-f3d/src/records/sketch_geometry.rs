@@ -840,17 +840,20 @@ impl<T: Copy + Into<f64>> SketchPointRecordForm<T> {
         }
     }
 
+    fn stored_flags(&self) -> &[bool] {
+        match self {
+            Self::Version0 { flag, .. } => std::slice::from_ref(flag),
+            Self::Version8 { flags, .. }
+            | Self::Version10 { flags, .. }
+            | Self::Version10InlineTyped { flags, .. } => flags,
+            Self::Version11 { flags, .. } | Self::Version11InlineTyped { flags, .. } => flags,
+        }
+    }
+
     pub(crate) fn flags(&self) -> [u8; 8] {
         let mut flags = [0; 8];
-        match self {
-            Self::Version0 { flag, .. } => flags[0] = u8::from(*flag),
-            Self::Version8 { flags: source, .. }
-            | Self::Version10 { flags: source, .. }
-            | Self::Version10InlineTyped { flags: source, .. } => {
-                flags[..7].copy_from_slice(&source.map(u8::from));
-            }
-            Self::Version11 { flags: source, .. }
-            | Self::Version11InlineTyped { flags: source, .. } => flags = source.map(u8::from),
+        for (flag, &stored) in flags.iter_mut().zip(self.stored_flags()) {
+            *flag = u8::from(stored);
         }
         flags
     }
@@ -1220,6 +1223,10 @@ impl SketchPoint {
         self.record_form.persistent_id()
     }
 
+    pub(crate) fn stored_flags(&self) -> &[bool] {
+        self.record_form.stored_flags()
+    }
+
     pub(crate) fn flags(&self) -> [u8; 8] {
         self.record_form.flags()
     }
@@ -1229,7 +1236,7 @@ impl SketchPoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchPointRecordFormSerde {
     Version0,
@@ -2260,7 +2267,7 @@ impl SketchNurbsGeometry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchCurveGeometryWire {
     /// A straight line segment.

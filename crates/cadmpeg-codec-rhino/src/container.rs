@@ -15,7 +15,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
@@ -203,7 +203,7 @@ pub(crate) fn object_record_id(source_order: usize) -> UnknownId {
 }
 
 /// The part a framed object record is (`rhino_3dm.md` §21).
-const OBJECT_RECORD_PART: &str = "object-record";
+pub(crate) const OBJECT_RECORD_PART: &str = "object-record";
 /// The part a framed table record is (`rhino_3dm.md` §21).
 pub(crate) const TABLE_RECORD_PART: &str = "table-record";
 /// The part a view record of a counted view list is (`rhino_3dm.md` §21).
@@ -211,44 +211,96 @@ pub(crate) const VIEW_RECORD_PART: &str = "view-record";
 /// The part a record of the V1 flat stream is (`rhino_3dm.md` §21).
 pub(crate) const V1_RECORD_PART: &str = "v1-record";
 
-/// Gives up the framed record of `kind` at `range` of `data` for the codec
-/// loss `why`. A retained source record keeps the same bytes, so the part
-/// keeps only their digest. The part links to `holder`, the document record
-/// that contains it, when there is one.
+/// Gives up the framed record of `kind` at `range` of `data` for `cause`,
+/// with the text `error`. The part keeps the length and digest of the
+/// record's bytes until [`commit_given_up`] commits it. The part links to
+/// `holder`, the document record that contains it, when there is one.
 pub(crate) fn give_up_retained(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     kind: &'static str,
     range: std::ops::Range<usize>,
     holder: Option<UnknownId>,
-    why: &LossNote,
+    cause: Cause,
+    error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
+    let offset = cadmpeg_core::decode::u64_from_index(range.start);
+    let bytes = &data[range];
     let mut part = Part::at(
         "rhino",
         kind,
-        cadmpeg_core::decode::u64_from_index(range.start),
-        &data[range],
+        offset,
+        bytes,
         [cadmpeg_core::decode::ArenaClass::Model],
     )
     .digest_only();
     if let Some(holder) = holder {
         part = part.contained_in(cadmpeg_ir::ids::Identity::from(holder));
     }
-    ctx.give_up_part(
-        part,
-        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
-    )
+    ctx.give_up_part(part, cause, CodecError::malformed(error))
+}
+
+/// Commits each part of `given_up` to `ir` and `fidelity` and returns its
+/// loss. A part keeps the bytes of `data` it spans where no retained record
+/// of its stream keeps them. Where those bytes pass the caller's
+/// retained-bytes ceiling, the part keeps their length and digest, and its
+/// loss names the ceiling (`rhino_3dm.md` §21).
+///
+/// # Errors
+///
+/// A resource refusal for the retained bytes or a stub, or a malformed
+/// error when a part's span lies outside `data` or its stub is present.
+pub(crate) fn commit_given_up(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    ir: &mut CadIr,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+    given_up: Vec<GivenUpPart>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::with_capacity(given_up.len());
+    for mut part in given_up {
+        let record = part.retained();
+        let (start, end, length) = (record.offset(), record.end_offset(), record.byte_len());
+        let covered = fidelity.retained_records().iter().any(|(_, kept)| {
+            kept.data().is_some()
+                && kept.stream() == record.stream()
+                && kept.offset() <= start
+                && end <= kept.end_offset()
+        });
+        if !covered && length <= ctx.retained_bytes_available() {
+            let bytes = usize::try_from(start)
+                .ok()
+                .zip(usize::try_from(end).ok())
+                .and_then(|(start, end)| data.get(start..end))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "given-up part {} lies outside the source",
+                        part.id()
+                    ))
+                })?;
+            part.keep_bytes(ctx, bytes)?;
+        } else if !covered {
+            part.costing(
+                ctx,
+                "its bytes pass the caller's retained-bytes ceiling (max_retained_bytes); \
+                 the part keeps their length and digest",
+            )?;
+        }
+        losses.push(part.commit(ctx, ir, fidelity)?);
+    }
+    Ok(losses)
 }
 
 /// Gives up the framed object record at `source_order`, spanning `range`,
-/// for the codec loss `why`. Its object record in the document keeps its
-/// bytes and contains the part.
+/// for `cause`, with the text `error`. Its object record in the document
+/// contains the part.
 pub(crate) fn give_up_object_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     source_order: usize,
     range: std::ops::Range<usize>,
-    why: &LossNote,
+    cause: Cause,
+    error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
     give_up_retained(
         ctx,
@@ -256,17 +308,19 @@ pub(crate) fn give_up_object_record(
         OBJECT_RECORD_PART,
         range,
         Some(object_record_id(source_order)),
-        why,
+        cause,
+        error,
     )
 }
 
-/// Gives up the framed table record `record` for the codec loss `why`. Its
-/// opaque record in the source fidelity keeps its bytes.
+/// Gives up the framed table record `record` for `cause`, with the text
+/// `error`.
 pub(crate) fn give_up_table_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
-    why: &LossNote,
+    cause: Cause,
+    error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
     give_up_retained(
         ctx,
@@ -274,7 +328,8 @@ pub(crate) fn give_up_table_record(
         TABLE_RECORD_PART,
         record.range.clone(),
         None,
-        why,
+        cause,
+        error,
     )
 }
 
@@ -811,7 +866,7 @@ fn compressed_preview_buffer_child(
         1 => Ok(Some(take_anonymous_checksum_child(
             data, reader, archive, label,
         )?)),
-        method => Err(FramingError::structural(
+        method => Err(FramingError::unsupported(
             method_offset,
             format!("{label} has unsupported compression method {method}"),
         )),
@@ -1310,12 +1365,7 @@ fn scan_with_record_limit<'a>(
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit))
                     }
-                    Err(error) => {
-                        warnings.push(format_args!(
-                            "bounded object record at {child_offset} is malformed: {error}"
-                        ));
-                        degraded_object_record(&record, &error)
-                    }
+                    Err(error) => degraded_object_record(&record, &error),
                 };
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 count_object_typecode(&mut object_typecodes, typecode);

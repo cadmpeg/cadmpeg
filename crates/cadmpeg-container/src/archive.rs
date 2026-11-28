@@ -375,20 +375,18 @@ impl<'a> ArchiveSnapshot<'a> {
         self.recovery.as_ref().and_then(|recovery| recovery.tail)
     }
 
-    /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
-    pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
+    /// Checks the local frame and stored extent of an indexed member.
+    pub fn validate_member(&self, name: &str) -> Result<(), CodecError> {
         let entry = self
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
+        self.member_range(entry).map(|_| ())
+    }
+
+    fn member_range(&self, entry: &EntryRecord) -> Result<ByteRange, CodecError> {
         if let Some(error) = entry.metadata_error.or(entry.local_header_error) {
             return Err(CodecError::malformed(format_args!(
                 "{}: {error}",
-                entry.name
-            )));
-        }
-        if entry.encrypted {
-            return Err(CodecError::NotImplemented(format!(
-                "encrypted ZIP entry {}",
                 entry.name
             )));
         }
@@ -406,10 +404,30 @@ impl<'a> ArchiveSnapshot<'a> {
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
-        let range = ByteRange {
+        if absolute_end > cadmpeg_core::decode::u64_from_index(self.root.end()) {
+            return Err(CodecError::malformed(format_args!(
+                "ZIP data range escapes archive for {}",
+                entry.name
+            )));
+        }
+        Ok(ByteRange {
             start: absolute_start,
             end: absolute_end,
-        };
+        })
+    }
+
+    /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
+    pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .entry(name)
+            .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
+        let range = self.member_range(entry)?;
+        if entry.encrypted {
+            return Err(CodecError::NotImplemented(format!(
+                "encrypted ZIP entry {}",
+                entry.name
+            )));
+        }
         match entry.compression {
             ZipCompression::Unsupported(method) => Err(CodecError::NotImplemented(format!(
                 "ZIP compression {method:?} for {}",
