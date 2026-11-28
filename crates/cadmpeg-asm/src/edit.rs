@@ -7,7 +7,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{ParameterInterval, Sense};
 use cadmpeg_ir::transform::Transform;
 
@@ -35,7 +35,6 @@ use cadmpeg_ir::ids::CurveId;
 pub struct AsmEditSet {
     records: Vec<Record>,
     ref_width: RefWidth,
-    header_scale: Option<PositiveReal>,
 }
 
 /// Writable values for one solved NURBS surface cache.
@@ -166,17 +165,12 @@ impl AsmEditSet {
                     CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
                 })
             })?;
-        let header_scale = header.metadata.scale.unwrap_or(1.0);
-        Ok(Self::from_framed(records, ref_width, header_scale))
+        Ok(Self::from_framed(records, ref_width))
     }
 
     /// Build a context from an already framed record partition.
-    pub fn from_framed(records: Vec<Record>, ref_width: RefWidth, header_scale: f64) -> Self {
-        Self {
-            records,
-            ref_width,
-            header_scale: PositiveReal::new(header_scale),
-        }
+    pub fn from_framed(records: Vec<Record>, ref_width: RefWidth) -> Self {
+        Self { records, ref_width }
     }
 
     /// The framed solved records in record-table order.
@@ -953,12 +947,6 @@ impl AsmEditSet {
         record: &Record,
         transform: Transform,
     ) -> Result<(), CodecError> {
-        let header_scale = self.header_scale.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "transform record {} requires a positive finite header scale",
-                record.index
-            ))
-        })?;
         let [translation_x, translation_y, translation_z] = transform.translation().components();
         let vectors = [
             [
@@ -980,21 +968,21 @@ impl AsmEditSet {
                 cadmpeg_ir::math::multiply_divide(
                     translation_x,
                     LENGTH_PER_MILLIMETRE,
-                    header_scale.into(),
+                    FiniteReal::ONE,
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
                 cadmpeg_ir::math::multiply_divide(
                     translation_y,
                     LENGTH_PER_MILLIMETRE,
-                    header_scale.into(),
+                    FiniteReal::ONE,
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
                 cadmpeg_ir::math::multiply_divide(
                     translation_z,
                     LENGTH_PER_MILLIMETRE,
-                    header_scale.into(),
+                    FiniteReal::ONE,
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
@@ -2095,7 +2083,7 @@ mod tests {
             bytes.extend_from_slice(&1.0_f64.to_le_bytes());
             bytes.push(0x11);
             let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
-            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let edits = AsmEditSet::from_framed(records.clone(), width);
             for expected in [
                 0.0_f64,
                 -0.0,
@@ -2281,7 +2269,7 @@ mod tests {
         let original = b"\x0d\x01x\x07\x05surf1\x11";
         let records =
             crate::test_support::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         let mut bytes = original[..7].to_vec();
         let before = bytes.clone();
         let error = edits
@@ -2303,7 +2291,7 @@ mod tests {
             original.push(0x11);
             let records =
                 crate::test_support::sab::frame(&original, 0, original.len(), width).unwrap();
-            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let edits = AsmEditSet::from_framed(records.clone(), width);
             let mut bytes = original[..4].to_vec();
             let before = bytes.clone();
             let error = edits
@@ -2330,7 +2318,7 @@ mod tests {
         let mut bytes = b"\x0d\x01x\x07\x05surf1\x11".to_vec();
         let records =
             crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         edits
             .patch_ascii_field(&mut bytes, &records[0], 0, "surf2")
             .unwrap();
@@ -2354,7 +2342,7 @@ mod tests {
             bytes.extend_from_slice(&[0; 8][..payload_width]);
             bytes.push(0x11);
             let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
-            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            let edits = AsmEditSet::from_framed(records.clone(), width);
             edits
                 .patch_truecolor_field(&mut bytes, &records[0], 0, u32::MAX)
                 .unwrap();
@@ -2439,7 +2427,7 @@ mod tests {
             periodic: None,
             fit_tolerance: None,
         };
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         edits
             .patch_pcurve(
                 &mut original.clone(),
@@ -2470,7 +2458,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_patch_preserves_translation_at_large_header_scale() {
+    fn transform_patch_writes_the_translation_in_centimetres() {
         let mut bytes = vec![0x0d, 9];
         bytes.extend_from_slice(b"transform");
         for _ in 0..4 {
@@ -2482,9 +2470,9 @@ mod tests {
         bytes.push(0x11);
         let records =
             crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
-        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1e308);
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight);
         let transform = cadmpeg_ir::transform::Transform::affine([
-            [1.0, 0.0, 0.0, 1e308],
+            [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
         ])
@@ -2496,35 +2484,7 @@ mod tests {
             .required_payload_field(&bytes, &records[0], 3, 0x14)
             .unwrap();
         let native = cadmpeg_core::decode::View::f64_le_at(&bytes, offset + 1).unwrap();
-        assert!((native - 0.1).abs() <= f64::EPSILON);
-    }
-
-    #[test]
-    fn transform_rejects_nonpositive_and_nonfinite_header_scales() {
-        let mut original = vec![0x0d, 9];
-        original.extend_from_slice(b"transform");
-        for _ in 0..4 {
-            original.push(0x14);
-            original.extend_from_slice(&[0; 24]);
-        }
-        original.push(0x06);
-        original.extend_from_slice(&1.0f64.to_le_bytes());
-        original.push(0x11);
-        let records =
-            crate::test_support::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
-        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut bytes = original.clone();
-            let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, scale);
-            assert!(matches!(
-                edits.patch_transform(
-                    &mut bytes,
-                    &records[0],
-                    cadmpeg_ir::transform::Transform::identity()
-                ),
-                Err(cadmpeg_core::CodecError::Malformed(_))
-            ));
-            assert_eq!(bytes, original);
-        }
+        assert!((native - 3.0).abs() <= f64::EPSILON);
     }
 
     #[test]
