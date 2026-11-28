@@ -189,6 +189,30 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+## Scratch decodes
+
+`DecodeContext::scratch` runs optional evidence work in a separate arena
+and resource account. The measured carrier length scales its allowances.
+The codec's work and population caps bound repeated requests. The decoder
+admits the bytes and entities of each kept result together. A refusal
+at that admission leaves the session usable.
+
+An F3D or Inventor history nest admits its records and body and face names.
+An Inventor state view admits the topology, naming attributes and body keys
+that its proofs read. A profile body admits its wires and copied spline
+coefficients. An identity lookup, source key check or Loft body kind probe
+keeps a scalar result and discards the temporary graph.
+
+A resource refusal gives up the affected evidence. The codec reports the
+limit on a bounded history body, Base source body, Loft result or unread
+profile body. `cadmpeg_asm::brep::inspect_with_header` and
+`inspect_with_table` read framed records and preserve the shell membership
+marks. The Model path copies withheld and passthrough spans and emits
+provenance records.
+
+Scratch work uses the same evidence allowance at every F3Z composition
+position. The whole-session trace composes the charges of the kept output.
+
 ## Scan limits
 
 `ScanLimits` in `crates/cadmpeg-core/src/scan/mod.rs` bounds a feature-only
@@ -369,10 +393,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-inventor` | `src/feature/history_views.rs`                     | `MAX_STATE_VIEW_WORK`                     | `1 << 21`                                               | 4    | States walked and records materialized for the history-state views of one part, a `WorkBudget` that proves solid lofts and stored-body Base results against their own state. A loft whose view passes it stays native under `feature.loft-result-operands-native`; a Base result stays native under `feature.base-result-state-native`, which also counts a state that fails to decode and a state that holds no body with the result key. |
 | `cadmpeg-codec-inventor` | `src/feature/history_views.rs`                     | `MAX_STATE_VIEW_MODELS`                   | `4`                                                     | 4    | Decoded state models that the history-state views of one part keep. A request past it drops the cached models and decodes again, which `MAX_STATE_VIEW_WORK` charges. A loft whose second decode passes that cap stays native under `feature.loft-result-operands-native`. |
 | `cadmpeg-codec-inventor` | `src/feature/sheet_metal/contour/attachment.rs`   | `MAX_ATTACHMENT_WORK`                     | `1 << 21`                                               | 4    | Records materialized to resolve the attachment edges of one edge-attached contour flange, a `WorkBudget`. A list that passes it keeps the `reserved-slot` refusal. |
-| `cadmpeg-codec-inventor` | `src/design_v11/operations/selections/trimmed.rs`  | `MAX_SKETCH_CURVES`                       | `2048`                                                  | 4    | Non-construction curves of one sketch that a trimmed profile region is cut against, counted once per sketch. The cut work of one sketch is at most the square of it, and it is built once per decode and shared by every feature that uses the sketch. A sketch past the cap keeps each feature operation that uses a trimmed region of it native with `feature.design-operation-native`. |
+| `cadmpeg-ir`             | `src/design/regions.rs`                            | `MAX_SKETCH_CURVES`                       | `2048`                                                  | 4    | Non-construction curves of one sketch that a trimmed profile region is cut against, counted once per sketch. The cut work of one sketch is at most the square of it, and it is built once per decode and shared by every feature that uses the sketch. For a sketch past the cap, Inventor keeps each affected operation native with `feature.design-operation-native`. Onshape keeps the operation family with `history.design-operation-unresolved`. |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
+| `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_NAMED_RECORDS`                       | `8`                                                     | 4    | Occurrences one placement give-up names as left with no transform, and objects one member-list give-up names as placed without the container placement. The message counts the rest.                                                                                         |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_OBJECTS`                             | `1_000_000`                                             | 2    | Object elements in `Document.xml`, counted in the parsed tree. Excess returns `NotImplemented`. Entities are charged separately in `container.rs`.                                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_PROPERTY_VALUE_XML_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Total of the overlapping value-XML ranges one property would copy. Excess keeps the exact XML, builds no value records and reports `PersistencePayloadUnresolved`.                                                                                                           |
 | `cadmpeg-codec-freecad` | `src/application_geometry/mesh_placement.rs` | `MAX_MESH_PLACEMENT_WORK` | `65_536` | 4 | Floor of mesh occurrence expansion visits; allowance is the larger of this floor and 64 times the combined native product and neutral occurrence row count. Exhaustion withholds the current complete mesh use and subsequent uses with blocking `geometry.mesh-placement-bounded`; independent source meshes remain. |
@@ -628,6 +653,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia`    | `src/solve/missing_edge.rs`                        | `MAX_REPEATED_EDGE_HANDLE_STEPS`          | `1 << 20`                                               | 4    | Floor of the face-handle steps of the repeated-edge trim-handle overlap per file. A row past the allowance keeps no handle face candidates and `topology.standard-search-bounded` is reported. |
 | `cadmpeg-codec-catia`    | `src/solve/missing_edge.rs`                        | `MAX_REPEATED_EDGE_HANDLE_STEPS_PER_HANDLE` | `64`                                                    | 4    | Face-handle steps allowed per edge-row or face handle entry above the `MAX_REPEATED_EDGE_HANDLE_STEPS` floor; same outcome and loss.                                                                                                                                         |
 | `cadmpeg-codec-onshape` | `src/reader.rs` | `MAX_REFERENCE_DEPTH` | `7` | 2 | Nesting of referenced Part Studios, through derived features. A feature that names a studio deeper than the limit stays Native with `history.not-supported`. |
+| `cadmpeg-codec-onshape` | `src/reader/design/parameters.rs` | `MAX_DEPTH` | `64` | 2 | Parenthesis and unary-sign nesting in a stored parameter expression. Flat sums and products share one level. A deeper expression keeps its Onshape source text with `parameter.expression-text`. |
 
 ### Work budgets without a named `MAX_*` limit
 

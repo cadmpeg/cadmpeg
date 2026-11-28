@@ -28,6 +28,7 @@ fn entity(id: u32) -> CatiaEntityRecord {
         lead: 2,
         body: CatiaEntityRecordBody::empty_nested(),
         definition_schema_selections: Vec::new(),
+        compact_class: None,
         entity_id: id,
         value_schema_selections: Vec::new(),
         object_production: None,

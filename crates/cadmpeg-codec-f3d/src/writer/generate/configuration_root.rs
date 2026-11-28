@@ -19,7 +19,7 @@ use super::presentation::{GeneratedDesignRegistry, TypeRow};
 use super::records::{encode_configuration_root, EncodedDesignBulkStream};
 use crate::design::configurations::root_document;
 use crate::records::configuration::table::{rename_ids, ConfigurationTable};
-use crate::records::configuration::{encode_configuration_payload, DesignConfiguration, ID_WIDTH};
+use crate::records::configuration::{DesignConfiguration, ID_WIDTH};
 
 /// The type the record is registered under when the source registers none
 /// for it (f3d-open-items.md DR-1063). The writer generates the type GUID,
@@ -416,14 +416,20 @@ impl Plan {
         self.active.as_deref()
     }
 
-    /// The bytes of `configuration`, the written document at `index`, with
+    /// Table and row identifiers carried by the written root record.
+    pub(super) fn active_ids(&self) -> Option<(&str, &str)> {
+        let root = self.root.as_ref()?;
+        Some((&root.table_id, &root.row_id))
+    }
+
+    /// The payload of `configuration`, the written document at `index`, with
     /// the ids the root record cuts or renames written as the record writes
     /// them.
-    pub(super) fn payload(
+    pub(super) fn payload<'a>(
         &self,
         index: usize,
-        configuration: &DesignConfiguration,
-    ) -> Result<Vec<u8>, CodecError> {
+        configuration: &'a DesignConfiguration,
+    ) -> Cow<'a, serde_json::Map<String, serde_json::Value>> {
         let renamed = self
             .root
             .as_ref()
@@ -438,7 +444,7 @@ impl Plan {
                 (&renamed.row_id, &root.row_id),
             );
         }
-        encode_configuration_payload(configuration.entry_name(), &payload)
+        payload
     }
 
     /// Append the root record to `bulk` under the source's type of the

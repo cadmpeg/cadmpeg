@@ -2,12 +2,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::json;
-use cadmpeg_ir::{document::Model, CadIr};
+use cadmpeg_ir::document::Model;
 use serde_json::Value;
 
-use super::{features, id, number, push, rows, text, topology, Mapping};
-
-pub(super) mod sketches;
+use super::{features, id, number, rows, text, topology, Mapping};
 
 pub(super) fn profile(profile: Value, model: &Model) -> Mapping<Value> {
     if text(&profile, "kind")? != "sketch" {
@@ -28,23 +26,6 @@ pub(super) fn profile(profile: Value, model: &Model) -> Mapping<Value> {
         .map(|entity| entity.id().as_str())
         .collect();
     Ok(json!({"kind":"sketch_entities","value":{"sketch":sketch,"entities":entities}}))
-}
-
-pub(super) fn owner(ir: &CadIr) -> Mapping<cadmpeg_ir::ids::ProductDefinitionId> {
-    let [definition] = ir.model.product_definitions.as_slice() else {
-        return Err("thin construction needs one admitted Part Studio product scope".into());
-    };
-    if !definition.occurrences.is_empty()
-        || definition.bodies.len() != ir.geometry.bodies.len()
-        || ir
-            .geometry
-            .bodies
-            .iter()
-            .any(|body| !definition.bodies.contains(&body.id))
-    {
-        return Err("thin construction product scope does not own the Part Studio bodies".into());
-    }
-    Ok(definition.id.clone())
 }
 
 /// The path of a one-sided thin wall's side in its design feature.
@@ -160,13 +141,28 @@ pub(super) fn feature(
         Ok(value)
     };
     let literal = |value| json!({"kind":"literal","value":value});
+    let formula = |key| {
+        features::parameter(source, key)
+            .ok()
+            .and_then(|row| row.get("expression"))
+            .and_then(Value::as_str)
+            .is_some_and(|expression| !super::expression::literal(expression))
+    };
+    let native = text(source, "featureId")?;
+    let dimension = |key, value| {
+        if formula(key) {
+            json!({"kind":"parameter","value":id("parameter", &format!("{native}/{key}"))})
+        } else {
+            literal(value)
+        }
+    };
     let mut assumed = None;
     let thickness = if midplane {
         let value = length("thickness")?;
         if value == 0.0 {
             return Err("thin thickness is zero".into());
         }
-        json!({"kind":"symmetric","value":literal(value)})
+        json!({"kind":"symmetric","value":dimension("thickness", value)})
     } else {
         let first = length("thickness1")?;
         let second = length("thickness2")?;
@@ -174,7 +170,9 @@ pub(super) fn feature(
             return Err("thin thickness is zero".into());
         }
         let flip = flip ^ clockwise;
-        if first == second {
+        let bound_offsets =
+            closed && entities.len() == 1 && (formula("thickness1") || formula("thickness2"));
+        if first == second && !bound_offsets {
             let total = first + second;
             if !total.is_finite() {
                 return Err("thin thickness exceeds the finite range".into());
@@ -184,9 +182,9 @@ pub(super) fn feature(
             return Err("thin side over multiple curves is unresolved".into());
         } else if second == 0.0 || first == 0.0 {
             let (value, flip) = if first == 0.0 {
-                (second, !flip)
+                (dimension("thickness2", second), !flip)
             } else {
-                (first, flip)
+                (dimension("thickness1", first), flip)
             };
             let side = match (closed, flip) {
                 (true, false) => "outside",
@@ -199,14 +197,16 @@ pub(super) fn feature(
                     "the thin wall's {side} side over a line with endParam < startParam follows the stored line direction; the source convention for a reversed interval is unresolved (ONSHAPE-007)"
                 ));
             }
-            json!({"kind":"one_side","value":{"value":literal(value),"side":{"kind":side}}})
+            json!({"kind":"one_side","value":{"value":value,"side":{"kind":side}}})
         } else if closed {
+            let first = dimension("thickness1", first);
+            let second = dimension("thickness2", second);
             let (outside, inside) = if flip {
                 (second, first)
             } else {
                 (first, second)
             };
-            json!({"kind":"offsets","value":{"outside":literal(outside),"inside":literal(inside)}})
+            json!({"kind":"offsets","value":{"outside":outside,"inside":inside}})
         } else {
             return Err("two-sided open thin offsets are unresolved".into());
         }
@@ -216,12 +216,14 @@ pub(super) fn feature(
         .pointer("/side/termination")
         .ok_or("thin termination is missing")?;
     let limit = match text(termination, "kind")? {
-        "blind" => json!({"kind":"amount","value":literal(number(termination,"length")?)}),
+        "blind" => {
+            json!({"kind":"amount","value":dimension("depth", number(termination,"length")?)})
+        }
         "through_all" => json!({"kind":"through_all"}),
         _ => return Err("thin termination is unresolved".into()),
     };
     let span = if text(extent, "kind")? == "symmetric" {
-        json!({"kind":"symmetric","amount":literal(number(termination,"length")?),"measure":"total"})
+        json!({"kind":"symmetric","amount":dimension("depth", number(termination,"length")?),"measure":"total"})
     } else {
         json!({"kind":"between","start":{"kind":"at_origin"},"end":limit})
     };
@@ -229,105 +231,15 @@ pub(super) fn feature(
     let boolean = if op == "new_body" {
         json!({"kind":"new_body"})
     } else {
-        json!({"kind":"apply","op":{"kind":op},"targets":{"kind":"all"}})
+        json!({"kind":"apply","op":{"kind":op}})
     };
     let picks: Vec<_> = entities
         .iter()
         .map(|entity| json!({"target":{"kind":"sketch_entity","value":entity}}))
         .collect();
-    let mut row = json!({"id":id("feature",text(source,"featureId")?),"definition":{"operation":{"kind":"extrude","value":{
+    let operation = json!({"kind":"extrude","value":{
         "profile":{"at":{"kind":"input"},"picks":{"kind":"named","value":picks}},
         "direction":{"kind":"profile_normal","reversed":{"kind":"literal","value":reversed}},"origin":{"kind":"profile_plane"},"span":span,
-        "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}}}});
-    if super::suppression_stated(source) {
-        row["suppressed"] = json!({"kind":"literal","value":false});
-    }
-    Ok((row, assumed))
-}
-
-pub(super) fn install_scope(
-    ir: &mut CadIr,
-    report: &mut super::Report,
-    bar: &super::RollbackBar,
-) -> Mapping<()> {
-    for source in &ir.model.features {
-        if ir
-            .design
-            .features
-            .iter()
-            .any(|feature| feature.id == source.id)
-        {
-            continue;
-        }
-        let mut row = json!({"id":source.id,"definition":{"operation":{"kind":"native","value":{"kind":"onshape:timeline-member","native_options":{},"source_settings":{}}}}});
-        if let Some(sketch) = ir
-            .design
-            .sketches
-            .iter()
-            .find(|sketch| sketch.owner == source.id)
-        {
-            row["definition"]["operation"] = json!({"kind":"sketch","value":sketch.id});
-        } else {
-            report.push_coded(source.id.as_str(), crate::loss::OnshapeLossCode::DesignOperationNative,
-                "design timeline retains the native source operation; model history carries its decoded construction");
-        }
-        if let Some(name) = &source.name {
-            row["name"] = json!(name);
-        }
-        if let Some(suppressed) = source.suppressed {
-            row["suppressed"] = json!({"kind":"literal","value":suppressed});
-        }
-        push(&mut ir.design.features, row)?;
-    }
-    ir.design.features.sort_by_key(|feature| {
-        ir.model
-            .features
-            .iter()
-            .position(|source| source.id == feature.id)
-    });
-    if ir.design.features.is_empty() {
-        return Ok(());
-    }
-    let definition = owner(ir)?;
-    let container = id("container", "Part Studio");
-    let bodies: Vec<_> = ir.geometry.bodies.iter().map(|body| &body.id).collect();
-    let members: Vec<_> = ir
-        .design
-        .features
-        .iter()
-        .map(|feature| json!({"kind":"feature","value":feature.id}))
-        .collect();
-    // The bar stands before the first kept member at or after the stored
-    // rollback feature. The current state is the state before the bar.
-    let barred = bar.0.iter().find_map(|native| {
-        let member = id("feature", native);
-        ir.design
-            .features
-            .iter()
-            .position(|feature| feature.id.as_str() == member)
-    });
-    let (rollback, at) = match barred {
-        Some(0) => (
-            json!({"kind":"before","value":members[0]}),
-            json!({"kind":"start","value":container}),
-        ),
-        Some(index) => (
-            json!({"kind":"before","value":members[index]}),
-            json!({"kind":"after","value":members[index - 1]}),
-        ),
-        None => (
-            json!({"kind":"end"}),
-            json!({"kind":"after","value":members[members.len() - 1]}),
-        ),
-    };
-    push(
-        &mut ir.design.containers,
-        json!({"kind":"ordered","value":{"id":container,"kind":"timeline","members":members,"folders":[],"rollback":rollback}}),
-    )?;
-    push(
-        &mut ir.design.scopes,
-        json!({"definition":definition,"roots":[container],"active_arrangements":[],"occurrences":{},"unproduced":[],
-        "current":[{"at":at,"bodies":bodies,"poses":[],"status":"current"}]}),
-    )?;
-    Ok(())
+        "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}});
+    Ok((operation, assumed))
 }
